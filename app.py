@@ -98,6 +98,19 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0, 199, 60, 0.1) !important;
     }
 
+    /* Fix for overlapping text in copy button inside st.code/st.popover */
+    button[title="Copy to clipboard"] {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        height: auto !important;
+        width: auto !important;
+    }
+    button[title="Copy to clipboard"]:hover {
+        background: rgba(0,0,0,0.05) !important;
+        transform: none !important;
+    }
+
     /* Action Buttons (Primary) */
     .primary-btn button {
         background: var(--primary) !important;
@@ -147,6 +160,8 @@ if 'df_raw' not in st.session_state:
     st.session_state.df_raw = None
 if 'last_uploaded_file' not in st.session_state:
     st.session_state.last_uploaded_file = None
+if 'campaign_settings' not in st.session_state:
+    st.session_state.campaign_settings = {}
 
 # --- Main Layout ---
 st.markdown("<div class='main-title'>GFA RAW MASTER PRO</div>", unsafe_allow_html=True)
@@ -169,8 +184,23 @@ with container:
             st.session_state.last_uploaded_file = uploaded_file
 
         media_list = ['네이버GFA', '카카오', '구글', '메타']
-        selected_media = st.selectbox("집행 매체", media_list)
-        base_fee = st.number_input("기본 대행 수수료 (%)", min_value=0.0, max_value=100.0, value=15.0, step=0.5)
+        
+        # Determine default values based on selected campaigns
+        default_media = media_list[0]
+        default_fee = 15.0
+        
+        # If campaigns are selected, try to load from cache
+        current_campaigns = st.session_state.get('selected_campaigns', [])
+        if current_campaigns:
+            # For simplicity, we use the settings of the first selected campaign
+            first_camp = current_campaigns[0]
+            if first_camp in st.session_state.campaign_settings:
+                saved = st.session_state.campaign_settings[first_camp]
+                default_media = saved.get('media', default_media)
+                default_fee = saved.get('fee', default_fee)
+
+        selected_media = st.selectbox("집행 매체", media_list, index=media_list.index(default_media) if default_media in media_list else 0)
+        base_fee = st.number_input("기본 대행 수수료 (%)", min_value=0.0, max_value=100.0, value=default_fee, step=0.5)
         
         if uploaded_file is not None:
             if st.session_state.df_raw is None:
@@ -203,7 +233,8 @@ with container:
             # Campaign Multi-select
             if '캠페인' in df_base.columns:
                 all_campaigns = sorted(df_base['캠페인'].unique().tolist())
-                selected_campaigns = st.multiselect("캠페인 다중 선택", options=all_campaigns)
+                # Use key to persist between runs and allow auto-loading trigger
+                selected_campaigns = st.multiselect("캠페인 다중 선택", options=all_campaigns, key='selected_campaigns')
             else:
                 st.error("'캠페인 이름' 컬럼을 찾을 수 없습니다.")
                 st.stop()
@@ -227,6 +258,14 @@ with container:
             st.markdown("</div>", unsafe_allow_html=True)
 
             if run_btn:
+                # Save settings for selected campaigns
+                if selected_campaigns:
+                    for camp in selected_campaigns:
+                        st.session_state.campaign_settings[camp] = {
+                            'media': selected_media,
+                            'fee': base_fee
+                        }
+
                 with st.spinner("생성 중..."):
                     # Filtering
                     if selected_campaigns:
@@ -294,8 +333,8 @@ with container:
             copy_col, dl_col = st.columns(2)
             
             with copy_col:
-                # Optimized for Excel pasting (TSV)
-                tsv_data = st.session_state.processed_df.to_csv(index=False, sep='\t')
+                # Optimized for Excel pasting (TSV) - Header removed as requested
+                tsv_data = st.session_state.processed_df.to_csv(index=False, sep='\t', header=False)
                 with st.popover("📋 클립보드 복사 모드", use_container_width=True):
                     st.markdown("**데이터를 복사하여 엑셀에 바로 붙여넣으세요.**")
                     st.code(tsv_data, language="text")
