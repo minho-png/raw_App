@@ -1,6 +1,8 @@
 import pandas as pd
 import streamlit as st
 import io
+from database_manager import DatabaseManager
+from report_generator import generate_premium_html
 from datetime import datetime
 from logic import parse_naver_date, get_day_of_week, calculate_metrics, clean_placement, clean_numeric
 
@@ -163,6 +165,23 @@ if 'last_uploaded_file' not in st.session_state:
 if 'campaign_settings' not in st.session_state:
     st.session_state.campaign_settings = {}
 
+# --- Helper Logic for Persistent Settings ---
+if 'media_val' not in st.session_state:
+    st.session_state.media_val = '네이버GFA'
+if 'fee_val' not in st.session_state:
+    st.session_state.fee_val = 15.0
+
+def sync_campaign_settings():
+    """Update UI input values when campaign selection changes"""
+    selected = st.session_state.get('selected_campaigns', [])
+    if selected:
+        # Load settings from the first selected campaign's history if available
+        first_camp = selected[0]
+        if first_camp in st.session_state.campaign_settings:
+            saved = st.session_state.campaign_settings[first_camp]
+            st.session_state.media_val = saved.get('media', '네이버GFA')
+            st.session_state.fee_val = saved.get('fee', 15.0)
+
 # --- Main Layout ---
 st.markdown("<div class='main-title'>GFA RAW MASTER PRO</div>", unsafe_allow_html=True)
 st.markdown("<div class='main-subtitle'>네이버 GFA 광고 성과를 완벽한 RAW 데이터로 가공하세요.</div>", unsafe_allow_html=True)
@@ -185,22 +204,19 @@ with container:
 
         media_list = ['네이버GFA', '카카오', '구글', '메타']
         
-        # Determine default values based on selected campaigns
-        default_media = media_list[0]
-        default_fee = 15.0
-        
-        # If campaigns are selected, try to load from cache
-        current_campaigns = st.session_state.get('selected_campaigns', [])
-        if current_campaigns:
-            # For simplicity, we use the settings of the first selected campaign
-            first_camp = current_campaigns[0]
-            if first_camp in st.session_state.campaign_settings:
-                saved = st.session_state.campaign_settings[first_camp]
-                default_media = saved.get('media', default_media)
-                default_fee = saved.get('fee', default_fee)
-
-        selected_media = st.selectbox("집행 매체", media_list, index=media_list.index(default_media) if default_media in media_list else 0)
-        base_fee = st.number_input("기본 대행 수수료 (%)", min_value=0.0, max_value=100.0, value=default_fee, step=0.5)
+        selected_media = st.selectbox(
+            "집행 매체", 
+            media_list, 
+            index=media_list.index(st.session_state.media_val) if st.session_state.media_val in media_list else 0,
+            key='media_val'
+        )
+        base_fee = st.number_input(
+            "기본 대행 수수료 (%)", 
+            min_value=0.0, 
+            max_value=100.0, 
+            step=0.5,
+            key='fee_val'
+        )
         
         if uploaded_file is not None:
             if st.session_state.df_raw is None:
@@ -233,8 +249,13 @@ with container:
             # Campaign Multi-select
             if '캠페인' in df_base.columns:
                 all_campaigns = sorted(df_base['캠페인'].unique().tolist())
-                # Use key to persist between runs and allow auto-loading trigger
-                selected_campaigns = st.multiselect("캠페인 다중 선택", options=all_campaigns, key='selected_campaigns')
+                # Use key and on_change to trigger sync when selection changes
+                selected_campaigns = st.multiselect(
+                    "캠페인 다중 선택", 
+                    options=all_campaigns, 
+                    key='selected_campaigns',
+                    on_change=sync_campaign_settings
+                )
             else:
                 st.error("'캠페인 이름' 컬럼을 찾을 수 없습니다.")
                 st.stop()
@@ -258,12 +279,12 @@ with container:
             st.markdown("</div>", unsafe_allow_html=True)
 
             if run_btn:
-                # Save settings for selected campaigns
+                # Save settings for all currently selected campaigns
                 if selected_campaigns:
                     for camp in selected_campaigns:
                         st.session_state.campaign_settings[camp] = {
-                            'media': selected_media,
-                            'fee': base_fee
+                            'media': st.session_state.media_val,
+                            'fee': st.session_state.fee_val
                         }
 
                 with st.spinner("생성 중..."):
@@ -322,51 +343,125 @@ with container:
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
-        if st.session_state.processed_df is not None:
-            st.markdown("<div class='glass-card' style='height: 100%; border-left: 5px solid var(--primary);'>", unsafe_allow_html=True)
-            st.markdown("<div class='header-text'>✨ 생성 결과 프리뷰</div>", unsafe_allow_html=True)
-            
-            # --- Copy & Download Actions ---
-            st.markdown("<div class='section-label'>Data Export & Copy</div>", unsafe_allow_html=True)
-            
-            # Use columns but ensure they don't fight for space
-            copy_col, dl_col = st.columns(2)
-            
-            with copy_col:
-                # Optimized for Excel pasting (TSV) - Header removed as requested
-                tsv_data = st.session_state.processed_df.to_csv(index=False, sep='\t', header=False)
-                with st.popover("📋 클립보드 복사 모드", use_container_width=True):
-                    st.markdown("**데이터를 복사하여 엑셀에 바로 붙여넣으세요.**")
-                    st.code(tsv_data, language="text")
-                    st.caption("우측 상단의 버튼을 클릭하여 복사하세요.")
-
-            with dl_col:
-                # Excel Export
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    st.session_state.processed_df.to_excel(writer, index=False, sheet_name='RAW_Data')
-                    workbook = writer.book
-                    worksheet = writer.sheets['RAW_Data']
-                    header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
-                    for c, val in enumerate(st.session_state.processed_df.columns):
-                        worksheet.write(0, c, val, header_fmt)
+        tab1, tab2 = st.tabs(["📊 데이터 가공", "🔍 데이터베이스 익스플로러"])
+        
+        with tab1:
+            if st.session_state.processed_df is not None:
+                st.markdown("<div class='glass-card' style='height: 100%; border-left: 5px solid var(--primary);'>", unsafe_allow_html=True)
+                st.markdown("<div class='header-text'>✨ 생성 결과 프리뷰</div>", unsafe_allow_html=True)
                 
-                st.download_button(
-                    label="📥 엑셀(Excel) 다운로드",
-                    data=output.getvalue(),
-                    file_name=f"GFA_RAW_{datetime.now().strftime('%m%d_%H%M')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
+                # --- Copy & Download Actions ---
+                st.markdown("<div class='section-label'>Data Export & DB Save</div>", unsafe_allow_html=True)
+                
+                # Use columns but ensure they don't fight for space
+                copy_col, dl_col, db_col = st.columns(3)
+                
+                with copy_col:
+                    # Optimized for Excel pasting (TSV) - Header removed as requested
+                    tsv_data = st.session_state.processed_df.to_csv(index=False, sep='\t', header=False)
+                    with st.popover("📋 클립보드 복사", use_container_width=True):
+                        st.markdown("**데이터를 복사하여 엑셀에 바로 붙여넣으세요.**")
+                        st.code(tsv_data, language="text")
+                        st.caption("우측 상단의 버튼을 클릭하여 복사하세요.")
 
-            st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-            st.dataframe(st.session_state.processed_df, use_container_width=True, height=450)
+                with dl_col:
+                    # Excel Export
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        st.session_state.processed_df.to_excel(writer, index=False, sheet_name='RAW_Data')
+                        workbook = writer.book
+                        worksheet = writer.sheets['RAW_Data']
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
+                        for c, val in enumerate(st.session_state.processed_df.columns):
+                            worksheet.write(0, c, val, header_fmt)
+                    
+                    st.download_button(
+                        label="📥 엑셀 다운로드",
+                        data=output.getvalue(),
+                        file_name=f"GFA_RAW_{datetime.now().strftime('%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
 
+                with db_col:
+                    if st.button("💾 DB에 저장", type="primary"):
+                        if not st.session_state.db_connected:
+                            st.warning("먼저 데이터베이스에 연결해주세요.")
+                        else:
+                            with st.spinner("저장 중..."):
+                                success, msg = st.session_state.db_manager.save_data(st.session_state.processed_df)
+                                if success:
+                                    st.success(msg)
+                                else:
+                                    st.error(msg)
+                
+                # --- HTML Report Button ---
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                html_col1, html_col2 = st.columns([1, 1])
+                with html_col1:
+                    html_report = generate_premium_html(st.session_state.processed_df)
+                    st.download_button(
+                        label="📄 HTML 리포트 다운로드",
+                        data=html_report,
+                        file_name=f"GFA_Report_{datetime.now().strftime('%m%d_%H%M')}.html",
+                        mime="text/html",
+                        use_container_width=True
+                    )
 
-            st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='glass-card' style='height: 100%; display: flex; align-items: center; justify-content: center;'>", unsafe_allow_html=True)
-            st.markdown("<div style='color: #94a3b8;'>설정을 완료하고 생성 버튼을 눌러주세요.</div>", unsafe_allow_html=True)
+                st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+                st.dataframe(st.session_state.processed_df, use_container_width=True, height=450)
+
+                st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div class='glass-card' style='height: 100%; display: flex; align-items: center; justify-content: center;'>", unsafe_allow_html=True)
+                st.markdown("<div style='color: #94a3b8;'>설정을 완료하고 생성 버튼을 눌러주세요.</div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+        with tab2:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("<div class='header-text'>🔎 SQL 데이터 조회 (DuckDB)</div>", unsafe_allow_html=True)
+            
+            if not st.session_state.db_connected:
+                st.info("데이터베이스에 연결하여 저장된 데이터를 SQL로 조회할 수 있습니다.")
+            else:
+                collection_to_query = st.text_input("조회할 컬렉션 명", value="raw_master_results")
+                
+                load_col, _ = st.columns([1, 2])
+                with load_col:
+                    if st.button("🔄 데이터 불러오기"):
+                        with st.spinner("데이터를 가져오는 중..."):
+                            df_db, msg = st.session_state.db_manager.fetch_data(collection_to_query)
+                            if df_db is not None:
+                                if df_db.empty:
+                                    st.warning("데이터가 없습니다.")
+                                else:
+                                    st.session_state.db_data = df_db
+                                    st.success(f"데이터 로드 완료 ({len(df_db)} row)")
+                            else:
+                                st.error(msg)
+                
+                if 'db_data' in st.session_state:
+                    st.markdown("<div class='section-label'>SQL Query</div>", unsafe_allow_html=True)
+                    sql_input = st.text_area(
+                        "SQL을 입력하세요 (테이블명은 'data'로 고정입니다)", 
+                        value="SELECT * FROM data LIMIT 10",
+                        height=100
+                    )
+                    
+                    if st.button("⚡ 쿼리 실행"):
+                        # DuckDB session to register the dataframe as 'data'
+                        data = st.session_state.db_data
+                        res_df, msg = st.session_state.db_manager.run_sql(sql_input, data)
+                        if res_df is not None:
+                            st.session_state.sql_result = res_df
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+                    
+                    if 'sql_result' in st.session_state:
+                        st.markdown("<div class='section-label'>Query Result</div>", unsafe_allow_html=True)
+                        st.dataframe(st.session_state.sql_result, use_container_width=True)
+
             st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<div class='footer'>© 2026 GFA RAW MASTER PRO</div>", unsafe_allow_html=True)
