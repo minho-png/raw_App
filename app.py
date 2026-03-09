@@ -164,6 +164,14 @@ if 'last_uploaded_file' not in st.session_state:
     st.session_state.last_uploaded_file = None
 if 'campaign_settings' not in st.session_state:
     st.session_state.campaign_settings = {}
+if 'db_manager' not in st.session_state:
+    st.session_state.db_manager = None
+if 'db_connected' not in st.session_state:
+    st.session_state.db_connected = False
+if 'db_data' not in st.session_state:
+    st.session_state.db_data = None
+if 'sql_result' not in st.session_state:
+    st.session_state.sql_result = None
 
 # --- Helper Logic for Persistent Settings ---
 if 'media_val' not in st.session_state:
