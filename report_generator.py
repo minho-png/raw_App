@@ -27,9 +27,11 @@ def calculate_performance_indicators(df):
     
     return df_res
 
-def generate_premium_html(df, title="GFA 광고 성과 리포트"):
+def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=None, theme_color="#AC0212", logo_url=None):
     """
     Jinja2 템플릿을 사용하여 고도화된 HTML 리포트 생성
+    theme_color: 브랜드 컬러 (HEX)
+    logo_url: 대행사/브랜드 로고 경로
     """
     # 1. 성과 지표 계산
     df_perf = calculate_performance_indicators(df)
@@ -63,6 +65,18 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트"):
         'values': media_share['집행 금액'].tolist()
     }
     
+    # 3.1 DMP 효율 비교 데이터
+    dmp_comparison = {}
+    if 'has_dmp' in df_perf.columns:
+        dmp_stats = df_perf.groupby('has_dmp').agg({
+            '노출': 'sum',
+            '클릭': 'sum',
+            '집행 금액': 'sum'
+        }).reset_index()
+        dmp_stats['CTR'] = (dmp_stats['클릭'] / dmp_stats['노출'] * 100).fillna(0)
+        dmp_stats['CPC'] = (dmp_stats['집행 금액'] / dmp_stats['클릭']).fillna(0)
+        dmp_comparison = dmp_stats.to_dict('records')
+    
     # 4. 템플릿 필터 정의 (Jinja용)
     def format_comma(value):
         try: return f"{value:,.0f}"
@@ -90,7 +104,7 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트"):
         # Fallback if file not found
         template = Environment().from_string("<html><body>Template not found</body></html>")
     
-    table_cols = [c for c in df_perf.columns if c not in ['has_dmp', '조회']]
+    table_cols = [c for c in df_perf.columns if c not in ['has_dmp', '조회', 'NET', 'NET가']]
     table_data = df_perf[table_cols].to_dict('records')
     
     html_content = template.render(
@@ -100,7 +114,11 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트"):
         trend_data=trend_data,
         media_data=media_data,
         table_cols=table_cols,
-        table_data=table_data
+        table_data=table_data,
+        growth_data=growth_data,
+        dmp_comparison=dmp_comparison,
+        theme_color=theme_color,
+        logo_url=logo_url
     )
     
     return html_content

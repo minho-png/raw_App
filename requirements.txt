@@ -8,3 +8,6 @@ duckdb
 Jinja2
 weasyprint
 certifi
+plotly
+chardet
+xlsxwriter

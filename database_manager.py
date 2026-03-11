@@ -42,6 +42,12 @@ class DatabaseManager:
         try:
             # Add a timestamp to the data
             df_to_save = df.copy()
+            
+            # Security Patch: NET 관련 정보 명시적 삭제
+            cols_to_drop = [c for c in ['NET', 'NET가'] if c in df_to_save.columns]
+            if cols_to_drop:
+                df_to_save = df_to_save.drop(columns=cols_to_drop)
+                
             df_to_save['db_created_at'] = datetime.now()
             
             # Convert to dictionary records
@@ -85,17 +91,60 @@ class DatabaseManager:
         except Exception as e:
             return None, f"Query failed: {str(e)}"
 
-    def calculate_growth_metrics(self, df, kpi_col='집행 금액'):
-        """Calculate WoW and MoM growth rates"""
-        if df.empty or '날짜' not in df.columns:
+    def calculate_growth_metrics(self, current_df, historical_df=None):
+        """Calculate WoW (Week-over-Week) growth rates"""
+        if current_df.empty or '날짜' not in current_df.columns:
             return None
+            
+        current_sum = current_sum = current_df.agg({'집행 금액': 'sum', '노출': 'sum', '클릭': 'sum'})
         
-        df_sorted = df.sort_values('날짜')
-        
-        # Simple aggregation by date for trend
-        daily_trend = df_sorted.groupby('날짜')[kpi_col].sum().reset_index()
-        
-        # Calculate growth if we have enough data
-        # For WoW/MoM we might need more complex logic based on current date
-        # Here we'll provide a simplified version using pandas.pct_change
-        return daily_trend
+        if historical_df is not None and not historical_df.empty:
+            hist_sum = historical_df.agg({'집행 금액': 'sum', '노출': 'sum', '클릭': 'sum'})
+            
+            growth = {}
+            for col in ['집행 금액', '노출', '클릭']:
+                if hist_sum[col] > 0:
+                    growth[col] = (current_sum[col] - hist_sum[col]) / hist_sum[col] * 100
+                else:
+                    growth[col] = 0.0
+            return growth
+        return None
+
+    def compare_with_history(self, current_df):
+        """Fetch matching historical data (e.g., same period last week) and compare"""
+        if self.db is None or current_df.empty or '날짜' not in current_df.columns:
+            return None
+            
+        try:
+            # 1. Determine date range of current data
+            min_date = current_df['날짜'].min()
+            max_date = current_df['날짜'].max()
+            
+            # 2. Calculate last week's range
+            from datetime import timedelta
+            last_week_min = min_date - timedelta(days=7)
+            last_week_max = max_date - timedelta(days=7)
+            
+            # 3. Query MongoDB for last week's data
+            collection = self.db["raw_master_results"]
+            query = {
+                "날짜": {
+                    "$gte": last_week_min,
+                    "$lte": last_week_max
+                }
+            }
+            cursor = collection.find(query)
+            hist_df = pd.DataFrame(list(cursor))
+            
+            if hist_df.empty:
+                return None
+                
+            if '_id' in hist_df.columns:
+                hist_df = hist_df.drop(columns=['_id'])
+            
+            # 4. Calculate growth
+            return self.calculate_growth_metrics(current_df, hist_df)
+            
+        except Exception as e:
+            print(f"Comparison failed: {e}")
+            return None

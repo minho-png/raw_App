@@ -12,94 +12,153 @@
         rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
+        :root {
+            --brand-color: {{ theme_color }};
+            --brand-light: {{ theme_color }}15;
+        }
         body {
             font-family: 'Noto Sans KR', sans-serif;
             background-color: #f8fafc;
-            color: #334155;
+            color: #1e293b;
         }
 
-        .text-brand {
-            color: rgb(172, 2, 18);
-        }
-
-        .bg-brand {
-            background-color: rgb(172, 2, 18);
-        }
+        .text-brand { color: var(--brand-color); }
+        .bg-brand { background-color: var(--brand-color); }
+        .border-brand { border-color: var(--brand-color); }
 
         .card {
             background: white;
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            border-radius: 1.25rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
             padding: 1.5rem;
             height: 100%;
+            transition: transform 0.2s ease;
         }
+        .card:hover { transform: translateY(-2px); }
 
         .chart-container {
             position: relative;
-            height: 300px;
+            height: 320px;
             width: 100%;
         }
 
         .premium-table-container {
             overflow-x: auto;
             background: white;
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            border-radius: 1.25rem;
+            border: 1px solid #e2e8f0;
         }
+
+        .growth-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+        .growth-up { background-color: #fef2f2; color: #ef4444; }
+        .growth-down { background-color: #f0fdf4; color: #22c55e; }
     </style>
 </head>
 
 <body class="p-4 md:p-8">
     <div class="max-w-7xl mx-auto space-y-6">
-        <header
-            class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border-l-8 border-brand">
-            <div>
-                <h1 class="text-3xl font-black text-slate-800 tracking-tight">{{ title }}</h1>
-                <p class="text-slate-500 mt-2 flex items-center gap-2 font-medium">
-                    <i data-lucide="calendar" class="w-4 h-4"></i>
-                    리포트 생성 일시: {{ generated_at }}
-                </p>
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border-l-8 border-brand">
+            <div class="flex items-center gap-6">
+                {% if logo_url %}
+                <img src="{{ logo_url }}" alt="Logo" class="h-12 object-contain">
+                {% endif %}
+                <div>
+                    <h1 class="text-3xl font-black text-slate-800 tracking-tight">{{ title }}</h1>
+                    <p class="text-slate-500 mt-1 flex items-center gap-2 font-medium text-sm">
+                        <i data-lucide="calendar" class="w-4 h-4"></i>
+                        리포트 생성 일시: {{ generated_at }}
+                    </p>
+                </div>
+            </div>
+            <div class="mt-4 md:mt-0 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100 italic text-xs text-slate-400 font-medium">
+                Verified by GFA RAW MASTER PRO
             </div>
         </header>
 
         <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
-                <div class="p-3 bg-red-50 rounded-full text-brand shrink-0"><i data-lucide="eye"
-                        class="w-6 h-6 md:w-8 md:h-8"></i></div>
+            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4">
+                <div class="p-3 bg-red-50 rounded-full text-brand shrink-0"><i data-lucide="eye" class="w-6 h-6"></i></div>
                 <div>
-                    <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">총 노출수</p>
-                    <h3 class="text-lg md:text-xl font-bold text-slate-800">{{ summary.total_imp|format_comma }} <span
-                            class="text-xs font-normal text-slate-400">회</span></h3>
+                    <p class="text-xs text-slate-400 font-bold mb-1 uppercase tracking-wider">노출수</p>
+                    <h3 class="text-xl font-black text-slate-800">{{ summary.total_imp|format_comma }}</h3>
+                    {% if growth_data %}
+                    <span class="growth-badge {% if growth_data['노출'] >= 0 %}growth-up{% else %}growth-down{% endif %}">
+                        {% if growth_data['노출'] >= 0 %}▲{% else %}▼{% endif %} {{ growth_data['노출']|format_pct }}%
+                    </span>
+                    {% endif %}
                 </div>
             </div>
-            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
-                <div class="p-3 bg-blue-50 rounded-full text-blue-600 shrink-0"><i data-lucide="mouse-pointer-click"
-                        class="w-6 h-6 md:w-8 md:h-8"></i></div>
+            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4">
+                <div class="p-3 bg-blue-50 rounded-full text-blue-600 shrink-0"><i data-lucide="mouse-pointer-click" class="w-6 h-6"></i></div>
                 <div>
-                    <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">총 클릭수</p>
-                    <h3 class="text-lg md:text-xl font-bold text-slate-800">{{ summary.total_click|format_comma }} <span
-                            class="text-xs font-normal text-slate-400">회</span></h3>
+                    <p class="text-xs text-slate-400 font-bold mb-1 uppercase tracking-wider">클릭수</p>
+                    <h3 class="text-xl font-black text-slate-800">{{ summary.total_click|format_comma }}</h3>
+                    {% if growth_data %}
+                    <span class="growth-badge {% if growth_data['클릭'] >= 0 %}growth-up{% else %}growth-down{% endif %}">
+                        {% if growth_data['클릭'] >= 0 %}▲{% else %}▼{% endif %} {{ growth_data['클릭']|format_pct }}%
+                    </span>
+                    {% endif %}
                 </div>
             </div>
-            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
-                <div class="p-3 bg-emerald-50 rounded-full text-emerald-600 shrink-0"><i data-lucide="percent"
-                        class="w-6 h-6 md:w-8 md:h-8"></i></div>
+            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4">
+                <div class="p-3 bg-emerald-50 rounded-full text-emerald-600 shrink-0"><i data-lucide="percent" class="w-6 h-6"></i></div>
                 <div>
-                    <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">평균 클릭률 (CTR)</p>
-                    <h3 class="text-lg md:text-xl font-bold text-slate-800">{{ summary.avg_ctr|format_pct }} <span
-                            class="text-xs font-normal text-slate-400">%</span></h3>
+                    <p class="text-xs text-slate-400 font-bold mb-1 uppercase tracking-wider">클릭률 (CTR)</p>
+                    <h3 class="text-xl font-black text-slate-800">{{ summary.avg_ctr|format_pct }}%</h3>
                 </div>
             </div>
-            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
-                <div class="p-3 bg-purple-50 rounded-full text-purple-600 shrink-0"><i data-lucide="banknote"
-                        class="w-6 h-6 md:w-8 md:h-8"></i></div>
+            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4">
+                <div class="p-3 bg-purple-50 rounded-full text-purple-600 shrink-0"><i data-lucide="banknote" class="w-6 h-6"></i></div>
                 <div>
-                    <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">총 집행 금액</p>
-                    <h3 class="text-lg md:text-xl font-bold text-slate-800">{{ summary.total_exec|format_comma }} <span
-                            class="text-xs font-normal text-slate-400">원</span></h3>
+                    <p class="text-xs text-slate-400 font-bold mb-1 uppercase tracking-wider">집행 금액</p>
+                    <h3 class="text-xl font-black text-slate-800">{{ summary.total_exec|format_comma }}원</h3>
+                    {% if growth_data %}
+                    <span class="growth-badge {% if growth_data['집행 금액'] >= 0 %}growth-up{% else %}growth-down{% endif %}">
+                        {% if growth_data['집행 금액'] >= 0 %}▲{% else %}▼{% endif %} {{ growth_data['집행 금액']|format_pct }}%
+                    </span>
+                    {% endif %}
                 </div>
             </div>
         </section>
+
+        {% if dmp_comparison %}
+        <section class="card overflow-hidden">
+            <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="layers" class="w-5 h-5 text-brand"></i>DMP 타겟팅 효율 비교</h2>
+            <div class="premium-table-container">
+                <table class="min-w-full divide-y divide-slate-200">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">DMP 여부</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">노출</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">클릭</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">CTR</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">CPC</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-widest">집행 금액</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for item in dmp_comparison %}
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-bold {% if item.has_dmp %}text-brand{% else %}text-slate-500{% endif %}">
+                                {% if item.has_dmp %}DMP Applied{% else %}Standard{% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{{ item['노출']|format_comma }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{{ item['클릭']|format_comma }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{{ item['CTR']|format_pct }}%</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{{ item['CPC']|format_comma }}원</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{{ item['집행 금액']|format_comma }}원</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <section class="card">

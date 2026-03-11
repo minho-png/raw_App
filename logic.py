@@ -1,4 +1,6 @@
 import pandas as pd
+import chardet
+import numpy as np
 
 def parse_naver_date(date_str):
     """'2026.02.24.' -> '2026-02-24'"""
@@ -24,6 +26,55 @@ def clean_placement(placement_str):
         return placement_str.replace("네이버+ > ", "")
     return placement_str
 
+def load_data_with_encoding(file_obj):
+    """Detect encoding and load CSV"""
+    raw_data = file_obj.read()
+    file_obj.seek(0)
+    result = chardet.detect(raw_data)
+    encoding = result['encoding']
+    
+    # Fallback to CP949 if detection is unsure
+    if encoding is None or result['confidence'] < 0.8:
+        encoding = 'cp949'
+    
+    try:
+        df = pd.read_csv(file_obj, encoding=encoding)
+    except UnicodeDecodeError:
+        df = pd.read_csv(file_obj, encoding='utf-8-sig')
+    return df
+
+def merge_raw_data(dfs):
+    """Merge multiple raw dataframes and sort by date"""
+    if not dfs:
+        return pd.DataFrame()
+    combined_df = pd.concat(dfs, ignore_index=True)
+    if '날짜' in combined_df.columns:
+        combined_df['dt'] = combined_df['날짜'].apply(parse_naver_date)
+        combined_df = combined_df.sort_values('dt').drop('dt', axis=1)
+    return combined_df
+
+def detect_anomalies(df, threshold=2.0):
+    """Detect anomalies in CTR (more than threshold * std dev)"""
+    if '클릭' not in df.columns or '노출' not in df.columns or len(df) < 5:
+        return []
+    
+    temp_df = df.copy()
+    temp_df['CTR'] = (temp_df['클릭'] / temp_df['노출']).fillna(0)
+    mean_ctr = temp_df['CTR'].mean()
+    std_ctr = temp_df['CTR'].std()
+    
+    if std_ctr == 0:
+        return []
+        
+    anomalies = temp_df[temp_df['CTR'] > (mean_ctr + threshold * std_ctr)]
+    insights = []
+    for _, row in anomalies.iterrows():
+        placement = row.get('지면', 'Unknown')
+        group = row.get('광고 그룹 이름', 'Unknown')
+        insights.append(f"이상 탐지: [{placement} > {group}] CTR {row['CTR']*100:.2f}% (평균 대비 급증)")
+    
+    return insights
+
 def clean_numeric(val):
     """Remove commas and convert to float/int"""
     if isinstance(val, str):
@@ -39,7 +90,7 @@ def clean_numeric(val):
         return float(val)
     return 0.0
 
-def calculate_metrics(df, base_fee, media_type, dmp_keywords=None):
+def calculate_metrics(df, base_fee, media_type, dmp_keywords=None, include_vat=False):
     """
     정산 목적의 '집행 금액'과 'NET'만 계산하도록 유지.
     성과 지표(CTR, CPC, CPM)는 report_generator.py에서 계산함.
@@ -73,18 +124,17 @@ def calculate_metrics(df, base_fee, media_type, dmp_keywords=None):
         else:
             exec_cost = row['총 비용'] / (1 - fee_rate)
             
-        # NET은 기본적으로 원본 총 비용
-        net_cost = row['총 비용']
-        
-        # 매체별 특약 로직
         if media_type == '네이버GFA':
-            # 네이버 특약: 집행금액/NET 모두 / 1.1 (공급가액 기준)
+            # 네이버 특약: 공급가액 기준으로 변환 (/ 1.1)
             exec_cost = exec_cost / 1.1
-            net_cost = net_cost / 1.1
             
-        return pd.Series([exec_cost, net_cost])
+        # VAT 처리 (10% 추가)
+        if include_vat:
+            exec_cost = exec_cost * 1.1
+            
+        return exec_cost
 
-    df[['집행 금액', 'NET']] = df.apply(apply_formula, axis=1)
+    df['집행 금액'] = df.apply(apply_formula, axis=1)
     
     if '지면' in df.columns:
         df['지면'] = df['지면'].apply(clean_placement)
