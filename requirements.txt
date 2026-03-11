@@ -7,3 +7,4 @@ dnspython
 duckdb
 Jinja2
 xhtml2pdf
+certifi

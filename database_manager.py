@@ -3,6 +3,7 @@ from pymongo import MongoClient
 import duckdb
 from datetime import datetime
 import streamlit as st
+import certifi
 
 class DatabaseManager:
     def __init__(self, uri=None, database_name="gfa_master_pro"):
@@ -25,7 +26,8 @@ class DatabaseManager:
 
     def connect(self):
         try:
-            self.client = MongoClient(self.uri)
+            ca = certifi.where()
+            self.client = MongoClient(self.uri, tlsCAFile=ca)
             # Test connection
             self.client.admin.command('ping')
             self.db = self.client[self.database_name]
