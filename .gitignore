@@ -7,3 +7,7 @@ venv/
 .env
 .ipynb_checkpoints/
 .DS_Store
+
+# Streamlit secrets (Security)
+.streamlit/
+secrets.toml

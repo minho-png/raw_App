@@ -15,8 +15,13 @@ class DatabaseManager:
         self.database_name = database_name
         self.client = None
         self.db = None
+        self.conn_success = False
+        self.conn_msg = "Not connected"
+        
         if self.uri:
-            self.connect()
+            self.conn_success, self.conn_msg = self.connect()
+        else:
+            self.conn_msg = "MONGODB_URI not found in secrets"
 
     def connect(self):
         try:

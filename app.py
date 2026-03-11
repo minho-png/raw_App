@@ -139,8 +139,25 @@ if 'processed_df' not in st.session_state: st.session_state.processed_df = None
 if 'df_raw' not in st.session_state: st.session_state.df_raw = None
 if 'last_uploaded_file' not in st.session_state: st.session_state.last_uploaded_file = None
 if 'db_manager' not in st.session_state: st.session_state.db_manager = DatabaseManager()
-if 'db_connected' in st.session_state: pass # Use existing
-else: st.session_state.db_connected = False
+
+# --- Sidebar for DB Connection Status ---
+with st.sidebar:
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='header-text'>🔗 DB Status</div>", unsafe_allow_html=True)
+    
+    db_mgr = st.session_state.db_manager
+    if db_mgr.conn_success:
+        st.success("Connected to MongoDB")
+    else:
+        st.error(f"DB Error: {db_mgr.conn_msg}")
+        with st.expander("Setup Help"):
+            st.info("`.streamlit/secrets.toml` 파일에 `MONGODB_URI`를 설정하세요.")
+    
+    if st.button("🔄 Reconnect"):
+        st.session_state.db_manager = DatabaseManager()
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
 if 'db_data' not in st.session_state: st.session_state.db_data = None
 if 'sql_result' not in st.session_state: st.session_state.sql_result = None
 
