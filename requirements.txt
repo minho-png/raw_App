@@ -5,3 +5,5 @@ xlsxwriter
 pymongo[srv]
 dnspython
 duckdb
+Jinja2
+xhtml2pdf

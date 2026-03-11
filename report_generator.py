@@ -1,160 +1,111 @@
 import pandas as pd
 from datetime import datetime
+from jinja2 import Template
+import io
+import os
+from xhtml2pdf import pisa
+
+def calculate_performance_indicators(df):
+    """
+    리포트용 성과 지표 계산: CTR, CPC, CPM.
+    """
+    df_res = df.copy()
+    
+    # 기본 지표 확인
+    if '노출' not in df_res.columns or '클릭' not in df_res.columns or '집행 금액' not in df_res.columns:
+        return df_res
+        
+    df_res['CTR'] = (df_res['클릭'] / df_res['노출'] * 100).fillna(0)
+    df_res['CPC'] = (df_res['집행 금액'] / df_res['클릭']).replace([float('inf'), -float('inf')], 0).fillna(0)
+    df_res['CPM'] = (df_res['집행 금액'] / df_res['노출'] * 1000).fillna(0)
+    
+    return df_res
 
 def generate_premium_html(df, title="GFA 광고 성과 리포트"):
     """
-    Generates a premium, styled HTML report from a pandas DataFrame,
-    inspired by the '트립앤샵 진행리포트.html' template.
+    Jinja2 템플릿을 사용하여 고도화된 HTML 리포트 생성
     """
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 1. 성과 지표 계산
+    df_perf = calculate_performance_indicators(df)
     
-    # Calculate summary metrics
-    summary_data = {
-        'total_imp': df['노출'].sum() if '노출' in df.columns else 0,
-        'total_click': df['클릭'].sum() if '클릭' in df.columns else 0,
-        'total_exec': df['집행 금액'].sum() if '집행 금액' in df.columns else 0,
-        'total_net': df['NET'].sum() if 'NET' in df.columns else 0
+    # 2. 요약 데이터
+    summary = {
+        'total_imp': df_perf['노출'].sum(),
+        'total_click': df_perf['클릭'].sum(),
+        'total_exec': df_perf['집행 금액'].sum(),
+        'avg_ctr': (df_perf['클릭'].sum() / df_perf['노출'].sum() * 100) if df_perf['노출'].sum() > 0 else 0
     }
     
-    ctr = (summary_data['total_click'] / summary_data['total_imp'] * 100) if summary_data['total_imp'] > 0 else 0
-    
-    # Format numbers for display
-    fmt_imp = f"{summary_data['total_imp']:,.0f}"
-    fmt_click = f"{summary_data['total_click']:,.0f}"
-    fmt_exec = f"{summary_data['total_exec']:,.0f}"
-    fmt_ctr = f"{ctr:.2f}"
-
-    # Generate the table HTML using Tailwind classes
-    # We'll build the table manually for better control over styling
-    table_headers = "".join([f'<th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{col}</th>' for col in df.columns])
-    
-    table_rows = ""
-    for _, row in df.iterrows():
-        row_html = "".join([f'<td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600 border-b border-slate-100">{val}</td>' for val in row])
-        table_rows += f"<tr>{row_html}</tr>"
-
-    html_template = f"""
-    <!DOCTYPE html>
-    <html lang="ko">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{title}</title>
-        <!-- Tailwind CSS -->
-        <script src="https://cdn.tailwindcss.com"></script>
-        <!-- Google Fonts (Noto Sans KR) -->
-        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-        <!-- Lucide Icons -->
-        <script src="https://unpkg.com/lucide@latest"></script>
+    # 3. 차트 데이터 준비
+    # 일별 추이
+    if '날짜' in df_perf.columns:
+        daily = df_perf.groupby('날짜').agg({'노출':'sum', '클릭':'sum', '집행 금액':'sum'}).reset_index()
+        daily['CTR'] = (daily['클릭'] / daily['노출'] * 100).fillna(0)
+        trend_data = {
+            'labels': daily['날짜'].tolist(),
+            'imp': daily['노출'].tolist(),
+            'click': daily['클릭'].tolist(),
+            'ctr': daily['CTR'].tolist()
+        }
+    else:
+        trend_data = {'labels': [], 'imp': [], 'click': [], 'ctr': []}
         
-        <style>
-            body {{
-                font-family: 'Noto Sans KR', sans-serif;
-                background-color: #f8fafc;
-                color: #334155;
-            }}
-            .text-brand {{ color: rgb(172, 2, 18); }}
-            .bg-brand {{ background-color: rgb(172, 2, 18); }}
-            .border-brand {{ border-color: rgb(172, 2, 18); }}
-            
-            .card {{
-                background: white;
-                border-radius: 1rem;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-                padding: 1.5rem;
-            }}
-            
-            .premium-table-container {{
-                overflow-x: auto;
-                background: white;
-                border-radius: 1rem;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            }}
-        </style>
-    </head>
-    <body class="p-4 md:p-8">
-        <div class="max-w-7xl mx-auto space-y-6">
-            <!-- Header -->
-            <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border-l-8 border-brand">
-                <div>
-                    <h1 class="text-3xl font-black text-slate-800 tracking-tight">{title}</h1>
-                    <p class="text-slate-500 mt-2 flex items-center gap-2 font-medium">
-                        <i data-lucide="calendar" class="w-4 h-4"></i>
-                        리포트 생성 일시: {now}
-                    </p>
-                </div>
-            </header>
+    # 매체별 비중
+    media_share = df_perf.groupby('매체')['집행 금액'].sum().reset_index()
+    media_data = {
+        'labels': media_share['매체'].tolist(),
+        'values': media_share['집행 금액'].tolist()
+    }
+    
+    # 4. 템플릿 필터 정의 (Jinja용)
+    def format_comma(value):
+        try: return f"{value:,.0f}"
+        except: return value
+        
+    def format_pct(value):
+        try: return f"{value:.2f}"
+        except: return value
+        
+    def format_cell(value):
+        if isinstance(value, (int, float)):
+            if value == int(value): return f"{value:,.0f}"
+            return f"{value:,.2f}"
+        return str(value)
 
-            <!-- Executive Summary KPIs -->
-            <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
-                    <div class="p-3 bg-red-50 rounded-full text-brand shrink-0">
-                        <i data-lucide="eye" class="w-6 h-6 md:w-8 md:h-8"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">총 노출수</p>
-                        <h3 class="text-lg md:text-xl font-bold text-slate-800">{fmt_imp} <span class="text-xs font-normal text-slate-400">회</span></h3>
-                    </div>
-                </div>
-                <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
-                    <div class="p-3 bg-blue-50 rounded-full text-blue-600 shrink-0">
-                        <i data-lucide="mouse-pointer-click" class="w-6 h-6 md:w-8 md:h-8"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">총 클릭수</p>
-                        <h3 class="text-lg md:text-xl font-bold text-slate-800">{fmt_click} <span class="text-xs font-normal text-slate-400">회</span></h3>
-                    </div>
-                </div>
-                <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
-                    <div class="p-3 bg-emerald-50 rounded-full text-emerald-600 shrink-0">
-                        <i data-lucide="percent" class="w-6 h-6 md:w-8 md:h-8"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">평균 클릭률 (CTR)</p>
-                        <h3 class="text-lg md:text-xl font-bold text-slate-800">{fmt_ctr} <span class="text-xs font-normal text-slate-400">%</span></h3>
-                    </div>
-                </div>
-                <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
-                    <div class="p-3 bg-purple-50 rounded-full text-purple-600 shrink-0">
-                        <i data-lucide="banknote" class="w-6 h-6 md:w-8 md:h-8"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">총 집행 금액</p>
-                        <h3 class="text-lg md:text-xl font-bold text-slate-800">{fmt_exec} <span class="text-xs font-normal text-slate-400">원</span></h3>
-                    </div>
-                </div>
-            </section>
+    # 5. 템플릿 로드 및 렌더링
+    from jinja2 import Environment, FileSystemLoader
+    env = Environment(loader=FileSystemLoader(os.path.dirname(__file__)))
+    env.filters['format_comma'] = format_comma
+    env.filters['format_pct'] = format_pct
+    env.filters['format_cell'] = format_cell
+    
+    try:
+        template = env.get_template('report_template.html')
+    except Exception:
+        # Fallback if file not found
+        template = Environment().from_string("<html><body>Template not found</body></html>")
+    
+    table_cols = [c for c in df_perf.columns if c not in ['has_dmp', '조회']]
+    table_data = df_perf[table_cols].to_dict('records')
+    
+    html_content = template.render(
+        title=title,
+        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        summary=summary,
+        trend_data=trend_data,
+        media_data=media_data,
+        table_cols=table_cols,
+        table_data=table_data
+    )
+    
+    return html_content
 
-            <!-- Data Table Section -->
-            <section class="card">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800">
-                    <i data-lucide="table" class="w-5 h-5 text-brand"></i>
-                    상세 성과 데이터
-                </h2>
-                <div class="premium-table-container">
-                    <table class="min-w-full divide-y divide-slate-200">
-                        <thead class="bg-slate-50">
-                            <tr>
-                                {table_headers}
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white">
-                            {table_rows}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <footer class="text-center text-slate-400 text-sm py-6 border-t border-slate-200">
-                <p>&copy; 2026 GFA RAW MASTER PRO. All rights reserved.</p>
-            </footer>
-        </div>
-
-        <script>
-            // Initialize Lucide icons
-            lucide.createIcons();
-        </script>
-    </body>
-    </html>
+def generate_pdf_report(html_content):
     """
-    return html_template
+    HTML 콘텐츠를 PDF로 변환
+    """
+    result = io.BytesIO()
+    pisa_status = pisa.CreatePDF(io.BytesIO(html_content.encode("utf-8")), dest=result, encoding='utf-8')
+    if pisa_status.err:
+        return None
+    return result.getvalue()

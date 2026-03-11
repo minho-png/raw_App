@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f8fafc;
+            color: #334155;
+        }
+
+        .text-brand {
+            color: rgb(172, 2, 18);
+        }
+
+        .bg-brand {
+            background-color: rgb(172, 2, 18);
+        }
+
+        .card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+            height: 100%;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+        .premium-table-container {
+            overflow-x: auto;
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+
+<body class="p-4 md:p-8">
+    <div class="max-w-7xl mx-auto space-y-6">
+        <header
+            class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border-l-8 border-brand">
+            <div>
+                <h1 class="text-3xl font-black text-slate-800 tracking-tight">{{ title }}</h1>
+                <p class="text-slate-500 mt-2 flex items-center gap-2 font-medium">
+                    <i data-lucide="calendar" class="w-4 h-4"></i>
+                    리포트 생성 일시: {{ generated_at }}
+                </p>
+            </div>
+        </header>
+
+        <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
+                <div class="p-3 bg-red-50 rounded-full text-brand shrink-0"><i data-lucide="eye"
+                        class="w-6 h-6 md:w-8 md:h-8"></i></div>
+                <div>
+                    <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">총 노출수</p>
+                    <h3 class="text-lg md:text-xl font-bold text-slate-800">{{ summary.total_imp|format_comma }} <span
+                            class="text-xs font-normal text-slate-400">회</span></h3>
+                </div>
+            </div>
+            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
+                <div class="p-3 bg-blue-50 rounded-full text-blue-600 shrink-0"><i data-lucide="mouse-pointer-click"
+                        class="w-6 h-6 md:w-8 md:h-8"></i></div>
+                <div>
+                    <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">총 클릭수</p>
+                    <h3 class="text-lg md:text-xl font-bold text-slate-800">{{ summary.total_click|format_comma }} <span
+                            class="text-xs font-normal text-slate-400">회</span></h3>
+                </div>
+            </div>
+            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
+                <div class="p-3 bg-emerald-50 rounded-full text-emerald-600 shrink-0"><i data-lucide="percent"
+                        class="w-6 h-6 md:w-8 md:h-8"></i></div>
+                <div>
+                    <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">평균 클릭률 (CTR)</p>
+                    <h3 class="text-lg md:text-xl font-bold text-slate-800">{{ summary.avg_ctr|format_pct }} <span
+                            class="text-xs font-normal text-slate-400">%</span></h3>
+                </div>
+            </div>
+            <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4 text-center md:text-left">
+                <div class="p-3 bg-purple-50 rounded-full text-purple-600 shrink-0"><i data-lucide="banknote"
+                        class="w-6 h-6 md:w-8 md:h-8"></i></div>
+                <div>
+                    <p class="text-xs md:text-sm text-slate-500 font-semibold mb-1">총 집행 금액</p>
+                    <h3 class="text-lg md:text-xl font-bold text-slate-800">{{ summary.total_exec|format_comma }} <span
+                            class="text-xs font-normal text-slate-400">원</span></h3>
+                </div>
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <section class="card">
+                <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="line-chart"
+                        class="w-5 h-5 text-brand"></i>성과 추이 (일별)</h2>
+                <div class="chart-container"><canvas id="trendChart"></canvas></div>
+            </section>
+            <section class="card">
+                <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="pie-chart"
+                        class="w-5 h-5 text-brand"></i>매체별 성과 비중</h2>
+                <div class="chart-container"><canvas id="mediaChart"></canvas></div>
+            </section>
+        </div>
+
+        <section class="card">
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="table"
+                    class="w-5 h-5 text-brand"></i>상세 성과 데이터</h2>
+            <div class="premium-table-container">
+                <table class="min-w-full divide-y divide-slate-200">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            {% for col in table_cols %}
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{{
+                                col }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white">
+                        {% for row in table_data %}
+                        <tr>
+                            {% for col in table_cols %}
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600 border-b border-slate-100">
+                                {{ row[col]|format_cell }}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer class="text-center text-slate-400 text-sm py-6 border-t border-slate-200">
+            <p>&copy; 2026 GFA RAW MASTER PRO. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        Chart.register(ChartDataLabels);
+        Chart.defaults.font.family = "'Noto Sans KR', sans-serif";
+
+        // Trend Chart
+        const trendData = {{ trend_data | tojson }};
+        new Chart(document.getElementById('trendChart'), {
+            type: 'bar',
+            data: {
+                labels: trendData.labels,
+                datasets: [
+                    { label: '노출', data: trendData.imp, backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgb(239, 68, 68)', borderWidth: 1, yAxisID: 'y' },
+                    { label: '클릭', data: trendData.click, backgroundColor: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgb(59, 130, 246)', borderWidth: 1, yAxisID: 'y' },
+                    { label: 'CTR (%)', data: trendData.ctr, type: 'line', borderColor: 'rgb(16, 185, 129)', tension: 0.3, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, position: 'left' },
+                    y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } }
+                }
+            }
+        });
+
+        // Media Chart
+        const mediaData = {{ media_data | tojson }};
+        new Chart(document.getElementById('mediaChart'), {
+            type: 'doughnut',
+            data: {
+                labels: mediaData.labels,
+                datasets: [{ data: mediaData.values, backgroundColor: ['#03c75a', '#fae100', '#4285f4', '#3b5998'] }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        });
+    </script>
+</body>
+
+</html>
