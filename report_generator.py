@@ -1,10 +1,15 @@
 import pandas as pd
-# Deployment Trigger: v1.0.1
+# Deployment Trigger: v1.0.2
 from datetime import datetime
 from jinja2 import Template
 import io
 import os
-from xhtml2pdf import pisa
+
+try:
+    from xhtml2pdf import pisa
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
 
 def calculate_performance_indicators(df):
     """
@@ -105,6 +110,9 @@ def generate_pdf_report(html_content):
     """
     HTML 콘텐츠를 PDF로 변환
     """
+    if not PDF_SUPPORT:
+        return None
+        
     result = io.BytesIO()
     pisa_status = pisa.CreatePDF(io.BytesIO(html_content.encode("utf-8")), dest=result, encoding='utf-8')
     if pisa_status.err:

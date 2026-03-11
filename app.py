@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 import io
 from database_manager import DatabaseManager
-from report_generator import generate_premium_html, generate_pdf_report
+from report_generator import generate_premium_html, generate_pdf_report, PDF_SUPPORT
 from datetime import datetime
 from logic import parse_naver_date, get_day_of_week, calculate_metrics, clean_placement, clean_numeric
 
@@ -297,11 +297,14 @@ with tab2:
             with down_col1:
                 st.download_button("📄 HTML 리포트 다운로드", data=st.session_state.html_report, file_name=f"Report_{datetime.now().strftime('%m%d')}.html", mime="text/html")
             with down_col2:
-                pdf_data = generate_pdf_report(st.session_state.html_report)
-                if pdf_data:
-                    st.download_button("📕 PDF 리포트 다운로드", data=pdf_data, file_name=f"Report_{datetime.now().strftime('%m%d')}.pdf", mime="application/pdf")
+                if PDF_SUPPORT:
+                    pdf_data = generate_pdf_report(st.session_state.html_report)
+                    if pdf_data:
+                        st.download_button("📕 PDF 리포트 다운로드", data=pdf_data, file_name=f"Report_{datetime.now().strftime('%m%d')}.pdf", mime="application/pdf")
+                    else:
+                        st.error("PDF 생성 중 오류가 발생했습니다.")
                 else:
-                    st.error("PDF 생성 중 오류가 발생했습니다.")
+                    st.info("PDF 기능은 현재 환경에서 지원되지 않습니다 (추가 라이브러리 설치 필요).")
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.info("먼저 'RAW 데이터 가공' 탭에서 데이터를 가공해주세요.")
