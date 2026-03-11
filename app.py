@@ -23,6 +23,7 @@ st.set_page_config(
 # --- Premium Global Styling ---
 st.markdown("""
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pretendard+Variable:wght@100..900&display=swap" rel="stylesheet">
+<style>
     /* Stepper Styling */
     .stepper-box {
         display: flex;
