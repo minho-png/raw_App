@@ -7,4 +7,5 @@ dnspython
 duckdb
 Jinja2
 xhtml2pdf
+reportlab==4.1.0
 certifi
