@@ -6,7 +6,7 @@ import io
 import os
 
 try:
-    from xhtml2pdf import pisa
+    from weasyprint import HTML
     PDF_SUPPORT = True
 except ImportError:
     PDF_SUPPORT = False
@@ -107,13 +107,16 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트"):
 
 def generate_pdf_report(html_content):
     """
-    HTML 콘텐츠를 PDF로 변환
+    HTML 콘텐츠를 PDF로 변환 (WeasyPrint 사용)
     """
     if not PDF_SUPPORT:
         return None
         
-    result = io.BytesIO()
-    pisa_status = pisa.CreatePDF(io.BytesIO(html_content.encode("utf-8")), dest=result, encoding='utf-8')
-    if pisa_status.err:
+    try:
+        # WeasyPrint handles modern CSS better than xhtml2pdf
+        # Note: External resources like Google Fonts might not load easily in all environments
+        result = HTML(string=html_content).write_pdf()
+        return result
+    except Exception as e:
+        print(f"PDF Generation Error: {e}")
         return None
-    return result.getvalue()
