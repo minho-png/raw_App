@@ -1,7 +1,7 @@
 import pandas as pd
-# Deployment Trigger: v1.0.2
+# Deployment Trigger: v1.0.3
 from datetime import datetime
-from jinja2 import Template
+from jinja2 import Environment, FileSystemLoader, Template
 import io
 import os
 
@@ -79,7 +79,6 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트"):
         return str(value)
 
     # 5. 템플릿 로드 및 렌더링
-    from jinja2 import Environment, FileSystemLoader
     env = Environment(loader=FileSystemLoader(os.path.dirname(__file__)))
     env.filters['format_comma'] = format_comma
     env.filters['format_pct'] = format_pct
