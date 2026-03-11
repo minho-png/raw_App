@@ -76,8 +76,11 @@ class DatabaseManager:
 
     def run_sql(self, sql_query, data_df):
         try:
-            # duckdb can query pandas dataframes directly
-            result_df = duckdb.query(sql_query).to_df()
+            # Explicitly register the dataframe as a table named 'data'
+            # This ensures duckdb can find it regardless of local scope
+            con = duckdb.connect(database=':memory:')
+            con.register('data', data_df)
+            result_df = con.execute(sql_query).df()
             return result_df, "Query successful"
         except Exception as e:
             return None, f"Query failed: {str(e)}"
