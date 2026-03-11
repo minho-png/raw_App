@@ -141,3 +141,60 @@ def calculate_metrics(df, base_fee, media_type, dmp_keywords=None, include_vat=F
         
     return df
 
+def calculate_budget_metrics(df, total_budget):
+    """소진액, 잔여 예산, 소진율 계산"""
+    spent = df['집행 금액'].sum()
+    remaining = total_budget - spent
+    burn_rate = (spent / total_budget * 100) if total_budget > 0 else 0
+    return {
+        "spent": spent,
+        "remaining": remaining,
+        "burn_rate": burn_rate
+    }
+
+def calculate_pacing(spent, total_budget, start_date, end_date):
+    """
+    Pacing Index 계산:
+    100 = 정상 집행
+    > 100 = 과다 집행 (빨름)
+    < 100 = 과소 집행 (느림)
+    """
+    from datetime import datetime
+    if not start_date or not end_date or total_budget <= 0:
+        return 0, "N/A"
+    
+    # Normalize dates to start of day for comparison
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    today = pd.to_datetime(datetime.now().date())
+    
+    total_days = (end_dt - start_dt).days + 1
+    elapsed_days = (today - start_dt).days + 1
+    
+    if elapsed_days <= 0: return 0, "집행 전"
+    if elapsed_days > total_days: elapsed_days = total_days
+    
+    target_burn_rate = (elapsed_days / total_days) * 100
+    current_burn_rate = (spent / total_budget) * 100
+    
+    pacing_index = (current_burn_rate / target_burn_rate * 100) if target_burn_rate > 0 else 0
+    
+    status = "정상"
+    if pacing_index > 110: status = "과다 (Fast)"
+    elif pacing_index < 90: status = "과소 (Slow)"
+    
+    return pacing_index, status
+
+def prepare_daily_accumulation(df):
+    """날짜별 누적 집행 금액 데이터 생성"""
+    if '날짜' not in df.columns or df.empty:
+        return pd.DataFrame()
+    
+    temp_df = df.copy()
+    # Ensure the date column is sorted and unique per day
+    daily = temp_df.groupby('날짜').agg({'집행 금액': 'sum'}).reset_index()
+    daily = daily.sort_values('날짜')
+    daily['누적 집행 금액'] = daily['집행 금액'].cumsum()
+    
+    return daily
+

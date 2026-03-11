@@ -9,7 +9,8 @@ from datetime import datetime
 from logic import (
     parse_naver_date, get_day_of_week, calculate_metrics, 
     clean_placement, clean_numeric, load_data_with_encoding, 
-    merge_raw_data, detect_anomalies
+    merge_raw_data, detect_anomalies, calculate_budget_metrics,
+    calculate_pacing, prepare_daily_accumulation
 )
 
 # --- Page Config ---
@@ -83,7 +84,9 @@ if 'db_manager' not in st.session_state: st.session_state.db_manager = DatabaseM
 if 'current_step' not in st.session_state: st.session_state.current_step = 1
 if 'growth_data' not in st.session_state: st.session_state.growth_data = None
 if 'brand_color' not in st.session_state: st.session_state.brand_color = "#AC0212"
-if 'logo_url' not in st.session_state: st.session_state.logo_url = None
+if 'logo_url' not in st.session_state: st.session_state.logo_url = ""
+if 'report_type' not in st.session_state: st.session_state.report_type = "Final Performance"
+if 'campaign_config' not in st.session_state: st.session_state.campaign_config = {"name": "", "budget": 0, "start": datetime.now(), "end": datetime.now()}
 
 # --- Sidebar Implementation ---
 with st.sidebar:
@@ -153,12 +156,44 @@ elif st.session_state.current_step == 2:
     with col_s1:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.markdown("<div class='header-text'>⚙️ Processing Options</div>", unsafe_allow_html=True)
+        st.session_state.report_type = st.radio("리포트 타입", ["Final Performance", "Daily Operations"], horizontal=True)
         media_list = ['네이버GFA', '카카오', '구글', '메타']
         selected_media = st.selectbox("매체 선택", media_list)
         base_fee = st.number_input("수수료 (%)", value=15.0)
         include_vat = st.toggle("VAT (10%) 포함 정산")
         dmp_input = st.text_area("DMP Keywords", value="SKP, LOTTE, TG360, WIFI")
         st.markdown("</div>", unsafe_allow_html=True)
+        
+        if st.session_state.report_type == "Daily Operations":
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("<div class='header-text'>💰 Budget & Schedule</div>", unsafe_allow_html=True)
+            c_name = st.text_input("캠페인명", value=st.session_state.campaign_config['name'])
+            
+            if st.button("🔍 Load Saved Budget"):
+                cfg, msg = st.session_state.db_manager.get_campaign_config(c_name)
+                if cfg:
+                    st.session_state.campaign_config = {
+                        "name": c_name,
+                        "budget": cfg.get("budget", 0),
+                        "start": pd.to_datetime(cfg.get("start")).date(),
+                        "end": pd.to_datetime(cfg.get("end")).date()
+                    }
+                    st.success("Loaded config from DB")
+                    st.rerun()
+                else: st.warning(msg)
+
+            c_budget = st.number_input("총 예산 (원)", value=float(st.session_state.campaign_config['budget']), step=1000000.0)
+            c_start = st.date_input("시작일", value=st.session_state.campaign_config['start'])
+            c_end = st.date_input("종료일", value=st.session_state.campaign_config['end'])
+            
+            if st.button("💾 Save Budget"):
+                config = {"name": c_name, "budget": c_budget, "start": str(c_start), "end": str(c_end)}
+                success, msg = st.session_state.db_manager.save_campaign_config(c_name, config)
+                if success: 
+                    st.session_state.campaign_config = {"name": c_name, "budget": c_budget, "start": c_start, "end": c_end}
+                    st.success(msg)
+                else: st.error(msg)
+            st.markdown("</div>", unsafe_allow_html=True)
         
     with col_s2:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -246,15 +281,58 @@ elif st.session_state.current_step == 4:
 
     # Visuals
     v1, v2 = st.columns([2, 1])
-    with v1:
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        if '날짜' in df.columns:
-            # Group by data if needed
-            trend_df = df.groupby('날짜').agg({'집행 금액': 'sum', '클릭': 'sum'}).reset_index()
-            fig = px.area(trend_df, x='날짜', y='집행 금액', title="Spending Trend")
-            fig.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+    
+    if st.session_state.report_type == "Daily Operations":
+        cfg = st.session_state.campaign_config
+        budget_metrics = calculate_budget_metrics(df, cfg['budget'])
+        pacing_idx, pacing_status = calculate_pacing(budget_metrics['spent'], cfg['budget'], cfg['start'], cfg['end'])
+        
+        with v1:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown(f"<div class='header-text'>📊 Budget Pacing: {pacing_status}</div>", unsafe_allow_html=True)
+            
+            # Cumulative Trend
+            acc_df = prepare_daily_accumulation(df)
+            if not acc_df.empty:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=acc_df['날짜'], y=acc_df['누적 집행 금액'], fill='tozeroy', name='Cumulative Spent', line_color=st.session_state.brand_color))
+                # Add Budget Target Line if possible
+                fig.add_hline(y=cfg['budget'], line_dash="dash", line_color="#ef4444", annotation_text="Total Budget")
+                fig.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+        with v2:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("<div class='header-text'>⭕ Burn Rate</div>", unsafe_allow_html=True)
+            fig_gauge = go.Figure(go.Indicator(
+                mode = "gauge+number",
+                value = budget_metrics['burn_rate'],
+                title = {'text': "소진율 (%)"},
+                gauge = {
+                    'axis': {'range': [None, 100]},
+                    'bar': {'color': st.session_state.brand_color},
+                    'steps': [
+                        {'range': [0, 80], 'color': "lightgray"},
+                        {'range': [80, 100], 'color': "gray"}],
+                }
+            ))
+            fig_gauge.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
+            st.plotly_chart(fig_gauge, use_container_width=True)
+            
+            st.write(f"**Pacing Index:** {pacing_idx:.1f}")
+            st.write(f"**잔여 예산:** {budget_metrics['remaining']:,.0f}원")
+            st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        # Final Performance Visuals (Existing)
+        with v1:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            if '날짜' in df.columns:
+                trend_df = df.groupby('날짜').agg({'집행 금액': 'sum', '클릭': 'sum'}).reset_index()
+                fig = px.area(trend_df, x='날짜', y='집행 금액', title="Spending Trend")
+                fig.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
     
     with v2:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -269,10 +347,22 @@ elif st.session_state.current_step == 4:
     # Report Downloader
     st.markdown("<div class='glass-card' style='text-align:center'>", unsafe_allow_html=True)
     if st.button("🎨 Generate Premium Report", type="primary"):
-        html = generate_premium_html(df, 
-                                     growth_data=growth, 
-                                     theme_color=st.session_state.brand_color,
-                                     logo_url=st.session_state.logo_url)
+        from report_generator import generate_daily_report_html
+        
+        if st.session_state.report_type == "Daily Operations":
+            html = generate_daily_report_html(
+                df, 
+                st.session_state.campaign_config,
+                theme_color=st.session_state.brand_color,
+                logo_url=st.session_state.logo_url
+            )
+        else:
+            html = generate_premium_html(
+                df, 
+                growth_data=growth, 
+                theme_color=st.session_state.brand_color,
+                logo_url=st.session_state.logo_url
+            )
         st.session_state.html_report = html
         st.success("Report Generated!")
     

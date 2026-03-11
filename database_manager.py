@@ -91,6 +91,35 @@ class DatabaseManager:
         except Exception as e:
             return None, f"Query failed: {str(e)}"
 
+    def save_campaign_config(self, campaign_name, config_data):
+        if self.db is None:
+            return False, "Database not connected"
+        try:
+            collection = self.db["campaign_configs"]
+            # Update or insert (upsert)
+            collection.update_one(
+                {"campaign_name": campaign_name},
+                {"$set": {**config_data, "updated_at": datetime.now()}, 
+                 "$setOnInsert": {"created_at": datetime.now()}},
+                upsert=True
+            )
+            return True, f"Campaign config saved for {campaign_name}"
+        except Exception as e:
+            return False, f"Failed to save campaign config: {str(e)}"
+
+    def get_campaign_config(self, campaign_name):
+        if self.db is None:
+            return None, "Database not connected"
+        try:
+            collection = self.db["campaign_configs"]
+            config = collection.find_one({"campaign_name": campaign_name})
+            if config:
+                if '_id' in config: del config['_id']
+                return config, "Config found"
+            return None, "Config not found"
+        except Exception as e:
+            return None, f"Failed to fetch campaign config: {str(e)}"
+
     def calculate_growth_metrics(self, current_df, historical_df=None):
         """Calculate WoW (Week-over-Week) growth rates"""
         if current_df.empty or '날짜' not in current_df.columns:

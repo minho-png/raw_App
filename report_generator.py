@@ -123,6 +123,80 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=N
     
     return html_content
 
+def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리포트", theme_color="#AC0212", logo_url=""):
+    """
+    일일 운영 관리용 HTML 리포트 생성 (예산 소진 중심)
+    """
+    from logic import calculate_budget_metrics, calculate_pacing, prepare_daily_accumulation
+    
+    # 1. 지표 계산
+    df_perf = calculate_performance_indicators(df)
+    budget_metrics = calculate_budget_metrics(df, campaign_config['budget'])
+    pacing_idx, pacing_status = calculate_pacing(budget_metrics['spent'], campaign_config['budget'], campaign_config['start'], campaign_config['end'])
+    acc_df = prepare_daily_accumulation(df)
+    
+    # 2. 요약 및 차트 데이터
+    summary = {
+        'total_imp': df_perf['노출'].sum(),
+        'total_click': df_perf['클릭'].sum(),
+        'total_exec': df_perf['집행 금액'].sum(),
+        'avg_ctr': (df_perf['클릭'].sum() / df_perf['노출'].sum() * 100) if df_perf['노출'].sum() > 0 else 0
+    }
+    
+    media_share = df_perf.groupby('매체')['집행 금액'].sum().reset_index()
+    media_data = {
+        'labels': media_share['매체'].tolist(),
+        'values': media_share['집행 금액'].tolist()
+    }
+    
+    acc_data = {
+        'labels': [d.strftime('%m-%d') for d in acc_df['날짜']] if not acc_df.empty else [],
+        'values': acc_df['누적 집행 금액'].tolist() if not acc_df.empty else []
+    }
+    
+    # 3. 템플릿 로더 설정
+    def format_comma(value):
+        try: return f"{value:,.0f}"
+        except: return value
+    def format_pct(value):
+        try: return f"{value:.2f}"
+        except: return value
+    def format_cell(value):
+        if isinstance(value, (int, float)):
+            if value == int(value): return f"{value:,.0f}"
+            return f"{value:,.2f}"
+        return str(value)
+
+    env = Environment(loader=FileSystemLoader(os.path.dirname(__file__)))
+    env.filters['format_comma'] = format_comma
+    env.filters['format_pct'] = format_pct
+    env.filters['format_cell'] = format_cell
+    
+    try:
+        template = env.get_template('daily_report_template.html')
+    except Exception:
+        template = Environment().from_string("<html><body>Daily Template not found</body></html>")
+    
+    table_cols = [c for c in df_perf.columns if c not in ['has_dmp', 'NET', 'NET가']]
+    table_data = df_perf.sort_values('날짜', ascending=False).to_dict('records')
+    
+    html_content = template.render(
+        title=title,
+        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        campaign_config=campaign_config,
+        budget_metrics=budget_metrics,
+        pacing={'index': pacing_idx, 'status': pacing_status},
+        summary=summary,
+        acc_data=acc_data,
+        media_data=media_data,
+        table_cols=table_cols,
+        table_data=table_data,
+        theme_color=theme_color,
+        logo_url=logo_url
+    )
+    
+    return html_content
+
 def generate_pdf_report(html_content):
     """
     HTML 콘텐츠를 PDF로 변환 (WeasyPrint 사용)
