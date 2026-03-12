@@ -267,11 +267,14 @@ with tabs[1]:
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
             st.markdown("<div class='header-text'>📈 일별 집행 추이</div>", unsafe_allow_html=True)
             acc_df = prepare_daily_accumulation(df)
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=acc_df['날짜'], y=acc_df['누적 집행 금액'], fill='tozeroy', name='누적 지출', line_color=st.session_state.brand_color))
-            fig.add_hline(y=cfg['budget'], line_dash="dash", line_color="#ef4444", annotation_text="Total Budget")
-            fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig, use_container_width=True)
+            if not acc_df.empty:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=acc_df['날짜'], y=acc_df['누적 집행 금액'], fill='tozeroy', name='누적 지출', line_color=st.session_state.brand_color))
+                fig.add_hline(y=cfg['budget'], line_dash="dash", line_color="#ef4444", annotation_text="Total Budget")
+                fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("표시할 누적 데이터가 없습니다. 날짜 정보가 포함된 파일을 업로드했는지 확인하세요.")
             st.markdown("</div>", unsafe_allow_html=True)
 
         with v2:
