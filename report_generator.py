@@ -95,7 +95,7 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=N
         theme_color=theme_color, logo_url=logo_url, insights=insights
     )
 
-def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리포트", theme_color="#AC0212", logo_url="", selected_cols=None, insights=None, target_cpc=0, target_ctr=0):
+def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리포트", theme_color="#AC0212", logo_url="", selected_cols=None, insights=None, target_cpc=0, target_ctr=0, show_trend_chart=True, show_media_chart=True):
     from logic import calculate_budget_metrics, calculate_pacing, prepare_daily_accumulation
     
     df_perf = calculate_performance_indicators(df)
@@ -154,7 +154,8 @@ def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리
         acc_data=acc_data, daily_trend=daily_trend, media_data=media_data, 
         table_cols=table_cols, table_data=table_data,
         theme_color=theme_color, logo_url=logo_url, insights=insights,
-        benchmarking=benchmarking
+        benchmarking=benchmarking,
+        show_trend_chart=show_trend_chart, show_media_chart=show_media_chart
     )
 
 def generate_media_report_html(df, title="GFA 매체별 성과 리포트", theme_color="#AC0212", logo_url="", insights=None):

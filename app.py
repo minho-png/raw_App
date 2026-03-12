@@ -491,7 +491,15 @@ with tabs[2]:
         with c1:
             if st.button("💾 Cloud DB에 현재 데이터 저장", use_container_width=True):
                 c_name = st.session_state.campaign_config['name']
-                df_to_save = st.session_state.full_processed_df if 'full_processed_df' in st.session_state else st.session_state.processed_df
+                df_to_save = st.session_state.processed_df.copy()
+                
+                # 병합: 사용자가 수정한 데이터(df_to_save)에 숨겨진 정산 관련 컬럼을 다시 붙임
+                if 'full_processed_df' in st.session_state:
+                    restore_cols = [c for c in ['총 비용', 'has_dmp', 'NET', 'NET가', 'DMP종류', '매체'] if c in st.session_state.full_processed_df.columns]
+                    if restore_cols and len(st.session_state.full_processed_df) == len(df_to_save):
+                        # 행 순서가 동일하다는 가정 하에 값만 덮어씌움
+                        df_to_save[restore_cols] = st.session_state.full_processed_df[restore_cols].values
+                        
                 success, msg = st.session_state.db_manager.save_data(df_to_save, campaign_name=c_name)
                 if success: st.success(msg)
                 else: st.error(msg)
@@ -597,7 +605,7 @@ with tabs[4]:
             horizontal=True, key="report_kind_selector", label_visibility="collapsed")
         
         st.markdown("<br>", unsafe_allow_html=True)
-        rep_col1, rep_col2 = st.columns([1, 1])
+        rep_col1, rep_col2, rep_col3 = st.columns([1, 1, 1])
         with rep_col1:
             st.markdown("**2. 포함할 측정 지표**")
             m_cols = ['노출', '클릭', '집행 금액', 'CTR', 'CPC', 'CPM']
@@ -606,8 +614,12 @@ with tabs[4]:
             st.markdown("**3. 분석 차원 선택**")
             d_cols = ['날짜', '캠페인', '지면', '소재']
             selected_dims = [d for d in d_cols if d in df.columns and st.checkbox(d, value=True, key=f"final_d_{d}")]
+        with rep_col3:
+            st.markdown("**4. 차트 표시 옵션**")
+            show_trend_chart = st.checkbox("📈 일별 소진 추이 차트", value=True, key="opt_trend")
+            show_media_chart = st.checkbox("🍩 매체별 비중 차트", value=True, key="opt_media")
 
-        st.markdown("**4. 전문가 운영 인사이트**")
+        st.markdown("**5. 전문가 운영 인사이트**")
         op_insights = st.text_area("인사이트를 입력하세요.", placeholder="리포트의 최상단에 강조되어 표시됩니다.", height=100)
         
         if st.button("📄 프리미어 HTML 리포트 발행", type="primary", use_container_width=True):
@@ -621,7 +633,8 @@ with tabs[4]:
                         df, cfg, title=f"{cfg['name']} 일일 운영 보고서",
                         theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
                         selected_cols=final_cols, insights=op_insights,
-                        target_cpc=t_cpc, target_ctr=t_ctr
+                        target_cpc=t_cpc, target_ctr=t_ctr,
+                        show_trend_chart=show_trend_chart, show_media_chart=show_media_chart
                     )
                 else:
                     if '매체' in selected_dims and '소재' in selected_dims:

@@ -36,33 +36,42 @@ class DatabaseManager:
             return False, f"Connection failed: {str(e)}"
 
     def save_data(self, df, campaign_name=None, collection_name="raw_master_results"):
+        """Save performance data to DB. Additionally separates settlement data into a different collection."""
         if self.db is None:
             return False, "Database not connected"
         
         try:
-            # Add a timestamp and campaign identifier to the data
             df_to_save = df.copy()
-            
-            # Security Patch Removal: 'NET', 'NET가', 'DMP종류' 등 정보를 DB에는 저장함
-            # (UI previews and reports will still filter these)
-                
             df_to_save['db_created_at'] = datetime.now()
             if campaign_name:
                 df_to_save['db_campaign_name'] = campaign_name
             
-            # Convert to dictionary records
-            records = df_to_save.to_dict('records')
+            # --- Collection 1: Settlement Data (settlement_master_data) ---
+            # Extract settlement specific columns and save independently
+            settlement_cols = ['날짜', 'db_campaign_name', '매체', 'DMP종류', 'NET가', '집행 금액']
+            s_exist = [c for c in settlement_cols if c in df_to_save.columns]
             
+            if len(s_exist) > 2: # Has data beyond just tracking info
+                df_settlement = df_to_save[s_exist].copy()
+                self.db['settlement_master_data'].insert_many(df_settlement.to_dict('records'))
+            
+            # --- Collection 2: Marketing Performance Data (raw_master_results) ---
+            # Remove settlement-specific sensitive columns from general logs
+            perf_cols_to_drop = [c for c in ['NET', 'NET가', 'has_dmp', 'DMP종류', '초도_수수료율'] if c in df_to_save.columns]
+            if perf_cols_to_drop:
+                df_to_save = df_to_save.drop(columns=perf_cols_to_drop)
+            
+            records = df_to_save.to_dict('records')
             collection = self.db[collection_name]
             result = collection.insert_many(records)
             
-            return True, f"Successfully saved {len(result.inserted_ids)} records to {collection_name}"
+            return True, f"Successfully saved {len(result.inserted_ids)} records to {collection_name} and updated settlement data."
         except Exception as e:
             return False, f"Save failed: {str(e)}"
 
-    def get_settlement_data(self, campaign_name, start_date=None, end_date=None, collection_name="raw_master_results"):
+    def get_settlement_data(self, campaign_name, start_date=None, end_date=None, collection_name="settlement_master_data"):
         """
-        특정 캠페인과 기간의 DMP별 NET가 합계 데이터를 가져옵니다.
+        특정 캠페인과 기간의 DMP별 NET가 합계 데이터를 'settlement_master_data' 컬렉션에서 가져옵니다.
         """
         if self.db is None:
             return None, "Database not connected"
@@ -75,7 +84,6 @@ class DatabaseManager:
             
             # 기간 필터 추가
             if start_date and end_date:
-                # '날짜' 컬럼이 문자열(YYYY-MM-DD)로 저장되어 있을 가능성이 높으므로 문자열 비교 수행
                 query["날짜"] = {
                     "$gte": start_date if isinstance(start_date, str) else start_date.strftime("%Y-%m-%d"),
                     "$lte": end_date if isinstance(end_date, str) else end_date.strftime("%Y-%m-%d")
@@ -91,7 +99,7 @@ class DatabaseManager:
                 df = df.drop(columns=['_id'])
                 
             # 수치형 변환
-            cols_to_fix = ['NET가', '집행 금액', '노출', '클릭']
+            cols_to_fix = ['NET가', '집행 금액']
             for c in cols_to_fix:
                 if c in df.columns:
                     df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)

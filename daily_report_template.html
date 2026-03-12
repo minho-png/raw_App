@@ -177,6 +177,7 @@
             </div>
         </section>
 
+        {% if show_trend_chart %}
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <section class="card">
                 <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="bar-chart-3"
@@ -189,12 +190,15 @@
                 <div class="chart-container" style="height: 300px;"><canvas id="ctrTrendChart"></canvas></div>
             </section>
         </div>
+        {% endif %}
 
+        {% if show_media_chart %}
         <section class="card">
             <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="pie-chart"
                     class="w-5 h-5 text-brand"></i>매체별 소진 비중</h2>
             <div class="chart-container" style="height: 300px;"><canvas id="mediaChart"></canvas></div>
         </section>
+        {% endif %}
 
         <section class="card">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="table"
@@ -231,6 +235,7 @@
     <script>
         lucide.createIcons();
         
+        {% if show_trend_chart %}
         // Daily Spend Trend Chart
         const trendData = {{ daily_trend | tojson }};
         new Chart(document.getElementById('spendTrendChart'), {
@@ -285,7 +290,9 @@
                 plugins: { legend: { position: 'top' } }
             }
         });
+        {% endif %}
 
+        {% if show_media_chart %}
         // Media Chart
         const mediaData = {{ media_data | tojson }};
         new Chart(document.getElementById('mediaChart'), {
@@ -303,6 +310,7 @@
                 plugins: { legend: { position: 'bottom' } } 
             }
         });
+        {% endif %}
     </script>
 </body>
 </html>
