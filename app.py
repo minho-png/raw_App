@@ -259,6 +259,16 @@ with tabs[0]:
                 if "logo_url" in cfg: st.session_state.logo_url = cfg["logo_url"]
                 st.success(f"'{selected_camp}' 캠페인 정보 로드 완료")
                 st.rerun()
+                
+        if selected_camp != "선택 안함":
+            if st.button("🗑️ 선택한 캠페인 영구 삭제", type="secondary", use_container_width=True):
+                success, msg = st.session_state.db_manager.delete_campaign(selected_camp)
+                if success:
+                    st.success(msg)
+                    st.session_state.campaign_config = {"name": "", "budget": 0, "start": datetime.now(), "end": datetime.now()}
+                    st.rerun()
+                else:
+                    st.error(msg)
 
     with c_col2:
         # Toggle for new campaign creation
@@ -526,8 +536,14 @@ with tabs[3]:
             
     if 'settlement_df' in st.session_state and st.session_state.settlement_df is not None:
         sdf = st.session_state.settlement_df
+        
+        # Backward compatibility for older data without NET/DMP columns
+        if 'NET가' not in sdf.columns: sdf['NET가'] = 0
+        if 'DMP종류' not in sdf.columns: sdf['DMP종류'] = 'N/A'
+        if '매체' not in sdf.columns: sdf['매체'] = 'N/A'
+        
         st.markdown("<div class='m-grid'>", unsafe_allow_html=True)
-        st.markdown(f"<div class='m-card'><div class='m-label'>총 정산 대상 금액</div><div class='m-value'>{sdf['집행 금액'].sum():,.0f}원</div><div class='m-status'>💰 Settlement Base</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>총 정산 대상 금액</div><div class='m-value'>{sdf.get('집행 금액', pd.Series([0])).sum():,.0f}원</div><div class='m-status'>💰 Settlement Base</div></div>", unsafe_allow_html=True)
         st.markdown(f"<div class='m-card'><div class='m-label'>총 NET가</div><div class='m-value'>{sdf['NET가'].sum():,.0f}원</div><div class='m-status'>📉 DMP Net Price</div></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 

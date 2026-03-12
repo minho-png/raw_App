@@ -207,6 +207,21 @@ class DatabaseManager:
         except Exception as e:
             return [], f"Failed to list campaigns: {str(e)}"
 
+    def delete_campaign(self, campaign_name):
+        """
+        캠페인과 연관된 모든 데이터(설정, 목표, 성과)를 삭제합니다.
+        """
+        if self.db is None:
+            return False, "Database not connected"
+        try:
+            self.db["campaign_configs"].delete_one({"campaign_name": campaign_name})
+            self.db["campaign_targets"].delete_one({"campaign_name": campaign_name})
+            del_result = self.db["raw_master_results"].delete_many({"db_campaign_name": campaign_name})
+            
+            return True, f"'{campaign_name}' 삭제 성공 (데이터 {del_result.deleted_count}건 포함)"
+        except Exception as e:
+            return False, f"삭제 실패: {str(e)}"
+
     def calculate_growth_metrics(self, current_df, historical_df=None):
         """Calculate WoW (Week-over-Week) growth rates"""
         if current_df.empty or '날짜' not in current_df.columns:
