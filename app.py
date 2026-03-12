@@ -23,57 +23,104 @@ st.set_page_config(
 
 # --- Premium Global Styling ---
 st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pretendard+Variable:wght@100..900&display=swap" rel="stylesheet">
-<style>
-    /* Stepper Styling */
-    .stepper-box {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 2rem;
-        background: white;
-        padding: 1rem;
-        border-radius: 12px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.02);
-    }
-    .step-item {
-        flex: 1;
-        text-align: center;
-        position: relative;
-        font-size: 0.85rem;
-        font-weight: 600;
-        color: var(--text-sub);
-    }
-    .step-item.active {
-        color: var(--primary);
-    }
-    .step-item.active .step-num {
-        background: var(--primary);
-        color: white;
-    }
-    .step-num {
-        width: 24px;
-        height: 24px;
-        line-height: 24px;
-        border-radius: 50%;
-        background: #e2e8f0;
-        display: inline-block;
-        margin-bottom: 5px;
-        font-size: 0.75rem;
+    :root {
+        --primary: #AC0212;
+        --primary-soft: rgba(172, 2, 18, 0.1);
+        --glass: rgba(255, 255, 255, 0.7);
+        --glass-border: rgba(255, 255, 255, 0.3);
+        --shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+        --text-main: #1e293b;
+        --text-sub: #64748b;
     }
 
-    /* Metric Card Premium */
+    /* Global Transitions */
+    * { transition: all 0.2s ease-in-out; }
+
+    /* Glassmorphism Cards */
+    .glass-card {
+        background: var(--glass);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-radius: 16px;
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--shadow);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .header-text {
+        font-family: 'Pretendard Variable', sans-serif;
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: var(--text-main);
+        margin-bottom: 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    /* Premium Metric Grid */
+    .m-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
     .m-card {
         background: white;
-        border-radius: 12px;
         padding: 1.25rem;
-        border: 1px solid #e2e8f0;
-        text-align: left;
+        border-radius: 16px;
+        border: 1px solid #f1f5f9;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        position: relative;
+        overflow: hidden;
     }
-    .m-label { color: var(--text-sub); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; margin-bottom: 0.5rem; }
-    .m-value { font-size: 1.5rem; font-weight: 800; color: var(--text-main); }
-    .m-growth { font-size: 0.8rem; font-weight: 600; margin-top: 0.25rem; }
-    .growth-up { color: #ef4444; }
-    .growth-down { color: #22c55e; }
+    .m-card::after {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; width: 4px; height: 100%;
+        background: var(--primary);
+    }
+    .m-label { color: var(--text-sub); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .m-value { color: var(--text-main); font-size: 1.5rem; font-weight: 850; margin-top: 0.25rem; font-family: 'Inter', sans-serif; }
+    .m-status { font-size: 0.8rem; font-weight: 600; margin-top: 0.5rem; display: flex; align-items: center; gap: 0.25rem; }
+
+    /* Button Styling */
+    .stButton > button {
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1rem !important;
+        border: none !important;
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(172, 2, 18, 0.2);
+    }
+
+    /* Progress Stepper */
+    .stepper {
+        display: flex;
+        justify-content: space-around;
+        padding: 1rem 0;
+        margin-bottom: 2rem;
+    }
+    .step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        opacity: 0.4;
+    }
+    .step.active { opacity: 1; color: var(--primary); }
+    .step-circle {
+        width: 32px; height: 32px;
+        border-radius: 50%;
+        background: #e2e8f0;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 0.9rem;
+    }
+    .step.active .step-circle { background: var(--primary); color: white; box-shadow: 0 0 15px rgba(172,2,18,0.3); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -128,14 +175,41 @@ if 'db_data' not in st.session_state: st.session_state.db_data = None
 if 'sql_result' not in st.session_state: st.session_state.sql_result = None
 
 # --- Main Layout ---
-st.markdown("<div class='main-title'>GFA RAW MASTER PRO</div>", unsafe_allow_html=True)
-st.markdown("<div class='main-subtitle'>네이버 GFA 광고 성과를 완벽한 RAW 데이터로 가공하고 리포트를 생성하세요.</div>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: var(--primary); font-family: Pretendard; font-weight: 900; letter-spacing: -0.02em;'>🚀 GFA RAW MASTER PRO</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: var(--text-sub); margin-bottom: 2rem;'>네이버 GFA 광고 성과를 완벽한 RAW 데이터로 가공하고 리포트를 생성하세요.</p>", unsafe_allow_html=True)
+
+# Visual Stepper
+st.markdown(f"""
+<div class='stepper'>
+    <div class='step {"active" if st.session_state.current_step >= 1 else ""}'>
+        <div class='step-circle'>1</div>
+        <div class='step-label'>관리</div>
+    </div>
+    <div class='step {"active" if st.session_state.current_step >= 2 else ""}'>
+        <div class='step-circle'>2</div>
+        <div class='step-label'>분석</div>
+    </div>
+    <div class='step {"active" if st.session_state.current_step >= 3 else ""}'>
+        <div class='step-circle'>3</div>
+        <div class='step-label'>교정</div>
+    </div>
+    <div class='step {"active" if st.session_state.current_step >= 4 else ""}'>
+        <div class='step-circle'>4</div>
+        <div class='step-label'>정산</div>
+    </div>
+    <div class='step {"active" if st.session_state.current_step >= 5 else ""}'>
+        <div class='step-circle'>5</div>
+        <div class='step-label'>리포트</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # --- TAB Navigator ---
-tabs = st.tabs(["📁 데이터 관리", "📈 일일 운영", "🏆 최종 성과", "📊 정산 분석", "💾 데이터 뷰어"])
+tabs = st.tabs(["📁 데이터 관리", "📈 일일 운영", "✍️ 데이터 교정", "📊 정산 분석", "📑 리포트 빌더"])
 
 # --- TAB 1: 데이터 관리 ---
 with tabs[0]:
+    st.session_state.current_step = 1
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("<div class='header-text'>📂 캠페인 선택 및 관리</div>", unsafe_allow_html=True)
     
@@ -329,6 +403,7 @@ with tabs[0]:
 
 # --- TAB 2: 일일 운영 (Daily Ops) ---
 with tabs[1]:
+    st.session_state.current_step = 2
     if st.session_state.processed_df is None:
         st.info("먼저 '데이터 관리' 탭에서 파일을 업로드하고 '데이터 가공 시작'을 클릭하세요.")
     else:
@@ -338,13 +413,11 @@ with tabs[1]:
         pacing_idx, pacing_status = calculate_pacing(budget_metrics['spent'], cfg['budget'], cfg['start'], cfg['end'])
         
         # Dashboard Header
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.markdown(f"<div class='m-card'><div class='m-label'>오늘 누적 소진액</div><div class='m-value'>{budget_metrics['spent']:,.0f}원</div></div>", unsafe_allow_html=True)
-        with m2:
-            st.markdown(f"<div class='m-card'><div class='m-label'>잔여 예산</div><div class='m-value'>{budget_metrics['remaining']:,.0f}원</div></div>", unsafe_allow_html=True)
-        with m3:
-            st.markdown(f"<div class='m-card'><div class='m-label'>Pacing Status</div><div class='m-value'>{pacing_status}</div><div class='m-growth'>Index: {pacing_idx:.1f}</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='m-grid'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>오늘 누적 소진액</div><div class='m-value'>{budget_metrics['spent']:,.0f}원</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>잔여 예산</div><div class='m-value'>{budget_metrics['remaining']:,.0f}원</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>Pacing Status</div><div class='m-value'>{pacing_status}</div><div class='m-status'>Index: {pacing_idx:.1f}</div></div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         v1, v2 = st.columns([2, 1])
         with v1:
@@ -373,253 +446,152 @@ with tabs[1]:
             st.plotly_chart(fig_gauge, use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Campaign Target Settings (Benchmarking)
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='header-text'>🎯 캠페인 목표 성과 설정 (벤치마킹)</div>", unsafe_allow_html=True)
-        
-        t_col1, t_col2 = st.columns(2)
-        # Load existing targets
-        existing_targets = db_manager.get_campaign_targets(selected_campaign) if selected_campaign else None
-        default_cpc = existing_targets.get('target_cpc', 0) if existing_targets else 0
-        default_ctr = existing_targets.get('target_ctr', 0.0) if existing_targets else 0.0
-
-        target_cpc = t_col1.number_input("기대 CPC (원)", value=int(default_cpc), step=10, key="target_cpc_input")
-        target_ctr = t_col2.number_input("기대 CTR (%)", value=float(default_ctr), step=0.1, format="%.2f", key="target_ctr_input")
-        
-        if st.button("목표치 저장", use_container_width=True, key="save_targets_btn"):
-            if selected_campaign:
-                success, msg = db_manager.save_campaign_targets(selected_campaign, {
-                    'target_cpc': target_cpc,
-                    'target_ctr': target_ctr
-                })
-                if success: st.success(f"[{selected_campaign}] 목표치가 성공적으로 저장되었습니다.")
-                else: st.error(msg)
-            else:
-                st.warning("먼저 캠페인을 선택해주세요.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # Report Action Builder
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='header-text'>🛠️ 맞춤형 리포트 빌더</div>", unsafe_allow_html=True)
-        
-        rep_col1, rep_col2 = st.columns([1, 1])
-        with rep_col1:
-            st.markdown("**1. 포함할 측정 항목 (Metrics)**")
-            m_cols = ['노출', '클릭', '집행 금액', 'CTR', 'CPC', 'CPM']
-            selected_metrics = [m for m in m_cols if st.checkbox(m, value=True, key=f"check_m_{m}")]
-            
-        with rep_col2:
-            st.markdown("**2. 포함할 분류 항목 (Dimensions)**")
-            d_cols = ['날짜', '캠페인', '지면', '소재']
-            selected_dims = [d for d in d_cols if d in df.columns and st.checkbox(d, value=True, key=f"check_d_{d}")]
-
-        st.markdown("**3. 일일 운영 인사이트 (Operation Insights)**")
-        operational_insights = st.text_area("광고 운영에 대한 인사이트나 특이사항을 입력하세요. (리포트에 반영됩니다)", 
-                                           placeholder="예: 주말 할인 프로모션으로 인한 CTR 급증, 신규 소재 B의 효율이 우수함...", 
-                                           height=100)
-        
-        if st.button("📄 맞춤형 HTML 리포트 생성", type="primary", use_container_width=True):
-            from report_generator import generate_daily_report_html, generate_media_report_html, generate_creative_report_html, generate_media_creative_report_html
-            
-            # Combine selected columns
-            final_report_cols = selected_dims + selected_metrics
-            
-            if not final_report_cols:
-                st.error("최소 하나 이상의 항목을 선택해야 합니다.")
-            else:
-                # Intelligent Generator Selection
-                if '날짜' in selected_dims:
-                    # Fetch targets for benchmarking
-                    targets = db_manager.get_campaign_targets(selected_campaign) if selected_campaign else None
-                    t_cpc = targets.get('target_cpc', 0) if targets else 0
-                    t_ctr = targets.get('target_ctr', 0) if targets else 0
-                    
-                    # Daily/Trend style if temporal data is selected
-                    st.session_state.html_report = generate_daily_report_html(
-                        df, cfg, title=f"{cfg['name']} 일일 운영 리포트 (맞춤형)",
-                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
-                        selected_cols=final_report_cols, insights=operational_insights,
-                        target_cpc=t_cpc, target_ctr=t_ctr
-                    )
-                elif '매체' in selected_dims and '소재' in selected_dims:
-                    st.session_state.html_report = generate_media_creative_report_html(
-                        df, title=f"{cfg['name']} 매체/소재 통합 리포트",
-                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
-                        insights=operational_insights
-                    )
-                elif '매체' in selected_dims:
-                    st.session_state.html_report = generate_media_report_html(
-                        df, title=f"{cfg['name']} 매체별 비교 리포트",
-                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
-                        insights=operational_insights
-                    )
-                elif '소재' in selected_dims:
-                    st.session_state.html_report = generate_creative_report_html(
-                        df, title=f"{cfg['name']} 소재별 상세 리포트",
-                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
-                        insights=operational_insights
-                    )
-                else:
-                    # Default premium style for other combinations
-                    from report_generator import generate_premium_html
-                    st.session_state.html_report = generate_premium_html(
-                        df, title=f"{cfg['name']} 맞춤형 성과 리포트",
-                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
-                        selected_cols=final_report_cols, insights=operational_insights
-                    )
-                
-                st.success("요청하신 데이터 조합에 가장 적합한 리포트가 생성되었습니다.")
-                st.download_button("📥 리포트 즉시 다운로드", data=st.session_state.html_report, file_name=f"Advanced_Report_{cfg['name']}.html", mime="text/html")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# --- TAB 3: 최종 성과 (Final Performance) ---
+# --- TAB 3: 데이터 교정 (Data Correction) ---
 with tabs[2]:
-    if st.session_state.processed_df is None:
-        st.info("먼저 '데이터 관리' 탭에서 데이터를 가공하세요.")
-    else:
-        df = st.session_state.processed_df
-        growth = st.session_state.growth_data or {}
-        
-        # Metric Grid
-        mc1, mc2, mc3, mc4 = st.columns(4)
-        def draw_metric(col, label, val, unit, g_key):
-            g_val = growth.get(g_key)
-            with col:
-                st.markdown(f"""
-                <div class='m-card'>
-                    <div class='m-label'>{label}</div>
-                    <div class='m-value'>{val:,.0f}{unit}</div>
-                    {"<div class='m-growth growth-up'>▲ " + f"{g_val:.1f}%" + "</div>" if g_val and g_val > 0 else ""}
-                    {"<div class='m-growth growth-down'>▼ " + f"{g_val:.1f}%" + "</div>" if g_val and g_val < 0 else ""}
-                </div>
-                """, unsafe_allow_html=True)
-
-        draw_metric(mc1, "Total Cost", df['집행 금액'].sum(), "원", "집행 금액")
-        draw_metric(mc2, "Impressions", df['노출'].sum(), "", "노출")
-        draw_metric(mc3, "Clicks", df['클릭'].sum(), "", "클릭")
-        ctr = (df['클릭'].sum() / df['노출'].sum() * 100) if df['노출'].sum() > 0 else 0
-        draw_metric(mc4, "Avg CTR", ctr, "%", None)
-
-        # Charts
-        v1, v2 = st.columns([2, 1])
-        with v1:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            if '날짜' in df.columns and not df.empty:
-                trend_df = df.groupby('날짜').agg({'집행 금액': 'sum', '클릭': 'sum'}).reset_index()
-                fig = px.area(trend_df, x='날짜', y='집행 금액', title="Spending Trend")
-                fig.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("표시할 트렌드 데이터가 없습니다. 날짜 정보가 포함된 파일을 업로드했는지 확인하세요.")
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-        with v2:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("<div class='header-text' style='font-size:1rem'>💡 Insight Notifications</div>", unsafe_allow_html=True)
-            anomalies = detect_anomalies(df)
-            if anomalies:
-                for a in anomalies: st.info(a)
-            else: st.success("모든 소재 성과가 안정적입니다.")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        if st.button("🏆 최종 성과 프리미엄 리포트 생성", type="primary", use_container_width=True):
-            st.session_state.html_report = generate_premium_html(df, growth_data=growth, theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url)
-            st.success("리포트 생성 완료!")
-            st.download_button("📥 성과 리포트 즉시 다운로드", data=st.session_state.html_report, file_name="Final_Performance_Report.html", mime="text/html")
-
-# --- TAB 4: 정산 분석 (Settlement Analysis) ---
-with tabs[3]:
+    st.session_state.current_step = 3
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='header-text'>📊 On-Demand 정산 데이터 분석</div>", unsafe_allow_html=True)
-    st.info("이 탭은 DB에 저장된 데이터를 기반으로 DMP별 NET가 및 집행 금액을 조회합니다.")
+    st.markdown("<div class='header-text'>✍️ 데이터 교합 및 교정</div>", unsafe_allow_html=True)
+    st.info("💡 여기서 수정한 데이터는 다른 분석 모듈 및 최종 리포트에 즉시 반영됩니다.")
     
-    # Filters
-    camp_list, _ = st.session_state.db_manager.list_campaigns()
-    s_col1, s_col2, s_col3 = st.columns([2, 2, 1])
-    
-    with s_col1:
-        s_camp = st.selectbox("조회할 캠페인 선택", ["선택 안함"] + camp_list, key="settle_camp")
-    with s_col2:
-        today = datetime.now()
-        s_date = st.date_input("조회 기간", value=[today, today], key="settle_date")
-    with s_col3:
-        st.write("") # Padding
-        st.write("")
-        fetch_btn = st.button("🔍 데이터 조회", use_container_width=True)
+    if st.session_state.processed_df is not None:
+        edited_df = st.data_editor(st.session_state.processed_df, use_container_width=True, num_rows="dynamic", key="main_editor_v2")
+        st.session_state.processed_df = edited_df
         
-    if fetch_btn and s_camp != "선택 안함":
-        start_d, end_d = s_date[0], s_date[1]
-        s_df, msg = st.session_state.db_manager.get_settlement_data(s_camp, start_d, end_d)
-        
-        if s_df is not None and not s_df.empty:
-            st.success(msg)
-            
-            # Summary Metrics
-            sm1, sm2, sm3 = st.columns(3)
-            sm1.metric("총 NET가", f"{s_df['NET가'].sum():,.0f}원")
-            sm2.metric("총 집행 금액", f"{s_df['집행 금액'].sum():,.0f}원")
-            sm3.metric("데이터 행 수", f"{len(s_df)}개")
-            
-            # Pivot Table: DMP종류별 요약
-            st.markdown("#### 💎 DMP 종류별 정산 요약")
-            pivot_df = s_df.groupby('DMP종류').agg({
-                'NET가': 'sum',
-                '집행 금액': 'sum',
-                '노출': 'sum',
-                '클릭': 'sum'
-            }).reset_index()
-            # Sort by Net Price desc
-            pivot_df = pivot_df.sort_values('NET가', ascending=False)
-            st.dataframe(pivot_df, use_container_width=True)
-            
-            # Detail Viewer
-            with st.expander("📄 상세 데이터 보기"):
-                st.dataframe(s_df, use_container_width=True)
-        else:
-            st.warning(msg)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# --- TAB 5: 데이터 뷰어 (Data Viewer) ---
-with tabs[4]:
-    if st.session_state.processed_df is None:
-        st.info("표시할 결과 데이터가 없습니다.")
-    else:
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='header-text'>✨ Interactive Data Editor</div>", unsafe_allow_html=True)
-        st.info("💡 하단 테이블에서 데이터를 직접 수정할 수 있습니다. 수정 사항은 리포트와 DB 저장에 즉시 반영됩니다.")
-        
-        # Interactive Data Editor
-        edited_df = st.data_editor(
-            st.session_state.processed_df, 
-            use_container_width=True,
-            num_rows="dynamic",
-            key="data_editor_main"
-        )
-        # Sync changes back to session state
-        if not edited_df.equals(st.session_state.processed_df):
-            st.session_state.processed_df = edited_df
-            st.toast("데이터 수정 사항이 메모리에 반영되었습니다.")
-        
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         with c1:
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                st.session_state.processed_df.to_excel(writer, index=False)
-            st.download_button("📥 Master Excel 다운로드", data=output.getvalue(), file_name="Master_Data.xlsx")
-        with c2:
-            if st.button("💾 Cloud DB에 결과 저장"):
+            if st.button("💾 Cloud DB에 현재 데이터 저장", use_container_width=True):
                 c_name = st.session_state.campaign_config['name']
-                # use full_processed_df if available to save all columns
                 df_to_save = st.session_state.full_processed_df if 'full_processed_df' in st.session_state else st.session_state.processed_df
                 success, msg = st.session_state.db_manager.save_data(df_to_save, campaign_name=c_name)
                 if success: st.success(msg)
                 else: st.error(msg)
-        with c3:
-            if st.button("🧹 전체 초기화 (Start Over)"):
-                st.session_state.processed_df = None
-                st.session_state.df_raw = None
-                st.rerun()
+        with c2:
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                st.session_state.processed_df.to_excel(writer, index=False)
+            st.download_button("📥 Master Excel 다운로드", data=output.getvalue(), file_name="Master_Data.xlsx", use_container_width=True)
+    else:
+        st.warning("표시할 가공된 데이터가 없습니다. 1단계에서 가공을 완료해 주세요.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# --- TAB 4: 정산 분석 (Settlement Analysis) ---
+with tabs[3]:
+    st.session_state.current_step = 4
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='header-text'>📊 On-Demand 정산 분석 (DMP NET가)</div>", unsafe_allow_html=True)
+    st.info("이 탭은 DB에 저장된 데이터를 기반으로 DMP별 NET가 및 집행 금액을 조회합니다.")
+    
+    # Filtering for settlement
+    sc1, sc2, sc3 = st.columns([2, 2, 1])
+    with sc1:
+        s_camp_list, _ = db_manager.list_campaigns()
+        selected_s_camp = st.selectbox("정산 캠페인 선택", ["선택 안함"] + s_camp_list, key="settle_camp_select")
+    with sc2:
+        today = datetime.now()
+        s_date_range = st.date_input("정산 기간 선택", value=[today, today], key="settle_date_sel")
+    with sc3:
+        st.write("") # Padding
+        st.write("")
+        fetch_settle = st.button("🔍 조회", use_container_width=True)
+
+    if fetch_settle and selected_s_camp != "선택 안함":
+        start_d = s_date_range[0]
+        end_d = s_date_range[1] if len(s_date_range) > 1 else start_d
+        s_df, msg = db_manager.get_settlement_data(selected_s_camp, start_d, end_d)
+        
+        if s_df is not None and not s_df.empty:
+            st.session_state.settlement_df = s_df
+            st.success(msg)
+        else:
+            st.warning(msg)
+            
+    if 'settlement_df' in st.session_state and st.session_state.settlement_df is not None:
+        sdf = st.session_state.settlement_df
+        st.markdown("<div class='m-grid'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>총 정산 대상 금액</div><div class='m-value'>{sdf['집행 금액'].sum():,.0f}원</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>총 NET가</div><div class='m-value'>{sdf['NET가'].sum():,.0f}원</div></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown("<div class='footer'>© 2026 GFA RAW MASTER PRO | Premium Agency Solution</div>", unsafe_allow_html=True)
+        st.markdown("#### 📑 매체/DMP별 정산 상세 내역")
+        pivot_sdf = sdf.pivot_table(index=['매체', 'DMP종류'], values=['집행 금액', 'NET가'], aggfunc='sum').reset_index()
+        st.dataframe(pivot_sdf, use_container_width=True)
+        
+        with st.expander("📄 전체 RAW 정산 데이터"):
+            st.dataframe(sdf, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# --- TAB 5: 리포트 빌더 (Report Builder) ---
+with tabs[4]:
+    st.session_state.current_step = 5
+    if st.session_state.processed_df is None:
+        st.info("먼저 데이터를 가공해 주세요.")
+    else:
+        df = st.session_state.processed_df
+        cfg = st.session_state.campaign_config
+        
+        # Campaign Target Settings (Benchmarking)
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='header-text'>🎯 캠페인 성과 벤치마킹 설정</div>", unsafe_allow_html=True)
+        
+        t_col1, t_col2 = st.columns(2)
+        existing_targets = db_manager.get_campaign_targets(selected_camp) if selected_camp != "선택 안함" else None
+        d_cpc = existing_targets.get('target_cpc', 0) if existing_targets else 0
+        d_ctr = existing_targets.get('target_ctr', 0.0) if existing_targets else 0.0
+
+        t_cpc = t_col1.number_input("기대 CPC (원)", value=int(d_cpc), step=10, key="rep_target_cpc")
+        t_ctr = t_col2.number_input("기대 CTR (%)", value=float(d_ctr), step=0.1, format="%.2f", key="rep_target_ctr")
+        
+        if st.button("목표치 저장 및 적용", use_container_width=True):
+            if selected_camp != "선택 안함":
+                success, msg = db_manager.save_campaign_targets(selected_camp, {'target_cpc': t_cpc, 'target_ctr': t_ctr})
+                if success: st.success(f"[{selected_camp}] 목표달성률 기준이 업데이트되었습니다.")
+                else: st.error(msg)
+            else: st.warning("캠페인을 선택해주세요.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Report Action Builder
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='header-text'>🛠️ 리포트 자동 생성 빌더</div>", unsafe_allow_html=True)
+        
+        rep_col1, rep_col2 = st.columns([1, 1])
+        with rep_col1:
+            st.markdown("**1. 포함할 측정 지표**")
+            m_cols = ['노출', '클릭', '집행 금액', 'CTR', 'CPC', 'CPM']
+            selected_metrics = [m for m in m_cols if st.checkbox(m, value=True, key=f"final_m_{m}")]
+        with rep_col2:
+            st.markdown("**2. 분석 차원 선택**")
+            d_cols = ['날짜', '캠페인', '지면', '소재']
+            selected_dims = [d for d in d_cols if d in df.columns and st.checkbox(d, value=True, key=f"final_d_{d}")]
+
+        st.markdown("**3. 전문가 운영 인사이트**")
+        op_insights = st.text_area("인사이트를 입력하세요.", placeholder="리포트의 최상단에 강조되어 표시됩니다.", height=100)
+        
+        if st.button("📄 프리미어 HTML 리포트 발행", type="primary", use_container_width=True):
+            from report_generator import generate_daily_report_html, generate_media_report_html, generate_creative_report_html, generate_media_creative_report_html
+            final_cols = selected_dims + selected_metrics
+            
+            if not final_cols: st.error("항목을 선택하세요.")
+            else:
+                if '날짜' in selected_dims:
+                    st.session_state.html_report = generate_daily_report_html(
+                        df, cfg, title=f"{cfg['name']} 일일 운영 보고서",
+                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
+                        selected_cols=final_cols, insights=op_insights,
+                        target_cpc=t_cpc, target_ctr=t_ctr
+                    )
+                elif '매체' in selected_dims and '소재' in selected_dims:
+                    st.session_state.html_report = generate_media_creative_report_html(df, insights=op_insights)
+                elif '매체' in selected_dims:
+                    st.session_state.html_report = generate_media_report_html(df, insights=op_insights)
+                elif '소재' in selected_dims:
+                    st.session_state.html_report = generate_creative_report_html(df, insights=op_insights)
+                else:
+                    from report_generator import generate_premium_html
+                    st.session_state.html_report = generate_premium_html(df, title=f"{cfg['name']} 성과 보고서", selected_cols=final_cols, insights=op_insights)
+                
+                st.success("고급 리포트 생성이 완료되었습니다!")
+                st.download_button("📥 리포트 파일 내려받기", data=st.session_state.html_report, file_name=f"Advanced_Report_{cfg['name']}.html", mime="text/html", use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<div style='text-align: center; color: var(--text-sub); font-size: 0.8rem; margin: 4rem 0 2rem 0;'>© 2026 GFA RAW MASTER PRO | Powered by Advanced Data Engine</div>", unsafe_allow_html=True)
 
