@@ -88,6 +88,13 @@ if 'logo_url' not in st.session_state: st.session_state.logo_url = ""
 if 'report_type' not in st.session_state: st.session_state.report_type = "Final Performance"
 if 'campaign_config' not in st.session_state: st.session_state.campaign_config = {"name": "", "budget": 0, "start": datetime.now(), "end": datetime.now()}
 
+# Permanent Config Fields per Campaign
+if 'base_fee' not in st.session_state: st.session_state.base_fee = 15.0
+if 'include_vat' not in st.session_state: st.session_state.include_vat = False
+if 'dmp_keywords' not in st.session_state: st.session_state.dmp_keywords = "SKP, LOTTE, TG360, WIFI"
+if 'selected_media' not in st.session_state: st.session_state.selected_media = '네이버GFA'
+if 'saved_group_cols' not in st.session_state: st.session_state.saved_group_cols = ['날짜', '캠페인 이름']
+
 # --- Sidebar Implementation ---
 with st.sidebar:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -150,6 +157,14 @@ with tabs[0]:
                     "start": pd.to_datetime(cfg.get("start")).date(),
                     "end": pd.to_datetime(cfg.get("end")).date()
                 }
+                # Load additional settings if exist
+                if "base_fee" in cfg: st.session_state.base_fee = cfg["base_fee"]
+                if "include_vat" in cfg: st.session_state.include_vat = cfg["include_vat"]
+                if "dmp_keywords" in cfg: st.session_state.dmp_keywords = cfg["dmp_keywords"]
+                if "selected_media" in cfg: st.session_state.selected_media = cfg["selected_media"]
+                if "group_cols" in cfg: st.session_state.saved_group_cols = cfg["group_cols"]
+                if "brand_color" in cfg: st.session_state.brand_color = cfg["brand_color"]
+                if "logo_url" in cfg: st.session_state.logo_url = cfg["logo_url"]
                 st.success(f"'{selected_camp}' 캠페인 정보 로드 완료")
                 st.rerun()
 
@@ -160,7 +175,14 @@ with tabs[0]:
             if st.button("생성 및 저장"):
                 if new_camp_name and new_camp_name not in camp_list:
                     # Initialize with defaults
-                    new_cfg = {"name": new_camp_name, "budget": 0, "start": str(datetime.now().date()), "end": str(datetime.now().date())}
+                    new_cfg = {
+                        "name": new_camp_name, "budget": 0, "start": str(datetime.now().date()), "end": str(datetime.now().date()),
+                        "base_fee": st.session_state.base_fee,
+                        "include_vat": st.session_state.include_vat,
+                        "dmp_keywords": st.session_state.dmp_keywords,
+                        "selected_media": st.session_state.selected_media,
+                        "group_cols": st.session_state.saved_group_cols
+                    }
                     st.session_state.db_manager.save_campaign_config(new_camp_name, new_cfg)
                     st.session_state.campaign_config = {
                         "name": new_camp_name, "budget": 0, "start": datetime.now().date(), "end": datetime.now().date()
@@ -189,10 +211,18 @@ with tabs[0]:
             st.markdown("<div class='header-text'>⚙️ 가공 설정</div>", unsafe_allow_html=True)
             st.session_state.report_type = st.radio("기본 리포트 설정", ["Final Performance", "Daily Operations"], horizontal=True)
             media_list = ['네이버GFA', '카카오', '구글', '메타']
-            selected_media = st.selectbox("매체 선택", media_list)
-            base_fee = st.number_input("수수료 (%)", value=15.0)
-            include_vat = st.toggle("VAT (10%) 포함 정산")
-            dmp_input = st.text_area("DMP Keywords", value="SKP, LOTTE, TG360, WIFI")
+            # Find index of saved media
+            media_idx = media_list.index(st.session_state.selected_media) if st.session_state.selected_media in media_list else 0
+            selected_media = st.selectbox("매체 선택", media_list, index=media_idx)
+            base_fee = st.number_input("수수료 (%)", value=float(st.session_state.base_fee))
+            include_vat = st.toggle("VAT (10%) 포함 정산", value=st.session_state.include_vat)
+            dmp_input = st.text_area("DMP Keywords", value=st.session_state.dmp_keywords)
+            
+            # Sync back to session for saving
+            st.session_state.selected_media = selected_media
+            st.session_state.base_fee = base_fee
+            st.session_state.include_vat = include_vat
+            st.session_state.dmp_keywords = dmp_input
             st.markdown("</div>", unsafe_allow_html=True)
             
         with col_s2:
@@ -206,13 +236,22 @@ with tabs[0]:
             c_start = st.date_input("시작일", value=st.session_state.campaign_config['start'])
             c_end = st.date_input("종료일", value=st.session_state.campaign_config['end'])
             
-            if st.button("💾 예산 정보 업데이트 (DB)"):
+            if st.button("💾 모든 설정 저장 (DB)"):
                 c_name = st.session_state.campaign_config['name']
-                config = {"name": c_name, "budget": c_budget, "start": str(c_start), "end": str(c_end)}
+                config = {
+                    "name": c_name, "budget": c_budget, "start": str(c_start), "end": str(c_end),
+                    "base_fee": st.session_state.base_fee,
+                    "include_vat": st.session_state.include_vat,
+                    "dmp_keywords": st.session_state.dmp_keywords,
+                    "selected_media": st.session_state.selected_media,
+                    "group_cols": st.session_state.saved_group_cols,
+                    "brand_color": st.session_state.brand_color,
+                    "logo_url": st.session_state.logo_url
+                }
                 success, msg = st.session_state.db_manager.save_campaign_config(c_name, config)
                 if success: 
                     st.session_state.campaign_config = {"name": c_name, "budget": c_budget, "start": c_start, "end": c_end}
-                    st.success("캠페인 예산 정보가 업데이트되었습니다.")
+                    st.success("캠페인의 모든 설정이 DB에 저장되었습니다.")
                 else: st.error(msg)
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -233,9 +272,15 @@ with tabs[0]:
             else:
                 selected_cams = []
         with f_col2:
-            # SAFE DEFAULT: Use original names if they exist
-            safe_default = [d for d in ['날짜', '캠페인 이름', '캠페인'] if d in dim_candidates]
-            group_cols = st.multiselect("📊 데이터 집계 기준 (Group By)", dim_candidates, default=safe_default, help="엑셀 파일의 실제 컬럼명을 선택하여 데이터를 집계할 수 있습니다.")
+            # SAFE DEFAULT: Use saved_group_cols if they exist in dim_candidates
+            valid_saved_defaults = [d for d in st.session_state.saved_group_cols if d in dim_candidates]
+            
+            # If nothing valid, fallback to 날짜/캠페인 if they exist
+            if not valid_saved_defaults:
+                valid_saved_defaults = [d for d in ['날짜', '캠페인 이름', '캠페인'] if d in dim_candidates]
+                
+            group_cols = st.multiselect("📊 데이터 집계 기준 (Group By)", dim_candidates, default=valid_saved_defaults, help="엑셀 파일의 실제 컬럼명을 선택하여 데이터를 집계할 수 있습니다.")
+            st.session_state.saved_group_cols = group_cols # Sync for persistence
             st.caption("💡 '일일 운영' 분석을 사용하시려면 **'날짜'** 기준을 반드시 포함해 주세요.")
         
         if st.button("✨ 데이터 가공 시작 (Apply)", type="primary", use_container_width=True):
