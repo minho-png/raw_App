@@ -145,7 +145,8 @@ st.markdown("""
 # --- Initialization ---
 if 'processed_df' not in st.session_state: st.session_state.processed_df = None
 if 'df_raw' not in st.session_state: st.session_state.df_raw = None
-if 'db_manager' not in st.session_state: st.session_state.db_manager = DatabaseManager()
+if 'db_manager' not in st.session_state or not hasattr(st.session_state.db_manager, 'delete_campaign'): 
+    st.session_state.db_manager = DatabaseManager()
 if 'current_step' not in st.session_state: st.session_state.current_step = 1
 if 'growth_data' not in st.session_state: st.session_state.growth_data = None
 if 'brand_color' not in st.session_state: st.session_state.brand_color = "#AC0212"
