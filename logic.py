@@ -49,11 +49,20 @@ def load_data_with_encoding(file_obj):
     return df
 
 def merge_raw_data(dfs):
-    """Merge multiple raw dataframes and sort by date"""
+    """Merge multiple raw dataframes, filter summary rows, and sort by date"""
     if not dfs:
         return pd.DataFrame()
     combined_df = pd.concat(dfs, ignore_index=True)
     
+    # Filter out summary rows (often found in GFA/Media reports)
+    # These rows double the values when grouped/summed later
+    summary_keywords = ['합계', '소계', 'total', '평균']
+    # Check first 5 columns for summary keywords
+    search_cols = combined_df.columns[:5].tolist()
+    if search_cols:
+        mask = combined_df[search_cols].apply(lambda x: x.astype(str).str.contains('|'.join(summary_keywords), case=False, na=False)).any(axis=1)
+        combined_df = combined_df[~mask]
+
     # Handle Naver GFA specific '기간' column -> '날짜'
     if '기간' in combined_df.columns and '날짜' not in combined_df.columns:
         combined_df = combined_df.rename(columns={'기간': '날짜'})
