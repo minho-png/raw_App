@@ -581,12 +581,13 @@ with tabs[3]:
         st.markdown("<div class='header-text'>📑 전체 DMP/캠페인별 정산 내역 (DMP → 캠페인 → NET가 순)</div>", unsafe_allow_html=True)
 
         pivot_all = sdf.groupby(['DMP종류', 'db_campaign_name', '매체', '캠페인 기간'] if '캠페인 기간' in sdf.columns else ['DMP종류', 'db_campaign_name', '매체']).agg(
-            집행_금액=('집행 금액', 'sum'),
+            집행금액=('집행 금액', 'sum'),
             NET가=('NET가', 'sum')
         ).reset_index()
-        pivot_all.columns = [c.replace('_', ' ') for c in pivot_all.columns]
+        # Sort using the actual agg column names (before renaming)
         pivot_all = pivot_all.sort_values(['DMP종류', 'db_campaign_name', 'NET가'], ascending=[True, True, False])
-        pivot_all = pivot_all.rename(columns={'db_campaign_name': '캠페인명'})
+        # Readable renames after sorting
+        pivot_all = pivot_all.rename(columns={'db_campaign_name': '캠페인명', '집행금액': '집행 금액'})
 
         st.dataframe(
             pivot_all.style.format({'집행 금액': '{:,.0f}', 'NET가': '{:,.0f}'}),
