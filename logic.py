@@ -130,20 +130,21 @@ def calculate_metrics(df, base_fee, media_type, dmp_keywords=None, include_vat=F
     def apply_formula(row):
         if media_type == '네이버GFA':
             fee_rate = (base_fee + 10) / 100 if row['has_dmp'] else base_fee / 100
+            # 1. 리포트 금액에서 1.1을 먼저 나눔 (공급가액 기준)
+            supply_value = row['총 비용'] / 1.1
+            # 2. 해당 값을 (1 - 수수료율)로 나눠서 최종 집행 금액 계산
+            if fee_rate >= 1.0:
+                exec_cost = supply_value
+            else:
+                exec_cost = supply_value / (1 - fee_rate)
         else:
             fee_rate = base_fee / 100
-        
-        # 마크업 계산: 집행 금액 = (총 비용 / (1 - rate))
-        if fee_rate >= 1.0:
-            exec_cost = row['총 비용']
-        else:
-            exec_cost = row['총 비용'] / (1 - fee_rate)
+            if fee_rate >= 1.0:
+                exec_cost = row['총 비용']
+            else:
+                exec_cost = row['총 비용'] / (1 - fee_rate)
             
-        if media_type == '네이버GFA':
-            # 네이버 특약: 공급가액 기준으로 변환 (/ 1.1)
-            exec_cost = exec_cost / 1.1
-            
-        # VAT 처리 (10% 추가)
+        # VAT 처리 (최종 결과에 10% 추가 여부)
         if include_vat:
             exec_cost = exec_cost * 1.1
             
