@@ -218,46 +218,49 @@ with tabs[0]:
 
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.markdown("<div class='header-text'>🎯 필터 및 집계 구조 설정</div>", unsafe_allow_html=True)
-        # Rename for internal logic
-        df_target = st.session_state.df_raw.rename(columns={'캠페인 이름': '캠페인', '게재 위치': '지면', '광고 소재 이름': '소재'})
+        
+        # Original Columns from Excel
+        raw_cols = st.session_state.df_raw.columns.tolist()
+        metrics_to_exclude = ['노출', '클릭', '총 비용', '클릭수', '노출수', 'CTR', 'CPC', 'CPM', '집행 금액', 'has_dmp']
+        dim_candidates = [c for c in raw_cols if c not in metrics_to_exclude]
         
         f_col1, f_col2 = st.columns(2)
         with f_col1:
-            cams = st.multiselect("🏢 캠페인 필터링 (필요 시 선택)", df_target['캠페인'].unique(), help="특정 캠페인의 데이터만 골라내고 싶을 때 사용하세요.")
+            # Filtering based on original column name
+            camp_col_name = next((c for c in ['캠페인 이름', '캠페인'] if c in raw_cols), None)
+            if camp_col_name:
+                selected_cams = st.multiselect(f"🏢 {camp_col_name} 필터링", st.session_state.df_raw[camp_col_name].unique())
+            else:
+                selected_cams = []
         with f_col2:
-            group_options = ['날짜', '캠페인', '지면', '소재']
-            # Find available columns in the DF
-            available_groups = [c for c in group_options if c in df_target.columns]
-            
-            # SAFE DEFAULT: Only use defaults if they exist in available_groups
-            safe_default = [d for d in ['날짜', '캠페인'] if d in available_groups]
-            
-            group_cols = st.multiselect("📊 데이터 집계 기준 (Group By)", available_groups, default=safe_default, help="선택한 항목들을 기준으로 데이터를 합산하여 보여줍니다.")
+            # SAFE DEFAULT: Use original names if they exist
+            safe_default = [d for d in ['날짜', '캠페인 이름', '캠페인'] if d in dim_candidates]
+            group_cols = st.multiselect("📊 데이터 집계 기준 (Group By)", dim_candidates, default=safe_default, help="엑셀 파일의 실제 컬럼명을 선택하여 데이터를 집계할 수 있습니다.")
             st.caption("💡 '일일 운영' 분석을 사용하시려면 **'날짜'** 기준을 반드시 포함해 주세요.")
         
         if st.button("✨ 데이터 가공 시작 (Apply)", type="primary", use_container_width=True):
-            df_work = df_target.copy()
-            if cams: df_work = df_work[df_work['캠페인'].isin(cams)]
+            df_work = st.session_state.df_raw.copy()
+            if selected_cams and camp_col_name: 
+                df_work = df_work[df_work[camp_col_name].isin(selected_cams)]
             
             # Numeric cleaning
             for col in ['노출', '클릭', '총 비용']:
-                if col in df_work.columns: df_work[col] = df_work[col].apply(clean_numeric)
+                if col in df_work.columns: 
+                    df_work[col] = df_work[col].apply(clean_numeric)
             
             # Processing (calculate individual costs)
             keywords = [k.strip() for k in dmp_input.split(',')]
             df_processed = calculate_metrics(df_work, base_fee, selected_media, keywords, include_vat)
             
-            # Aggregation based on user choice
+            # Aggregation based on user choice (using original names)
             if group_cols:
-                # Group metrics appropriately
-                agg_dict = {
-                    '노출': 'sum',
-                    '클릭': 'sum',
-                    '집행 금액': 'sum'
-                }
-                # Keep only valid columns for grouping
-                actual_groups = [c for c in group_cols if c in df_processed.columns]
-                df_processed = df_processed.groupby(actual_groups).agg(agg_dict).reset_index()
+                # Group metrics (ensure columns exist)
+                actual_metrics = {c: 'sum' for c in ['노출', '클릭', '집행 금액'] if c in df_processed.columns}
+                df_processed = df_processed.groupby(group_cols).agg(actual_metrics).reset_index()
+            
+            # Post-Renaming for internal compatibility (Report Gen, etc.)
+            rename_map = {'캠페인 이름': '캠페인', '게재 위치': '지면', '광고 소재 이름': '소재'}
+            df_processed = df_processed.rename(columns={k: v for k, v in rename_map.items() if k in df_processed.columns})
             
             # Security Patch: NET 관련 컬럼 삭제
             cols_to_drop = [c for c in ['총 비용', 'has_dmp', 'NET', 'NET가'] if c in df_processed.columns]
@@ -266,7 +269,7 @@ with tabs[0]:
                 
             st.session_state.growth_data = st.session_state.db_manager.compare_with_history(df_processed)
             st.session_state.processed_df = df_processed
-            st.success("데이터 가공 완료! 다른 탭에서 성과를 확인하세요.")
+            st.success("데이터 가공 완료! 원본 컬럼 기준으로 집계되었습니다.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 # --- TAB 2: 일일 운영 (Daily Ops) ---
