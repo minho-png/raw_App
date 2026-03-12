@@ -200,6 +200,24 @@
         </section>
         {% endif %}
 
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            {% if show_creative_chart %}
+            <section class="card">
+                <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="pie-chart"
+                        class="w-5 h-5 text-brand"></i>소재별 소진 비중</h2>
+                <div class="chart-container" style="height: 300px;"><canvas id="creativeChart"></canvas></div>
+            </section>
+            {% endif %}
+
+            {% if show_placement_chart %}
+            <section class="card">
+                <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="pie-chart"
+                        class="w-5 h-5 text-brand"></i>지면별 소진 비중</h2>
+                <div class="chart-container" style="height: 300px;"><canvas id="placementChart"></canvas></div>
+            </section>
+            {% endif %}
+        </div>
+
         <section class="card">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="table"
                     class="w-5 h-5 text-brand"></i>일별 상세 데이터 (최근 10일)</h2>
@@ -301,13 +319,53 @@
                 labels: mediaData.labels,
                 datasets: [{ 
                     data: mediaData.values, 
-                    backgroundColor: ['#03c75a', '#fae100', '#4285f4', '#3b5998'] 
+                    backgroundColor: ['#03c75a', '#fae100', '#4285f4', '#3b5998', '#8b5cf6', '#ec4899', '#f97316'] 
                 }]
             },
             options: { 
                 responsive: true, 
                 maintainAspectRatio: false, 
                 plugins: { legend: { position: 'bottom' } } 
+            }
+        });
+        {% endif %}
+
+        {% if show_creative_chart %}
+        // Creative Chart
+        const creativeData = {{ creative_data | tojson }};
+        new Chart(document.getElementById('creativeChart'), {
+            type: 'doughnut',
+            data: {
+                labels: creativeData.labels,
+                datasets: [{ 
+                    data: creativeData.values, 
+                    backgroundColor: ['#f43f5e', '#ec4899', '#d946ef', '#a855f7', '#8b5cf6', '#6366f1', '#3b82f6', '#0ea5e9', '#06b6d4', '#14b8a6'] 
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { position: 'bottom', display: false }, title: {display: true, text: 'Top 소재 분포'} } 
+            }
+        });
+        {% endif %}
+
+        {% if show_placement_chart %}
+        // Placement Chart
+        const placementData = {{ placement_data | tojson }};
+        new Chart(document.getElementById('placementChart'), {
+            type: 'doughnut',
+            data: {
+                labels: placementData.labels,
+                datasets: [{ 
+                    data: placementData.values, 
+                    backgroundColor: ['#10b981', '#fbbf24', '#f59e0b', '#d97706', '#ea580c', '#ef4444', '#b91c1c', '#4ade80', '#2dd4bf', '#38bdf8'] 
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { position: 'bottom', display: false }, title: {display: true, text: 'Top 지면 분포'} } 
             }
         });
         {% endif %}

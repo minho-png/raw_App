@@ -37,8 +37,8 @@ def select_optimal_columns(df):
     데이터프레임의 컬럼을 분석하여 리포트용 최적의 컬럼 리스트와 정렬 순서를 반환.
     보안에 민감한 정산 데이터(NET가 등)는 제외.
     """
-    exclude = ['has_dmp', 'NET', 'NET가', 'DMP종류', '매체', '조회', 'db_created_at', 'db_campaign_name', '총 비용']
-    dimensions = ['날짜', '캠페인', '지면', '소재']
+    exclude = ['has_dmp', 'NET', 'NET가', '조회', 'db_created_at', 'db_campaign_name', '총 비용']
+    dimensions = ['날짜', '매체', '캠페인', 'DMP종류', '지면', '소재']
     metrics = ['노출', '클릭', '집행 금액', 'CTR', 'CPC', 'CPM']
     
     useful_metrics = [c for c in metrics if c in df.columns and c not in exclude]
@@ -62,7 +62,7 @@ def calculate_performance_indicators(df):
 
 # --- Report Generators ---
 
-def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=None, theme_color="#AC0212", logo_url=None, selected_cols=None, insights=None):
+def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=None, theme_color="#AC0212", logo_url=None, selected_cols=None, insights=None, show_trend_chart=True, show_media_chart=True, show_creative_chart=True, show_placement_chart=True):
     df_perf = calculate_performance_indicators(df)
     summary = {
         'total_imp': df_perf['노출'].sum() if '노출' in df_perf.columns else 0,
@@ -83,6 +83,16 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=N
         media_share = df_perf.groupby('매체')['집행 금액'].sum().reset_index()
         media_data = {'labels': media_share['매체'].tolist(), 'values': media_share['집행 금액'].tolist()}
 
+    creative_data = {'labels': [], 'values': []}
+    if '소재' in df_perf.columns:
+        creative_share = df_perf.groupby('소재')['집행 금액'].sum().reset_index()
+        creative_data = {'labels': creative_share['소재'].tolist(), 'values': creative_share['집행 금액'].tolist()}
+
+    placement_data = {'labels': [], 'values': []}
+    if '지면' in df_perf.columns:
+        placement_share = df_perf.groupby('지면')['집행 금액'].sum().reset_index()
+        placement_data = {'labels': placement_share['지면'].tolist(), 'values': placement_share['집행 금액'].tolist()}
+
     table_cols = selected_cols if selected_cols else select_optimal_columns(df_perf)
     table_data = df_perf[table_cols].to_dict('records')
     
@@ -91,11 +101,14 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=N
     return template.render(
         title=title, generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         summary=summary, trend_data=trend_data, media_data=media_data,
+        creative_data=creative_data, placement_data=placement_data,
         table_cols=table_cols, table_data=table_data, growth_data=growth_data,
-        theme_color=theme_color, logo_url=logo_url, insights=insights
+        theme_color=theme_color, logo_url=logo_url, insights=insights,
+        show_trend_chart=show_trend_chart, show_media_chart=show_media_chart,
+        show_creative_chart=show_creative_chart, show_placement_chart=show_placement_chart
     )
 
-def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리포트", theme_color="#AC0212", logo_url="", selected_cols=None, insights=None, target_cpc=0, target_ctr=0, show_trend_chart=True, show_media_chart=True):
+def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리포트", theme_color="#AC0212", logo_url="", selected_cols=None, insights=None, target_cpc=0, target_ctr=0, show_trend_chart=True, show_media_chart=True, show_creative_chart=True, show_placement_chart=True):
     from logic import calculate_budget_metrics, calculate_pacing, prepare_daily_accumulation
     
     df_perf = calculate_performance_indicators(df)
@@ -142,6 +155,18 @@ def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리
         media_summary = df_perf.groupby('매체')['집행 금액'].sum().reset_index()
         media_data = {'labels': media_summary['매체'].tolist(), 'values': media_summary['집행 금액'].tolist()}
 
+    # Creative Chart Data
+    creative_data = {'labels': [], 'values': []}
+    if '소재' in df_perf.columns:
+        creative_summary = df_perf.groupby('소재')['집행 금액'].sum().reset_index()
+        creative_data = {'labels': creative_summary['소재'].tolist(), 'values': creative_summary['집행 금액'].tolist()}
+
+    # Placement Chart Data
+    placement_data = {'labels': [], 'values': []}
+    if '지면' in df_perf.columns:
+        placement_summary = df_perf.groupby('지면')['집행 금액'].sum().reset_index()
+        placement_data = {'labels': placement_summary['지면'].tolist(), 'values': placement_summary['집행 금액'].tolist()}
+
     table_cols = selected_cols if selected_cols else select_optimal_columns(df_perf)
     table_data = df_perf[table_cols].sort_values('날짜', ascending=False).to_dict('records') if '날짜' in table_cols else df_perf[table_cols].to_dict('records')
 
@@ -152,10 +177,12 @@ def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리
         campaign_config=campaign_config, budget_metrics=budget_metrics,
         pacing={'index': pacing_idx, 'status': pacing_status}, summary=summary,
         acc_data=acc_data, daily_trend=daily_trend, media_data=media_data, 
+        creative_data=creative_data, placement_data=placement_data,
         table_cols=table_cols, table_data=table_data,
         theme_color=theme_color, logo_url=logo_url, insights=insights,
         benchmarking=benchmarking,
-        show_trend_chart=show_trend_chart, show_media_chart=show_media_chart
+        show_trend_chart=show_trend_chart, show_media_chart=show_media_chart,
+        show_creative_chart=show_creative_chart, show_placement_chart=show_placement_chart
     )
 
 def generate_media_report_html(df, title="GFA 매체별 성과 리포트", theme_color="#AC0212", logo_url="", insights=None):

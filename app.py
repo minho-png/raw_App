@@ -384,6 +384,9 @@ with tabs[0]:
                 
             group_cols = st.multiselect("📊 데이터 집계 기준 (Group By)", dim_candidates, default=valid_saved_defaults, help="엑셀 파일의 실제 컬럼명을 선택하여 데이터를 집계할 수 있습니다.")
             st.session_state.saved_group_cols = group_cols # Sync for persistence
+            
+            split_by_dmp = st.checkbox("🧩 DMP 및 매체별 성과 분리 (선택)", value=False, help="체크 시 초기 설정한 매체와 추출된 DMP 종류를 기준으로 데이터를 추가 분리합니다.")
+            
             st.caption("💡 '일일 운영' 분석을 사용하시려면 **'날짜'** 기준을 반드시 포함해 주세요.")
         
         if st.button("✨ 데이터 가공 시작 (Apply)", type="primary", use_container_width=True):
@@ -403,8 +406,19 @@ with tabs[0]:
             # Aggregation based on user choice (using original names)
             if group_cols:
                 # Group metrics (ensure columns exist)
-                actual_metrics = {c: 'sum' for c in ['노출', '클릭', '집행 금액'] if c in df_processed.columns}
-                df_processed = df_processed.groupby(group_cols).agg(actual_metrics).reset_index()
+                actual_metrics = {c: 'sum' for c in ['노출', '클릭', '집행 금액', 'NET가', '총 비용'] if c in df_processed.columns}
+                
+                final_group_cols = group_cols.copy()
+                if split_by_dmp:
+                    for c in ['매체', 'DMP종류', 'has_dmp']:
+                        if c in df_processed.columns and c not in final_group_cols:
+                            final_group_cols.append(c)
+                else:
+                    # If not splitting by DMP, ensure we don't accidentally lose these overall values by summing them up
+                    # though DMP종류 and 매체 are strings so sum won't work, so we just let them drop from groupby 
+                    # actually we should keep the first value or drop them. dropping them is safest.
+                    pass
+                df_processed = df_processed.groupby(final_group_cols).agg(actual_metrics).reset_index()
             
             # Post-Renaming for internal compatibility (Report Gen, etc.)
             rename_map = {'캠페인 이름': '캠페인', '게재 위치': '지면', '광고 소재 이름': '소재'}
@@ -414,7 +428,7 @@ with tabs[0]:
             st.session_state.full_processed_df = df_processed.copy()
             
             # Security Patch: NET 관련 컬럼 삭제 (일반 성과 뷰용)
-            cols_to_drop = [c for c in ['총 비용', 'has_dmp', 'NET', 'NET가', 'DMP종류', '매체'] if c in df_processed.columns]
+            cols_to_drop = [c for c in ['총 비용', 'has_dmp', 'NET', 'NET가'] if c in df_processed.columns]
             if cols_to_drop:
                 df_processed = df_processed.drop(columns=cols_to_drop)
                 
@@ -612,12 +626,14 @@ with tabs[4]:
             selected_metrics = [m for m in m_cols if st.checkbox(m, value=True, key=f"final_m_{m}")]
         with rep_col2:
             st.markdown("**3. 분석 차원 선택**")
-            d_cols = ['날짜', '캠페인', '지면', '소재']
-            selected_dims = [d for d in d_cols if d in df.columns and st.checkbox(d, value=True, key=f"final_d_{d}")]
+            d_cols = ['날짜', '캠페인', '지면', '소재', '매체', 'DMP종류']
+            selected_dims = [d for d in d_cols if d in df.columns and st.checkbox(d, value=(d in ['날짜', '캠페인']), key=f"final_d_{d}")]
         with rep_col3:
             st.markdown("**4. 차트 표시 옵션**")
             show_trend_chart = st.checkbox("📈 일별 소진 추이 차트", value=True, key="opt_trend")
             show_media_chart = st.checkbox("🍩 매체별 비중 차트", value=True, key="opt_media")
+            show_creative_chart = st.checkbox("🖼️ 소재별 비중 차트", value=True, key="opt_creative")
+            show_placement_chart = st.checkbox("📱 지면별 비중 차트", value=True, key="opt_placement")
 
         st.markdown("**5. 전문가 운영 인사이트**")
         op_insights = st.text_area("인사이트를 입력하세요.", placeholder="리포트의 최상단에 강조되어 표시됩니다.", height=100)
@@ -634,7 +650,8 @@ with tabs[4]:
                         theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
                         selected_cols=final_cols, insights=op_insights,
                         target_cpc=t_cpc, target_ctr=t_ctr,
-                        show_trend_chart=show_trend_chart, show_media_chart=show_media_chart
+                        show_trend_chart=show_trend_chart, show_media_chart=show_media_chart,
+                        show_creative_chart=show_creative_chart, show_placement_chart=show_placement_chart
                     )
                 else:
                     if '매체' in selected_dims and '소재' in selected_dims:
@@ -645,7 +662,11 @@ with tabs[4]:
                         st.session_state.html_report = generate_creative_report_html(df, insights=op_insights)
                     else:
                         from report_generator import generate_premium_html
-                        st.session_state.html_report = generate_premium_html(df, title=f"{cfg['name']} 최종 성과 보고서", selected_cols=final_cols, insights=op_insights)
+                        st.session_state.html_report = generate_premium_html(
+                            df, title=f"{cfg['name']} 최종 성과 보고서", selected_cols=final_cols, insights=op_insights,
+                            show_trend_chart=show_trend_chart, show_media_chart=show_media_chart,
+                            show_creative_chart=show_creative_chart, show_placement_chart=show_placement_chart
+                        )
                 
                 st.success("고급 리포트 생성이 완료되었습니다!")
                 st.download_button("📥 리포트 파일 내려받기", data=st.session_state.html_report, file_name=f"Advanced_Report_{cfg['name']}.html", mime="text/html", use_container_width=True)
