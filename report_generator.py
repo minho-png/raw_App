@@ -136,6 +136,12 @@ def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리
         'avg_cpc': avg_cpc
     }
 
+    # Media Chart Data
+    media_data = {'labels': [], 'values': []}
+    if '매체' in df_perf.columns:
+        media_summary = df_perf.groupby('매체')['집행 금액'].sum().reset_index()
+        media_data = {'labels': media_summary['매체'].tolist(), 'values': media_summary['집행 금액'].tolist()}
+
     table_cols = selected_cols if selected_cols else select_optimal_columns(df_perf)
     table_data = df_perf[table_cols].sort_values('날짜', ascending=False).to_dict('records') if '날짜' in table_cols else df_perf[table_cols].to_dict('records')
 
@@ -145,7 +151,8 @@ def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리
         title=title, generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         campaign_config=campaign_config, budget_metrics=budget_metrics,
         pacing={'index': pacing_idx, 'status': pacing_status}, summary=summary,
-        acc_data=acc_data, daily_trend=daily_trend, table_cols=table_cols, table_data=table_data,
+        acc_data=acc_data, daily_trend=daily_trend, media_data=media_data, 
+        table_cols=table_cols, table_data=table_data,
         theme_color=theme_color, logo_url=logo_url, insights=insights,
         benchmarking=benchmarking
     )

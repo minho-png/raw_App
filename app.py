@@ -590,17 +590,23 @@ with tabs[4]:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.markdown("<div class='header-text'>🛠️ 리포트 자동 생성 빌더</div>", unsafe_allow_html=True)
         
+        st.markdown("**1. 리포트 목적 선택**")
+        report_kind = st.radio("발행할 리포트의 종류를 선택하세요.", 
+            ["일일 운영 보고서 (데일리 트래킹)", "최종 마감 보고서 (매체/소재 총괄)"], 
+            horizontal=True, key="report_kind_selector", label_visibility="collapsed")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
         rep_col1, rep_col2 = st.columns([1, 1])
         with rep_col1:
-            st.markdown("**1. 포함할 측정 지표**")
+            st.markdown("**2. 포함할 측정 지표**")
             m_cols = ['노출', '클릭', '집행 금액', 'CTR', 'CPC', 'CPM']
             selected_metrics = [m for m in m_cols if st.checkbox(m, value=True, key=f"final_m_{m}")]
         with rep_col2:
-            st.markdown("**2. 분석 차원 선택**")
+            st.markdown("**3. 분석 차원 선택**")
             d_cols = ['날짜', '캠페인', '지면', '소재']
             selected_dims = [d for d in d_cols if d in df.columns and st.checkbox(d, value=True, key=f"final_d_{d}")]
 
-        st.markdown("**3. 전문가 운영 인사이트**")
+        st.markdown("**4. 전문가 운영 인사이트**")
         op_insights = st.text_area("인사이트를 입력하세요.", placeholder="리포트의 최상단에 강조되어 표시됩니다.", height=100)
         
         if st.button("📄 프리미어 HTML 리포트 발행", type="primary", use_container_width=True):
@@ -609,22 +615,23 @@ with tabs[4]:
             
             if not final_cols: st.error("항목을 선택하세요.")
             else:
-                if '날짜' in selected_dims:
+                if report_kind.startswith("일일"):
                     st.session_state.html_report = generate_daily_report_html(
                         df, cfg, title=f"{cfg['name']} 일일 운영 보고서",
                         theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
                         selected_cols=final_cols, insights=op_insights,
                         target_cpc=t_cpc, target_ctr=t_ctr
                     )
-                elif '매체' in selected_dims and '소재' in selected_dims:
-                    st.session_state.html_report = generate_media_creative_report_html(df, insights=op_insights)
-                elif '매체' in selected_dims:
-                    st.session_state.html_report = generate_media_report_html(df, insights=op_insights)
-                elif '소재' in selected_dims:
-                    st.session_state.html_report = generate_creative_report_html(df, insights=op_insights)
                 else:
-                    from report_generator import generate_premium_html
-                    st.session_state.html_report = generate_premium_html(df, title=f"{cfg['name']} 성과 보고서", selected_cols=final_cols, insights=op_insights)
+                    if '매체' in selected_dims and '소재' in selected_dims:
+                        st.session_state.html_report = generate_media_creative_report_html(df, insights=op_insights)
+                    elif '매체' in selected_dims:
+                        st.session_state.html_report = generate_media_report_html(df, insights=op_insights)
+                    elif '소재' in selected_dims:
+                        st.session_state.html_report = generate_creative_report_html(df, insights=op_insights)
+                    else:
+                        from report_generator import generate_premium_html
+                        st.session_state.html_report = generate_premium_html(df, title=f"{cfg['name']} 최종 성과 보고서", selected_cols=final_cols, insights=op_insights)
                 
                 st.success("고급 리포트 생성이 완료되었습니다!")
                 st.download_button("📥 리포트 파일 내려받기", data=st.session_state.html_report, file_name=f"Advanced_Report_{cfg['name']}.html", mime="text/html", use_container_width=True)
