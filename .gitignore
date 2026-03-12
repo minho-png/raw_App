@@ -11,3 +11,6 @@ venv/
 # Streamlit secrets (Security)
 .streamlit/
 secrets.toml
+
+# Sample Report Templates (Private)
+트립앤샵 진행리포트.html
