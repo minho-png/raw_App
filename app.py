@@ -269,7 +269,14 @@ with tabs[0]:
                 
             st.session_state.growth_data = st.session_state.db_manager.compare_with_history(df_processed)
             st.session_state.processed_df = df_processed
-            st.success("데이터 가공 완료! 원본 컬럼 기준으로 집계되었습니다.")
+            st.success("데이터 가공 완료! 하단 프리뷰 및 다른 탭에서 결과를 확인하세요.")
+
+    # Show preview if processed_df exists
+    if st.session_state.processed_df is not None:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='header-text'>📝 가공 결과 프리뷰 (상위 5행)</div>", unsafe_allow_html=True)
+        st.dataframe(st.session_state.processed_df.head(5), use_container_width=True)
+        st.caption(f"총 {len(st.session_state.processed_df)}개의 집계 데이터가 생성되었습니다. 상세 내역은 '데이터 뷰어' 탭을 이용해 주세요.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 # --- TAB 2: 일일 운영 (Daily Ops) ---
