@@ -114,10 +114,24 @@ def clean_numeric(val):
         return float(val)
     return 0.0
 
+def extract_dmp_type(group_name, keywords):
+    """
+    광고 그룹명에서 DMP 사명을 추출합니다.
+    예: "[SKP] 관심사_A" -> "SKP"
+    """
+    if not isinstance(group_name, str):
+        return "None"
+    
+    # 키워드별로 매칭 확인
+    for kw in keywords:
+        if kw.strip() and kw.strip().upper() in group_name.upper():
+            return kw.strip().upper()
+    return "None"
+
 def calculate_metrics(df, base_fee, media_type, dmp_keywords=None, include_vat=False):
     """
     정산 목적의 '집행 금액'과 'NET'만 계산하도록 유지.
-    성과 지표(CTR, CPC, CPM)는 report_generator.py에서 계산함.
+    매체, DMP종류, NET가 컬럼을 추가함.
     """
     if dmp_keywords is None:
         dmp_keywords = ['SKP', 'LOTTE', 'TG360', 'WIFI', '실내 위치']
@@ -126,21 +140,28 @@ def calculate_metrics(df, base_fee, media_type, dmp_keywords=None, include_vat=F
     if '총 비용' in df.columns:
         df['총 비용'] = df['총 비용'].apply(clean_numeric)
     
-    # DMP 여부 확인 (광고 그룹 이름 기준)
-    if '광고 그룹 이름' in df.columns:
-        dmp_pattern = '|'.join([k.strip() for k in dmp_keywords if k.strip()])
-        if dmp_pattern:
-            df['has_dmp'] = df['광고 그룹 이름'].str.contains(dmp_pattern, case=False, na=False)
-        else:
-            df['has_dmp'] = False
+    # NET가 계산 (총 비용 / 1.1)
+    if '총 비용' in df.columns:
+        df['NET가'] = df['총 비용'] / 1.1
     else:
+        df['NET가'] = 0.0
+
+    # 매체 정보 추가
+    df['매체'] = media_type
+
+    # DMP 여부 및 종류 확인 (광고 그룹 이름 기준)
+    if '광고 그룹 이름' in df.columns:
+        df['DMP종류'] = df['광고 그룹 이름'].apply(lambda x: extract_dmp_type(x, dmp_keywords))
+        df['has_dmp'] = df['DMP종류'] != "None"
+    else:
+        df['DMP종류'] = "None"
         df['has_dmp'] = False
     
     def apply_formula(row):
         if media_type == '네이버GFA':
             fee_rate = (base_fee + 10) / 100 if row['has_dmp'] else base_fee / 100
-            # 1. 리포트 금액에서 1.1을 먼저 나눔 (공급가액 기준)
-            supply_value = row['총 비용'] / 1.1
+            # 1. 리포트 금액에서 1.1을 먼저 나눔 (공급가액 기준) = NET가
+            supply_value = row['NET가']
             # 2. 해당 값을 (1 - 수수료율)로 나눠서 최종 집행 금액 계산
             if fee_rate >= 1.0:
                 exec_cost = supply_value
@@ -148,10 +169,13 @@ def calculate_metrics(df, base_fee, media_type, dmp_keywords=None, include_vat=F
                 exec_cost = supply_value / (1 - fee_rate)
         else:
             fee_rate = base_fee / 100
+            # 타 매체도 동일하게 NET가(공급가액) 기준으로 계산하는지 확인 필요하나, 
+            # 일단 기존 로직 유지하되 공급가액 기반으로 통일
+            supply_value = row['NET가']
             if fee_rate >= 1.0:
-                exec_cost = row['총 비용']
+                exec_cost = supply_value
             else:
-                exec_cost = row['총 비용'] / (1 - fee_rate)
+                exec_cost = supply_value / (1 - fee_rate)
             
         # VAT 처리 (최종 결과에 10% 추가 여부)
         if include_vat:

@@ -72,6 +72,13 @@
             </div>
         </header>
 
+        {% if insights %}
+        <section class="card bg-slate-800 text-white border-l-8 border-brand">
+            <h2 class="text-lg font-bold mb-3 flex items-center gap-2"><i data-lucide="lightbulb" class="w-5 h-5 text-brand"></i>Operation Insights</h2>
+            <div class="text-slate-300 leading-relaxed italic whitespace-pre-wrap">{{ insights }}</div>
+        </section>
+        {% endif %}
+
         <!-- Budget Status -->
         <section class="card bg-slate-900 text-white border-none p-8">
             <div class="flex flex-col md:flex-row justify-between items-center gap-8">
@@ -103,6 +110,54 @@
             </div>
         </section>
 
+        <!-- Benchmarking (Target vs Actual) -->
+        {% if benchmarking.active %}
+        <section class="card border-l-8 border-emerald-500">
+            <h2 class="text-xl font-bold mb-6 flex items-center gap-2 text-slate-800"><i data-lucide="target" class="text-emerald-500"></i> Performance Benchmarking (기대 지표 대비 성과)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- CTR Benchmarking -->
+                <div class="space-y-3">
+                    <div class="flex justify-between items-end">
+                        <span class="text-sm font-bold text-slate-500">CTR Achievement (기대 {{ benchmarking.target_ctr }}%)</span>
+                        <span class="text-2xl font-black {% if benchmarking.ctr_achievement >= 100 %}text-emerald-600{% else %}text-amber-500{% endif %}">
+                            {{ benchmarking.ctr_achievement|format_pct }}%
+                        </span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-3">
+                        <div class="h-full rounded-full {% if benchmarking.ctr_achievement >= 100 %}bg-emerald-500{% else %}bg-amber-500{% endif %}" 
+                             style="width: {{ [benchmarking.ctr_achievement, 100]|min }}%"></div>
+                    </div>
+                    <p class="text-xs text-slate-400">실제 CTR: {{ summary.avg_ctr|format_pct }}%</p>
+                </div>
+
+                <!-- CPC Benchmarking -->
+                <div class="space-y-3">
+                    <div class="flex justify-between items-end">
+                        <span class="text-sm font-bold text-slate-500">CPC Efficiency (기대 {{ benchmarking.target_cpc }}원)</span>
+                        <span class="text-2xl font-black {% if benchmarking.cpc_achievement >= 100 %}text-emerald-600{% else %}text-amber-500{% endif %}">
+                            {{ benchmarking.cpc_achievement|format_pct }}%
+                        </span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-3">
+                        <div class="h-full rounded-full {% if benchmarking.cpc_achievement >= 100 %}bg-emerald-500{% else %}bg-amber-500{% endif %}" 
+                             style="width: {{ [benchmarking.cpc_achievement, 100]|min }}%"></div>
+                    </div>
+                    <p class="text-xs text-slate-400">실제 CPC: {{ summary.avg_cpc|format_comma }}원</p>
+                </div>
+            </div>
+            
+            <div class="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <p class="text-sm text-slate-600 font-medium leading-relaxed">
+                    🎯 <strong>인사이트 요약:</strong> 
+                    기존 기대 CPC 대비 소진 효율이 <span class="font-bold {% if benchmarking.cpc_achievement >= 100 %}text-emerald-600{% else %}text-amber-500{% endif %}">
+                    {{ benchmarking.cpc_achievement|format_pct }}%</span> 수준이며, 
+                    CTR은 기대치 대비 <span class="font-bold {% if benchmarking.ctr_achievement >= 100 %}text-emerald-600{% else %}text-amber-500{% endif %}">
+                    {{ benchmarking.ctr_achievement|format_pct }}%</span> 달성 중입니다.
+                </p>
+            </div>
+        </section>
+        {% endif %}
+
         <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div class="card flex flex-col items-start p-5 gap-2">
                 <p class="text-xs text-slate-400 font-bold uppercase tracking-wider">오늘 노출</p>
@@ -124,16 +179,22 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <section class="card">
-                <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="line-chart"
-                        class="w-5 h-5 text-brand"></i>누적 집행 추이</h2>
-                <div class="chart-container" style="height: 300px;"><canvas id="accChart"></canvas></div>
+                <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="bar-chart-3"
+                        class="w-5 h-5 text-brand"></i>일간 집행 금액 추이</h2>
+                <div class="chart-container" style="height: 300px;"><canvas id="spendTrendChart"></canvas></div>
             </section>
             <section class="card">
-                <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="bar-chart-3"
-                        class="w-5 h-5 text-brand"></i>매체별 소진 비중</h2>
-                <div class="chart-container" style="height: 300px;"><canvas id="mediaChart"></canvas></div>
+                <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="trending-up"
+                        class="w-5 h-5 text-emerald-500"></i>일간 CTR 효율 추이</h2>
+                <div class="chart-container" style="height: 300px;"><canvas id="ctrTrendChart"></canvas></div>
             </section>
         </div>
+
+        <section class="card">
+            <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="pie-chart"
+                    class="w-5 h-5 text-brand"></i>매체별 소진 비중</h2>
+            <div class="chart-container" style="height: 300px;"><canvas id="mediaChart"></canvas></div>
+        </section>
 
         <section class="card">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800"><i data-lucide="table"
@@ -170,26 +231,58 @@
     <script>
         lucide.createIcons();
         
-        // Accumulation Chart
-        const accData = {{ acc_data | tojson }};
-        new Chart(document.getElementById('accChart'), {
-            type: 'line',
+        // Daily Spend Trend Chart
+        const trendData = {{ daily_trend | tojson }};
+        new Chart(document.getElementById('spendTrendChart'), {
+            type: 'bar',
             data: {
-                labels: accData.labels,
+                labels: trendData.labels,
                 datasets: [{
-                    label: '누적 집행 금액',
-                    data: accData.values,
+                    label: '일간 소진액',
+                    data: trendData.spend,
+                    backgroundColor: '{{ theme_color }}40',
                     borderColor: '{{ theme_color }}',
-                    backgroundColor: '{{ theme_color }}20',
-                    fill: true,
-                    tension: 0.4
+                    borderWidth: 1
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true } }
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: '소진액 (원)' }
+                    }
+                },
+                plugins: { legend: { position: 'top' } }
+            }
+        });
+
+        // CTR Trend Chart
+        new Chart(document.getElementById('ctrTrendChart'), {
+            type: 'line',
+            data: {
+                labels: trendData.labels,
+                datasets: [{
+                    label: 'CTR (%)',
+                    data: trendData.ctr,
+                    borderColor: '#10b981',
+                    backgroundColor: '#10b981',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'CTR (%)' }
+                    }
+                },
+                plugins: { legend: { position: 'top' } }
             }
         });
 

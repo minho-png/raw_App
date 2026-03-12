@@ -132,7 +132,7 @@ st.markdown("<div class='main-title'>GFA RAW MASTER PRO</div>", unsafe_allow_htm
 st.markdown("<div class='main-subtitle'>네이버 GFA 광고 성과를 완벽한 RAW 데이터로 가공하고 리포트를 생성하세요.</div>", unsafe_allow_html=True)
 
 # --- TAB Navigator ---
-tabs = st.tabs(["📁 데이터 관리", "📈 일일 운영", "🏆 최종 성과", "💾 데이터 뷰어"])
+tabs = st.tabs(["📁 데이터 관리", "📈 일일 운영", "🏆 최종 성과", "📊 정산 분석", "💾 데이터 뷰어"])
 
 # --- TAB 1: 데이터 관리 ---
 with tabs[0]:
@@ -307,8 +307,11 @@ with tabs[0]:
             rename_map = {'캠페인 이름': '캠페인', '게재 위치': '지면', '광고 소재 이름': '소재'}
             df_processed = df_processed.rename(columns={k: v for k, v in rename_map.items() if k in df_processed.columns})
             
-            # Security Patch: NET 관련 컬럼 삭제
-            cols_to_drop = [c for c in ['총 비용', 'has_dmp', 'NET', 'NET가'] if c in df_processed.columns]
+            # DB 저장용 전체 데이터는 별도 저장 (정산 분석용)
+            st.session_state.full_processed_df = df_processed.copy()
+            
+            # Security Patch: NET 관련 컬럼 삭제 (일반 성과 뷰용)
+            cols_to_drop = [c for c in ['총 비용', 'has_dmp', 'NET', 'NET가', 'DMP종류', '매체'] if c in df_processed.columns]
             if cols_to_drop:
                 df_processed = df_processed.drop(columns=cols_to_drop)
                 
@@ -370,12 +373,104 @@ with tabs[1]:
             st.plotly_chart(fig_gauge, use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Report Action
-        if st.button("📄 일일 운영 HTML 리포트 생성", type="primary", use_container_width=True):
-            from report_generator import generate_daily_report_html
-            st.session_state.html_report = generate_daily_report_html(df, cfg, theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url)
-            st.success("리포트가 생성되었습니다. '데이터 뷰어' 탭에서 다운로드하거나 아래 버튼을 클릭하세요.")
-            st.download_button("📥 HTML 리포트 즉시 다운로드", data=st.session_state.html_report, file_name=f"Daily_Report_{cfg['name']}.html", mime="text/html")
+        # Campaign Target Settings (Benchmarking)
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='header-text'>🎯 캠페인 목표 성과 설정 (벤치마킹)</div>", unsafe_allow_html=True)
+        
+        t_col1, t_col2 = st.columns(2)
+        # Load existing targets
+        existing_targets = db_manager.get_campaign_targets(selected_campaign) if selected_campaign else None
+        default_cpc = existing_targets.get('target_cpc', 0) if existing_targets else 0
+        default_ctr = existing_targets.get('target_ctr', 0.0) if existing_targets else 0.0
+
+        target_cpc = t_col1.number_input("기대 CPC (원)", value=int(default_cpc), step=10, key="target_cpc_input")
+        target_ctr = t_col2.number_input("기대 CTR (%)", value=float(default_ctr), step=0.1, format="%.2f", key="target_ctr_input")
+        
+        if st.button("목표치 저장", use_container_width=True, key="save_targets_btn"):
+            if selected_campaign:
+                success, msg = db_manager.save_campaign_targets(selected_campaign, {
+                    'target_cpc': target_cpc,
+                    'target_ctr': target_ctr
+                })
+                if success: st.success(f"[{selected_campaign}] 목표치가 성공적으로 저장되었습니다.")
+                else: st.error(msg)
+            else:
+                st.warning("먼저 캠페인을 선택해주세요.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Report Action Builder
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='header-text'>🛠️ 맞춤형 리포트 빌더</div>", unsafe_allow_html=True)
+        
+        rep_col1, rep_col2 = st.columns([1, 1])
+        with rep_col1:
+            st.markdown("**1. 포함할 측정 항목 (Metrics)**")
+            m_cols = ['노출', '클릭', '집행 금액', 'CTR', 'CPC', 'CPM']
+            selected_metrics = [m for m in m_cols if st.checkbox(m, value=True, key=f"check_m_{m}")]
+            
+        with rep_col2:
+            st.markdown("**2. 포함할 분류 항목 (Dimensions)**")
+            d_cols = ['날짜', '캠페인', '지면', '소재']
+            selected_dims = [d for d in d_cols if d in df.columns and st.checkbox(d, value=True, key=f"check_d_{d}")]
+
+        st.markdown("**3. 일일 운영 인사이트 (Operation Insights)**")
+        operational_insights = st.text_area("광고 운영에 대한 인사이트나 특이사항을 입력하세요. (리포트에 반영됩니다)", 
+                                           placeholder="예: 주말 할인 프로모션으로 인한 CTR 급증, 신규 소재 B의 효율이 우수함...", 
+                                           height=100)
+        
+        if st.button("📄 맞춤형 HTML 리포트 생성", type="primary", use_container_width=True):
+            from report_generator import generate_daily_report_html, generate_media_report_html, generate_creative_report_html, generate_media_creative_report_html
+            
+            # Combine selected columns
+            final_report_cols = selected_dims + selected_metrics
+            
+            if not final_report_cols:
+                st.error("최소 하나 이상의 항목을 선택해야 합니다.")
+            else:
+                # Intelligent Generator Selection
+                if '날짜' in selected_dims:
+                    # Fetch targets for benchmarking
+                    targets = db_manager.get_campaign_targets(selected_campaign) if selected_campaign else None
+                    t_cpc = targets.get('target_cpc', 0) if targets else 0
+                    t_ctr = targets.get('target_ctr', 0) if targets else 0
+                    
+                    # Daily/Trend style if temporal data is selected
+                    st.session_state.html_report = generate_daily_report_html(
+                        df, cfg, title=f"{cfg['name']} 일일 운영 리포트 (맞춤형)",
+                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
+                        selected_cols=final_report_cols, insights=operational_insights,
+                        target_cpc=t_cpc, target_ctr=t_ctr
+                    )
+                elif '매체' in selected_dims and '소재' in selected_dims:
+                    st.session_state.html_report = generate_media_creative_report_html(
+                        df, title=f"{cfg['name']} 매체/소재 통합 리포트",
+                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
+                        insights=operational_insights
+                    )
+                elif '매체' in selected_dims:
+                    st.session_state.html_report = generate_media_report_html(
+                        df, title=f"{cfg['name']} 매체별 비교 리포트",
+                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
+                        insights=operational_insights
+                    )
+                elif '소재' in selected_dims:
+                    st.session_state.html_report = generate_creative_report_html(
+                        df, title=f"{cfg['name']} 소재별 상세 리포트",
+                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
+                        insights=operational_insights
+                    )
+                else:
+                    # Default premium style for other combinations
+                    from report_generator import generate_premium_html
+                    st.session_state.html_report = generate_premium_html(
+                        df, title=f"{cfg['name']} 맞춤형 성과 리포트",
+                        theme_color=st.session_state.brand_color, logo_url=st.session_state.logo_url,
+                        selected_cols=final_report_cols, insights=operational_insights
+                    )
+                
+                st.success("요청하신 데이터 조합에 가장 적합한 리포트가 생성되었습니다.")
+                st.download_button("📥 리포트 즉시 다운로드", data=st.session_state.html_report, file_name=f"Advanced_Report_{cfg['name']}.html", mime="text/html")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # --- TAB 3: 최종 성과 (Final Performance) ---
 with tabs[2]:
@@ -432,14 +527,78 @@ with tabs[2]:
             st.success("리포트 생성 완료!")
             st.download_button("📥 성과 리포트 즉시 다운로드", data=st.session_state.html_report, file_name="Final_Performance_Report.html", mime="text/html")
 
-# --- TAB 4: 데이터 뷰어 (Data Viewer) ---
+# --- TAB 4: 정산 분석 (Settlement Analysis) ---
 with tabs[3]:
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='header-text'>📊 On-Demand 정산 데이터 분석</div>", unsafe_allow_html=True)
+    st.info("이 탭은 DB에 저장된 데이터를 기반으로 DMP별 NET가 및 집행 금액을 조회합니다.")
+    
+    # Filters
+    camp_list, _ = st.session_state.db_manager.list_campaigns()
+    s_col1, s_col2, s_col3 = st.columns([2, 2, 1])
+    
+    with s_col1:
+        s_camp = st.selectbox("조회할 캠페인 선택", ["선택 안함"] + camp_list, key="settle_camp")
+    with s_col2:
+        today = datetime.now()
+        s_date = st.date_input("조회 기간", value=[today, today], key="settle_date")
+    with s_col3:
+        st.write("") # Padding
+        st.write("")
+        fetch_btn = st.button("🔍 데이터 조회", use_container_width=True)
+        
+    if fetch_btn and s_camp != "선택 안함":
+        start_d, end_d = s_date[0], s_date[1]
+        s_df, msg = st.session_state.db_manager.get_settlement_data(s_camp, start_d, end_d)
+        
+        if s_df is not None and not s_df.empty:
+            st.success(msg)
+            
+            # Summary Metrics
+            sm1, sm2, sm3 = st.columns(3)
+            sm1.metric("총 NET가", f"{s_df['NET가'].sum():,.0f}원")
+            sm2.metric("총 집행 금액", f"{s_df['집행 금액'].sum():,.0f}원")
+            sm3.metric("데이터 행 수", f"{len(s_df)}개")
+            
+            # Pivot Table: DMP종류별 요약
+            st.markdown("#### 💎 DMP 종류별 정산 요약")
+            pivot_df = s_df.groupby('DMP종류').agg({
+                'NET가': 'sum',
+                '집행 금액': 'sum',
+                '노출': 'sum',
+                '클릭': 'sum'
+            }).reset_index()
+            # Sort by Net Price desc
+            pivot_df = pivot_df.sort_values('NET가', ascending=False)
+            st.dataframe(pivot_df, use_container_width=True)
+            
+            # Detail Viewer
+            with st.expander("📄 상세 데이터 보기"):
+                st.dataframe(s_df, use_container_width=True)
+        else:
+            st.warning(msg)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# --- TAB 5: 데이터 뷰어 (Data Viewer) ---
+with tabs[4]:
     if st.session_state.processed_df is None:
         st.info("표시할 결과 데이터가 없습니다.")
     else:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='header-text'>✨ Processed Data Preview</div>", unsafe_allow_html=True)
-        st.dataframe(st.session_state.processed_df, use_container_width=True)
+        st.markdown("<div class='header-text'>✨ Interactive Data Editor</div>", unsafe_allow_html=True)
+        st.info("💡 하단 테이블에서 데이터를 직접 수정할 수 있습니다. 수정 사항은 리포트와 DB 저장에 즉시 반영됩니다.")
+        
+        # Interactive Data Editor
+        edited_df = st.data_editor(
+            st.session_state.processed_df, 
+            use_container_width=True,
+            num_rows="dynamic",
+            key="data_editor_main"
+        )
+        # Sync changes back to session state
+        if not edited_df.equals(st.session_state.processed_df):
+            st.session_state.processed_df = edited_df
+            st.toast("데이터 수정 사항이 메모리에 반영되었습니다.")
         
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -450,7 +609,9 @@ with tabs[3]:
         with c2:
             if st.button("💾 Cloud DB에 결과 저장"):
                 c_name = st.session_state.campaign_config['name']
-                success, msg = st.session_state.db_manager.save_data(st.session_state.processed_df, campaign_name=c_name)
+                # use full_processed_df if available to save all columns
+                df_to_save = st.session_state.full_processed_df if 'full_processed_df' in st.session_state else st.session_state.processed_df
+                success, msg = st.session_state.db_manager.save_data(df_to_save, campaign_name=c_name)
                 if success: st.success(msg)
                 else: st.error(msg)
         with c3:

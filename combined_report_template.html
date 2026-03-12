@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root { --brand-color: {{ theme_color }}; }
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #fafafa; color: #334155; }
+        .card { background: white; border-radius: 1.5rem; padding: 2rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); }
+        .table-header { background-color: #f1f5f9; position: sticky; top: 0; }
+        .grid-bg { background-image: radial-gradient(#e2e8f0 1px, transparent 1px); background-size: 20px 20px; }
+    </style>
+</head>
+<body class="p-6 md:p-16 grid-bg">
+    <div class="max-w-7xl mx-auto space-y-10">
+        <header class="flex flex-col md:flex-row justify-between items-end gap-6 border-b-2 border-slate-200 pb-8">
+            <div>
+                <div class="flex items-center gap-4 mb-4">
+                    {% if logo_url %}<img src="{{ logo_url }}" alt="Logo" class="h-10">{% endif %}
+                    <span class="px-3 py-1 bg-slate-900 text-white text-xs font-black rounded uppercase">Premium Report</span>
+                </div>
+                <h1 class="text-5xl font-black text-slate-900 tracking-tighter">{{ title }}</h1>
+                <p class="text-slate-400 mt-2 font-bold uppercase tracking-widest text-sm">Synthetic Media & Creative Evaluation</p>
+            </div>
+            <div class="text-right">
+                <p class="text-slate-400 font-bold text-xs uppercase">Generated At</p>
+                <p class="text-slate-900 font-black text-xl">{{ generated_at }}</p>
+            </div>
+        </header>
+
+        {% if insights %}
+        <section class="card border-t-8 border-brand">
+            <h2 class="text-xl font-black mb-4 flex items-center gap-3 text-slate-900 uppercase tracking-tight"><i data-lucide="compass" class="text-brand"></i> Strategic Overview</h2>
+            <div class="text-slate-500 leading-relaxed font-medium text-lg border-l-4 border-slate-100 pl-6 italic">{{ insights }}</div>
+        </section>
+        {% endif %}
+
+        <section class="card space-y-6">
+            <h2 class="text-2xl font-black text-slate-800 flex items-center gap-3"><i data-lucide="database" class="text-brand"></i> Cross-Dimensional Metrics Table</h2>
+            <div class="overflow-x-auto rounded-xl border border-slate-100 shadow-inner">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="table-header text-slate-400 font-black uppercase tracking-widest border-b">
+                            {% for col in table_cols %}<th class="p-5 text-left">{{ col }}</th>{% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        {% for row in table_data %}
+                        <tr class="hover:bg-slate-50 transition-all">
+                            {% for col in table_cols %}
+                            <td class="p-5 font-bold {% if col == 'CTR' %}text-brand{% elif col == '집행 금액' %}text-slate-900{% else %}text-slate-600{% endif %}">
+                                {{ row[col]|format_cell }}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer class="text-center pt-10 text-slate-300 font-bold uppercase tracking-tighter">
+            &copy; 2026 GFA MASTER PRO &bull; INTERNAL STRATEGIC DOCUMENT
+        </footer>
+    </div>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

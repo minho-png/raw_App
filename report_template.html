@@ -79,6 +79,13 @@
                 Verified by GFA RAW MASTER PRO
             </div>
         </header>
+        
+        {% if insights %}
+        <section class="card bg-slate-800 text-white border-l-8 border-brand">
+            <h2 class="text-lg font-bold mb-3 flex items-center gap-2"><i data-lucide="lightbulb" class="w-5 h-5 text-brand"></i>Operation Insights</h2>
+            <div class="text-slate-300 leading-relaxed italic whitespace-pre-wrap">{{ insights }}</div>
+        </section>
+        {% endif %}
 
         <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div class="card flex flex-col md:flex-row items-center md:items-start p-5 gap-4">
@@ -181,8 +188,7 @@
                     <thead class="bg-slate-50">
                         <tr>
                             {% for col in table_cols %}
-                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{{
-                                col }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{{ col }}</th>
                             {% endfor %}
                         </tr>
                     </thead>

@@ -43,10 +43,8 @@ class DatabaseManager:
             # Add a timestamp and campaign identifier to the data
             df_to_save = df.copy()
             
-            # Security Patch: NET 관련 정보 명시적 삭제
-            cols_to_drop = [c for c in ['NET', 'NET가'] if c in df_to_save.columns]
-            if cols_to_drop:
-                df_to_save = df_to_save.drop(columns=cols_to_drop)
+            # Security Patch Removal: 'NET', 'NET가', 'DMP종류' 등 정보를 DB에는 저장함
+            # (UI previews and reports will still filter these)
                 
             df_to_save['db_created_at'] = datetime.now()
             if campaign_name:
@@ -61,6 +59,47 @@ class DatabaseManager:
             return True, f"Successfully saved {len(result.inserted_ids)} records to {collection_name}"
         except Exception as e:
             return False, f"Save failed: {str(e)}"
+
+    def get_settlement_data(self, campaign_name, start_date=None, end_date=None, collection_name="raw_master_results"):
+        """
+        특정 캠페인과 기간의 DMP별 NET가 합계 데이터를 가져옵니다.
+        """
+        if self.db is None:
+            return None, "Database not connected"
+            
+        try:
+            collection = self.db[collection_name]
+            
+            # 기본 쿼리: 캠페인명 기준
+            query = {"db_campaign_name": campaign_name}
+            
+            # 기간 필터 추가
+            if start_date and end_date:
+                # '날짜' 컬럼이 문자열(YYYY-MM-DD)로 저장되어 있을 가능성이 높으므로 문자열 비교 수행
+                query["날짜"] = {
+                    "$gte": start_date if isinstance(start_date, str) else start_date.strftime("%Y-%m-%d"),
+                    "$lte": end_date if isinstance(end_date, str) else end_date.strftime("%Y-%m-%d")
+                }
+            
+            cursor = collection.find(query)
+            df = pd.DataFrame(list(cursor))
+            
+            if df.empty:
+                return pd.DataFrame(), "No data found for the given criteria"
+                
+            if '_id' in df.columns:
+                df = df.drop(columns=['_id'])
+                
+            # 수치형 변환
+            cols_to_fix = ['NET가', '집행 금액', '노출', '클릭']
+            for c in cols_to_fix:
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            
+            return df, "Settlement data fetched successfully"
+            
+        except Exception as e:
+            return None, f"Failed to fetch settlement data: {str(e)}"
 
     def fetch_data(self, collection_name="raw_master_results"):
         if self.db is None:
@@ -121,6 +160,41 @@ class DatabaseManager:
             return None, "Config not found"
         except Exception as e:
             return None, f"Failed to fetch campaign config: {str(e)}"
+
+    # --- Campaign Targets (Expectation Benchmarking) ---
+
+    def save_campaign_targets(self, campaign_name, targets):
+        """
+        캠페인별 기대 CPC, CTR 목표를 저장합니다.
+        """
+        if self.db is None: return False, "Database not connected"
+        try:
+            settings_col = self.db['campaign_targets']
+            settings_col.update_one(
+                {'campaign_name': campaign_name},
+                {'$set': {
+                    'campaign_name': campaign_name,
+                    'target_cpc': targets.get('target_cpc', 0),
+                    'target_ctr': targets.get('target_ctr', 0),
+                    'updated_at': datetime.now()
+                }},
+                upsert=True
+            )
+            return True, "Targets saved"
+        except Exception as e:
+            return False, f"Error saving targets: {e}"
+
+    def get_campaign_targets(self, campaign_name):
+        """
+        특정 캠페인의 목표치를 조회합니다.
+        """
+        if self.db is None: return None
+        try:
+            settings_col = self.db['campaign_targets']
+            return settings_col.find_one({'campaign_name': campaign_name})
+        except Exception as e:
+            print(f"Error fetching targets: {e}")
+            return None
 
     def list_campaigns(self):
         if self.db is None:
