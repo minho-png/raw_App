@@ -47,13 +47,7 @@ class DatabaseManager:
                 df_to_save['db_campaign_name'] = campaign_name
             
             # --- Collection 1: Settlement Data (settlement_master_data) ---
-            # Extract settlement specific columns and save independently
-            settlement_cols = ['날짜', 'db_campaign_name', '매체', 'DMP종류', 'NET가', '집행 금액']
-            s_exist = [c for c in settlement_cols if c in df_to_save.columns]
-            
-            if len(s_exist) > 2: # Has data beyond just tracking info
-                df_settlement = df_to_save[s_exist].copy()
-                self.db['settlement_master_data'].insert_many(df_settlement.to_dict('records'))
+            # Now handled by `save_background_settlement` explicitly so we skip double insertion here
             
             # --- Collection 2: Marketing Performance Data (raw_master_results) ---
             # Remove settlement-specific sensitive columns from general logs
@@ -67,6 +61,33 @@ class DatabaseManager:
             
             return True, f"Successfully saved {len(result.inserted_ids)} records to {collection_name} and updated settlement data."
         except Exception as e:
+            return False, f"Save failed: {str(e)}"
+
+    def save_background_settlement(self, df, campaign_name):
+        """Silently aggregates and saves the net prices by DMP to the DB for the settlement tab."""
+        if self.db is None or df.empty:
+            return False, "Database not connected or DataFrame empty"
+        
+        try:
+            # Group by minimum requirements: date, media, dmp
+            group_keys = ['날짜', '매체', 'DMP종류']
+            available_keys = [k for k in group_keys if k in df.columns]
+            if not available_keys:
+                return False, "No valid keys to group for settlement"
+                
+            metrics = {c: 'sum' for c in ['NET가', '집행 금액'] if c in df.columns}
+            if not metrics:
+                return False, "No valid metrics (NET가, 집행 금액) to save"
+                
+            agg_df = df.groupby(available_keys).agg(metrics).reset_index()
+            agg_df['db_campaign_name'] = campaign_name
+            agg_df['db_created_at'] = datetime.now()
+            
+            records = agg_df.to_dict('records')
+            self.db['settlement_master_data'].insert_many(records)
+            return True, f"Saved {len(records)} aggregated settlement records."
+        except Exception as e:
+            print(f"Background settlement save failed: {e}")
             return False, f"Save failed: {str(e)}"
 
     def get_settlement_data(self, campaign_name, start_date=None, end_date=None, collection_name="settlement_master_data"):

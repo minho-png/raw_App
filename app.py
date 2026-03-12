@@ -157,7 +157,7 @@ if 'campaign_config' not in st.session_state: st.session_state.campaign_config =
 # Permanent Config Fields per Campaign
 if 'base_fee' not in st.session_state: st.session_state.base_fee = 15.0
 if 'include_vat' not in st.session_state: st.session_state.include_vat = False
-if 'dmp_keywords' not in st.session_state: st.session_state.dmp_keywords = "SKP, LOTTE, TG360, WIFI"
+if 'dmp_keywords' not in st.session_state: st.session_state.dmp_keywords = "SKP, KB, LOTTE, TG360, WIFI, 실내위치"
 if 'selected_media' not in st.session_state: st.session_state.selected_media = '네이버GFA'
 if 'saved_group_cols' not in st.session_state: st.session_state.saved_group_cols = ['날짜', '캠페인 이름']
 
@@ -426,6 +426,11 @@ with tabs[0]:
             
             # DB 저장용 전체 데이터는 별도 저장 (정산 분석용)
             st.session_state.full_processed_df = df_processed.copy()
+            
+            # Background logic: Send to DB implicitly for settlement module
+            c_name = st.session_state.campaign_config.get('name', 'Unknown')
+            if c_name and c_name != "선택 안함":
+                st.session_state.db_manager.save_background_settlement(st.session_state.full_processed_df, c_name)
             
             # Security Patch: NET 관련 컬럼 삭제 (일반 성과 뷰용)
             cols_to_drop = [c for c in ['총 비용', 'has_dmp', 'NET', 'NET가'] if c in df_processed.columns]

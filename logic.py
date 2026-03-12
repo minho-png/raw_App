@@ -71,9 +71,10 @@ def merge_raw_data(dfs):
         combined_df['dt'] = combined_df['날짜'].apply(parse_naver_date)
         # Drop rows where date parsing failed
         combined_df = combined_df.dropna(subset=['dt'])
-        combined_df = combined_df.sort_values('dt').drop('dt', axis=1)
-        # Final Format for consistency: YYYY-MM-DD string
-        combined_df['날짜'] = combined_df['날짜'].apply(parse_naver_date).dt.strftime('%Y-%m-%d')
+        combined_df = combined_df.sort_values('dt')
+        # Preserve actual datetime object instead of converting to strings
+        combined_df['날짜'] = combined_df['dt']
+        combined_df = combined_df.drop('dt', axis=1)
         
     return combined_df
 
@@ -118,14 +119,20 @@ def extract_dmp_type(group_name, keywords):
     """
     광고 그룹명에서 DMP 사명을 추출합니다.
     예: "[SKP] 관심사_A" -> "SKP"
+    실내위치나 WIFI는 "WIFI"로 통합합니다.
     """
     if not isinstance(group_name, str):
         return "None"
     
     # 키워드별로 매칭 확인
+    group_upper = group_name.upper()
     for kw in keywords:
-        if kw.strip() and kw.strip().upper() in group_name.upper():
-            return kw.strip().upper()
+        kw_clean = kw.strip().upper()
+        if kw_clean and kw_clean in group_upper:
+            # 실내위치나 WIFI는 WIFI로 통일
+            if kw_clean in ["WIFI", "실내위치", "실내 위치"]:
+                return "WIFI"
+            return kw_clean
     return "None"
 
 def calculate_metrics(df, base_fee, media_type, dmp_keywords=None, include_vat=False):
@@ -134,7 +141,7 @@ def calculate_metrics(df, base_fee, media_type, dmp_keywords=None, include_vat=F
     매체, DMP종류, NET가 컬럼을 추가함.
     """
     if dmp_keywords is None:
-        dmp_keywords = ['SKP', 'LOTTE', 'TG360', 'WIFI', '실내 위치']
+        dmp_keywords = ['SKP', 'KB', 'LOTTE', 'TG360', 'WIFI', '실내위치']
     
     # Ensure '총 비용' is numeric
     if '총 비용' in df.columns:
