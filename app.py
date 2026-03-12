@@ -223,13 +223,17 @@ with tabs[0]:
         
         f_col1, f_col2 = st.columns(2)
         with f_col1:
-            cams = st.multiselect("캠페인 필터 선택", df_target['캠페인'].unique())
+            cams = st.multiselect("🏢 캠페인 필터링 (필요 시 선택)", df_target['캠페인'].unique(), help="특정 캠페인의 데이터만 골라내고 싶을 때 사용하세요.")
         with f_col2:
             group_options = ['날짜', '캠페인', '지면', '소재']
             # Find available columns in the DF
             available_groups = [c for c in group_options if c in df_target.columns]
-            group_cols = st.multiselect("데이터 집계 기준 (Group By)", available_groups, default=['날짜', '캠페인'])
-            st.caption("💡 '일일 운영' 분석을 사용하시려면 **'날짜'** 기준을 포함해 주세요.")
+            
+            # SAFE DEFAULT: Only use defaults if they exist in available_groups
+            safe_default = [d for d in ['날짜', '캠페인'] if d in available_groups]
+            
+            group_cols = st.multiselect("📊 데이터 집계 기준 (Group By)", available_groups, default=safe_default, help="선택한 항목들을 기준으로 데이터를 합산하여 보여줍니다.")
+            st.caption("💡 '일일 운영' 분석을 사용하시려면 **'날짜'** 기준을 반드시 포함해 주세요.")
         
         if st.button("✨ 데이터 가공 시작 (Apply)", type="primary", use_container_width=True):
             df_work = df_target.copy()
