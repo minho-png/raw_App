@@ -139,6 +139,82 @@ class DatabaseManager:
         except Exception as e:
             return None, f"Failed to fetch settlement data: {str(e)}"
 
+    def get_all_settlement_data(self):
+        """
+        모든 캠페인의 settlement_master_data를 조회하여
+        각 캠페인의 실제 캠페인 기간(campaign_configs의 start/end)에 맞는 데이터를 반환합니다.
+        """
+        if self.db is None:
+            return None, "Database not connected"
+        
+        try:
+            from datetime import datetime as dt
+            # 1. 모든 캠페인 설정 로드 (기간 정보 포함)
+            configs_cursor = self.db["campaign_configs"].find({}, {
+                "campaign_name": 1, "start": 1, "end": 1
+            })
+            configs = {doc["campaign_name"]: doc for doc in configs_cursor}
+            
+            if not configs:
+                return pd.DataFrame(), "No campaign configs found"
+            
+            # 2. 각 캠페인별로 기간에 맞는 데이터 조회 후 병합
+            all_dfs = []
+            collection = self.db["settlement_master_data"]
+            
+            for camp_name, cfg in configs.items():
+                try:
+                    query = {"db_campaign_name": camp_name}
+                    
+                    # 캠페인 기간이 있으면 필터 적용
+                    if cfg.get("start") and cfg.get("end"):
+                        start_str = cfg["start"]
+                        end_str = cfg["end"]
+                        
+                        # Parse dates flexibly
+                        try:
+                            start_dt = dt.strptime(start_str[:10], "%Y-%m-%d")
+                            end_dt = dt.strptime(end_str[:10], "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+                            query["날짜"] = {"$gte": start_dt, "$lte": end_dt}
+                        except:
+                            pass  # If date parsing fails, fetch all data for this campaign
+                    
+                    cursor = collection.find(query)
+                    camp_df = pd.DataFrame(list(cursor))
+                    
+                    if not camp_df.empty:
+                        if '_id' in camp_df.columns:
+                            camp_df = camp_df.drop(columns=['_id'])
+                        all_dfs.append(camp_df)
+                        
+                except Exception as e:
+                    print(f"Failed to fetch settlement for {camp_name}: {e}")
+                    continue
+            
+            if not all_dfs:
+                return pd.DataFrame(), "No settlement data found across all campaigns"
+            
+            result_df = pd.concat(all_dfs, ignore_index=True)
+            
+            # Cast numeric fields
+            for c in ['NET가', '집행 금액']:
+                if c in result_df.columns:
+                    result_df[c] = pd.to_numeric(result_df[c], errors='coerce').fillna(0)
+                    
+            # Add campaign period info
+            def get_period(row):
+                cfg = configs.get(row.get('db_campaign_name', ''), {})
+                start = cfg.get('start', '')[:10] if cfg.get('start') else ''
+                end = cfg.get('end', '')[:10] if cfg.get('end') else ''
+                return f"{start} ~ {end}" if start and end else "기간 미설정"
+                
+            result_df['캠페인 기간'] = result_df.apply(get_period, axis=1)
+            
+            return result_df, f"총 {len(result_df)}건의 정산 데이터를 로드했습니다."
+
+        except Exception as e:
+            return None, f"Failed to fetch all settlement data: {str(e)}"
+
     def fetch_data(self, collection_name="raw_master_results"):
         if self.db is None:
             return None, "Database not connected"

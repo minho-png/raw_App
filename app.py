@@ -535,54 +535,101 @@ with tabs[2]:
 with tabs[3]:
     st.session_state.current_step = 4
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='header-text'>📊 On-Demand 정산 분석 (DMP NET가)</div>", unsafe_allow_html=True)
-    st.info("이 탭은 DB에 저장된 데이터를 기반으로 DMP별 NET가 및 집행 금액을 조회합니다.")
-    
-    # Filtering for settlement
-    sc1, sc2, sc3 = st.columns([2, 2, 1])
-    with sc1:
-        s_camp_list, _ = st.session_state.db_manager.list_campaigns()
-        selected_s_camp = st.selectbox("정산 캠페인 선택", ["선택 안함"] + s_camp_list, key="settle_camp_select")
-    with sc2:
-        today = datetime.now()
-        s_date_range = st.date_input("정산 기간 선택", value=[today, today], key="settle_date_sel")
-    with sc3:
-        st.write("") # Padding
-        st.write("")
-        fetch_settle = st.button("🔍 조회", use_container_width=True)
+    st.markdown("<div class='header-text'>📊 전체 캠페인 DMP NET가 정산 분석</div>", unsafe_allow_html=True)
+    st.info("모든 저장된 캠페인의 실제 캠페인 기간 데이터를 기반으로 DMP별 NET가를 집계합니다.")
 
-    if fetch_settle and selected_s_camp != "선택 안함":
-        start_d = s_date_range[0]
-        end_d = s_date_range[1] if len(s_date_range) > 1 else start_d
-        s_df, msg = st.session_state.db_manager.get_settlement_data(selected_s_camp, start_d, end_d)
-        
-        if s_df is not None and not s_df.empty:
-            st.session_state.settlement_df = s_df
+    col_fetch, _ = st.columns([1, 3])
+    with col_fetch:
+        fetch_all = st.button("🔄 전체 정산 데이터 불러오기", type="primary", use_container_width=True)
+
+    if fetch_all:
+        all_sdf, msg = st.session_state.db_manager.get_all_settlement_data()
+        if all_sdf is not None and not all_sdf.empty:
+            st.session_state.all_settlement_df = all_sdf
             st.success(msg)
         else:
             st.warning(msg)
-            
-    if 'settlement_df' in st.session_state and st.session_state.settlement_df is not None:
-        sdf = st.session_state.settlement_df
-        
-        # Backward compatibility for older data without NET/DMP columns
+            if 'all_settlement_df' in st.session_state:
+                del st.session_state.all_settlement_df
+
+    if 'all_settlement_df' in st.session_state and st.session_state.all_settlement_df is not None:
+        sdf = st.session_state.all_settlement_df.copy()
+
+        # Ensure required columns
         if 'NET가' not in sdf.columns: sdf['NET가'] = 0
-        if 'DMP종류' not in sdf.columns: sdf['DMP종류'] = 'N/A'
+        if 'DMP종류' not in sdf.columns: sdf['DMP종류'] = 'None'
         if '매체' not in sdf.columns: sdf['매체'] = 'N/A'
-        
+        if '집행 금액' not in sdf.columns: sdf['집행 금액'] = 0
+        if 'db_campaign_name' not in sdf.columns: sdf['db_campaign_name'] = 'N/A'
+
+        # --- Summary Metrics ---
+        total_exec = sdf['집행 금액'].sum()
+        total_net = sdf['NET가'].sum()
+        dmp_only = sdf[sdf['DMP종류'] != 'None']
+        total_dmp_net = dmp_only['NET가'].sum()
+        num_camps = sdf['db_campaign_name'].nunique()
+
         st.markdown("<div class='m-grid'>", unsafe_allow_html=True)
-        st.markdown(f"<div class='m-card'><div class='m-label'>총 정산 대상 금액</div><div class='m-value'>{sdf.get('집행 금액', pd.Series([0])).sum():,.0f}원</div><div class='m-status'>💰 Settlement Base</div></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='m-card'><div class='m-label'>총 NET가</div><div class='m-value'>{sdf['NET가'].sum():,.0f}원</div><div class='m-status'>📉 DMP Net Price</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>총 캠페인 수</div><div class='m-value'>{num_camps}개</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>전체 집행 금액</div><div class='m-value'>{total_exec:,.0f}원</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>전체 NET가 합계</div><div class='m-value'>{total_net:,.0f}원</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>DMP 적용 NET가</div><div class='m-value'>{total_dmp_net:,.0f}원</div><div class='m-status'>🧩 DMP 포함 행 기준</div></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+        # --- Main pivot: DMP종류 > 캠페인 > NET가 순 정렬 ---
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='header-text'>📑 매체/DMP별 정산 상세 내역</div>", unsafe_allow_html=True)
-        pivot_sdf = sdf.pivot_table(index=['매체', 'DMP종류'], values=['집행 금액', 'NET가'], aggfunc='sum').reset_index()
-        st.dataframe(pivot_sdf, use_container_width=True)
-        
-        with st.expander("🔍 전체 RAW 정산 데이터 확인"):
-            st.dataframe(sdf, use_container_width=True)
+        st.markdown("<div class='header-text'>📑 전체 DMP/캠페인별 정산 내역 (DMP → 캠페인 → NET가 순)</div>", unsafe_allow_html=True)
+
+        pivot_all = sdf.groupby(['DMP종류', 'db_campaign_name', '매체', '캠페인 기간'] if '캠페인 기간' in sdf.columns else ['DMP종류', 'db_campaign_name', '매체']).agg(
+            집행_금액=('집행 금액', 'sum'),
+            NET가=('NET가', 'sum')
+        ).reset_index()
+        pivot_all.columns = [c.replace('_', ' ') for c in pivot_all.columns]
+        pivot_all = pivot_all.sort_values(['DMP종류', 'db_campaign_name', 'NET가'], ascending=[True, True, False])
+        pivot_all = pivot_all.rename(columns={'db_campaign_name': '캠페인명'})
+
+        st.dataframe(
+            pivot_all.style.format({'집행 금액': '{:,.0f}', 'NET가': '{:,.0f}'}),
+            use_container_width=True
+        )
         st.markdown("</div>", unsafe_allow_html=True)
+
+        # --- Per-DMP Subtabs ---
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='header-text'>🧩 DMP별 상세 분석</div>", unsafe_allow_html=True)
+
+        dmp_list = sorted(sdf['DMP종류'].dropna().unique().tolist())
+        dmp_tab_labels = [f"{'전체'}" ] + [d if d != 'None' else '⬜ DMP 없음' for d in dmp_list]
+        dmp_tabs = st.tabs(dmp_tab_labels)
+
+        # Tab 0: 전체 합계
+        with dmp_tabs[0]:
+            summary_by_dmp = sdf.groupby('DMP종류').agg(
+                집행_금액=('집행 금액', 'sum'),
+                NET가=('NET가', 'sum'),
+                캠페인수=('db_campaign_name', 'nunique')
+            ).reset_index().sort_values('NET가', ascending=False)
+            summary_by_dmp.columns = ['DMP종류', '집행 금액', 'NET가', '캠페인 수']
+            st.dataframe(summary_by_dmp.style.format({'집행 금액': '{:,.0f}', 'NET가': '{:,.0f}'}), use_container_width=True)
+
+        # Per-DMP tabs
+        for i, dmp in enumerate(dmp_list):
+            with dmp_tabs[i + 1]:
+                dmp_df = sdf[sdf['DMP종류'] == dmp].copy()
+
+                d1, d2 = st.columns(2)
+                d1.metric("NET가 합계", f"{dmp_df['NET가'].sum():,.0f}원")
+                d2.metric("집행 금액 합계", f"{dmp_df['집행 금액'].sum():,.0f}원")
+
+                dmp_pivot = dmp_df.groupby('db_campaign_name').agg(
+                    집행_금액=('집행 금액', 'sum'),
+                    NET가=('NET가', 'sum')
+                ).reset_index().sort_values('NET가', ascending=False)
+                dmp_pivot.columns = ['캠페인명', '집행 금액', 'NET가']
+                st.dataframe(dmp_pivot.style.format({'집행 금액': '{:,.0f}', 'NET가': '{:,.0f}'}), use_container_width=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 # --- TAB 5: 리포트 빌더 (Report Builder) ---
