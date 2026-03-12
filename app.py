@@ -41,86 +41,103 @@ st.markdown("""
         background: var(--glass);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
-        border-radius: 16px;
+        border-radius: 20px;
         border: 1px solid var(--glass-border);
         box-shadow: var(--shadow);
-        padding: 1.5rem;
+        padding: 1.75rem;
         margin-bottom: 1.5rem;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .glass-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.1);
     }
 
     .header-text {
         font-family: 'Pretendard Variable', sans-serif;
-        font-size: 1.25rem;
-        font-weight: 800;
+        font-size: 1.3rem;
+        font-weight: 850;
         color: var(--text-main);
-        margin-bottom: 1.25rem;
+        margin-bottom: 1.5rem;
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.75rem;
+        letter-spacing: -0.01em;
     }
 
     /* Premium Metric Grid */
     .m-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1.25rem;
+        margin-bottom: 2rem;
     }
     
     .m-card {
         background: white;
-        padding: 1.25rem;
-        border-radius: 16px;
+        padding: 1.5rem;
+        border-radius: 20px;
         border: 1px solid #f1f5f9;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
         position: relative;
         overflow: hidden;
     }
     .m-card::after {
         content: '';
         position: absolute;
-        top: 0; left: 0; width: 4px; height: 100%;
+        top: 0; left: 0; width: 6px; height: 100%;
         background: var(--primary);
+        opacity: 0.8;
     }
-    .m-label { color: var(--text-sub); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-    .m-value { color: var(--text-main); font-size: 1.5rem; font-weight: 850; margin-top: 0.25rem; font-family: 'Inter', sans-serif; }
-    .m-status { font-size: 0.8rem; font-weight: 600; margin-top: 0.5rem; display: flex; align-items: center; gap: 0.25rem; }
+    .m-label { color: var(--text-sub); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem; }
+    .m-value { color: var(--text-main); font-size: 1.75rem; font-weight: 900; font-family: 'Inter', sans-serif; }
+    .m-status { font-size: 0.85rem; font-weight: 600; margin-top: 0.75rem; display: flex; align-items: center; gap: 0.4rem; color: var(--primary); }
 
     /* Button Styling */
     .stButton > button {
-        border-radius: 12px !important;
-        font-weight: 600 !important;
-        padding: 0.5rem 1rem !important;
-        border: none !important;
+        border-radius: 14px !important;
+        font-weight: 700 !important;
+        padding: 0.6rem 1.2rem !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(172, 2, 18, 0.2);
+    .stButton > button:active {
+        transform: scale(0.98);
     }
 
     /* Progress Stepper */
     .stepper {
         display: flex;
         justify-content: space-around;
-        padding: 1rem 0;
-        margin-bottom: 2rem;
+        padding: 1.5rem 0;
+        margin-bottom: 2.5rem;
+        background: rgba(255,255,255,0.4);
+        border-radius: 20px;
+        border: 1px solid rgba(255,255,255,0.2);
     }
     .step {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 0.5rem;
-        opacity: 0.4;
+        gap: 0.6rem;
+        opacity: 0.3;
+        transition: opacity 0.5s ease;
     }
-    .step.active { opacity: 1; color: var(--primary); }
+    .step.active { opacity: 1; filter: drop-shadow(0 0 8px rgba(172,2,18,0.15)); }
     .step-circle {
-        width: 32px; height: 32px;
+        width: 36px; height: 36px;
         border-radius: 50%;
-        background: #e2e8f0;
+        background: #f1f5f9;
         display: flex; align-items: center; justify-content: center;
-        font-weight: 800; font-size: 0.9rem;
+        font-weight: 900; font-size: 1rem;
+        border: 2px solid #e2e8f0;
     }
-    .step.active .step-circle { background: var(--primary); color: white; box-shadow: 0 0 15px rgba(172,2,18,0.3); }
+    .step.active .step-circle { 
+        background: var(--primary); 
+        color: white; 
+        border-color: var(--primary);
+        box-shadow: 0 4px 15px rgba(172,2,18,0.3); 
+    }
+    .step-label { font-size: 0.85rem; font-weight: 800; letter-spacing: -0.02em; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -447,6 +464,7 @@ with tabs[1]:
             st.markdown("</div>", unsafe_allow_html=True)
 
 # --- TAB 3: 데이터 교정 (Data Correction) ---
+# --- TAB 3: 데이터 교정 (Data Correction) ---
 with tabs[2]:
     st.session_state.current_step = 3
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -508,16 +526,18 @@ with tabs[3]:
     if 'settlement_df' in st.session_state and st.session_state.settlement_df is not None:
         sdf = st.session_state.settlement_df
         st.markdown("<div class='m-grid'>", unsafe_allow_html=True)
-        st.markdown(f"<div class='m-card'><div class='m-label'>총 정산 대상 금액</div><div class='m-value'>{sdf['집행 금액'].sum():,.0f}원</div></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='m-card'><div class='m-label'>총 NET가</div><div class='m-value'>{sdf['NET가'].sum():,.0f}원</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>총 정산 대상 금액</div><div class='m-value'>{sdf['집행 금액'].sum():,.0f}원</div><div class='m-status'>💰 Settlement Base</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='m-card'><div class='m-label'>총 NET가</div><div class='m-value'>{sdf['NET가'].sum():,.0f}원</div><div class='m-status'>📉 DMP Net Price</div></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("#### 📑 매체/DMP별 정산 상세 내역")
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='header-text'>📑 매체/DMP별 정산 상세 내역</div>", unsafe_allow_html=True)
         pivot_sdf = sdf.pivot_table(index=['매체', 'DMP종류'], values=['집행 금액', 'NET가'], aggfunc='sum').reset_index()
         st.dataframe(pivot_sdf, use_container_width=True)
         
-        with st.expander("📄 전체 RAW 정산 데이터"):
+        with st.expander("🔍 전체 RAW 정산 데이터 확인"):
             st.dataframe(sdf, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 # --- TAB 5: 리포트 빌더 (Report Builder) ---
