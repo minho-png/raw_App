@@ -3,11 +3,16 @@ import chardet
 import numpy as np
 
 def parse_naver_date(date_str):
-    """'2026.02.24.' -> '2026-02-24'"""
+    """'2026.02.24.' or '2026.02.24' -> datetime"""
     try:
         if isinstance(date_str, str):
-            clean_date = date_str.strip('.')
-            dt = pd.to_datetime(clean_date, format='%Y.%m.%d')
+            # Clean possible dots or spaces
+            clean_date = date_str.strip().strip('.')
+            # Handle 2026.02.24 style
+            dt = pd.to_datetime(clean_date, format='%Y.%m.%d', errors='coerce')
+            if pd.isna(dt):
+                # Fallback to general parser
+                dt = pd.to_datetime(clean_date, errors='coerce')
             return dt
         return date_str
     except Exception:
@@ -48,9 +53,19 @@ def merge_raw_data(dfs):
     if not dfs:
         return pd.DataFrame()
     combined_df = pd.concat(dfs, ignore_index=True)
+    
+    # Handle Naver GFA specific '기간' column -> '날짜'
+    if '기간' in combined_df.columns and '날짜' not in combined_df.columns:
+        combined_df = combined_df.rename(columns={'기간': '날짜'})
+    
     if '날짜' in combined_df.columns:
         combined_df['dt'] = combined_df['날짜'].apply(parse_naver_date)
+        # Drop rows where date parsing failed
+        combined_df = combined_df.dropna(subset=['dt'])
         combined_df = combined_df.sort_values('dt').drop('dt', axis=1)
+        # Final Format for consistency: YYYY-MM-DD string
+        combined_df['날짜'] = combined_df['날짜'].apply(parse_naver_date).dt.strftime('%Y-%m-%d')
+        
     return combined_df
 
 def detect_anomalies(df, threshold=2.0):
