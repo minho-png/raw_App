@@ -32,6 +32,15 @@ def get_jinja_env():
     env.filters['format_cell'] = format_cell
     return env
 
+def safe_date_str(val):
+    """Converts any date/datetime to YYYY-MM-DD string for JSON serialization."""
+    try:
+        if hasattr(val, 'strftime'):
+            return val.strftime('%Y-%m-%d')
+        return str(val)[:10]
+    except:
+        return str(val)
+
 def select_optimal_columns(df):
     """
     데이터프레임의 컬럼을 분석하여 리포트용 최적의 컬럼 리스트와 정렬 순서를 반환.
@@ -62,7 +71,7 @@ def calculate_performance_indicators(df):
 
 # --- Report Generators ---
 
-def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=None, theme_color="#AC0212", logo_url=None, selected_cols=None, insights=None, show_trend_chart=True, show_media_chart=True, show_creative_chart=True, show_placement_chart=True):
+def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=None, theme_color="#AC0212", logo_url=None, selected_cols=None, insights=None, show_trend_chart=True, show_media_chart=True, show_creative_chart=True, show_placement_chart=True, table_group_by=None):
     df_perf = calculate_performance_indicators(df)
     summary = {
         'total_imp': df_perf['노출'].sum() if '노출' in df_perf.columns else 0,
@@ -71,12 +80,17 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=N
         'avg_ctr': (df_perf['클릭'].sum() / df_perf['노출'].sum() * 100) if '노출' in df_perf.columns and df_perf['노출'].sum() > 0 else 0
     }
     
-    # Trend & Media Data
+    # Trend & Media Data - dates converted to strings for JSON safety
     trend_data = {'labels': [], 'imp': [], 'click': [], 'ctr': []}
     if '날짜' in df_perf.columns:
         daily = df_perf.groupby('날짜').agg({'노출':'sum', '클릭':'sum', '집행 금액':'sum'}).reset_index().sort_values('날짜')
         daily['CTR'] = (daily['클릭'] / daily['노출'] * 100).fillna(0)
-        trend_data = {'labels': daily['날짜'].tolist(), 'imp': daily['노출'].tolist(), 'click': daily['클릭'].tolist(), 'ctr': daily['CTR'].tolist()}
+        trend_data = {
+            'labels': [safe_date_str(d) for d in daily['날짜'].tolist()],
+            'imp': daily['노출'].tolist(),
+            'click': daily['클릭'].tolist(),
+            'ctr': daily['CTR'].tolist()
+        }
         
     media_data = {'labels': [], 'values': []}
     if '매체' in df_perf.columns:
@@ -93,8 +107,28 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=N
         placement_share = df_perf.groupby('지면')['집행 금액'].sum().reset_index()
         placement_data = {'labels': placement_share['지면'].tolist(), 'values': placement_share['집행 금액'].tolist()}
 
+    # Table: optionally group by a dimension before rendering
     table_cols = selected_cols if selected_cols else select_optimal_columns(df_perf)
-    table_data = df_perf[table_cols].to_dict('records')
+    if table_group_by and table_group_by in df_perf.columns:
+        grp_metrics = {c: 'sum' for c in ['노출', '클릭', '집행 금액'] if c in df_perf.columns}
+        grp_keys = [table_group_by]
+        for extra in [c for c in table_cols if c != table_group_by and c not in grp_metrics]:
+            if extra in df_perf.columns:
+                grp_keys.append(extra)
+        df_table = df_perf.groupby(list(dict.fromkeys(grp_keys))).agg(grp_metrics).reset_index()
+        df_table = calculate_performance_indicators(df_table)
+        avail_cols = [c for c in table_cols if c in df_table.columns]
+        table_data = df_table[avail_cols].to_dict('records')
+        table_cols = avail_cols
+    else:
+        table_data = df_perf[[c for c in table_cols if c in df_perf.columns]].to_dict('records')
+        table_cols = [c for c in table_cols if c in df_perf.columns]
+    
+    # Convert any date objects in table_data to strings
+    for row in table_data:
+        for k, v in row.items():
+            if hasattr(v, 'strftime'):
+                row[k] = safe_date_str(v)
     
     env = get_jinja_env()
     template = env.get_template('report_template.html')
@@ -108,7 +142,7 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=N
         show_creative_chart=show_creative_chart, show_placement_chart=show_placement_chart
     )
 
-def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리포트", theme_color="#AC0212", logo_url="", selected_cols=None, insights=None, target_cpc=0, target_ctr=0, show_trend_chart=True, show_media_chart=True, show_creative_chart=True, show_placement_chart=True):
+def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리포트", theme_color="#AC0212", logo_url="", selected_cols=None, insights=None, target_cpc=0, target_ctr=0, show_trend_chart=True, show_media_chart=True, show_creative_chart=True, show_placement_chart=True, table_group_by=None):
     from logic import calculate_budget_metrics, calculate_pacing, prepare_daily_accumulation
     
     df_perf = calculate_performance_indicators(df)
@@ -128,18 +162,25 @@ def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리
         'target_cpc': target_cpc,
         'target_ctr': target_ctr,
         'ctr_achievement': (avg_ctr / target_ctr * 100) if target_ctr > 0 else 0,
-        'cpc_achievement': (target_cpc / avg_cpc * 100) if target_cpc > 0 and avg_cpc > 0 else 0, # Higher is better for CPC efficiency
+        'cpc_achievement': (target_cpc / avg_cpc * 100) if target_cpc > 0 and avg_cpc > 0 else 0,
         'active': target_cpc > 0 or target_ctr > 0
     }
 
-    # Daily Chart Data (Spend vs CTR)
+    # Daily Chart Data - dates converted to strings for JSON safety
     daily_trend = {'labels': [], 'spend': [], 'ctr': []}
     if '날짜' in df_perf.columns:
-         daily = df_perf.groupby('날짜').agg({'집행 금액':'sum', '노출':'sum', '클릭':'sum'}).reset_index().sort_values('날짜')
-         daily['CTR'] = (daily['클릭'] / daily['노출'] * 100).fillna(0)
-         daily_trend = {'labels': daily['날짜'].tolist(), 'spend': daily['집행 금액'].tolist(), 'ctr': daily['CTR'].tolist()}
+        daily = df_perf.groupby('날짜').agg({'집행 금액':'sum', '노출':'sum', '클릭':'sum'}).reset_index().sort_values('날짜')
+        daily['CTR'] = (daily['클릭'] / daily['노출'] * 100).fillna(0)
+        daily_trend = {
+            'labels': [safe_date_str(d) for d in daily['날짜'].tolist()],
+            'spend': daily['집행 금액'].tolist(),
+            'ctr': daily['CTR'].tolist()
+        }
 
-    acc_data = {'labels': [d for d in acc_df['날짜']] if not acc_df.empty else [], 'values': acc_df['누적 집행 금액'].tolist() if not acc_df.empty else []}
+    acc_data = {
+        'labels': [safe_date_str(d) for d in acc_df['날짜']] if not acc_df.empty else [],
+        'values': acc_df['누적 집행 금액'].tolist() if not acc_df.empty else []
+    }
     
     summary = {
         'total_imp': total_imp,
@@ -167,8 +208,29 @@ def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리
         placement_summary = df_perf.groupby('지면')['집행 금액'].sum().reset_index()
         placement_data = {'labels': placement_summary['지면'].tolist(), 'values': placement_summary['집행 금액'].tolist()}
 
+    # Table: optionally group by dimension
     table_cols = selected_cols if selected_cols else select_optimal_columns(df_perf)
-    table_data = df_perf[table_cols].sort_values('날짜', ascending=False).to_dict('records') if '날짜' in table_cols else df_perf[table_cols].to_dict('records')
+    if table_group_by and table_group_by in df_perf.columns:
+        grp_metrics = {c: 'sum' for c in ['노출', '클릭', '집행 금액'] if c in df_perf.columns}
+        grp_keys = [table_group_by]
+        for extra in [c for c in table_cols if c != table_group_by and c not in grp_metrics]:
+            if extra in df_perf.columns:
+                grp_keys.append(extra)
+        df_table = df_perf.groupby(list(dict.fromkeys(grp_keys))).agg(grp_metrics).reset_index()
+        df_table = calculate_performance_indicators(df_table)
+        avail_cols = [c for c in table_cols if c in df_table.columns]
+        table_data = df_table[avail_cols].to_dict('records')
+        table_cols = avail_cols
+    else:
+        avail_cols = [c for c in table_cols if c in df_perf.columns]
+        table_data = df_perf[avail_cols].sort_values('날짜', ascending=False).to_dict('records') if '날짜' in avail_cols else df_perf[avail_cols].to_dict('records')
+        table_cols = avail_cols
+    
+    # Coerce any date objects in table_data to strings
+    for row in table_data:
+        for k, v in row.items():
+            if hasattr(v, 'strftime'):
+                row[k] = safe_date_str(v)
 
     env = get_jinja_env()
     template = env.get_template('daily_report_template.html')

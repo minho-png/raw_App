@@ -687,6 +687,11 @@ with tabs[4]:
             show_media_chart = st.checkbox("🍩 매체별 비중 차트", value=True, key="opt_media")
             show_creative_chart = st.checkbox("🖼️ 소재별 비중 차트", value=True, key="opt_creative")
             show_placement_chart = st.checkbox("📱 지면별 비중 차트", value=True, key="opt_placement")
+            st.markdown("---")
+            st.markdown("**5. 리포트 표 그룹 기준**")
+            groupable_dims = [c for c in ['날짜', '지면', '소재', '매체', 'DMP종류'] if c in df.columns]
+            table_group_by_raw = st.selectbox("표를 ___ 기준으로 집계", ["집계 안함 (원본)"] + groupable_dims, key="tbl_grp_sel")
+            table_group_by = None if table_group_by_raw == "집계 안함 (원본)" else table_group_by_raw
 
         st.markdown("**5. 전문가 운영 인사이트**")
         op_insights = st.text_area("인사이트를 입력하세요.", placeholder="리포트의 최상단에 강조되어 표시됩니다.", height=100)
@@ -704,7 +709,8 @@ with tabs[4]:
                         selected_cols=final_cols, insights=op_insights,
                         target_cpc=t_cpc, target_ctr=t_ctr,
                         show_trend_chart=show_trend_chart, show_media_chart=show_media_chart,
-                        show_creative_chart=show_creative_chart, show_placement_chart=show_placement_chart
+                        show_creative_chart=show_creative_chart, show_placement_chart=show_placement_chart,
+                        table_group_by=table_group_by
                     )
                 else:
                     if '매체' in selected_dims and '소재' in selected_dims:
@@ -718,7 +724,8 @@ with tabs[4]:
                         st.session_state.html_report = generate_premium_html(
                             df, title=f"{cfg['name']} 최종 성과 보고서", selected_cols=final_cols, insights=op_insights,
                             show_trend_chart=show_trend_chart, show_media_chart=show_media_chart,
-                            show_creative_chart=show_creative_chart, show_placement_chart=show_placement_chart
+                            show_creative_chart=show_creative_chart, show_placement_chart=show_placement_chart,
+                            table_group_by=table_group_by
                         )
                 
                 st.success("고급 리포트 생성이 완료되었습니다!")
