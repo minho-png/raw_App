@@ -503,7 +503,7 @@ with tabs[3]:
     # Filtering for settlement
     sc1, sc2, sc3 = st.columns([2, 2, 1])
     with sc1:
-        s_camp_list, _ = db_manager.list_campaigns()
+        s_camp_list, _ = st.session_state.db_manager.list_campaigns()
         selected_s_camp = st.selectbox("정산 캠페인 선택", ["선택 안함"] + s_camp_list, key="settle_camp_select")
     with sc2:
         today = datetime.now()
@@ -516,7 +516,7 @@ with tabs[3]:
     if fetch_settle and selected_s_camp != "선택 안함":
         start_d = s_date_range[0]
         end_d = s_date_range[1] if len(s_date_range) > 1 else start_d
-        s_df, msg = db_manager.get_settlement_data(selected_s_camp, start_d, end_d)
+        s_df, msg = st.session_state.db_manager.get_settlement_data(selected_s_camp, start_d, end_d)
         
         if s_df is not None and not s_df.empty:
             st.session_state.settlement_df = s_df
@@ -555,7 +555,7 @@ with tabs[4]:
         st.markdown("<div class='header-text'>🎯 캠페인 성과 벤치마킹 설정</div>", unsafe_allow_html=True)
         
         t_col1, t_col2 = st.columns(2)
-        existing_targets = db_manager.get_campaign_targets(selected_camp) if selected_camp != "선택 안함" else None
+        existing_targets = st.session_state.db_manager.get_campaign_targets(selected_camp) if selected_camp != "선택 안함" else None
         d_cpc = existing_targets.get('target_cpc', 0) if existing_targets else 0
         d_ctr = existing_targets.get('target_ctr', 0.0) if existing_targets else 0.0
 
@@ -564,7 +564,7 @@ with tabs[4]:
         
         if st.button("목표치 저장 및 적용", use_container_width=True):
             if selected_camp != "선택 안함":
-                success, msg = db_manager.save_campaign_targets(selected_camp, {'target_cpc': t_cpc, 'target_ctr': t_ctr})
+                success, msg = st.session_state.db_manager.save_campaign_targets(selected_camp, {'target_cpc': t_cpc, 'target_ctr': t_ctr})
                 if success: st.success(f"[{selected_camp}] 목표달성률 기준이 업데이트되었습니다.")
                 else: st.error(msg)
             else: st.warning("캠페인을 선택해주세요.")
