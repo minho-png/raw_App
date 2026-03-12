@@ -328,10 +328,13 @@ with tabs[2]:
         v1, v2 = st.columns([2, 1])
         with v1:
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            trend_df = df.groupby('날짜').agg({'집행 금액': 'sum', '클릭': 'sum'}).reset_index()
-            fig = px.area(trend_df, x='날짜', y='집행 금액', title="Spending Trend")
-            fig.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig, use_container_width=True)
+            if '날짜' in df.columns and not df.empty:
+                trend_df = df.groupby('날짜').agg({'집행 금액': 'sum', '클릭': 'sum'}).reset_index()
+                fig = px.area(trend_df, x='날짜', y='집행 금액', title="Spending Trend")
+                fig.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("표시할 트렌드 데이터가 없습니다. 날짜 정보가 포함된 파일을 업로드했는지 확인하세요.")
             st.markdown("</div>", unsafe_allow_html=True)
         
         with v2:
