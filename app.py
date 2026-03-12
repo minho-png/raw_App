@@ -133,8 +133,6 @@ with tabs[0]:
     st.markdown("<div class='header-text'>📂 캠페인 선택 및 관리</div>", unsafe_allow_html=True)
     
     # Campaign List Refresh
-    camp_list, _ = st.session_state.db_manager.list_campaign_campaigns() if hasattr(st.session_state.db_manager, 'list_campaigns') else ([], "")
-    # Wait, I just named it list_campaigns in database_manager.py
     camp_list, _ = st.session_state.db_manager.list_campaigns()
     
     c_col1, c_col2 = st.columns([2, 1])
