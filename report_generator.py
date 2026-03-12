@@ -11,6 +11,41 @@ try:
 except ImportError:
     PDF_SUPPORT = False
 
+def select_optimal_columns(df):
+    """
+    데이터프레임의 컬럼을 분석하여 리포트용 최적의 컬럼 리스트와 정렬 순서를 반환.
+    데이터가 유효하지 않은(모든 값이 0인) 지표 컬럼은 자동으로 제외.
+    """
+    # 1. 제외할 컬럼 (보안 및 노이즈)
+    exclude = ['has_dmp', 'NET', 'NET가', '조회', 'db_created_at', 'db_campaign_name', '총 비용']
+    
+    # 2. 범주별 우선순위 정의 (Dimensions)
+    dimensions = ['날짜', '캠페인', '매체', '지면', '소재']
+    
+    # 3. 실제 존재하는 유효한 수치형 컬럼 필터링
+    useful_metrics = []
+    # Metrics/KPI candidate check
+    candidates = ['노출', '클릭', '집행 금액', 'CTR', 'CPC', 'CPM']
+    for c in candidates:
+        if c in df.columns and c not in exclude:
+            # Check if column has any non-zero values
+            try:
+                if (df[c] != 0).any():
+                    useful_metrics.append(c)
+            except:
+                useful_metrics.append(c) # Fallback to include if check fails
+    
+    # 4. 실제 존재하는 식별자 필터링
+    available_dims = [c for c in dimensions if c in df.columns and c not in exclude]
+    
+    # 기타 남은 유용한 컬럼들
+    known_cols = dimensions + candidates + exclude
+    others = [c for c in df.columns if c not in known_cols]
+    
+    # 5. 논리적 순서로 병합: 식별자 -> 유효 지표 -> 기타
+    final_cols = available_dims + useful_metrics + others
+    return final_cols
+
 def calculate_performance_indicators(df):
     """
     리포트용 성과 지표 계산: CTR, CPC, CPM.
@@ -104,7 +139,15 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=N
         # Fallback if file not found
         template = Environment().from_string("<html><body>Template not found</body></html>")
     
-    table_cols = [c for c in df_perf.columns if c not in ['has_dmp', '조회', 'NET', 'NET가']]
+    # Intelligent Column Selection
+    table_cols = select_optimal_columns(df_perf)
+    
+    # Sort data for better presentation (Date desc, then Exec Cost desc)
+    sort_cols = [c for c in ['날짜', '집행 금액'] if c in df_perf.columns]
+    sort_order = [False] * len(sort_cols) # Descending for both
+    if sort_cols:
+        df_perf = df_perf.sort_values(sort_cols, ascending=sort_order)
+        
     table_data = df_perf[table_cols].to_dict('records')
     
     html_content = template.render(
@@ -177,8 +220,14 @@ def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리
     except Exception:
         template = Environment().from_string("<html><body>Daily Template not found</body></html>")
     
-    table_cols = [c for c in df_perf.columns if c not in ['has_dmp', 'NET', 'NET가']]
-    table_data = df_perf.sort_values('날짜', ascending=False).to_dict('records')
+    # Intelligent Column Selection
+    table_cols = select_optimal_columns(df_perf)
+    
+    # Sort data (Date desc)
+    if '날짜' in df_perf.columns:
+        df_perf = df_perf.sort_values('날짜', ascending=False)
+        
+    table_data = df_perf[table_cols].to_dict('records')
     
     html_content = template.render(
         title=title,
