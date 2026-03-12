@@ -217,9 +217,19 @@ with tabs[0]:
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='header-text'>🎯 필터 및 집계 구조 설정</div>", unsafe_allow_html=True)
         # Rename for internal logic
         df_target = st.session_state.df_raw.rename(columns={'캠페인 이름': '캠페인', '게재 위치': '지면', '광고 소재 이름': '소재'})
-        cams = st.multiselect("캠페인 필터 선택", df_target['캠페인'].unique())
+        
+        f_col1, f_col2 = st.columns(2)
+        with f_col1:
+            cams = st.multiselect("캠페인 필터 선택", df_target['캠페인'].unique())
+        with f_col2:
+            group_options = ['날짜', '캠페인', '지면', '소재']
+            # Find available columns in the DF
+            available_groups = [c for c in group_options if c in df_target.columns]
+            group_cols = st.multiselect("데이터 집계 기준 (Group By)", available_groups, default=['날짜', '캠페인'])
+            st.caption("💡 '일일 운영' 분석을 사용하시려면 **'날짜'** 기준을 포함해 주세요.")
         
         if st.button("✨ 데이터 가공 시작 (Apply)", type="primary", use_container_width=True):
             df_work = df_target.copy()
@@ -229,9 +239,21 @@ with tabs[0]:
             for col in ['노출', '클릭', '총 비용']:
                 if col in df_work.columns: df_work[col] = df_work[col].apply(clean_numeric)
             
-            # Processing
+            # Processing (calculate individual costs)
             keywords = [k.strip() for k in dmp_input.split(',')]
             df_processed = calculate_metrics(df_work, base_fee, selected_media, keywords, include_vat)
+            
+            # Aggregation based on user choice
+            if group_cols:
+                # Group metrics appropriately
+                agg_dict = {
+                    '노출': 'sum',
+                    '클릭': 'sum',
+                    '집행 금액': 'sum'
+                }
+                # Keep only valid columns for grouping
+                actual_groups = [c for c in group_cols if c in df_processed.columns]
+                df_processed = df_processed.groupby(actual_groups).agg(agg_dict).reset_index()
             
             # Security Patch: NET 관련 컬럼 삭제
             cols_to_drop = [c for c in ['총 비용', 'has_dmp', 'NET', 'NET가'] if c in df_processed.columns]
