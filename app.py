@@ -23,6 +23,7 @@ st.set_page_config(
 
 # --- Premium Global Styling ---
 st.markdown("""
+<style>
     :root {
         --primary: #AC0212;
         --primary-soft: rgba(172, 2, 18, 0.1);
