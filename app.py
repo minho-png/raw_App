@@ -130,6 +130,50 @@ tabs = st.tabs(["📁 데이터 관리", "📈 일일 운영", "🏆 최종 성�
 # --- TAB 1: 데이터 관리 ---
 with tabs[0]:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='header-text'>📂 캠페인 선택 및 관리</div>", unsafe_allow_html=True)
+    
+    # Campaign List Refresh
+    camp_list, _ = st.session_state.db_manager.list_campaign_campaigns() if hasattr(st.session_state.db_manager, 'list_campaigns') else ([], "")
+    # Wait, I just named it list_campaigns in database_manager.py
+    camp_list, _ = st.session_state.db_manager.list_campaigns()
+    
+    c_col1, c_col2 = st.columns([2, 1])
+    with c_col1:
+        # Dropdown to select existing campaign
+        options = ["선택 안함"] + camp_list
+        selected_camp = st.selectbox("관리할 캠페인 선택", options, index=0)
+        
+        if selected_camp != "선택 안함" and (st.session_state.campaign_config['name'] != selected_camp):
+            cfg, _ = st.session_state.db_manager.get_campaign_config(selected_camp)
+            if cfg:
+                st.session_state.campaign_config = {
+                    "name": selected_camp,
+                    "budget": cfg.get("budget", 0),
+                    "start": pd.to_datetime(cfg.get("start")).date(),
+                    "end": pd.to_datetime(cfg.get("end")).date()
+                }
+                st.success(f"'{selected_camp}' 캠페인 정보 로드 완료")
+                st.rerun()
+
+    with c_col2:
+        # Toggle for new campaign creation
+        if st.checkbox("➕ 새 캠페인 생성하기"):
+            new_camp_name = st.text_input("새 캠페인 이름")
+            if st.button("생성 및 저장"):
+                if new_camp_name and new_camp_name not in camp_list:
+                    # Initialize with defaults
+                    new_cfg = {"name": new_camp_name, "budget": 0, "start": str(datetime.now().date()), "end": str(datetime.now().date())}
+                    st.session_state.db_manager.save_campaign_config(new_camp_name, new_cfg)
+                    st.session_state.campaign_config = {
+                        "name": new_camp_name, "budget": 0, "start": datetime.now().date(), "end": datetime.now().date()
+                    }
+                    st.success(f"'{new_camp_name}' 캠페인이 생성되었습니다.")
+                    st.rerun()
+                else:
+                    st.error("이름을 입력하거나 중복을 확인하세요.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("<div class='header-text'>📤 신규 데이터 업로드</div>", unsafe_allow_html=True)
     uploaded_files = st.file_uploader("result.csv 파일들을 선택하세요", type=['csv'], accept_multiple_files=True, key="uploader_main")
     
@@ -155,33 +199,22 @@ with tabs[0]:
             
         with col_s2:
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("<div class='header-text'>💰 캠페인 예산 관리</div>", unsafe_allow_html=True)
-            c_name = st.text_input("캠페인명", value=st.session_state.campaign_config['name'])
+            st.markdown("<div class='header-text'>💰 예산 및 기간 설정</div>", unsafe_allow_html=True)
             
-            # Load config from DB
-            if st.button("🔍 DB 예산 정보 로드"):
-                cfg, msg = st.session_state.db_manager.get_campaign_config(c_name)
-                if cfg:
-                    st.session_state.campaign_config = {
-                        "name": c_name,
-                        "budget": cfg.get("budget", 0),
-                        "start": pd.to_datetime(cfg.get("start")).date(),
-                        "end": pd.to_datetime(cfg.get("end")).date()
-                    }
-                    st.success("Loaded config from DB")
-                    st.rerun()
-                else: st.warning(msg)
-
+            # Show current selected campaign name (Read-only for consistency)
+            st.info(f"현재 선택된 캠페인: **{st.session_state.campaign_config['name']}**")
+            
             c_budget = st.number_input("총 예산 (원)", value=float(st.session_state.campaign_config['budget']), step=1000000.0)
             c_start = st.date_input("시작일", value=st.session_state.campaign_config['start'])
             c_end = st.date_input("종료일", value=st.session_state.campaign_config['end'])
             
-            if st.button("💾 예산 정보 DB 저장"):
+            if st.button("💾 예산 정보 업데이트 (DB)"):
+                c_name = st.session_state.campaign_config['name']
                 config = {"name": c_name, "budget": c_budget, "start": str(c_start), "end": str(c_end)}
                 success, msg = st.session_state.db_manager.save_campaign_config(c_name, config)
                 if success: 
                     st.session_state.campaign_config = {"name": c_name, "budget": c_budget, "start": c_start, "end": c_end}
-                    st.success("캠페인 설정 저장 완료")
+                    st.success("캠페인 예산 정보가 업데이트되었습니다.")
                 else: st.error(msg)
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -331,7 +364,8 @@ with tabs[3]:
             st.download_button("📥 Master Excel 다운로드", data=output.getvalue(), file_name="Master_Data.xlsx")
         with c2:
             if st.button("💾 Cloud DB에 결과 저장"):
-                success, msg = st.session_state.db_manager.save_data(st.session_state.processed_df)
+                c_name = st.session_state.campaign_config['name']
+                success, msg = st.session_state.db_manager.save_data(st.session_state.processed_df, campaign_name=c_name)
                 if success: st.success(msg)
                 else: st.error(msg)
         with c3:

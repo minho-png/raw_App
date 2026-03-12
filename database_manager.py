@@ -35,12 +35,12 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Connection failed: {str(e)}"
 
-    def save_data(self, df, collection_name="raw_master_results"):
+    def save_data(self, df, campaign_name=None, collection_name="raw_master_results"):
         if self.db is None:
             return False, "Database not connected"
         
         try:
-            # Add a timestamp to the data
+            # Add a timestamp and campaign identifier to the data
             df_to_save = df.copy()
             
             # Security Patch: NET 관련 정보 명시적 삭제
@@ -49,6 +49,8 @@ class DatabaseManager:
                 df_to_save = df_to_save.drop(columns=cols_to_drop)
                 
             df_to_save['db_created_at'] = datetime.now()
+            if campaign_name:
+                df_to_save['db_campaign_name'] = campaign_name
             
             # Convert to dictionary records
             records = df_to_save.to_dict('records')
@@ -119,6 +121,17 @@ class DatabaseManager:
             return None, "Config not found"
         except Exception as e:
             return None, f"Failed to fetch campaign config: {str(e)}"
+
+    def list_campaigns(self):
+        if self.db is None:
+            return [], "Database not connected"
+        try:
+            collection = self.db["campaign_configs"]
+            cursor = collection.find({}, {"campaign_name": 1})
+            campaigns = [doc["campaign_name"] for doc in cursor]
+            return sorted(campaigns), "Campaigns listed"
+        except Exception as e:
+            return [], f"Failed to list campaigns: {str(e)}"
 
     def calculate_growth_metrics(self, current_df, historical_df=None):
         """Calculate WoW (Week-over-Week) growth rates"""
