@@ -94,11 +94,14 @@ def generate_premium_html(df, title="GFA 광고 성과 리포트", growth_data=N
         trend_data = {'labels': [], 'imp': [], 'click': [], 'ctr': []}
         
     # 매체별 비중
-    media_share = df_perf.groupby('매체')['집행 금액'].sum().reset_index()
-    media_data = {
-        'labels': media_share['매체'].tolist(),
-        'values': media_share['집행 금액'].tolist()
-    }
+    if '매체' in df_perf.columns and '집행 금액' in df_perf.columns:
+        media_share = df_perf.groupby('매체')['집행 금액'].sum().reset_index()
+        media_data = {
+            'labels': media_share['매체'].tolist(),
+            'values': media_share['집행 금액'].tolist()
+        }
+    else:
+        media_data = {'labels': [], 'values': []}
     
     # 3.1 DMP 효율 비교 데이터
     dmp_comparison = {}
@@ -186,11 +189,15 @@ def generate_daily_report_html(df, campaign_config, title="GFA 일일 운영 리
         'avg_ctr': (df_perf['클릭'].sum() / df_perf['노출'].sum() * 100) if df_perf['노출'].sum() > 0 else 0
     }
     
-    media_share = df_perf.groupby('매체')['집행 금액'].sum().reset_index()
-    media_data = {
-        'labels': media_share['매체'].tolist(),
-        'values': media_share['집행 금액'].tolist()
-    }
+    if '매체' in df_perf.columns and '집행 금액' in df_perf.columns:
+        media_share = df_perf.groupby('매체')['집행 금액'].sum().reset_index()
+        media_data = {
+            'labels': media_share['매체'].tolist(),
+            'values': media_share['집행 금액'].tolist()
+        }
+    else:
+        media_data = {'labels': [], 'values': []}
+
     
     acc_data = {
         'labels': [d.strftime('%m-%d') for d in acc_df['날짜']] if not acc_df.empty else [],
