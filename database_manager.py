@@ -103,12 +103,21 @@ class DatabaseManager:
             # 기본 쿼리: 캠페인명 기준
             query = {"db_campaign_name": campaign_name}
             
-            # 기간 필터 추가
+            # 기간 필터 추가 (datetime 객체 기준으로 통일)
             if start_date and end_date:
-                query["날짜"] = {
-                    "$gte": start_date if isinstance(start_date, str) else start_date.strftime("%Y-%m-%d"),
-                    "$lte": end_date if isinstance(end_date, str) else end_date.strftime("%Y-%m-%d")
-                }
+                from datetime import datetime as dt
+                # Convert incoming date params to datetime if they're strings or date objects
+                if isinstance(start_date, str):
+                    start_dt = dt.strptime(start_date, "%Y-%m-%d")
+                else:
+                    start_dt = dt.combine(start_date, dt.min.time())
+                    
+                if isinstance(end_date, str):
+                    end_dt = dt.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+                else:
+                    end_dt = dt.combine(end_date, dt.max.time())
+                
+                query["날짜"] = {"$gte": start_dt, "$lte": end_dt}
             
             cursor = collection.find(query)
             df = pd.DataFrame(list(cursor))
