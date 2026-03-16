@@ -48,12 +48,11 @@ import { saveCampaignAction, deleteCampaignAction } from "@/server/actions/campa
 import { CalculationService } from "@/services/calculationService";
 
 export const ReportCenter: React.FC = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab } = useCampaignStore();
   const selectedCampaign = campaigns.find(c => c.campaign_id === selectedCampaignId);
   
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
   const [reportType, setReportType] = useState('daily');
-  const [activeTab, setActiveTab] = useState('upload');
   const [uploadStep, setUploadStep] = useState<'config' | 'mapping' | 'setup' | 'complete'>('config');
   const [activeMedia, setActiveMedia] = useState<MediaProvider>('네이버GFA');
   const [groupByColumns, setGroupByColumns] = useState<string[]>([]);
@@ -251,6 +250,18 @@ export const ReportCenter: React.FC = () => {
                         <FileUploader 
                           onAnalysisComplete={(data) => {
                             setRawParsedData(data);
+                            // Auto-mapping for NaverGFA
+                            if (data.length > 0) {
+                              const headers = Object.keys(data[0]);
+                              const mapping: Record<string, string> = { ...columnMapping };
+                              if (headers.includes('기간')) mapping.date = '기간';
+                              if (headers.includes('광고 그룹 이름')) mapping.ad_group = '광고 그룹 이름';
+                              if (headers.includes('클릭')) mapping.clicks = '클릭';
+                              if (headers.includes('노출')) mapping.impressions = '노출';
+                              if (headers.includes('총 비용')) mapping.supply_value = '총 비용';
+                              if (headers.includes('캠페인')) mapping.excel_campaign = '캠페인';
+                              setColumnMapping(mapping);
+                            }
                             setUploadStep('mapping');
                           }} 
                           overrides={{ media: '네이버GFA', group_by_columns: groupByColumns }}

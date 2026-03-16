@@ -51,13 +51,17 @@ export class CalculationService {
       if (columnMapping.clicks && currentCols.includes(columnMapping.clicks)) renameObj[columnMapping.clicks] = 'clicks';
       if (columnMapping.supply_value && currentCols.includes(columnMapping.supply_value)) renameObj[columnMapping.supply_value] = 'supply_value';
     } else {
-      // Automatic fallback
+      // Automatic fallback (including NaverGFA specific headers)
       const columnMap: Record<string, string> = {
         '날짜': 'date_raw',
+        '기간': 'date_raw', // NaverGFA
         '광고 그룹': 'ad_group_name',
+        '광고 그룹 이름': 'ad_group_name', // NaverGFA
         '노출': 'impressions',
         '클릭': 'clicks',
-        '집행 금액(VAT 별도)': 'supply_value'
+        '집행 금액(VAT 별도)': 'supply_value',
+        '총 비용': 'supply_value', // NaverGFA
+        '캠페인': 'excel_campaign_name' // NaverGFA
       };
       Object.keys(columnMap).forEach(key => {
         if (currentCols.includes(key)) {
@@ -83,8 +87,8 @@ export class CalculationService {
     }
 
     // 3. Total Commission Calculation
-    // Execution Amount = Supply Value / (1 - (Fee Rate / 100))
-    // We need to apply different fee rates per row if campaignConfigs is provided
+    // NaverGFA: Execution Amount = (Supply Value / 1.1) / (1 - (Fee Rate / 100))
+    // Others: Execution Amount = Supply Value / (1 - (Fee Rate / 100))
     const executionAmounts: number[] = [];
     const netAmounts: number[] = [];
 
@@ -93,14 +97,19 @@ export class CalculationService {
       const excelCampName = row.excel_campaign_name;
       const config = campaignConfigs && excelCampName ? campaignConfigs[excelCampName] : null;
       
+      const rowMedia = config ? config.media : media;
       const rowFeeRate = config ? config.fee_rate : totalFeeRate;
       const feeDecimal = rowFeeRate / 100;
       
-      const supplyVal = parseFloat(String(row.supply_value).replace(/,/g, '')) || 0;
-      const executionAmt = feeDecimal === 1 ? supplyVal : supplyVal / (1 - feeDecimal);
+      let supplyVal = parseFloat(String(row.supply_value).replace(/,/g, '')) || 0;
+      
+      // NaverGFA VAT logic: Divide by 1.1
+      const baseValue = (rowMedia === '네이버GFA') ? (supplyVal / 1.1) : supplyVal;
+      
+      const executionAmt = feeDecimal === 1 ? baseValue : baseValue / (1 - feeDecimal);
       
       executionAmounts.push(executionAmt);
-      netAmounts.push(supplyVal);
+      netAmounts.push(baseValue); // Net is usually VAT excluded
     });
 
     df.addColumn('execution_amount', executionAmounts, { inplace: true });

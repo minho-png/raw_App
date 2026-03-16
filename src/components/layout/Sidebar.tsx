@@ -94,6 +94,16 @@ export const Sidebar = () => {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      selectCampaign(camp.campaign_id);
+                      useCampaignStore.getState().setActiveTab('campaigns');
+                    }}
+                    className="p-1 hover:bg-white/20 rounded text-white/70 transition-colors"
+                  >
+                    <Settings size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
                       handleDeleteCampaign(camp.campaign_id);
                     }}
                     className="p-1 hover:bg-red-500/20 rounded text-red-400 transition-colors"
