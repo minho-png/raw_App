@@ -54,7 +54,7 @@ export const ReportCenter: React.FC = () => {
   
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
   const [reportType, setReportType] = useState('daily');
-  const [uploadStep, setUploadStep] = useState<'config' | 'mapping' | 'setup' | 'complete'>('config');
+  const [uploadStep, setUploadStep] = useState<'media' | 'config' | 'mapping' | 'setup' | 'complete'>('media');
   const [activeMedia, setActiveMedia] = useState<MediaProvider>('네이버GFA');
   const [groupByColumns, setGroupByColumns] = useState<string[]>([]);
   const [rawParsedData, setRawParsedData] = useState<any[]>([]);
@@ -233,73 +233,125 @@ export const ReportCenter: React.FC = () => {
         <div className="mt-8">
           <AnimatePresence mode="wait">
             <TabsContent value="upload" className="m-0 focus-visible:ring-0">
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }} 
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-8"
-              >
-                {uploadStep === 'config' && (
-                  <div className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8 flex flex-col items-center justify-center min-h-[300px]">
-                    <div className="text-center space-y-2">
-                      <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-2xl mx-auto mb-4">
-                        <Database size={32} />
-                      </div>
-                      <h3 className="text-2xl font-black text-slate-800 tracking-tight">1단계: RAW 데이터 업로드</h3>
-                      <div className="pt-2">
-                        {selectedCampaign ? (
-                          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 inline-block">
-                             <p className="text-sm font-bold text-blue-700">
-                               관리 대상: <span className="text-lg underline underline-offset-4">{selectedCampaign.campaign_name}</span>
-                             </p>
-                             <p className="text-[11px] text-blue-500/80 mt-1 font-medium italic">사이드바에서 선택된 통합 마스터 캠페인에 데이터가 등록됩니다.</p>
-                          </div>
-                        ) : (
-                          <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 inline-block">
-                            <p className="text-sm font-bold text-rose-600">
-                              먼저 왼쪽 사이드바에서 관리를 원하는 캠페인을 선택해주세요.
-                            </p>
-                          </div>
-                        )}
-                      </div>
+              <AnimatePresence mode="wait">
+                {uploadStep === 'media' && (
+                  <motion.div 
+                    key="media"
+                    initial={{ opacity: 0, y: 20 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="bg-white/40 backdrop-blur-md rounded-3xl p-12 border border-white/40 shadow-xl flex flex-col items-center justify-center text-center space-y-8"
+                  >
+                    <div className="w-16 h-16 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+                      <Layers size={32} />
+                    </div>
+                    <div className="space-y-2">
+                       <h3 className="text-2xl font-bold text-slate-800">1단계: 광고 매체 선택</h3>
+                       <p className="text-slate-500">업로드할 엑셀 파일의 광고 매체를 먼저 선택해 주세요.<br/>하나의 파일은 동일한 매체의 데이터로 구성되어야 합니다.</p>
                     </div>
 
-                    {selectedCampaign && (
-                      <div className="w-full max-w-md pt-4">
-                        <FileUploader 
-                          onAnalysisComplete={(data) => {
-                            setRawParsedData(data);
-                            // Auto-mapping for NaverGFA
-                            if (data.length > 0) {
-                              const headers = Object.keys(data[0]);
-                              const mapping: Record<string, string> = { ...columnMapping };
-                              if (headers.includes('기간')) mapping.date = '기간';
-                              if (headers.includes('광고 그룹 이름')) mapping.ad_group = '광고 그룹 이름';
-                              if (headers.includes('클릭')) mapping.clicks = '클릭';
-                              if (headers.includes('노출')) mapping.impressions = '노출';
-                              if (headers.includes('총 비용')) mapping.supply_value = '총 비용';
-                              if (headers.includes('캠페인')) mapping.excel_campaign = '캠페인';
-                              setColumnMapping(mapping);
-                            }
-                            setUploadStep('mapping');
-                          }} 
-                          overrides={{ media: '네이버GFA', group_by_columns: groupByColumns }}
-                          isSimpleButton={true}
-                        />
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-4xl">
+                      {[
+                        { id: '네이버GFA', name: '네이버 GFA', color: 'bg-green-500' },
+                        { id: '카카오Moment', name: '카카오 모먼트', color: 'bg-yellow-400' },
+                        { id: '구글Ads', name: '구글 Ads', color: 'bg-blue-500' },
+                        { id: '메타Ads', name: '메타 Ads', color: 'bg-blue-600' }
+                      ].map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            setActiveMedia(m.id as MediaProvider);
+                            setUploadStep('config');
+                          }}
+                          className={cn(
+                            "group relative overflow-hidden p-6 rounded-2xl border-2 transition-all duration-300 text-left",
+                            activeMedia === m.id 
+                              ? "border-blue-500 bg-blue-50 shadow-lg scale-[1.02]" 
+                              : "border-slate-100 bg-white hover:border-blue-200"
+                          )}
+                        >
+                          <div className={cn("w-2 h-2 rounded-full mb-3", m.color)} />
+                          <div className="font-bold text-slate-800">{m.name}</div>
+                          <div className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">Provider</div>
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {uploadStep === 'config' && (
+                  <motion.div 
+                    key="config"
+                    initial={{ opacity: 0, y: 20 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="space-y-6"
+                  >
+                    <div className="bg-white/40 backdrop-blur-md rounded-3xl p-12 border border-white/40 shadow-xl flex flex-col items-center justify-center text-center space-y-8">
+                       <div className="flex items-center justify-between w-full mb-4">
+                        <button 
+                          onClick={() => setUploadStep('media')}
+                          className="flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors"
+                        >
+                          <X size={20} />
+                          <span className="text-sm font-bold">이전 단계</span>
+                        </button>
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-600 border-none font-bold px-4 py-1">{activeMedia}</Badge>
                       </div>
-                    )}
-                  </div>
+
+                      <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-2xl mx-auto mb-2">
+                        <Database size={32} />
+                      </div>
+                      <h3 className="text-2xl font-black text-slate-800 tracking-tight">2단계: 원본 파일 업로드</h3>
+                      <p className="text-slate-500">선택하신 <span className="text-blue-600 font-bold">{activeMedia}</span> 리포트 원본 파일을 드래그하여 업로드해주세요.</p>
+
+                      {selectedCampaign ? (
+                        <div className="w-full max-w-xl">
+                          <FileUploader 
+                            onAnalysisComplete={async (data) => {
+                              setRawParsedData(data);
+                              if (data.length > 0) {
+                                const headers = Object.keys(data[0]);
+                                const mapping: Record<string, string> = {};
+                                if (activeMedia === '네이버GFA') {
+                                  if (headers.includes('기간')) mapping.date = '기간';
+                                  if (headers.includes('광고 그룹 이름')) mapping.ad_group = '광고 그룹 이름';
+                                  if (headers.includes('클릭')) mapping.clicks = '클릭';
+                                  if (headers.includes('노출')) mapping.impressions = '노출';
+                                  if (headers.includes('총 비용')) mapping.supply_value = '총 비용';
+                                  if (headers.includes('캠페인')) mapping.excel_campaign = '캠페인';
+                                }
+                                setColumnMapping(mapping);
+                              }
+                              setUploadStep('mapping');
+                            }} 
+                            overrides={{ media: activeMedia, group_by_columns: groupByColumns }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="bg-rose-50 border border-rose-100 rounded-2xl p-6 text-center">
+                          <p className="text-rose-600 font-bold">왼쪽 사이드바에서 마스터 캠페인을 먼저 선택해주세요.</p>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
                 )}
 
                 {uploadStep === 'mapping' && (
-                  <div className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8">
+                  <motion.div 
+                    key="mapping"
+                    initial={{ opacity: 0, y: 20 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8"
+                  >
                     <div className="flex items-center gap-4 border-b border-white/20 pb-6">
                       <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
                         <Eye size={24} />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold text-slate-800">2단계: 데이터 컬럼 매핑</h3>
-                        <p className="text-sm text-slate-500">엑셀의 어떤 항목이 시스템의 어떤 필드인지 지정해주세요.</p>
+                        <h3 className="text-xl font-bold text-slate-800">3단계: 데이터 컬럼 매핑</h3>
+                        <p className="text-sm text-slate-500">매체: <span className="font-bold text-blue-600">{activeMedia}</span> | 엑셀의 항목을 시스템 필드에 연결합니다.</p>
                       </div>
                     </div>
 
@@ -308,7 +360,7 @@ export const ReportCenter: React.FC = () => {
                         <Database size={14} />
                         데이터 미리보기 (상위 3개 행)
                       </div>
-                      <div className="overflow-x-auto rounded-lg border border-blue-200 bg-white">
+                      <div className="overflow-x-auto rounded-lg border border-blue-200 bg-white shadow-inner">
                         <table className="w-full text-[10px] text-slate-600">
                           <thead className="bg-blue-50 border-b border-blue-100">
                             <tr>
@@ -344,7 +396,7 @@ export const ReportCenter: React.FC = () => {
                             {field.label} {field.required && <span className="text-red-500">*</span>}
                           </Label>
                           <select 
-                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm"
                             value={columnMapping[field.key] || ''}
                             onChange={(e) => setColumnMapping(prev => ({ ...prev, [field.key]: e.target.value }))}
                           >
@@ -357,37 +409,30 @@ export const ReportCenter: React.FC = () => {
                       ))}
                     </div>
 
-                    <div className="flex gap-4 pt-4">
+                    <div className="flex gap-4 pt-4 border-t border-white/20">
                       <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('config')}>
                         이전 단계로
                       </Button>
                       <Button 
                         className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/20"
-                        disabled={!columnMapping.date || !columnMapping.excel_campaign || !columnMapping.ad_group || !columnMapping.supply_value}
                         onClick={() => {
-                          const campaignCol = columnMapping.excel_campaign;
-                          const uniqueCampaigns = Array.from(new Set(rawParsedData.map(row => String(row[campaignCol] || '')))).filter(Boolean);
-                          
+                          const excelCampCol = columnMapping.excel_campaign;
+                          if (!excelCampCol) {
+                            alert('캠페인 명(Excel) 컬럼을 지정해주세요.');
+                            return;
+                          }
+                          const uniqueCamps = Array.from(new Set(rawParsedData.map(r => r[excelCampCol])));
                           const initialConfigs: Record<string, any> = {};
-                          uniqueCampaigns.forEach(campName => {
-                            const existing = selectedCampaign?.sub_campaigns.find(s => s.excel_name === campName);
-                            if (existing) {
-                              initialConfigs[campName] = {
-                                media: existing.media,
-                                fee_rate: existing.fee_rate,
-                                budget: existing.budget,
-                                cpc_goal: existing.target_cpc || 0,
-                                ctr_goal: existing.target_ctr || 0
-                              };
-                            } else {
-                              initialConfigs[campName] = {
-                                media: '네이버GFA',
-                                fee_rate: 10,
-                                budget: 0,
-                                cpc_goal: 0,
-                                ctr_goal: 0
-                              };
-                            }
+                          uniqueCamps.forEach(campName => {
+                            if (!campName) return;
+                            const existing = selectedCampaign?.sub_campaigns?.find(s => s.excel_name === campName);
+                            initialConfigs[campName] = {
+                              media: activeMedia, 
+                              fee_rate: existing?.fee_rate || 10,
+                              budget: existing?.budget || 0,
+                              cpc_goal: existing?.target_cpc || 0,
+                              ctr_goal: existing?.target_ctr || 0
+                            };
                           });
                           
                           setExcelCampaignConfigs(initialConfigs);
@@ -397,19 +442,25 @@ export const ReportCenter: React.FC = () => {
                         다음 단계: 캠페인 상세 설정
                       </Button>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
 
                 {uploadStep === 'setup' && (
-                  <div className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8">
+                  <motion.div 
+                    key="setup"
+                    initial={{ opacity: 0, y: 20 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8"
+                  >
                     <div className="flex items-center gap-4 border-b border-white/20 pb-6">
                       <div className="w-12 h-12 bg-purple-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
                         <Settings size={24} />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold text-slate-800">3단계: 캠페인 상세 설정</h3>
+                        <h3 className="text-xl font-bold text-slate-800">4단계: 캠페인 상세 설정</h3>
                         <p className="text-sm text-slate-500">
-                          통합 대상: <span className="text-blue-600 font-bold">[{selectedCampaign?.campaign_name}]</span>
+                          통합 대상: <span className="text-blue-600 font-bold">[{selectedCampaign?.campaign_name}]</span> | 매체: <span className="font-bold text-blue-600">{activeMedia}</span>
                         </p>
                       </div>
                     </div>
@@ -427,20 +478,10 @@ export const ReportCenter: React.FC = () => {
                           
                           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">매체 선택</Label>
-                              <select 
-                                className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-blue-500"
-                                value={config.media}
-                                onChange={(e) => setExcelCampaignConfigs(prev => ({
-                                  ...prev,
-                                  [name]: { ...prev[name], media: e.target.value as MediaProvider }
-                                }))}
-                              >
-                                <option value="네이버GFA">네이버GFA</option>
-                                <option value="카카오Moment">카카오Moment</option>
-                                <option value="구글Ads">구글Ads</option>
-                                <option value="메타Ads">메타Ads</option>
-                              </select>
+                              <Label className="text-xs font-bold text-slate-500">매체 확인 (수정 불가)</Label>
+                              <div className="h-10 bg-slate-100/50 border border-slate-200 rounded-xl px-3 flex items-center text-xs text-slate-500 font-bold uppercase">
+                                {activeMedia}
+                              </div>
                             </div>
                             <div className="space-y-2">
                               <Label className="text-xs font-bold text-slate-500">수수료율 (%)</Label>
@@ -496,7 +537,7 @@ export const ReportCenter: React.FC = () => {
                               rawParsedData,
                               selectedCampaignId || 'UNASSIGNED',
                               activeMedia,
-                              10, // dummy default, overridden by rows
+                              10, 
                               groupByColumns,
                               columnMapping,
                               excelCampaignConfigs
@@ -504,13 +545,13 @@ export const ReportCenter: React.FC = () => {
 
                             // Update master campaign with these sub-campaign configs for persistence
                             if (selectedCampaign) {
-                              const updatedSubs = [...selectedCampaign.sub_campaigns];
+                              const updatedSubs = [...(selectedCampaign.sub_campaigns || [])];
                               Object.entries(excelCampaignConfigs).forEach(([name, cfg]: [string, any]) => {
                                 const idx = updatedSubs.findIndex(s => s.excel_name === name);
                                 if (idx > -1) {
                                   updatedSubs[idx] = { 
                                     ...updatedSubs[idx], 
-                                    media: cfg.media, 
+                                    media: activeMedia,
                                     fee_rate: cfg.fee_rate, 
                                     budget: cfg.budget,
                                     target_cpc: cfg.cpc_goal,
@@ -520,8 +561,8 @@ export const ReportCenter: React.FC = () => {
                                   updatedSubs.push({
                                     id: `SUB-${Math.floor(Math.random() * 1000)}`,
                                     excel_name: name,
-                                    media: cfg.media,
-                                    fee_rate: cfg.fee_rate,
+                                    media: activeMedia,
+                                    fee_rate: cfg.fee_rate, 
                                     budget: cfg.budget,
                                     target_cpc: cfg.cpc_goal,
                                     target_ctr: cfg.ctr_goal
@@ -553,30 +594,38 @@ export const ReportCenter: React.FC = () => {
                         최종 분석 및 저장
                       </Button>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
 
                 {uploadStep === 'complete' && (
-                  <div className="bg-white/40 backdrop-blur-md rounded-3xl p-12 border border-white/40 shadow-xl flex flex-col items-center justify-center text-center space-y-6">
+                  <motion.div 
+                    key="complete"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="bg-white/40 backdrop-blur-md rounded-3xl p-12 border border-white/40 shadow-xl flex flex-col items-center justify-center text-center space-y-6"
+                   >
                     <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex items-center justify-center shadow-lg">
                       <Check size={40} />
                     </div>
-                    <div>
-                      <h3 className="text-2xl font-bold text-slate-800">분석 완료 및 저장 성공!</h3>
-                      <p className="text-slate-500 mt-2">데이터가 성공적으로 처리되어 데이터베이스에 반영되었습니다.</p>
+                    <div className="space-y-2">
+                       <h3 className="text-3xl font-black text-slate-800">분석 완료!</h3>
+                       <p className="text-slate-500">데이터가 성공적으로 처리되어 데이터베이스에 반영되었습니다.</p>
                     </div>
                     <div className="flex gap-4 pt-4">
-                      <Button variant="outline" className="h-14 px-8 rounded-2xl font-bold" onClick={() => setUploadStep('config')}>
+                      <Button variant="outline" className="h-14 px-8 rounded-2xl font-bold" onClick={() => setUploadStep('media')}>
                         새로운 파일 업로드
                       </Button>
-                      <Button className="h-14 px-8 rounded-2xl font-bold bg-slate-900 text-white" onClick={() => setActiveTab('grid')}>
-                        결과 확인하기 (Grid)
+                      <Button className="h-14 px-8 rounded-2xl font-bold bg-slate-900 text-white" onClick={() => setActiveTab('report')}>
+                        리포트 확인하기
                       </Button>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
-                
-                {filteredData.length > 0 && (
+              </AnimatePresence>
+
+              {filteredData.length > 0 && (
+                <div className="mt-12 space-y-6">
                   <Card className="rounded-3xl border-white/40 bg-white/60 backdrop-blur-xl shadow-xl overflow-hidden border">
                     <CardHeader className="border-b border-slate-100/50 bg-white/20 px-8 py-6">
                       <div className="flex justify-between items-center">
@@ -683,8 +732,8 @@ export const ReportCenter: React.FC = () => {
                       )}
                     </CardContent>
                   </Card>
-                )}
-              </motion.div>
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="campaigns" className="m-0 focus-visible:ring-0">
