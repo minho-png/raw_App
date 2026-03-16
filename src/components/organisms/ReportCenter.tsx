@@ -348,7 +348,7 @@ export const ReportCenter: React.FC = () => {
                           const initialConfigs: Record<string, any> = {};
                           uniqueCampaigns.forEach(campName => {
                             initialConfigs[campName] = {
-                              system_name: campName, // Default to excel name
+                              system_name: '', // Force user to select from existing
                               media: '네이버GFA',
                               fee_rate: 10,
                               budget: 0,
@@ -389,16 +389,20 @@ export const ReportCenter: React.FC = () => {
                           
                           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                             <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">DB 저장용 캠페인명</Label>
-                              <Input 
-                                className="h-10 rounded-xl border-slate-200" 
+                              <Label className="text-xs font-bold text-slate-500">관리 캠페인 선택</Label>
+                              <select 
+                                className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-blue-500"
                                 value={config.system_name}
                                 onChange={(e) => setExcelCampaignConfigs(prev => ({
                                   ...prev,
                                   [name]: { ...prev[name], system_name: e.target.value }
                                 }))}
-                                placeholder="DB 관리용 이름 입력"
-                              />
+                              >
+                                <option value="" disabled>기존 캠페인 선택</option>
+                                {campaigns.map(c => (
+                                  <option key={c.campaign_id} value={c.campaign_id}>{c.campaign_name}</option>
+                                ))}
+                              </select>
                             </div>
                             <div className="space-y-2">
                               <Label className="text-xs font-bold text-slate-500">매체 선택</Label>
@@ -464,6 +468,11 @@ export const ReportCenter: React.FC = () => {
                       <Button 
                         className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/20"
                         onClick={async () => {
+                          const unmapped = Object.entries(excelCampaignConfigs).filter(([_, cfg]) => !cfg.system_name);
+                          if (unmapped.length > 0) {
+                            alert(`다음 엑셀 캠페인들에 대한 관리 캠페인을 선택해주세요: ${unmapped.map(([name]) => name).join(', ')}`);
+                            return;
+                          }
                           setIsProcessing(true);
                           try {
                             const processed = CalculationService.processWithDanfo(
