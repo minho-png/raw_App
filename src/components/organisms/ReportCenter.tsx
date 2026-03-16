@@ -60,6 +60,7 @@ export const ReportCenter: React.FC = () => {
   const [rawParsedData, setRawParsedData] = useState<any[]>([]);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [excelCampaignConfigs, setExcelCampaignConfigs] = useState<Record<string, {
+    system_name: string,
     media: MediaProvider,
     fee_rate: number,
     budget: number,
@@ -254,52 +255,6 @@ export const ReportCenter: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="space-y-4">
-                        <Label className="text-slate-700 font-bold ml-1">분석 대상 캠페인 선택</Label>
-                        <select 
-                          className="w-full h-[52px] bg-white border border-slate-200 rounded-2xl px-5 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
-                          value={selectedCampaignId || ''}
-                          onChange={(e) => selectCampaign(e.target.value)}
-                        >
-                          <option value="" disabled>등록된 캠페인 중 선택</option>
-                          {campaigns.map(c => (
-                            <option key={c.campaign_id} value={c.campaign_id}>{c.campaign_name}</option>
-                          ))}
-                        </select>
-                        <p className="text-[10px] text-blue-500 ml-1 font-medium">* 만약 캠페인이 없다면 '캠페인 관리' 탭에서 먼저 생성해주세요.</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <Layers size={16} className="text-blue-500" />
-                        <Label className="text-slate-700 font-bold">분석 기준 (동적 그룹바이)</Label>
-                      </div>
-                      <div className="flex flex-wrap gap-2.5 p-5 bg-slate-50/50 border border-slate-200/60 rounded-3xl">
-                        {['날짜', '광고 그룹', 'DMP', '소재', '캠페인'].map((col) => {
-                          const isSelected = groupByColumns.includes(col);
-                          return (
-                            <button
-                              key={col}
-                              onClick={() => {
-                                if (isSelected) {
-                                  setGroupByColumns(groupByColumns.filter(c => c !== col));
-                                } else {
-                                  setGroupByColumns([...groupByColumns, col]);
-                                }
-                              }}
-                              className={cn(
-                                "px-5 py-2.5 rounded-xl text-xs font-bold transition-all border",
-                                isSelected 
-                                  ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/20 scale-[1.02]" 
-                                  : "bg-white border-slate-200 text-slate-500 hover:border-blue-300"
-                              )}
-                            >
-                              {col}
-                            </button>
-                          );
-                        })}
-                      </div>
                     </div>
 
                     <FileUploader 
@@ -393,6 +348,7 @@ export const ReportCenter: React.FC = () => {
                           const initialConfigs: Record<string, any> = {};
                           uniqueCampaigns.forEach(campName => {
                             initialConfigs[campName] = {
+                              system_name: campName, // Default to excel name
                               media: '네이버GFA',
                               fee_rate: 10,
                               budget: 0,
@@ -431,7 +387,19 @@ export const ReportCenter: React.FC = () => {
                             <Badge variant="outline" className="bg-blue-50/50 text-blue-600 border-blue-100">분석 대상</Badge>
                           </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div className="space-y-2">
+                              <Label className="text-xs font-bold text-slate-500">DB 저장용 캠페인명</Label>
+                              <Input 
+                                className="h-10 rounded-xl border-slate-200" 
+                                value={config.system_name}
+                                onChange={(e) => setExcelCampaignConfigs(prev => ({
+                                  ...prev,
+                                  [name]: { ...prev[name], system_name: e.target.value }
+                                }))}
+                                placeholder="DB 관리용 이름 입력"
+                              />
+                            </div>
                             <div className="space-y-2">
                               <Label className="text-xs font-bold text-slate-500">매체 선택</Label>
                               <select 
