@@ -36,10 +36,10 @@ export class RepositoryService {
     }, new Map<string, { campaign_id: string; media: any; date: Date }>());
 
     // 2. Perform deletions for each unique combination found in the new data
-    // Optimizing by grouping by campaign and media if possible, but simplest is to delete by the combinations
     let totalDeleted = 0;
     
     // Using $or to delete all relevant records in one go
+    // Strict Unique Key: { campaign_id, media, date }
     const deleteFilters = Array.from(uniqueKeys.values()).map(k => ({
       campaign_id: k.campaign_id,
       media: k.media,
@@ -50,7 +50,7 @@ export class RepositoryService {
       $or: deleteFilters
     } as any);
     
-    totalDeleted = deleteResult.deletedCount;
+    totalDeleted = deleteResult.deletedCount || 0;
 
     // 3. Insert the new data
     const insertResult = await this.collection.insertMany(data);

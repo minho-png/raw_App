@@ -1,47 +1,45 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import { Sidebar } from '@/components/layout/Sidebar';
 import { ReportCenter } from '@/components/organisms/ReportCenter';
-import { BudgetStatus, PerformanceRecord } from '@/types';
+import { useCampaignStore } from '@/store/useCampaignStore';
 
-export default function DashboardPage() {
-  // Dummy data for initial display
-  const dummyStatus: BudgetStatus = {
-    spent: 4500000,
-    remaining: 5500000,
-    burn_rate: 45,
-    pacing_index: 98,
-    pacing_status: '정상'
-  };
+export default function DashboardRoot() {
+  const { setCampaigns } = useCampaignStore();
 
-  const dummyPerformance: PerformanceRecord[] = [
-    {
-      campaign_id: 'C001',
-      media: '네이버GFA',
-      date: new Date(),
-      ad_group_name: '[SKP] 관심사_리타겟팅',
-      impressions: 125000,
-      clicks: 1250,
-      cost: 1100000,
-      net_amount: 1000000,
-      execution_amount: 1111111,
-      dmp_type: 'SKP',
-      has_dmp: true
-    },
-    {
-      campaign_id: 'C001',
-      media: '네이버GFA',
-      date: new Date(),
-      ad_group_name: '[WIFI] 센텀시티_타겟',
-      impressions: 85000,
-      clicks: 980,
-      cost: 550000,
-      net_amount: 500000,
-      execution_amount: 555555,
-      dmp_type: 'WIFI',
-      has_dmp: true
-    }
-  ];
+  useEffect(() => {
+    // Initial mock campaigns
+    setCampaigns([
+      {
+        campaign_id: 'CAMP-001',
+        campaign_name: '네이버 GFA 3월 프로모션',
+        media: '네이버GFA',
+        total_budget: 15000000,
+        start_date: new Date('2026-03-01'),
+        end_date: new Date('2026-03-31'),
+        base_fee_rate: 10,
+        total_fee_rate: 12
+      },
+      {
+        campaign_id: 'CAMP-002',
+        campaign_name: '카카오 비즈보드 봄 시즌',
+        media: 'Kakao',
+        total_budget: 8000000,
+        start_date: new Date('2026-03-15'),
+        end_date: new Date('2026-04-15'),
+        base_fee_rate: 15,
+        total_fee_rate: 15
+      }
+    ]);
+  }, [setCampaigns]);
 
-  return <ReportCenter budgetStatus={dummyStatus} recentPerformance={dummyPerformance} />;
+  return (
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
+      <Sidebar />
+      <main className="flex-1 flex flex-col min-w-0 bg-[#f8fafc] overflow-y-auto">
+        <ReportCenter />
+      </main>
+    </div>
+  );
 }

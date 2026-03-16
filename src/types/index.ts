@@ -18,11 +18,11 @@ export interface PerformanceRecord {
   ad_group_name: string;
   impressions: number;
   clicks: number;
-  cost: number; // Raw cost from CSV
-  net_amount: number; // cost / 1.1
-  execution_amount: number; // net_amount / (1 - (total_fee_rate / 100))
-  dmp_type: string;
+  execution_amount: number; // 공급가액 / (1 - 수수료율)
+  net_amount: number;       // 실제 집행 순액
+  dmp_type: string;         // 추출된 DMP 종류 (SKP, KB 등)
   has_dmp: boolean;
+  cost: number;             // 집행 금액과 동일하거나 별도 집계용
   placement?: string;
   [key: string]: any; // Catch-all for other CSV columns
 }
