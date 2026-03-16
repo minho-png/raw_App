@@ -383,22 +383,25 @@ export const ReportCenter: React.FC = () => {
                       {Object.entries(excelCampaignConfigs).map(([name, config]) => (
                         <div key={name} className="bg-white/60 p-6 rounded-2xl border border-white/40 shadow-sm space-y-4">
                           <div className="flex items-center justify-between">
-                            <Label className="text-base font-bold text-blue-700">{name}</Label>
-                            <Badge variant="outline" className="bg-blue-50/50 text-blue-600 border-blue-100">분석 대상</Badge>
+                            <div className="flex flex-col">
+                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">엑셀 내 캠페인명 (매체별)</span>
+                              <Label className="text-lg font-black text-blue-700">{name}</Label>
+                            </div>
+                            <Badge variant="outline" className="h-7 bg-blue-50/50 text-blue-600 border-blue-100 px-3 font-bold">분석 대상</Badge>
                           </div>
                           
                           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                             <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">관리 캠페인 선택</Label>
+                              <Label className="text-xs font-bold text-slate-500">통합 마스터 캠페인 선택</Label>
                               <select 
-                                className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-blue-500"
+                                className="w-full h-10 bg-white border border-slate-300 rounded-xl px-3 text-sm font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 shadow-sm transition-all"
                                 value={config.system_name}
                                 onChange={(e) => setExcelCampaignConfigs(prev => ({
                                   ...prev,
                                   [name]: { ...prev[name], system_name: e.target.value }
                                 }))}
                               >
-                                <option value="" disabled>기존 캠페인 선택</option>
+                                <option value="" disabled>사이드바 관리 캠페인 선택</option>
                                 {campaigns.map(c => (
                                   <option key={c.campaign_id} value={c.campaign_id}>{c.campaign_name}</option>
                                 ))}
@@ -532,84 +535,102 @@ export const ReportCenter: React.FC = () => {
                   <Card className="rounded-3xl border-white/40 bg-white/60 backdrop-blur-xl shadow-xl overflow-hidden border">
                     <CardHeader className="border-b border-slate-100/50 bg-white/20 px-8 py-6">
                       <div className="flex justify-between items-center">
-                        <CardTitle className="text-xl font-bold text-slate-800">가공 완료 데이터 (Grid)</CardTitle>
+                        <div>
+                          <CardTitle className="text-xl font-bold text-slate-800">가공 완료 데이터 (Grid)</CardTitle>
+                          <p className="text-xs text-slate-400 mt-1 uppercase font-bold tracking-tight">통합 캠페인: {selectedCampaign?.campaign_name}</p>
+                        </div>
                         <Button variant="ghost" size="sm" className="text-blue-500 font-semibold hover:bg-blue-50">CSV 다운로드</Button>
                       </div>
                     </CardHeader>
                     <CardContent className="p-0">
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader className="bg-slate-50/50">
-                            <TableRow>
-                              <TableHead className="px-8 font-bold text-slate-900">날짜</TableHead>
-                              <TableHead className="font-bold text-slate-900">광고 그룹</TableHead>
-                              <TableHead className="text-right font-bold text-slate-900">노출</TableHead>
-                              <TableHead className="text-right font-bold text-slate-900">클릭</TableHead>
-                              <TableHead className="text-right font-bold text-slate-900">집행 금액</TableHead>
-                              <TableHead className="px-8 font-bold text-slate-900">DMP</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {filteredData.slice(0, 10).map((record, idx) => (
-                              <TableRow key={idx} className="hover:bg-slate-50/30 transition-colors">
-                                <TableCell className="px-8">{new Date(record.date).toLocaleDateString()}</TableCell>
-                                <TableCell className="max-w-[250px] truncate font-medium">{record.ad_group_name}</TableCell>
-                                <TableCell className="text-right">{record.impressions.toLocaleString()}</TableCell>
-                                <TableCell className="text-right">{record.clicks.toLocaleString()}</TableCell>
-                                <TableCell className="text-right font-bold text-blue-600">
-                                  {editingCell?.id === record._id ? (
-                                    <div className="flex items-center justify-end gap-1">
-                                      <Input 
-                                        type="number"
-                                        className="w-24 h-8 text-right px-2 rounded-lg border-blue-200 focus:ring-blue-500"
-                                        value={editingCell?.value ?? 0}
-                                        autoFocus
-                                        disabled={isUpdating}
-                                        onChange={(e) => {
-                                          if (editingCell) {
-                                            setEditingCell({ ...editingCell, value: Number(e.target.value) });
-                                          }
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter' && editingCell) handleUpdateAmount(record._id!, editingCell.value);
-                                          if (e.key === 'Escape') setEditingCell(null);
-                                        }}
-                                      />
-                                      <button 
-                                        onClick={() => editingCell && handleUpdateAmount(record._id!, editingCell.value)}
-                                        disabled={isUpdating}
-                                        className="p-1 text-green-600 hover:bg-green-50 rounded"
-                                      >
-                                        <Check size={14} />
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div 
-                                      className="group flex items-center justify-end gap-2 cursor-pointer hover:bg-white px-2 py-1 rounded transition-all"
-                                      onClick={() => record._id && setEditingCell({ id: record._id, value: record.execution_amount })}
-                                    >
-                                      {record.is_edited && (
-                                        <span className="bg-amber-100 text-amber-600 text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                                          <Edit3 size={8} /> 수정됨
-                                        </span>
-                                      )}
-                                      ₩{Math.round(record.execution_amount).toLocaleString()}
-                                    </div>
-                                  )}
-                                </TableCell>
-                                <TableCell className="px-8">
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
-                                    record.has_dmp ? "bg-purple-100 text-purple-600" : "bg-slate-100 text-slate-500"
-                                  )}>
-                                    {record.dmp_type}
-                                  </span>
-                                </TableCell>
-                              </TableRow>
+                      <Tabs defaultValue="all" className="w-full">
+                        <div className="px-8 pt-4 pb-2 border-b border-slate-100/50 bg-slate-50/10">
+                          <TabsList className="bg-slate-100/50 p-1 rounded-xl">
+                            <TabsTrigger value="all" className="rounded-lg text-xs font-bold">전체</TabsTrigger>
+                            {Array.from(new Set(filteredData.map(d => d.media))).map(m => (
+                              <TabsTrigger key={m} value={m} className="rounded-lg text-xs font-bold">{m}</TabsTrigger>
                             ))}
-                          </TableBody>
-                        </Table>
-                      </div>
+                          </TabsList>
+                        </div>
+
+                        {["all", ...Array.from(new Set(filteredData.map(d => d.media)))].map(tabMedia => (
+                          <TabsContent key={tabMedia} value={tabMedia} className="m-0 border-none outline-none">
+                            <div className="overflow-x-auto">
+                              <Table>
+                                <TableHeader className="bg-slate-50/50">
+                                  <TableRow>
+                                    <TableHead className="px-8 font-bold text-slate-900">날짜</TableHead>
+                                    <TableHead className="font-bold text-slate-900">광고 그룹</TableHead>
+                                    <TableHead className="text-right font-bold text-slate-900">노출</TableHead>
+                                    <TableHead className="text-right font-bold text-slate-900">클릭</TableHead>
+                                    <TableHead className="text-right font-bold text-slate-900">집행 금액</TableHead>
+                                    <TableHead className="px-8 font-bold text-slate-900">DMP</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(tabMedia === "all" ? filteredData : filteredData.filter(d => d.media === tabMedia)).slice(0, 10).map((record, idx) => (
+                                    <TableRow key={idx} className="hover:bg-slate-50/30 transition-colors">
+                                      <TableCell className="px-8">{new Date(record.date).toLocaleDateString()}</TableCell>
+                                      <TableCell className="max-w-[250px] truncate font-medium">{record.ad_group_name}</TableCell>
+                                      <TableCell className="text-right">{record.impressions.toLocaleString()}</TableCell>
+                                      <TableCell className="text-right">{record.clicks.toLocaleString()}</TableCell>
+                                      <TableCell className="text-right font-bold text-blue-600">
+                                        {editingCell?.id === record._id ? (
+                                          <div className="flex items-center justify-end gap-1">
+                                            <Input 
+                                              type="number"
+                                              className="w-24 h-8 text-right px-2 rounded-lg border-blue-200 focus:ring-blue-500"
+                                              value={editingCell?.value ?? 0}
+                                              autoFocus
+                                              disabled={isUpdating}
+                                              onChange={(e) => {
+                                                if (editingCell) {
+                                                  setEditingCell({ ...editingCell, value: Number(e.target.value) });
+                                                }
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && editingCell) handleUpdateAmount(record._id!, editingCell.value);
+                                                if (e.key === 'Escape') setEditingCell(null);
+                                              }}
+                                            />
+                                            <button 
+                                              onClick={() => editingCell && handleUpdateAmount(record._id!, editingCell.value)}
+                                              disabled={isUpdating}
+                                              className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                            >
+                                              <Check size={14} />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div 
+                                            className="group flex items-center justify-end gap-2 cursor-pointer hover:bg-white px-2 py-1 rounded transition-all"
+                                            onClick={() => record._id && setEditingCell({ id: record._id, value: record.execution_amount })}
+                                          >
+                                            {record.is_edited && (
+                                              <span className="bg-amber-100 text-amber-600 text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                                                <Edit3 size={8} /> 수정됨
+                                              </span>
+                                            )}
+                                            ₩{Math.round(record.execution_amount).toLocaleString()}
+                                          </div>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="px-8">
+                                        <span className={cn(
+                                          "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
+                                          record.has_dmp ? "bg-purple-100 text-purple-600" : "bg-slate-100 text-slate-500"
+                                        )}>
+                                          {record.dmp_type}
+                                        </span>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </TabsContent>
+                        ))}
+                      </Tabs>
                       {filteredData.length > 10 && (
                         <div className="p-4 text-center border-t border-slate-100/50 bg-slate-50/20 text-xs text-slate-400">
                           외 {filteredData.length - 10}개의 데이터가 더 있습니다.
