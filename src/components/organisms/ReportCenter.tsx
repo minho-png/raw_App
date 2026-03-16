@@ -120,7 +120,7 @@ export const ReportCenter: React.FC = () => {
   }, [processedData, selectedCampaignId]);
 
   const totalBudget = useMemo(() => {
-    if (!selectedCampaign) return 0;
+    if (!selectedCampaign || !selectedCampaign.sub_campaigns) return 0;
     return selectedCampaign.sub_campaigns.reduce((sum, sub) => sum + (sub.budget || 0), 0);
   }, [selectedCampaign]);
 
@@ -139,12 +139,12 @@ export const ReportCenter: React.FC = () => {
     const actualCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
 
     // Calculate Master Target CPC/CTR (Simple Average of sub-campaigns that have targets)
-    const subWithCpc = selectedCampaign?.sub_campaigns.filter(s => s.target_cpc && s.target_cpc > 0) || [];
+    const subWithCpc = selectedCampaign?.sub_campaigns?.filter(s => s.target_cpc && s.target_cpc > 0) || [];
     const avgTargetCpc = subWithCpc.length > 0 
       ? subWithCpc.reduce((sum, s) => sum + (s.target_cpc || 0), 0) / subWithCpc.length 
       : undefined;
 
-    const subWithCtr = selectedCampaign?.sub_campaigns.filter(s => s.target_ctr && s.target_ctr > 0) || [];
+    const subWithCtr = selectedCampaign?.sub_campaigns?.filter(s => s.target_ctr && s.target_ctr > 0) || [];
     const avgTargetCtr = subWithCtr.length > 0 
       ? subWithCtr.reduce((sum, s) => sum + (s.target_ctr || 0), 0) / subWithCtr.length 
       : undefined;
@@ -731,7 +731,7 @@ export const ReportCenter: React.FC = () => {
                   </div>
 
                   <div className="grid gap-6">
-                    {selectedCampaign?.sub_campaigns.map((sub, idx) => (
+                    {selectedCampaign?.sub_campaigns?.map((sub, idx) => (
                       <div key={sub.id} className="bg-white/80 rounded-2xl p-6 border border-white/40 shadow-sm hover:shadow-md transition-shadow grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                         <div className="lg:col-span-3 space-y-4">
                           <div className="flex items-center gap-3">
@@ -862,7 +862,7 @@ export const ReportCenter: React.FC = () => {
                             size="icon" 
                             className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
                             onClick={() => {
-                              if (!selectedCampaign) return;
+                              if (!selectedCampaign || !selectedCampaign.sub_campaigns) return;
                               const newSubs = selectedCampaign.sub_campaigns.filter((_, i) => i !== idx);
                               const updated = { ...selectedCampaign, sub_campaigns: newSubs };
                               updateCampaign(updated);
