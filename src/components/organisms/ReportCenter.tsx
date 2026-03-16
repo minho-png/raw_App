@@ -60,7 +60,6 @@ export const ReportCenter: React.FC = () => {
   const [rawParsedData, setRawParsedData] = useState<any[]>([]);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [excelCampaignConfigs, setExcelCampaignConfigs] = useState<Record<string, {
-    system_name: string,
     media: MediaProvider,
     fee_rate: number,
     budget: number,
@@ -223,48 +222,42 @@ export const ReportCenter: React.FC = () => {
                 className="space-y-8"
               >
                 {uploadStep === 'config' && (
-                  <div className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8">
-                    <div className="flex items-center gap-4 border-b border-white/20 pb-6">
-                      <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-xl">
-                        <Database size={24} />
+                  <div className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8 flex flex-col items-center justify-center min-h-[300px]">
+                    <div className="text-center space-y-2">
+                      <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-2xl mx-auto mb-4">
+                        <Database size={32} />
                       </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-slate-800">1단계: 기초 정보 및 파일 선택</h3>
-                        <p className="text-sm text-slate-500">분석할 매체와 캠페인을 지정하고 CSV 파일을 업로드하세요.</p>
+                      <h3 className="text-2xl font-black text-slate-800 tracking-tight">1단계: RAW 데이터 업로드</h3>
+                      <div className="pt-2">
+                        {selectedCampaign ? (
+                          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 inline-block">
+                             <p className="text-sm font-bold text-blue-700">
+                               관리 대상: <span className="text-lg underline underline-offset-4">{selectedCampaign.campaign_name}</span>
+                             </p>
+                             <p className="text-[11px] text-blue-500/80 mt-1 font-medium italic">사이드바에서 선택된 통합 마스터 캠페인에 데이터가 등록됩니다.</p>
+                          </div>
+                        ) : (
+                          <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 inline-block">
+                            <p className="text-sm font-bold text-rose-600">
+                              먼저 왼쪽 사이드바에서 관리를 원하는 캠페인을 선택해주세요.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                      <div className="space-y-4">
-                        <Label className="text-slate-700 font-bold ml-1">대상 매체 선택</Label>
-                        <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl">
-                          {(['네이버GFA', 'Kakao', 'Google', 'Meta'] as MediaProvider[]).map((m) => (
-                            <button
-                              key={m}
-                              onClick={() => setActiveMedia(m)}
-                              className={cn(
-                                "flex-1 px-4 py-3 rounded-xl text-xs font-bold transition-all",
-                                activeMedia === m 
-                                  ? "bg-white text-slate-900 shadow-md" 
-                                  : "text-slate-500 hover:text-slate-700"
-                              )}
-                            >
-                              {m}
-                            </button>
-                          ))}
-                        </div>
+                    {selectedCampaign && (
+                      <div className="w-full max-w-md pt-4">
+                        <FileUploader 
+                          onAnalysisComplete={(data) => {
+                            setRawParsedData(data);
+                            setUploadStep('mapping');
+                          }} 
+                          overrides={{ media: '네이버GFA', group_by_columns: groupByColumns }}
+                          isSimpleButton={true}
+                        />
                       </div>
-
-                    </div>
-
-                    <FileUploader 
-                      onAnalysisComplete={(data) => {
-                        setRawParsedData(data);
-                        setUploadStep('mapping');
-                      }} 
-                      overrides={{ media: activeMedia, group_by_columns: groupByColumns }}
-                      isSimpleButton={true}
-                    />
+                    )}
                   </div>
                 )}
 
@@ -348,7 +341,6 @@ export const ReportCenter: React.FC = () => {
                           const initialConfigs: Record<string, any> = {};
                           uniqueCampaigns.forEach(campName => {
                             initialConfigs[campName] = {
-                              system_name: '', // Force user to select from existing
                               media: '네이버GFA',
                               fee_rate: 10,
                               budget: 0,
@@ -375,7 +367,9 @@ export const ReportCenter: React.FC = () => {
                       </div>
                       <div>
                         <h3 className="text-xl font-bold text-slate-800">3단계: 캠페인 상세 설정</h3>
-                        <p className="text-sm text-slate-500">각 캠페인별 매체 정보와 예산, 수수료를 설정해주세요.</p>
+                        <p className="text-sm text-slate-500">
+                          통합 대상: <span className="text-blue-600 font-bold">[{selectedCampaign?.campaign_name}]</span>
+                        </p>
                       </div>
                     </div>
 
@@ -390,23 +384,7 @@ export const ReportCenter: React.FC = () => {
                             <Badge variant="outline" className="h-7 bg-blue-50/50 text-blue-600 border-blue-100 px-3 font-bold">분석 대상</Badge>
                           </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">통합 마스터 캠페인 선택</Label>
-                              <select 
-                                className="w-full h-10 bg-white border border-slate-300 rounded-xl px-3 text-sm font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 shadow-sm transition-all"
-                                value={config.system_name}
-                                onChange={(e) => setExcelCampaignConfigs(prev => ({
-                                  ...prev,
-                                  [name]: { ...prev[name], system_name: e.target.value }
-                                }))}
-                              >
-                                <option value="" disabled>사이드바 관리 캠페인 선택</option>
-                                {campaigns.map(c => (
-                                  <option key={c.campaign_id} value={c.campaign_id}>{c.campaign_name}</option>
-                                ))}
-                              </select>
-                            </div>
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div className="space-y-2">
                               <Label className="text-xs font-bold text-slate-500">매체 선택</Label>
                               <select 
@@ -471,11 +449,6 @@ export const ReportCenter: React.FC = () => {
                       <Button 
                         className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/20"
                         onClick={async () => {
-                          const unmapped = Object.entries(excelCampaignConfigs).filter(([_, cfg]) => !cfg.system_name);
-                          if (unmapped.length > 0) {
-                            alert(`다음 엑셀 캠페인들에 대한 관리 캠페인을 선택해주세요: ${unmapped.map(([name]) => name).join(', ')}`);
-                            return;
-                          }
                           setIsProcessing(true);
                           try {
                             const processed = CalculationService.processWithDanfo(

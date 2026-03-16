@@ -29,7 +29,6 @@ export class CalculationService {
     groupByColumns: string[] = [],
     columnMapping?: Record<string, string>,
     campaignConfigs?: Record<string, {
-      system_name: string,
       media: MediaProvider,
       fee_rate: number,
       budget: number,
@@ -117,7 +116,7 @@ export class CalculationService {
       const dmp = row.dmp_type;
       
       records.push({
-        campaign_id: config ? config.system_name : campaignId, // Use System Name for DB association
+        campaign_id: campaignId, // Always use the sidebar-selected campaign ID
         excel_campaign_name: excelCampName,
         media: config ? config.media : media,
         date: new Date(row.date_raw),
