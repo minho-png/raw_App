@@ -1,4 +1,4 @@
-export type MediaProvider = '네이버GFA' | 'Kakao' | 'Google' | 'Meta';
+export type MediaProvider = '네이버GFA' | '카카오Moment' | '구글Ads' | '메타Ads' | 'Kakao' | 'Google' | 'Meta';
 
 export interface CampaignConfig {
   campaign_id: string;
@@ -18,6 +18,7 @@ export interface CampaignConfig {
 export interface PerformanceRecord {
   _id?: string;               // MongoDB Object ID
   campaign_id: string;
+  excel_campaign_name?: string; 
   media: string;
   date: Date;
   ad_group_name: string;

@@ -54,11 +54,18 @@ export const ReportCenter: React.FC = () => {
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
   const [reportType, setReportType] = useState('daily');
   const [activeTab, setActiveTab] = useState('upload');
-  const [uploadStep, setUploadStep] = useState<'config' | 'mapping' | 'complete'>('config');
+  const [uploadStep, setUploadStep] = useState<'config' | 'mapping' | 'setup' | 'complete'>('config');
   const [activeMedia, setActiveMedia] = useState<MediaProvider>('네이버GFA');
   const [groupByColumns, setGroupByColumns] = useState<string[]>([]);
   const [rawParsedData, setRawParsedData] = useState<any[]>([]);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [excelCampaignConfigs, setExcelCampaignConfigs] = useState<Record<string, {
+    media: MediaProvider,
+    fee_rate: number,
+    budget: number,
+    cpc_goal?: number,
+    ctr_goal?: number
+  }>>({});
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
@@ -348,6 +355,7 @@ export const ReportCenter: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {[
                         { key: 'date', label: '날짜 컬럼', required: true },
+                        { key: 'excel_campaign', label: '캠페인 명(Excel) 컬럼', required: true },
                         { key: 'ad_group', label: '광고 그룹 컬럼', required: true },
                         { key: 'impressions', label: '노출수 컬럼', required: true },
                         { key: 'clicks', label: '클릭수 컬럼', required: true },
@@ -377,20 +385,127 @@ export const ReportCenter: React.FC = () => {
                       </Button>
                       <Button 
                         className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/20"
-                        disabled={!columnMapping.date || !columnMapping.ad_group || !columnMapping.supply_value}
-                        onClick={async () => {
-                          const selectedCamp = campaigns.find(c => c.campaign_id === selectedCampaignId);
-                          if (!selectedCamp) return alert('캠페인을 선택해주세요.');
+                        disabled={!columnMapping.date || !columnMapping.excel_campaign || !columnMapping.ad_group || !columnMapping.supply_value}
+                        onClick={() => {
+                          const campaignCol = columnMapping.excel_campaign;
+                          const uniqueCampaigns = Array.from(new Set(rawParsedData.map(row => String(row[campaignCol] || '')))).filter(Boolean);
                           
+                          const initialConfigs: Record<string, any> = {};
+                          uniqueCampaigns.forEach(campName => {
+                            initialConfigs[campName] = {
+                              media: '네이버GFA',
+                              fee_rate: 10,
+                              budget: 0,
+                              cpc_goal: 0,
+                              ctr_goal: 0
+                            };
+                          });
+                          
+                          setExcelCampaignConfigs(initialConfigs);
+                          setUploadStep('setup');
+                        }}
+                      >
+                        다음 단계: 캠페인 상세 설정
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {uploadStep === 'setup' && (
+                  <div className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8">
+                    <div className="flex items-center gap-4 border-b border-white/20 pb-6">
+                      <div className="w-12 h-12 bg-purple-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
+                        <Settings size={24} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-slate-800">3단계: 캠페인 상세 설정</h3>
+                        <p className="text-sm text-slate-500">각 캠페인별 매체 정보와 예산, 수수료를 설정해주세요.</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                      {Object.entries(excelCampaignConfigs).map(([name, config]) => (
+                        <div key={name} className="bg-white/60 p-6 rounded-2xl border border-white/40 shadow-sm space-y-4">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-base font-bold text-blue-700">{name}</Label>
+                            <Badge variant="outline" className="bg-blue-50/50 text-blue-600 border-blue-100">분석 대상</Badge>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div className="space-y-2">
+                              <Label className="text-xs font-bold text-slate-500">매체 선택</Label>
+                              <select 
+                                className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-blue-500"
+                                value={config.media}
+                                onChange={(e) => setExcelCampaignConfigs(prev => ({
+                                  ...prev,
+                                  [name]: { ...prev[name], media: e.target.value as MediaProvider }
+                                }))}
+                              >
+                                <option value="네이버GFA">네이버GFA</option>
+                                <option value="카카오Moment">카카오Moment</option>
+                                <option value="구글Ads">구글Ads</option>
+                                <option value="메타Ads">메타Ads</option>
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs font-bold text-slate-500">수수료율 (%)</Label>
+                              <Input 
+                                type="number" 
+                                className="h-10 rounded-xl border-slate-200" 
+                                value={config.fee_rate}
+                                onChange={(e) => setExcelCampaignConfigs(prev => ({
+                                  ...prev,
+                                  [name]: { ...prev[name], fee_rate: Number(e.target.value) }
+                                }))}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs font-bold text-slate-500">예산 (VAT 별도)</Label>
+                              <Input 
+                                type="number" 
+                                className="h-10 rounded-xl border-slate-200" 
+                                value={config.budget}
+                                onChange={(e) => setExcelCampaignConfigs(prev => ({
+                                  ...prev,
+                                  [name]: { ...prev[name], budget: Number(e.target.value) }
+                                }))}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs font-bold text-slate-500">목표 CPC</Label>
+                              <Input 
+                                type="number" 
+                                className="h-10 rounded-xl border-slate-200" 
+                                value={config.cpc_goal || 0}
+                                onChange={(e) => setExcelCampaignConfigs(prev => ({
+                                  ...prev,
+                                  [name]: { ...prev[name], cpc_goal: Number(e.target.value) }
+                                }))}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-4 pt-4 border-t border-white/20">
+                      <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('mapping')}>
+                        이전 단계로
+                      </Button>
+                      <Button 
+                        className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/20"
+                        onClick={async () => {
                           setIsProcessing(true);
                           try {
                             const processed = CalculationService.processWithDanfo(
                               rawParsedData,
-                              selectedCampaignId!,
+                              selectedCampaignId || 'UNASSIGNED',
                               activeMedia,
-                              selectedCamp.total_fee_rate,
+                              10, // dummy default, overridden by rows
                               groupByColumns,
-                              columnMapping
+                              columnMapping,
+                              excelCampaignConfigs
                             );
 
                             const result = await savePerformanceData(processed);
@@ -410,7 +525,7 @@ export const ReportCenter: React.FC = () => {
                         }}
                       >
                         {isProcessing ? <Loader2 className="animate-spin mr-2" /> : <Zap size={18} className="mr-2" />}
-                        분석 시작 및 저장
+                        최종 분석 및 저장
                       </Button>
                     </div>
                   </div>

@@ -27,7 +27,14 @@ export class CalculationService {
     media: MediaProvider, 
     totalFeeRate: number, 
     groupByColumns: string[] = [],
-    columnMapping?: Record<string, string>
+    columnMapping?: Record<string, string>,
+    campaignConfigs?: Record<string, {
+      media: MediaProvider,
+      fee_rate: number,
+      budget: number,
+      cpc_goal?: number,
+      ctr_goal?: number
+    }>
   ): PerformanceRecord[] {
     const df = new dfd.DataFrame(rawData);
 
@@ -38,6 +45,7 @@ export class CalculationService {
     if (columnMapping) {
       // Manual mapping: { internalKey: csvHeader }
       if (columnMapping.date && currentCols.includes(columnMapping.date)) renameObj[columnMapping.date] = 'date_raw';
+      if (columnMapping.excel_campaign && currentCols.includes(columnMapping.excel_campaign)) renameObj[columnMapping.excel_campaign] = 'excel_campaign_name';
       if (columnMapping.ad_group && currentCols.includes(columnMapping.ad_group)) renameObj[columnMapping.ad_group] = 'ad_group_name';
       if (columnMapping.impressions && currentCols.includes(columnMapping.impressions)) renameObj[columnMapping.impressions] = 'impressions';
       if (columnMapping.clicks && currentCols.includes(columnMapping.clicks)) renameObj[columnMapping.clicks] = 'clicks';
@@ -59,13 +67,7 @@ export class CalculationService {
     }
     df.rename(renameObj, { inplace: true });
 
-    // 2. Data Cleaning
-    if (df.columns.includes('supply_value')) {
-      // Remove commas if string and convert to numeric
-      // Note: Danfo.js handles some numeric conversion automatically if dynamicTyping was on in Papa.
-    }
-
-    // 3. DMP Detection Logic
+    // 2. DMP Detection Logic
     const dmpKeywords = ['SKP', 'KB', 'LOTTE', 'TG360', 'WIFI', 'BC', 'SH'];
     const detectDMP = (name: any) => {
       if (typeof name !== 'string') return 'N/A';
@@ -74,29 +76,49 @@ export class CalculationService {
       return found || 'DIRECT';
     };
 
-    df.addColumn('dmp_type', df['ad_group_name'].map(detectDMP), { inplace: true });
+    if (df.columns.includes('ad_group_name')) {
+      df.addColumn('dmp_type', df['ad_group_name'].map(detectDMP), { inplace: true });
+    } else {
+      df.addColumn('dmp_type', new Array(df.shape[0]).fill('N/A'), { inplace: true });
+    }
 
-    // 4. Total Commission Calculation
-    // Formula: Execution Amount = Supply Value / (1 - (Total Fee Rate / 100))
-    // Net Amount = Execution Amount * (1 - (Total Fee Rate / 100)) which is just Supply Value
-    const feeDecimal = totalFeeRate / 100;
-    const calcExecution = (val: any) => {
-      const num = parseFloat(String(val).replace(/,/g, '')) || 0;
-      return num / (1 - feeDecimal);
-    };
+    // 3. Total Commission Calculation
+    // Execution Amount = Supply Value / (1 - (Fee Rate / 100))
+    // We need to apply different fee rates per row if campaignConfigs is provided
+    const executionAmounts: number[] = [];
+    const netAmounts: number[] = [];
 
-    df.addColumn('execution_amount', df['supply_value'].map(calcExecution), { inplace: true });
-    df.addColumn('net_amount', df['supply_value'], { inplace: true }); // Net is supply value in this logic
-
-    // 5. Final Mapping to PerformanceRecord
-    const records: PerformanceRecord[] = [];
     const json = df.toJSON() as any[];
-
     json.forEach(row => {
+      const excelCampName = row.excel_campaign_name;
+      const config = campaignConfigs && excelCampName ? campaignConfigs[excelCampName] : null;
+      
+      const rowFeeRate = config ? config.fee_rate : totalFeeRate;
+      const feeDecimal = rowFeeRate / 100;
+      
+      const supplyVal = parseFloat(String(row.supply_value).replace(/,/g, '')) || 0;
+      const executionAmt = feeDecimal === 1 ? supplyVal : supplyVal / (1 - feeDecimal);
+      
+      executionAmounts.push(executionAmt);
+      netAmounts.push(supplyVal);
+    });
+
+    df.addColumn('execution_amount', executionAmounts, { inplace: true });
+    df.addColumn('net_amount', netAmounts, { inplace: true });
+
+    // 4. Final Mapping to PerformanceRecord
+    const records: PerformanceRecord[] = [];
+    const finalJson = df.toJSON() as any[];
+
+    finalJson.forEach(row => {
+      const excelCampName = row.excel_campaign_name;
+      const config = campaignConfigs && excelCampName ? campaignConfigs[excelCampName] : null;
       const dmp = row.dmp_type;
+      
       records.push({
         campaign_id: campaignId,
-        media: media,
+        excel_campaign_name: excelCampName, // Optional: add to type if needed
+        media: config ? config.media : media,
         date: new Date(row.date_raw),
         ad_group_name: row.ad_group_name || 'Unknown',
         impressions: row.impressions || 0,
