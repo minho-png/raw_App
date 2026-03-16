@@ -127,15 +127,15 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Actual CPC</p>
                 <div className="text-lg font-black text-slate-900">₩{Math.round(status.actual_cpc).toLocaleString()}</div>
               </div>
-              {campaign?.target_cpc && (
+              {status.target_cpc && (
                 <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target ₩{campaign.target_cpc.toLocaleString()}</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target ₩{status.target_cpc.toLocaleString()}</p>
                   <div className={cn(
                     "text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1",
-                    status.actual_cpc <= campaign.target_cpc ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                    status.actual_cpc <= status.target_cpc ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
                   )}>
-                    {status.actual_cpc <= campaign.target_cpc ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
-                    {Math.abs(((status.actual_cpc - campaign.target_cpc) / campaign.target_cpc) * 100).toFixed(1)}%
+                    {status.actual_cpc <= status.target_cpc ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
+                    {Math.abs(((status.actual_cpc - status.target_cpc) / status.target_cpc) * 100).toFixed(1)}%
                   </div>
                 </div>
               )}
@@ -146,15 +146,15 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Actual CTR</p>
                 <div className="text-lg font-black text-slate-900">{status.actual_ctr.toFixed(2)}%</div>
               </div>
-              {campaign?.target_ctr && (
+              {status.target_ctr && (
                 <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target {campaign.target_ctr}%</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target {status.target_ctr}%</p>
                   <div className={cn(
                     "text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1",
-                    status.actual_ctr >= campaign.target_ctr ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                    status.actual_ctr >= status.target_ctr ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
                   )}>
-                    {status.actual_ctr >= campaign.target_ctr ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                    {Math.abs(((status.actual_ctr - campaign.target_ctr) / campaign.target_ctr) * 100).toFixed(1)}%
+                    {status.actual_ctr >= status.target_ctr ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                    {Math.abs(((status.actual_ctr - status.target_ctr) / status.target_ctr) * 100).toFixed(1)}%
                   </div>
                 </div>
               )}

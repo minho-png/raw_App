@@ -46,6 +46,8 @@ export interface BudgetStatus {
   pacing_status: string;
   actual_cpc: number;
   actual_ctr: number;
+  target_cpc?: number;
+  target_ctr?: number;
 }
 
 export interface DmpSettlementRow {

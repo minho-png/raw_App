@@ -137,6 +137,17 @@ export const ReportCenter: React.FC = () => {
     const burnRate = total > 0 ? (spent / total) * 100 : 0;
     const actualCpc = totalClicks > 0 ? spent / totalClicks : 0;
     const actualCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+
+    // Calculate Master Target CPC/CTR (Simple Average of sub-campaigns that have targets)
+    const subWithCpc = selectedCampaign?.sub_campaigns.filter(s => s.target_cpc && s.target_cpc > 0) || [];
+    const avgTargetCpc = subWithCpc.length > 0 
+      ? subWithCpc.reduce((sum, s) => sum + (s.target_cpc || 0), 0) / subWithCpc.length 
+      : undefined;
+
+    const subWithCtr = selectedCampaign?.sub_campaigns.filter(s => s.target_ctr && s.target_ctr > 0) || [];
+    const avgTargetCtr = subWithCtr.length > 0 
+      ? subWithCtr.reduce((sum, s) => sum + (s.target_ctr || 0), 0) / subWithCtr.length 
+      : undefined;
     
     return {
       total_budget: total,
@@ -148,9 +159,11 @@ export const ReportCenter: React.FC = () => {
       pacing_index: burnRate > 50 ? 110 : 95,
       pacing_status: burnRate > 100 ? 'over' : (burnRate > 80 ? 'warning' : 'stable'),
       actual_cpc: actualCpc,
-      actual_ctr: actualCtr
+      actual_ctr: actualCtr,
+      target_cpc: avgTargetCpc,
+      target_ctr: avgTargetCtr
     };
-  }, [filteredData, totalBudget]);
+  }, [filteredData, totalBudget, selectedCampaign]);
 
   const handleAnalysisComplete = (data: PerformanceRecord[]) => {
     // Data is already saved to DB via Server Action in FileUploader
