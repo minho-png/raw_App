@@ -9,7 +9,6 @@ import { CalculationService } from '@/services/calculationService';
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { MediaProvider } from '@/types';
 
-import { savePerformanceData } from '@/server/actions/settlement';
 
 interface FileUploaderProps {
   onAnalysisComplete: (data: any[]) => void;
@@ -48,29 +47,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete, 
         return;
       }
 
-      const processed = CalculationService.processWithDanfo(
-        rawData, 
-        selectedCampaignId, 
-        overrides?.media || (selectedCampaign?.sub_campaigns[0]?.media as MediaProvider) || '네이버GFA',
-        selectedCampaign?.sub_campaigns[0]?.fee_rate || 10,
-        overrides?.group_by_columns || []
-      );
-
-      // Server Action CALL
-      const result = await savePerformanceData(processed);
-
-      if (result.success) {
-        // Narrowing manually to appease linter if needed, though result.success should work
-        const successResult = result as { success: true, deletedCount: number, insertedCount: number };
-        setUploadStatus({ 
-          type: 'success', 
-          message: `${successResult.insertedCount}건의 데이터가 성공적으로 DB에 저장되었습니다.` 
-        });
-        onAnalysisComplete(processed);
-      } else {
-        const errorResult = result as { success: false, error: string };
-        throw new Error(errorResult.error || 'DB 저장 실패');
-      }
+      onAnalysisComplete(rawData);
     } catch (error) {
       console.error("Analysis or Save failed:", error);
       setUploadStatus({ 
@@ -140,8 +117,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete, 
                   transition={{ repeat: Infinity, duration: 1.5 }}
                 />
               </div>
-              <p className="mt-4 text-slate-600 font-medium animte-pulse">Danfo.js 엔진 가동 중...</p>
-              <p className="text-xs text-slate-400">데이터프레임 분석 및 집계를 실행하고 있습니다.</p>
+              <p className="mt-4 text-slate-600 font-medium animte-pulse">파일 분석 중...</p>
+              <p className="text-xs text-slate-400">CSV 데이터를 파싱하고 있습니다.</p>
             </motion.div>
           ) : isSimpleButton ? (
             <motion.div 
