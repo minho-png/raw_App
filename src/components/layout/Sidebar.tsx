@@ -7,12 +7,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/server/actions/campaign';
-import { CampaignSettingsModal } from '@/components/molecules/CampaignSettingsModal';
 import { CampaignConfig } from '@/types';
 
 export const Sidebar = () => {
   const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading } = useCampaignStore();
-  const [settingsCampaign, setSettingsCampaign] = useState<CampaignConfig | null>(null);
 
   useEffect(() => {
     const fetchCampaigns = async () => {
@@ -96,15 +94,6 @@ export const Sidebar = () => {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSettingsCampaign(camp);
-                    }}
-                    className="p-1 hover:bg-white/20 rounded text-blue-200 transition-colors"
-                  >
-                    <Settings size={14} />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
                       handleDeleteCampaign(camp.campaign_id);
                     }}
                     className="p-1 hover:bg-red-500/20 rounded text-red-400 transition-colors"
@@ -128,13 +117,6 @@ export const Sidebar = () => {
         </div>
       </div>
 
-      {settingsCampaign && (
-        <CampaignSettingsModal 
-          campaign={settingsCampaign} 
-          isOpen={!!settingsCampaign} 
-          onClose={() => setSettingsCampaign(null)} 
-        />
-      )}
     </aside>
   );
 };

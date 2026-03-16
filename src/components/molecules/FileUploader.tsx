@@ -17,9 +17,10 @@ interface FileUploaderProps {
     media: MediaProvider;
     group_by_columns: string[];
   };
+  isSimpleButton?: boolean;
 }
 
-export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete, overrides }) => {
+export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete, overrides, isSimpleButton }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const { selectedCampaignId, campaigns, selectCampaign } = useCampaignStore();
@@ -41,6 +42,12 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete, 
       const text = await file.text();
       const rawData = await CalculationService.parseCsv(text);
       
+      if (isSimpleButton) {
+        setIsProcessing(false);
+        onAnalysisComplete(rawData);
+        return;
+      }
+
       const processed = CalculationService.processWithDanfo(
         rawData, 
         selectedCampaignId, 
@@ -135,6 +142,19 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete, 
               </div>
               <p className="mt-4 text-slate-600 font-medium animte-pulse">Danfo.js 엔진 가동 중...</p>
               <p className="text-xs text-slate-400">데이터프레임 분석 및 집계를 실행하고 있습니다.</p>
+            </motion.div>
+          ) : isSimpleButton ? (
+            <motion.div 
+              key="simple"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center"
+            >
+              <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 mb-2">
+                <Upload size={20} />
+              </div>
+              <p className="text-sm font-bold text-slate-700">여기에 CSV 파일을 드래그하여 드롭하세요</p>
+              <p className="text-xs text-slate-400 mt-1">또는 클릭하여 파일 선택</p>
             </motion.div>
           ) : (
             <motion.div 

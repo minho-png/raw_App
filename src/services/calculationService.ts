@@ -21,27 +21,42 @@ export class CalculationService {
   /**
    * processWithDanfo: Core logic using DataFrames for calculation and DMP detection.
    */
-  public static processWithDanfo(rawData: any[], campaignId: string, media: MediaProvider, totalFeeRate: number, groupByColumns?: string[]): PerformanceRecord[] {
+  public static processWithDanfo(
+    rawData: any[], 
+    campaignId: string, 
+    media: MediaProvider, 
+    totalFeeRate: number, 
+    groupByColumns: string[] = [],
+    columnMapping?: Record<string, string>
+  ): PerformanceRecord[] {
     const df = new dfd.DataFrame(rawData);
 
     // 1. Column normalization & cleaning
-    // Assuming GFA standard columns: 날짜, 광고 그룹, 노출, 클릭, 집행 금액(VAT 별도)
-    const columnMap: Record<string, string> = {
-      '날짜': 'date_raw',
-      '광고 그룹': 'ad_group_name',
-      '노출': 'impressions',
-      '클릭': 'clicks',
-      '집행 금액(VAT 별도)': 'supply_value'
-    };
-
-    // Rename columns if they exist
-    const currentCols = df.columns;
     const renameObj: Record<string, string> = {};
-    Object.keys(columnMap).forEach(key => {
-      if (currentCols.includes(key)) {
-        renameObj[key] = columnMap[key];
-      }
-    });
+    const currentCols = df.columns;
+
+    if (columnMapping) {
+      // Manual mapping: { internalKey: csvHeader }
+      if (columnMapping.date && currentCols.includes(columnMapping.date)) renameObj[columnMapping.date] = 'date_raw';
+      if (columnMapping.ad_group && currentCols.includes(columnMapping.ad_group)) renameObj[columnMapping.ad_group] = 'ad_group_name';
+      if (columnMapping.impressions && currentCols.includes(columnMapping.impressions)) renameObj[columnMapping.impressions] = 'impressions';
+      if (columnMapping.clicks && currentCols.includes(columnMapping.clicks)) renameObj[columnMapping.clicks] = 'clicks';
+      if (columnMapping.supply_value && currentCols.includes(columnMapping.supply_value)) renameObj[columnMapping.supply_value] = 'supply_value';
+    } else {
+      // Automatic fallback
+      const columnMap: Record<string, string> = {
+        '날짜': 'date_raw',
+        '광고 그룹': 'ad_group_name',
+        '노출': 'impressions',
+        '클릭': 'clicks',
+        '집행 금액(VAT 별도)': 'supply_value'
+      };
+      Object.keys(columnMap).forEach(key => {
+        if (currentCols.includes(key)) {
+          renameObj[key] = columnMap[key];
+        }
+      });
+    }
     df.rename(renameObj, { inplace: true });
 
     // 2. Data Cleaning
