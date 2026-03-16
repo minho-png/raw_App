@@ -81,3 +81,19 @@ export async function getPerformanceDataAction(campaignId: string) {
     return { success: false, error: String(error) };
   }
 }
+
+/**
+ * updatePerformanceDataAction: Updates a single performance record.
+ */
+export async function updatePerformanceDataAction(id: string, updates: Partial<PerformanceRecord>) {
+  try {
+    const client = await clientPromise;
+    const repo = new RepositoryService(client);
+    await repo.updatePerformanceData(id, updates);
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to update performance data:', error);
+    return { success: false, error: String(error) };
+  }
+}

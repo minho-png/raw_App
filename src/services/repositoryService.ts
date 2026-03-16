@@ -1,4 +1,4 @@
-import { Collection, Db, MongoClient, Filter } from 'mongodb';
+import { Collection, Db, MongoClient, Filter, ObjectId } from 'mongodb';
 import { PerformanceRecord } from '@/types';
 
 export class RepositoryService {
@@ -154,5 +154,15 @@ export class RepositoryService {
    */
   public async getPerformanceData(campaignId: string) {
     return await this.collection.find({ campaign_id: campaignId }).sort({ date: -1 }).toArray();
+  }
+
+  /**
+   * updatePerformanceData: Updates a single performance record.
+   */
+  public async updatePerformanceData(id: string, updates: Partial<PerformanceRecord>) {
+    return await this.collection.updateOne(
+      { _id: new ObjectId(id) } as any,
+      { $set: { ...updates, is_edited: true } }
+    );
   }
 }

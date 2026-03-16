@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CampaignConfig } from '@/types';
 import { saveCampaignAction } from '@/server/actions/campaign';
 import { useCampaignStore } from '@/store/useCampaignStore';
+import { cn } from '@/lib/utils';
 
 interface CampaignSettingsModalProps {
   campaign: CampaignConfig;
@@ -109,21 +110,36 @@ export const CampaignSettingsModal: React.FC<CampaignSettingsModalProps> = ({ ca
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="groupby">그룹바이 기준</Label>
-                    <Select 
-                      value={formData.group_by || 'ad_group'} 
-                      onValueChange={(v) => handleChange('group_by', v)}
-                    >
-                      <SelectTrigger id="groupby" className="rounded-xl border-slate-200">
-                        <SelectValue placeholder="기준 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="daily">일자별</SelectItem>
-                        <SelectItem value="ad_group">광고그룹별</SelectItem>
-                        <SelectItem value="dmp">DMP별</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-4">
+                    <Label htmlFor="groupby" className="text-slate-700 font-bold">동적 그룹바이 기준 (다중 선택)</Label>
+                    <div className="flex flex-wrap gap-2 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                      {['날짜', '광고 그룹', 'DMP', '소재', '캠페인'].map((col) => {
+                        const isSelected = (formData.group_by_columns || []).includes(col);
+                        return (
+                          <button
+                            key={col}
+                            onClick={() => {
+                              const current = formData.group_by_columns || [];
+                              if (isSelected) {
+                                handleChange('group_by_columns', current.filter(c => c !== col));
+                              } else {
+                                handleChange('group_by_columns', [...current, col]);
+                              }
+                            }}
+                            className={cn(
+                              "px-3 py-1.5 rounded-full text-xs font-semibold transition-all border",
+                              isSelected 
+                                ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/20" 
+                                : "bg-white border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-500"
+                            )}
+                          >
+                            {col}
+                            {isSelected && <X size={10} className="inline ml-1.5" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-slate-400">데이터 업로드 시 위 기준들에 맞춰 리포트가 자동 그룹화됩니다.</p>
                   </div>
                 </div>
 

@@ -22,8 +22,9 @@ import { BudgetStatus, PerformanceRecord } from "@/types";
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { cn } from '@/lib/utils';
 import { DmpSettlementNode } from "@/components/settlement/DmpSettlementNode";
-import { getPerformanceDataAction } from '@/server/actions/settlement';
-import { Loader2 } from 'lucide-react';
+import { getPerformanceDataAction, updatePerformanceDataAction } from '@/server/actions/settlement';
+import { Loader2, Edit3, Check, X as CloseIcon } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 export const ReportCenter: React.FC = () => {
   const { selectedCampaignId, campaigns } = useCampaignStore();
@@ -33,6 +34,29 @@ export const ReportCenter: React.FC = () => {
   const [reportType, setReportType] = useState('daily');
   const [activeTab, setActiveTab] = useState('upload');
   const [isLoadingDb, setIsLoadingDb] = useState(false);
+  
+  // Inline Editing State
+  const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleUpdateAmount = async (id: string, newValue: number) => {
+    setIsUpdating(true);
+    try {
+      const result = await updatePerformanceDataAction(id, { execution_amount: newValue });
+      if (result.success) {
+        setProcessedData(prev => prev.map(d => 
+          d._id === id ? { ...d, execution_amount: newValue, is_edited: true } : d
+        ));
+        setEditingCell(null);
+      } else {
+        alert('업데이트에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('Update failed:', error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const handleFetchDbData = async () => {
     if (!selectedCampaignId) return;
@@ -195,7 +219,47 @@ export const ReportCenter: React.FC = () => {
                                 <TableCell className="max-w-[250px] truncate font-medium">{record.ad_group_name}</TableCell>
                                 <TableCell className="text-right">{record.impressions.toLocaleString()}</TableCell>
                                 <TableCell className="text-right">{record.clicks.toLocaleString()}</TableCell>
-                                <TableCell className="text-right font-bold text-blue-600">₩{Math.round(record.execution_amount).toLocaleString()}</TableCell>
+                                <TableCell className="text-right font-bold text-blue-600">
+                                  {editingCell?.id === record._id ? (
+                                    <div className="flex items-center justify-end gap-1">
+                                      <Input 
+                                        type="number"
+                                        className="w-24 h-8 text-right px-2 rounded-lg border-blue-200 focus:ring-blue-500"
+                                        value={editingCell?.value ?? 0}
+                                        autoFocus
+                                        disabled={isUpdating}
+                                        onChange={(e) => {
+                                          if (editingCell) {
+                                            setEditingCell({ ...editingCell, value: Number(e.target.value) });
+                                          }
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' && editingCell) handleUpdateAmount(record._id!, editingCell.value);
+                                          if (e.key === 'Escape') setEditingCell(null);
+                                        }}
+                                      />
+                                      <button 
+                                        onClick={() => editingCell && handleUpdateAmount(record._id!, editingCell.value)}
+                                        disabled={isUpdating}
+                                        className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                      >
+                                        <Check size={14} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div 
+                                      className="group flex items-center justify-end gap-2 cursor-pointer hover:bg-white px-2 py-1 rounded transition-all"
+                                      onClick={() => record._id && setEditingCell({ id: record._id, value: record.execution_amount })}
+                                    >
+                                      {record.is_edited && (
+                                        <span className="bg-amber-100 text-amber-600 text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                                          <Edit3 size={8} /> 수정됨
+                                        </span>
+                                      )}
+                                      ₩{Math.round(record.execution_amount).toLocaleString()}
+                                    </div>
+                                  )}
+                                </TableCell>
                                 <TableCell className="px-8">
                                   <span className={cn(
                                     "px-2 py-0.5 rounded text-[10px] font-bold uppercase",

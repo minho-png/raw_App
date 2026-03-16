@@ -11,12 +11,14 @@ export interface CampaignConfig {
   total_fee_rate: number; // Inputted total fee rate (%)
   target_cpc?: number;
   target_ctr?: number;
-  group_by?: 'daily' | 'ad_group' | 'dmp';
+  group_by?: 'daily' | 'ad_group' | 'dmp'; // Optional: for backward compatibility
+  group_by_columns?: string[]; // Dynamic group by columns
 }
 
 export interface PerformanceRecord {
+  _id?: string;               // MongoDB Object ID
   campaign_id: string;
-  media: MediaProvider;
+  media: string;
   date: Date;
   ad_group_name: string;
   impressions: number;
@@ -26,6 +28,7 @@ export interface PerformanceRecord {
   dmp_type: string;         // 추출된 DMP 종류 (SKP, KB 등)
   has_dmp: boolean;
   cost: number;             // 집행 금액과 동일하거나 별도 집계용
+  is_edited?: boolean;        // 사용자가 수정한 데이터인지 여부
   placement?: string;
   [key: string]: any; // Catch-all for other CSV columns
 }
