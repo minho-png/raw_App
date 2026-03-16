@@ -48,6 +48,7 @@ export class CalculationService {
 
   /**
    * processWithDanfo: Core logic using DataFrames for calculation and DMP detection.
+   * Returns an object containing both raw records and aggregated (report) records.
    */
   public static processWithDanfo(
     rawData: any[], 
@@ -60,10 +61,11 @@ export class CalculationService {
       media: MediaProvider,
       fee_rate: number,
       budget: number,
+      budget_type: 'integrated' | 'individual',
       cpc_goal?: number,
       ctr_goal?: number
     }>
-  ): PerformanceRecord[] {
+  ): { raw: PerformanceRecord[], report: PerformanceRecord[] } {
     const df = new dfd.DataFrame(rawData);
 
     // 1. Column normalization & cleaning
@@ -71,7 +73,6 @@ export class CalculationService {
     const currentCols = df.columns;
 
     if (columnMapping) {
-      // Manual mapping: { internalKey: csvHeader }
       if (columnMapping.date && currentCols.includes(columnMapping.date)) renameObj[columnMapping.date] = 'date_raw';
       if (columnMapping.excel_campaign && currentCols.includes(columnMapping.excel_campaign)) renameObj[columnMapping.excel_campaign] = 'excel_campaign_name';
       if (columnMapping.ad_group && currentCols.includes(columnMapping.ad_group)) renameObj[columnMapping.ad_group] = 'ad_group_name';
@@ -79,32 +80,25 @@ export class CalculationService {
       if (columnMapping.clicks && currentCols.includes(columnMapping.clicks)) renameObj[columnMapping.clicks] = 'clicks';
       if (columnMapping.supply_value && currentCols.includes(columnMapping.supply_value)) renameObj[columnMapping.supply_value] = 'supply_value';
     } else {
-      // Automatic fallback (including NaverGFA specific headers)
       const columnMap: Record<string, string> = {
-        '날짜': 'date_raw',
-        '기간': 'date_raw', // NaverGFA
-        '광고 그룹': 'ad_group_name',
-        '광고 그룹 이름': 'ad_group_name', // NaverGFA
-        '노출': 'impressions',
-        '클릭': 'clicks',
-        '집행 금액(VAT 별도)': 'supply_value',
-        '총 비용': 'supply_value', // NaverGFA
-        '캠페인': 'excel_campaign_name' // NaverGFA
+        '날짜': 'date_raw', '기간': 'date_raw',
+        '광고 그룹': 'ad_group_name', '광고 그룹 이름': 'ad_group_name',
+        '노출': 'impressions', '클릭': 'clicks',
+        '집행 금액(VAT 별도)': 'supply_value', '총 비용': 'supply_value',
+        '캠페인': 'excel_campaign_name'
       };
       Object.keys(columnMap).forEach(key => {
-        if (currentCols.includes(key)) {
-          renameObj[key] = columnMap[key];
-        }
+        if (currentCols.includes(key)) renameObj[key] = columnMap[key];
       });
     }
     df.rename(renameObj, { inplace: true });
 
-    // 2. DMP Detection Logic
-    const dmpKeywords = ['SKP', 'KB', 'LOTTE', 'TG360', 'WIFI', 'BC', 'SH'];
+    // 2. DMP Detection
     const detectDMP = (name: any) => {
       if (typeof name !== 'string') return 'N/A';
       const upperName = name.toUpperCase();
-      const found = dmpKeywords.find(k => upperName.includes(k));
+      if (upperName.includes('WIFI') || name.includes('실내위치')) return 'WIFI';
+      const found = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH'].find(k => upperName.includes(k.toUpperCase()));
       return found || 'DIRECT';
     };
 
@@ -114,60 +108,84 @@ export class CalculationService {
       df.addColumn('dmp_type', new Array(df.shape[0]).fill('N/A'), { inplace: true });
     }
 
-    // 3. Total Commission Calculation
-    // NaverGFA: Execution Amount = (Supply Value / 1.1) / (1 - (Fee Rate / 100))
-    // Others: Execution Amount = Supply Value / (1 - (Fee Rate / 100))
+    // 3. Calculation & Raw Records
     const executionAmounts: number[] = [];
     const netAmounts: number[] = [];
+    const rawRecords: PerformanceRecord[] = [];
 
     const json = this.ensureRecords(df);
-    json.forEach(row => {
+    json.forEach((row, idx) => {
       const excelCampName = row.excel_campaign_name;
-      const config = campaignConfigs && excelCampName ? (campaignConfigs as Record<string, any>)[excelCampName] : null;
+      const config = campaignConfigs && excelCampName ? campaignConfigs[excelCampName] : null;
       
+      // Integrated vs Individual budget logic: 
+      // Individual uses its own fee rate, Integrated uses global (totalFeeRate)
       const rowMedia = config ? config.media : media;
-      const rowFeeRate = config ? (config.fee_rate ?? totalFeeRate) : totalFeeRate;
+      const rowFeeRate = (config && config.budget_type === 'individual') ? config.fee_rate : totalFeeRate;
       const feeDecimal = rowFeeRate / 100;
       
-      let supplyVal = parseFloat(String(row.supply_value).replace(/,/g, '')) || 0;
-      
-      // NaverGFA VAT logic: Divide by 1.1
+      const supplyVal = parseFloat(String(row.supply_value).replace(/,/g, '')) || 0;
       const baseValue = (rowMedia === '네이버GFA') ? (supplyVal / 1.1) : supplyVal;
-      
       const executionAmt = feeDecimal === 1 ? baseValue : baseValue / (1 - feeDecimal);
       
       executionAmounts.push(executionAmt);
-      netAmounts.push(baseValue); // Net is usually VAT excluded
+      netAmounts.push(baseValue);
+
+      rawRecords.push({
+        campaign_id: campaignId,
+        excel_campaign_name: excelCampName,
+        media: rowMedia,
+        date: new Date(row.date_raw),
+        ad_group_name: row.ad_group_name || 'Unknown',
+        impressions: row.impressions || 0,
+        clicks: row.clicks || 0,
+        execution_amount: executionAmt,
+        net_amount: baseValue,
+        dmp_type: row.dmp_type,
+        has_dmp: row.dmp_type !== 'DIRECT' && row.dmp_type !== 'N/A',
+        cost: supplyVal,
+        is_raw: true
+      });
     });
 
     df.addColumn('execution_amount', executionAmounts, { inplace: true });
     df.addColumn('net_amount', netAmounts, { inplace: true });
 
-    // 4. Final Mapping to PerformanceRecord
-    const records: PerformanceRecord[] = [];
-    const finalJson = this.ensureRecords(df);
-
-    finalJson.forEach(row => {
-      const excelCampName = row.excel_campaign_name;
-      const config = campaignConfigs && excelCampName ? campaignConfigs[excelCampName] : null;
-      const dmp = row.dmp_type;
+    // 4. Aggregation (Report Data)
+    let reportRecords: PerformanceRecord[] = [];
+    if (groupByColumns.length > 0) {
+      const sumCols = ['impressions', 'clicks', 'supply_value', 'execution_amount', 'net_amount'];
+      const availableSumCols = sumCols.filter(col => df.columns.includes(col));
+      const groupDf = df.groupby(groupByColumns).col(availableSumCols).sum();
       
-      records.push({
-        campaign_id: campaignId, // Always use the sidebar-selected campaign ID
-        excel_campaign_name: excelCampName,
-        media: config ? config.media : media,
-        date: new Date(row.date_raw),
-        ad_group_name: row.ad_group_name || 'Unknown',
-        impressions: row.impressions || 0,
-        clicks: row.clicks || 0,
-        execution_amount: row.execution_amount || 0,
-        net_amount: row.net_amount || 0,
-        dmp_type: dmp,
-        has_dmp: dmp !== 'DIRECT' && dmp !== 'N/A',
-        cost: row.supply_value || 0
-      });
-    });
+      const renameMap: Record<string, string> = {};
+      availableSumCols.forEach(col => { renameMap[`${col}_sum`] = col; });
+      groupDf.rename(renameMap, { inplace: true });
 
-    return records;
+      const finalJson = this.ensureRecords(groupDf);
+      finalJson.forEach(row => {
+        const dmp = row.dmp_type || 'N/A';
+        reportRecords.push({
+          campaign_id: campaignId,
+          excel_campaign_name: row.excel_campaign_name,
+          media: media, // Simplified for grouped view
+          date: new Date(row.date_raw),
+          ad_group_name: row.ad_group_name || 'Grouped',
+          impressions: row.impressions || 0,
+          clicks: row.clicks || 0,
+          execution_amount: row.execution_amount || 0,
+          net_amount: row.net_amount || 0,
+          dmp_type: dmp,
+          has_dmp: dmp !== 'DIRECT' && dmp !== 'N/A',
+          cost: row.supply_value || 0,
+          is_raw: false
+        });
+      });
+    } else {
+      // If no grouping, report records are same as raw (but marked as report)
+      reportRecords = rawRecords.map(r => ({ ...r, is_raw: false }));
+    }
+
+    return { raw: rawRecords, report: reportRecords };
   }
 }

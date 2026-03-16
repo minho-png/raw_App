@@ -54,18 +54,26 @@ export const ReportCenter: React.FC = () => {
   
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
   const [reportType, setReportType] = useState('daily');
-  const [uploadStep, setUploadStep] = useState<'media' | 'config' | 'mapping' | 'setup' | 'complete'>('media');
+  const [uploadStep, setUploadStep] = useState<'media' | 'config' | 'mapping' | 'select_campaigns' | 'select_groupby' | 'setup' | 'complete'>('media');
   const [activeMedia, setActiveMedia] = useState<MediaProvider>('네이버GFA');
-  const [groupByColumns, setGroupByColumns] = useState<string[]>([]);
+  const [groupByColumns, setGroupByColumns] = useState<string[]>(['date_raw']); // Default to date
   const [rawParsedData, setRawParsedData] = useState<any[]>([]);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [selectedExcelCampNames, setSelectedExcelCampNames] = useState<string[]>([]);
   const [excelCampaignConfigs, setExcelCampaignConfigs] = useState<Record<string, {
     media: MediaProvider,
     fee_rate: number,
     budget: number,
+    budget_type: 'integrated' | 'individual', // Added
     cpc_goal?: number,
     ctr_goal?: number
   }>>({});
+  const [bulkConfig, setBulkConfig] = useState({
+    fee_rate: 10,
+    budget: 0,
+    cpc_goal: 0,
+    budget_type: 'integrated' as const // Default to integrated
+  });
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
@@ -233,6 +241,34 @@ export const ReportCenter: React.FC = () => {
         <div className="mt-8">
           <AnimatePresence mode="wait">
             <TabsContent value="upload" className="m-0 focus-visible:ring-0">
+              {/* Persistent Campaign Selection for Wizard */}
+              <div className="mb-6 flex items-center justify-between bg-white/60 backdrop-blur-md p-4 rounded-2xl border border-white/40 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+                    <TrendingUp size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800">분석 대행 캠페인</h4>
+                    <p className="text-[10px] text-slate-400 font-medium">데이터가 귀속될 마스터 캠페인을 선택하세요</p>
+                  </div>
+                </div>
+                <Select 
+                  value={selectedCampaignId || ''} 
+                  onValueChange={selectCampaign}
+                >
+                  <SelectTrigger className="w-[280px] bg-white border-slate-200 rounded-xl">
+                    <SelectValue placeholder="캠페인 선택" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-200">
+                    {campaigns.map(c => (
+                      <SelectItem key={c.campaign_id} value={c.campaign_id} className="rounded-lg">
+                        {c.campaign_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <AnimatePresence mode="wait">
                 {uploadStep === 'media' && (
                   <motion.div 
@@ -421,25 +457,144 @@ export const ReportCenter: React.FC = () => {
                             alert('캠페인 명(Excel) 컬럼을 지정해주세요.');
                             return;
                           }
-                          const uniqueCamps = Array.from(new Set(rawParsedData.map(r => r[excelCampCol])));
+                          const uniqueCamps = Array.from(new Set(rawParsedData.map(r => r[excelCampCol]).filter(Boolean)));
+                          setSelectedExcelCampNames(uniqueCamps as string[]);
+                          setUploadStep('select_campaigns');
+                        }}
+                      >
+                        다음 단계: 캠페인 선택
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {uploadStep === 'select_campaigns' && (
+                  <motion.div 
+                    key="select_campaigns"
+                    initial={{ opacity: 0, y: 20 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8"
+                  >
+                    <div className="flex items-center gap-4 border-b border-white/20 pb-6">
+                      <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
+                        <Check size={24} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-slate-800">4단계: 분석 대상 캠페인 선택</h3>
+                        <p className="text-sm text-slate-500">엑셀 파일에서 실제 분석에 포함할 캠페인을 선택해 주세요.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto p-2">
+                      {Array.from(new Set(rawParsedData.map(r => r[columnMapping.excel_campaign!]).filter(Boolean))).map((camp: any) => (
+                        <div 
+                          key={camp}
+                          onClick={() => {
+                            setSelectedExcelCampNames(prev => 
+                              prev.includes(camp) ? prev.filter(c => c !== camp) : [...prev, camp]
+                            );
+                          }}
+                          className={cn(
+                            "p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between",
+                            selectedExcelCampNames.includes(camp)
+                              ? "border-blue-500 bg-blue-50 text-blue-700 font-bold"
+                              : "border-slate-100 bg-white text-slate-600"
+                          )}
+                        >
+                          <span className="truncate text-sm">{camp}</span>
+                          {selectedExcelCampNames.includes(camp) && <Check size={16} />}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-4 pt-4">
+                      <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('mapping')}>
+                        이전 단계
+                      </Button>
+                      <Button 
+                        className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700"
+                        onClick={() => setUploadStep('select_groupby')}
+                        disabled={selectedExcelCampNames.length === 0}
+                      >
+                        다음 단계: 그룹화 설정
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {uploadStep === 'select_groupby' && (
+                  <motion.div 
+                    key="select_groupby"
+                    initial={{ opacity: 0, y: 20 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8"
+                  >
+                    <div className="flex items-center gap-4 border-b border-white/20 pb-6">
+                      <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white shadow-xl">
+                        <Layers size={24} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-slate-800">5단계: 리포트 그룹화 설정</h3>
+                        <p className="text-sm text-slate-500">리포트에서 데이터를 어떤 단위로 합산하여 보여줄지 선택하세요.</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <Label className="text-sm font-bold text-slate-700">그룹화 기준 (복수 선택 가능)</Label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[
+                          { id: 'date_raw', name: '날짜' },
+                          { id: 'ad_group_name', name: '광고 그룹' },
+                          { id: 'excel_campaign_name', name: '캠페인' },
+                          { id: 'dmp_type', name: 'DMP' }
+                        ].map(criterion => (
+                          <div 
+                            key={criterion.id}
+                            onClick={() => {
+                              setGroupByColumns(prev => 
+                                prev.includes(criterion.id) ? prev.filter(c => c !== criterion.id) : [...prev, criterion.id]
+                              );
+                            }}
+                            className={cn(
+                              "p-4 rounded-xl border-2 transition-all cursor-pointer text-center",
+                              groupByColumns.includes(criterion.id)
+                                ? "border-amber-500 bg-amber-50 text-amber-700 font-bold"
+                                : "border-slate-100 bg-white text-slate-600"
+                            )}
+                          >
+                            {criterion.name}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-400">※ 아무것도 선택하지 않으면 모든 행이 개별로 표시됩니다.</p>
+                    </div>
+
+                    <div className="flex gap-4 pt-4">
+                      <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('select_campaigns')}>
+                        이전 단계
+                      </Button>
+                      <Button 
+                        className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700"
+                        onClick={() => {
                           const initialConfigs: Record<string, any> = {};
-                          uniqueCamps.forEach(campName => {
-                            if (!campName) return;
+                          selectedExcelCampNames.forEach(campName => {
                             const existing = selectedCampaign?.sub_campaigns?.find(s => s.excel_name === campName);
                             initialConfigs[campName] = {
                               media: activeMedia, 
                               fee_rate: existing?.fee_rate || 10,
                               budget: existing?.budget || 0,
+                              budget_type: existing?.budget_type || 'integrated',
                               cpc_goal: existing?.target_cpc || 0,
                               ctr_goal: existing?.target_ctr || 0
                             };
                           });
-                          
                           setExcelCampaignConfigs(initialConfigs);
                           setUploadStep('setup');
                         }}
                       >
-                        다음 단계: 캠페인 상세 설정
+                        다음 단계: 상세 설정 및 가공
                       </Button>
                     </div>
                   </motion.div>
@@ -465,21 +620,90 @@ export const ReportCenter: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Bulk Configuration Section */}
+                    <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl space-y-4">
+                      <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                            <Zap size={18} />
+                          </div>
+                          <h4 className="font-bold">캠페인 종합 설정 (Bulk Apply)</h4>
+                        </div>
+                        <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">통합 예산/수수료 적용</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] text-slate-400 font-bold uppercase">통합 수수료율 (%)</Label>
+                          <Input 
+                            type="number" 
+                            className="bg-white/10 border-white/20 text-white h-10" 
+                            value={bulkConfig.fee_rate}
+                            onChange={(e) => setBulkConfig(prev => ({ ...prev, fee_rate: Number(e.target.value) }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] text-slate-400 font-bold uppercase">통합 목표 CPC</Label>
+                          <Input 
+                            type="number" 
+                            className="bg-white/10 border-white/20 text-white h-10" 
+                            value={bulkConfig.cpc_goal}
+                            onChange={(e) => setBulkConfig(prev => ({ ...prev, cpc_goal: Number(e.target.value) }))}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                           <Button 
+                            variant="secondary"
+                            className="w-full h-10 bg-blue-600 text-white font-bold hover:bg-blue-500 border-none"
+                            onClick={() => {
+                              const newConfigs = { ...excelCampaignConfigs };
+                              Object.keys(newConfigs).forEach(name => {
+                                newConfigs[name] = {
+                                  ...newConfigs[name],
+                                  fee_rate: bulkConfig.fee_rate,
+                                  cpc_goal: bulkConfig.cpc_goal,
+                                  budget_type: 'integrated'
+                                };
+                              });
+                              setExcelCampaignConfigs(newConfigs);
+                            }}
+                          >
+                            선택된 모든 캠페인에 통합 설정 적용
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                       {Object.entries(excelCampaignConfigs).map(([name, config]) => (
-                        <div key={name} className="bg-white/60 p-6 rounded-2xl border border-white/40 shadow-sm space-y-4">
-                          <div className="flex items-center justify-between">
+                        <div key={name} className={cn(
+                          "bg-white/60 p-6 rounded-2xl border transition-all",
+                          config.budget_type === 'integrated' ? "border-blue-200 bg-blue-50/20" : "border-white/40 shadow-sm"
+                        )}>
+                          <div className="flex items-center justify-between mb-4">
                             <div className="flex flex-col">
-                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">엑셀 내 캠페인명 (매체별)</span>
-                              <Label className="text-lg font-black text-blue-700">{name}</Label>
+                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">엑셀 내 캠페인명</span>
+                              <Label className="text-lg font-black text-slate-800">{name}</Label>
                             </div>
-                            <Badge variant="outline" className="h-7 bg-blue-50/50 text-blue-600 border-blue-100 px-3 font-bold">분석 대상</Badge>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-500 mr-2">예산/수수료 방식:</span>
+                              <select 
+                                className="h-8 rounded-lg border-slate-200 text-xs font-bold px-2 outline-none focus:ring-2 focus:ring-blue-500"
+                                value={config.budget_type}
+                                onChange={(e) => setExcelCampaignConfigs(prev => ({
+                                  ...prev,
+                                  [name]: { ...prev[name], budget_type: e.target.value as 'integrated' | 'individual' }
+                                }))}
+                              >
+                                <option value="integrated">통합 (종합 설정 따름)</option>
+                                <option value="individual">개별 (직접 입력)</option>
+                              </select>
+                            </div>
                           </div>
                           
                           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">매체 확인 (수정 불가)</Label>
-                              <div className="h-10 bg-slate-100/50 border border-slate-200 rounded-xl px-3 flex items-center text-xs text-slate-500 font-bold uppercase">
+                              <Label className="text-xs font-bold text-slate-500">매체</Label>
+                              <div className="h-10 bg-slate-100/50 border border-slate-200 rounded-xl px-3 flex items-center text-xs text-slate-500 font-bold">
                                 {activeMedia}
                               </div>
                             </div>
@@ -487,8 +711,9 @@ export const ReportCenter: React.FC = () => {
                               <Label className="text-xs font-bold text-slate-500">수수료율 (%)</Label>
                               <Input 
                                 type="number" 
-                                className="h-10 rounded-xl border-slate-200" 
-                                value={config.fee_rate}
+                                disabled={config.budget_type === 'integrated'}
+                                className={cn("h-10 rounded-xl", config.budget_type === 'integrated' ? "bg-slate-100 text-slate-400" : "border-slate-200")}
+                                value={config.budget_type === 'integrated' ? bulkConfig.fee_rate : config.fee_rate}
                                 onChange={(e) => setExcelCampaignConfigs(prev => ({
                                   ...prev,
                                   [name]: { ...prev[name], fee_rate: Number(e.target.value) }
@@ -496,7 +721,7 @@ export const ReportCenter: React.FC = () => {
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">예산 (VAT 별도)</Label>
+                              <Label className="text-xs font-bold text-slate-500">개별 예산 (₩)</Label>
                               <Input 
                                 type="number" 
                                 className="h-10 rounded-xl border-slate-200" 
@@ -511,8 +736,9 @@ export const ReportCenter: React.FC = () => {
                               <Label className="text-xs font-bold text-slate-500">목표 CPC</Label>
                               <Input 
                                 type="number" 
-                                className="h-10 rounded-xl border-slate-200" 
-                                value={config.cpc_goal || 0}
+                                disabled={config.budget_type === 'integrated'}
+                                className={cn("h-10 rounded-xl", config.budget_type === 'integrated' ? "bg-slate-100 text-slate-400" : "border-slate-200")}
+                                value={config.budget_type === 'integrated' ? bulkConfig.cpc_goal : config.cpc_goal || 0}
                                 onChange={(e) => setExcelCampaignConfigs(prev => ({
                                   ...prev,
                                   [name]: { ...prev[name], cpc_goal: Number(e.target.value) }
@@ -525,7 +751,7 @@ export const ReportCenter: React.FC = () => {
                     </div>
 
                     <div className="flex gap-4 pt-4 border-t border-white/20">
-                      <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('mapping')}>
+                      <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('select_groupby')}>
                         이전 단계로
                       </Button>
                       <Button 
@@ -533,52 +759,52 @@ export const ReportCenter: React.FC = () => {
                         onClick={async () => {
                           setIsProcessing(true);
                           try {
-                            const processed = CalculationService.processWithDanfo(
-                              rawParsedData,
+                            // Filter raw data to only include selected campaigns
+                            const filteredRaw = rawParsedData.filter(r => 
+                              selectedExcelCampNames.includes(r[columnMapping.excel_campaign!])
+                            );
+
+                            const { raw, report } = CalculationService.processWithDanfo(
+                              filteredRaw,
                               selectedCampaignId || 'UNASSIGNED',
                               activeMedia,
-                              10, 
+                              bulkConfig.fee_rate, 
                               groupByColumns,
                               columnMapping,
                               excelCampaignConfigs
                             );
 
-                            // Update master campaign with these sub-campaign configs for persistence
                             if (selectedCampaign) {
                               const updatedSubs = [...(selectedCampaign.sub_campaigns || [])];
                               Object.entries(excelCampaignConfigs).forEach(([name, cfg]: [string, any]) => {
                                 const idx = updatedSubs.findIndex(s => s.excel_name === name);
+                                const subConfig = {
+                                  excel_name: name,
+                                  media: activeMedia,
+                                  fee_rate: cfg.budget_type === 'integrated' ? bulkConfig.fee_rate : cfg.fee_rate, 
+                                  budget: cfg.budget,
+                                  budget_type: cfg.budget_type,
+                                  target_cpc: cfg.budget_type === 'integrated' ? bulkConfig.cpc_goal : cfg.cpc_goal,
+                                  target_ctr: cfg.ctr_goal
+                                };
                                 if (idx > -1) {
-                                  updatedSubs[idx] = { 
-                                    ...updatedSubs[idx], 
-                                    media: activeMedia,
-                                    fee_rate: cfg.fee_rate, 
-                                    budget: cfg.budget,
-                                    target_cpc: cfg.cpc_goal,
-                                    target_ctr: cfg.ctr_goal
-                                  };
+                                  updatedSubs[idx] = { ...updatedSubs[idx], ...subConfig };
                                 } else {
-                                  updatedSubs.push({
-                                    id: `SUB-${Math.floor(Math.random() * 1000)}`,
-                                    excel_name: name,
-                                    media: activeMedia,
-                                    fee_rate: cfg.fee_rate, 
-                                    budget: cfg.budget,
-                                    target_cpc: cfg.cpc_goal,
-                                    target_ctr: cfg.ctr_goal
-                                  });
+                                  updatedSubs.push({ id: `SUB-${Math.floor(Math.random() * 1000)}`, ...subConfig } as any);
                                 }
                               });
                               const updatedCamp = { ...selectedCampaign, sub_campaigns: updatedSubs };
                               updateCampaign(updatedCamp);
-                              saveCampaignAction(updatedCamp);
+                              await saveCampaignAction(updatedCamp);
                             }
 
-                            const result = await savePerformanceData(processed);
+                            // Save both raw and report data
+                            // Note: RepositoryService should handle separation based on is_raw
+                            const result = await savePerformanceData([...raw, ...report]);
                             if (result.success) {
-                              setProcessedData(prev => [...prev, ...processed]);
+                              setProcessedData(prev => [...prev, ...report]); // Show report (grouped) data in UI
                               setUploadStep('complete');
-                              alert('데이터가 성공적으로 분석 및 저장되었습니다.');
+                              alert('데이터가 성공적으로 분석 및 저장되었습니다. (Raw + Report 분리 저장)');
                             } else {
                               alert('저장 중 오류가 발생했습니다.');
                             }
@@ -630,8 +856,8 @@ export const ReportCenter: React.FC = () => {
                     <CardHeader className="border-b border-slate-100/50 bg-white/20 px-8 py-6">
                       <div className="flex justify-between items-center">
                         <div>
-                          <CardTitle className="text-xl font-bold text-slate-800">가공 완료 데이터 (Grid)</CardTitle>
-                          <p className="text-xs text-slate-400 mt-1 uppercase font-bold tracking-tight">통합 캠페인: {selectedCampaign?.campaign_name}</p>
+                          <CardTitle className="text-xl font-bold text-slate-800">가공 완료 데이터 (Grouped View)</CardTitle>
+                          <p className="text-xs text-slate-400 mt-1 uppercase font-bold tracking-tight">기준: {groupByColumns.join(', ') || '전체(합계)'} | 통합 캠페인: {selectedCampaign?.campaign_name}</p>
                         </div>
                         <Button variant="ghost" size="sm" className="text-blue-500 font-semibold hover:bg-blue-50">CSV 다운로드</Button>
                       </div>
@@ -764,7 +990,8 @@ export const ReportCenter: React.FC = () => {
                           excel_name: '신규 매체/캠페인(Excel)',
                           media: '네이버GFA' as MediaProvider,
                           fee_rate: 10,
-                          budget: 0
+                          budget: 0,
+                          budget_type: 'integrated' as const
                         };
                         const updated = {
                           ...selectedCampaign,

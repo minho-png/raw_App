@@ -28,16 +28,17 @@ export class RepositoryService {
 
     // 1. Identify all unique { campaign_id, media, date } combinations in the input
     const uniqueKeys = data.reduce((acc, curr) => {
-      const key = `${curr.campaign_id}|${curr.media}|${curr.date.toISOString()}`;
+      const key = `${curr.campaign_id}|${curr.media}|${curr.date.toISOString()}|${!!curr.is_raw}`;
       if (!acc.has(key)) {
         acc.set(key, {
           campaign_id: curr.campaign_id,
           media: curr.media,
-          date: curr.date
+          date: curr.date,
+          is_raw: !!curr.is_raw
         });
       }
       return acc;
-    }, new Map<string, { campaign_id: string; media: any; date: Date }>());
+    }, new Map<string, { campaign_id: string; media: any; date: Date; is_raw: boolean }>());
 
     // 2. Perform deletions for each unique combination found in the new data
     let totalDeleted = 0;
@@ -47,7 +48,8 @@ export class RepositoryService {
     const deleteFilters = Array.from(uniqueKeys.values()).map(k => ({
       campaign_id: k.campaign_id,
       media: k.media,
-      date: k.date
+      date: k.date,
+      is_raw: k.is_raw
     })) as Filter<PerformanceRecord>[];
 
     const deleteResult = await this.collection.deleteMany({
@@ -153,7 +155,8 @@ export class RepositoryService {
    * getPerformanceData: Fetches all performance records for a campaign.
    */
   public async getPerformanceData(campaignId: string) {
-    return await this.collection.find({ campaign_id: campaignId }).sort({ date: -1 }).toArray();
+    // Return only report data by default for the UI, or handle is_raw filtering elsewhere
+    return await this.collection.find({ campaign_id: campaignId, is_raw: { $ne: true } }).sort({ date: -1 }).toArray();
   }
 
   /**

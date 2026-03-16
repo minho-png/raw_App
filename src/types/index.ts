@@ -6,6 +6,7 @@ export interface SubCampaignConfig {
   media: MediaProvider;
   fee_rate: number;
   budget: number;
+  budget_type: 'integrated' | 'individual'; // Added: integrated follows global, individual is separate
   target_cpc?: number;
   target_ctr?: number;
 }
@@ -31,7 +32,9 @@ export interface PerformanceRecord {
   has_dmp: boolean;
   cost: number;             // 집행 금액과 동일하거나 별도 집계용
   is_edited?: boolean;        // 사용자가 수정한 데이터인지 여부
+  is_raw?: boolean;           // Added: raw data vs report data
   placement?: string;
+  group_id?: string;          // Link grouped reports back to source groups
   [key: string]: any; // Catch-all for other CSV columns
 }
 
