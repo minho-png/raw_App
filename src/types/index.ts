@@ -28,9 +28,32 @@ export interface PerformanceRecord {
 }
 
 export interface BudgetStatus {
+  total_budget: number;
+  spent_budget: number;
+  remaining_budget: number;
   spent: number;
   remaining: number;
   burn_rate: number;
   pacing_index: number;
   pacing_status: string;
+}
+
+export interface DmpSettlementRow {
+  dmp_type: string;
+  total_execution: number;
+  total_net: number;
+  fee_amount: number;
+  row_count: number;
+}
+
+export interface MonthlySettlementResult {
+  year: number;
+  month: number;
+  campaign_id: string;
+  rows: DmpSettlementRow[];
+  total_execution: number;
+  total_net: number;
+  total_fee: number;
+  verification_status: 'valid' | 'warning';
+  diff_percentage: number;
 }

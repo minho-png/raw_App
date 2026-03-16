@@ -11,6 +11,10 @@ export class RepositoryService {
     return this.client.db(this.dbName).collection(this.collectionName);
   }
 
+  private get campaignCollection(): Collection<any> {
+    return this.client.db(this.dbName).collection('campaign_configs');
+  }
+
   /**
    * upsertCampaignData: 
    * Deletes existing data for the same campaign, media, and dates present in the new set,
@@ -79,5 +83,76 @@ export class RepositoryService {
     ];
 
     return await this.collection.aggregate(pipeline).toArray();
+  }
+
+  /**
+   * getMonthlySettlementData: Aggregates execution and net amounts by dmp_type for a given month.
+   */
+  public async getMonthlySettlementData(year: number, month: number, campaignId: string) {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+
+    const pipeline = [
+      {
+        $match: {
+          campaign_id: campaignId,
+          date: { $gte: startDate, $lte: endDate }
+        }
+      },
+      {
+        $group: {
+          _id: '$dmp_type',
+          total_execution: { $sum: '$execution_amount' },
+          total_net: { $sum: '$net_amount' },
+          row_count: { $count: {} }
+        }
+      },
+      {
+        $project: {
+          dmp_type: '$_id',
+          total_execution: 1,
+          total_net: 1,
+          fee_amount: { $subtract: ['$total_execution', '$total_net'] },
+          row_count: 1,
+          _id: 0
+        }
+      },
+      { $sort: { total_execution: -1 } }
+    ];
+
+    return await this.collection.aggregate(pipeline).toArray();
+  }
+
+  /**
+   * getCampaigns: Fetches all campaign configurations.
+   */
+  public async getCampaigns() {
+    return await this.campaignCollection.find({}).toArray();
+  }
+
+  /**
+   * upsertCampaignConfig: Saves or updates a campaign configuration.
+   */
+  public async upsertCampaignConfig(campaign: any) {
+    return await this.campaignCollection.updateOne(
+      { campaign_id: campaign.campaign_id },
+      { $set: campaign },
+      { upsert: true }
+    );
+  }
+
+  /**
+   * deleteCampaignConfig: Deletes a campaign configuration and its associated performance data.
+   */
+  public async deleteCampaign(campaignId: string) {
+    await this.campaignCollection.deleteOne({ campaign_id: campaignId });
+    return await this.collection.deleteMany({ campaign_id: campaignId });
+  }
+
+  /**
+   * getPerformanceData: Fetches all performance records for a campaign.
+   */
+  public async getPerformanceData(campaignId: string) {
+    return await this.collection.find({ campaign_id: campaignId }).sort({ date: -1 }).toArray();
   }
 }

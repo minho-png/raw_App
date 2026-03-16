@@ -17,10 +17,13 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, Eye, FileSpreadsheet, Zap, BarChart4, Layout, Database, TrendingUp } from "lucide-react";
+import { Download, Eye, FileSpreadsheet, Zap, BarChart4, Layout, Database, TrendingUp, Calculator } from "lucide-react";
 import { BudgetStatus, PerformanceRecord } from "@/types";
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { cn } from '@/lib/utils';
+import { DmpSettlementNode } from "@/components/settlement/DmpSettlementNode";
+import { getPerformanceDataAction } from '@/server/actions/settlement';
+import { Loader2 } from 'lucide-react';
 
 export const ReportCenter: React.FC = () => {
   const { selectedCampaignId, campaigns } = useCampaignStore();
@@ -28,6 +31,32 @@ export const ReportCenter: React.FC = () => {
   
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
   const [reportType, setReportType] = useState('daily');
+  const [activeTab, setActiveTab] = useState('upload');
+  const [isLoadingDb, setIsLoadingDb] = useState(false);
+
+  const handleFetchDbData = async () => {
+    if (!selectedCampaignId) return;
+    
+    setIsLoadingDb(true);
+    try {
+      const result = await getPerformanceDataAction(selectedCampaignId);
+      if (result.success && result.data) {
+        // Replace current data with DB data for the selected campaign
+        setProcessedData(prev => [
+          ...prev.filter(d => d.campaign_id !== selectedCampaignId),
+          ...result.data
+        ]);
+        alert(`${result.data.length}건의 데이터를 DB에서 성공적으로 불러왔습니다.`);
+      } else {
+        alert('데이터를 불러오는데 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('Fetch DB data failed:', error);
+      alert('데이터 요청 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoadingDb(false);
+    }
+  };
 
   // Filter data by selected campaign
   const filteredData = useMemo(() => {
@@ -41,7 +70,7 @@ export const ReportCenter: React.FC = () => {
     const remaining = total - spent;
     
     // Mock burn rate and pacing for UI
-    const burnRate = spent / (total || 1) * 100;
+    const burnRate = total > 0 ? (spent / total) * 100 : 0;
     
     return {
       total_budget: total,
@@ -56,8 +85,9 @@ export const ReportCenter: React.FC = () => {
   }, [filteredData, selectedCampaign]);
 
   const handleAnalysisComplete = (data: PerformanceRecord[]) => {
-    // Append to total processed data (in a real app, this would also hit the DB)
+    // Data is already saved to DB via Server Action in FileUploader
     setProcessedData(prev => [...prev, ...data]);
+    setActiveTab('upload');
   };
 
   if (!selectedCampaignId) {
@@ -83,11 +113,17 @@ export const ReportCenter: React.FC = () => {
             <span className="text-xs text-slate-400 font-medium">Campaign ID: {selectedCampaignId}</span>
           </div>
           <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">{selectedCampaign?.campaign_name}</h1>
-          <p className="text-slate-500 mt-1">실시간 데이터 분석 및 통합 리포트 센터</p>
+          <p className="text-slate-500 mt-1">실시간 광고 정산 및 성과 분석 엔진</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="rounded-xl border-slate-200 bg-white/50 backdrop-blur shadow-sm hover:translate-y-[-2px] transition-transform">
-            <Database className="mr-2 h-4 w-4" /> DB 데이터 불러오기
+          <Button 
+            variant="outline" 
+            onClick={handleFetchDbData}
+            disabled={isLoadingDb}
+            className="rounded-xl border-slate-200 bg-white/50 backdrop-blur shadow-sm hover:translate-y-[-2px] transition-transform"
+          >
+            {isLoadingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+            DB 데이터 불러오기
           </Button>
           <Button className="rounded-xl bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20 hover:scale-[1.02] transition-all">
             <Zap className="mr-2 h-4 w-4" /> 리포트 즉시 발행
@@ -97,10 +133,13 @@ export const ReportCenter: React.FC = () => {
 
       <BudgetPacingCards status={budgetStatus} />
 
-      <Tabs defaultValue="upload" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-slate-100/50 p-1 rounded-2xl border border-slate-200 inline-flex">
           <TabsTrigger value="upload" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
             <FileSpreadsheet size={16} /> RAW 데이터 관리
+          </TabsTrigger>
+          <TabsTrigger value="settlement" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
+            <Calculator size={16} /> DMP 정산
           </TabsTrigger>
           <TabsTrigger value="dmp" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
             <BarChart4 size={16} /> DMP 성과 분석
@@ -171,6 +210,21 @@ export const ReportCenter: React.FC = () => {
                     </CardContent>
                   </Card>
                 )}
+              </motion.div>
+            </TabsContent>
+
+            <TabsContent value="settlement" className="m-0 focus-visible:ring-0">
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }} 
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-8"
+              >
+                <DmpSettlementNode 
+                  campaignId={selectedCampaignId} 
+                  campaignName={selectedCampaign?.campaign_name || ''}
+                  totalBudget={selectedCampaign?.total_budget || 0}
+                />
               </motion.div>
             </TabsContent>
 

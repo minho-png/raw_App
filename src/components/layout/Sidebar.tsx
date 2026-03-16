@@ -1,27 +1,51 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useCampaignStore } from '@/store/useCampaignStore';
-import { Plus, Trash2, Layout, BarChart3, Database } from 'lucide-react';
+import { Plus, Trash2, Layout, BarChart3, Database, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/server/actions/campaign';
 
 export const Sidebar = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading } = useCampaignStore();
 
-  const handleAddCampaign = () => {
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      setIsLoading(true);
+      const result = await getCampaignsAction();
+      if (result.success && result.campaigns) {
+        setCampaigns(result.campaigns);
+      }
+      setIsLoading(false);
+    };
+    fetchCampaigns();
+  }, [setCampaigns, setIsLoading]);
+
+  const handleAddCampaign = async () => {
     const newId = `CAMP-${Math.floor(Math.random() * 1000)}`;
-    addCampaign({
+    const newCampaign = {
       campaign_id: newId,
       campaign_name: `신규 캠페인 ${campaigns.length + 1}`,
-      media: '네이버GFA',
+      media: '네이버GFA' as const,
       total_budget: 10000000,
       start_date: new Date(),
       end_date: new Date(),
       base_fee_rate: 10,
       total_fee_rate: 10
-    });
+    };
+    
+    await saveCampaignAction(newCampaign);
+    addCampaign(newCampaign);
+    selectCampaign(newId);
+  };
+
+  const handleDeleteCampaign = async (id: string) => {
+    if (confirm('캠페인을 삭제하시겠습니까? 관련 데이터도 함께 삭제됩니다.')) {
+      await deleteCampaignAction(id);
+      deleteCampaign(id);
+    }
   };
 
   return (
@@ -68,7 +92,7 @@ export const Sidebar = () => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    deleteCampaign(camp.campaign_id);
+                    handleDeleteCampaign(camp.campaign_id);
                   }}
                   className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 rounded text-red-400 transition-opacity"
                 >

@@ -3,11 +3,13 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileCheck, Loader2 } from 'lucide-react';
+import { Upload, FileCheck, Loader2, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CalculationService } from '@/services/calculationService';
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { MediaProvider } from '@/types';
+
+import { savePerformanceData } from '@/server/actions/settlement';
 
 interface FileUploaderProps {
   onAnalysisComplete: (data: any[]) => void;
@@ -15,6 +17,7 @@ interface FileUploaderProps {
 
 export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete }) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const { selectedCampaignId, campaigns } = useCampaignStore();
   const selectedCampaign = campaigns.find(c => c.campaign_id === selectedCampaignId);
 
@@ -28,14 +31,12 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete }
     if (!file) return;
 
     setIsProcessing(true);
+    setUploadStatus(null);
 
     try {
       const text = await file.text();
       const rawData = await CalculationService.parseCsv(text);
       
-      // Simulate slightly longer analysis for UI effect if file is small
-      await new Promise(r => setTimeout(r, 1500));
-
       const processed = CalculationService.processWithDanfo(
         rawData, 
         selectedCampaignId, 
@@ -43,10 +44,27 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete }
         selectedCampaign?.total_fee_rate || 10
       );
 
-      onAnalysisComplete(processed);
+      // Server Action CALL
+      const result = await savePerformanceData(processed);
+
+      if (result.success) {
+        // Narrowing manually to appease linter if needed, though result.success should work
+        const successResult = result as { success: true, deletedCount: number, insertedCount: number };
+        setUploadStatus({ 
+          type: 'success', 
+          message: `${successResult.insertedCount}건의 데이터가 성공적으로 DB에 저장되었습니다.` 
+        });
+        onAnalysisComplete(processed);
+      } else {
+        const errorResult = result as { success: false, error: string };
+        throw new Error(errorResult.error || 'DB 저장 실패');
+      }
     } catch (error) {
-      console.error("Analysis failed:", error);
-      alert("파일 분석 중 오류가 발생했습니다.");
+      console.error("Analysis or Save failed:", error);
+      setUploadStatus({ 
+        type: 'error', 
+        message: "데이터 저장 중 오류가 발생했습니다. 환경 변수를 확인하세요." 
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -60,6 +78,29 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete }
 
   return (
     <div className="w-full max-w-2xl mx-auto">
+      {/* Upload Status Message */}
+      <AnimatePresence>
+        {uploadStatus && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -10 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -10 }}
+            className={cn(
+              "mb-4 p-4 rounded-2xl border flex items-center gap-3",
+              uploadStatus.type === 'success' ? "bg-green-50 border-green-100 text-green-700" : "bg-red-50 border-red-100 text-red-700"
+            )}
+          >
+            <div className={cn(
+              "w-8 h-8 rounded-full flex items-center justify-center",
+              uploadStatus.type === 'success' ? "bg-green-100" : "bg-red-100"
+            )}>
+              {uploadStatus.type === 'success' ? <FileCheck size={18} /> : <Zap size={18} />}
+            </div>
+            <p className="text-sm font-medium">{uploadStatus.message}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div 
         {...getRootProps()} 
         className={cn(
