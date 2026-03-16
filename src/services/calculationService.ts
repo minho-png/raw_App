@@ -95,10 +95,10 @@ export class CalculationService {
     const json = df.toJSON() as any[];
     json.forEach(row => {
       const excelCampName = row.excel_campaign_name;
-      const config = campaignConfigs && excelCampName ? campaignConfigs[excelCampName] : null;
+      const config = campaignConfigs && excelCampName ? (campaignConfigs as Record<string, any>)[excelCampName] : null;
       
       const rowMedia = config ? config.media : media;
-      const rowFeeRate = config ? config.fee_rate : totalFeeRate;
+      const rowFeeRate = config ? (config.fee_rate ?? totalFeeRate) : totalFeeRate;
       const feeDecimal = rowFeeRate / 100;
       
       let supplyVal = parseFloat(String(row.supply_value).replace(/,/g, '')) || 0;

@@ -10,7 +10,10 @@ import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/
 import { CampaignConfig } from '@/types';
 
 export const Sidebar = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, updateCampaign } = useCampaignStore();
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingCampaign, setEditingCampaign] = useState<CampaignConfig | null>(null);
+  const [tempName, setTempName] = useState("");
 
   useEffect(() => {
     const fetchCampaigns = async () => {
@@ -26,15 +29,18 @@ export const Sidebar = () => {
 
   const handleAddCampaign = async () => {
     const newId = `CAMP-${Math.floor(Math.random() * 1000)}`;
-    const newCampaign = {
+    const newCampaign: CampaignConfig = {
       campaign_id: newId,
       campaign_name: `신규 캠페인 ${campaigns.length + 1}`,
-      media: '네이버GFA' as const,
-      total_budget: 10000000,
-      start_date: new Date(),
-      end_date: new Date(),
-      base_fee_rate: 10,
-      total_fee_rate: 10
+      sub_campaigns: [
+        {
+          id: `SUB-${Math.floor(Math.random() * 1000)}`,
+          excel_name: '기본 캠페인',
+          media: '네이버GFA',
+          fee_rate: 10,
+          budget: 10000000
+        }
+      ]
     };
     
     await saveCampaignAction(newCampaign);
@@ -94,8 +100,9 @@ export const Sidebar = () => {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      selectCampaign(camp.campaign_id);
-                      useCampaignStore.getState().setActiveTab('campaigns');
+                      setEditingCampaign(camp);
+                      setTempName(camp.campaign_name);
+                      setIsEditModalOpen(true);
                     }}
                     className="p-1 hover:bg-white/20 rounded text-white/70 transition-colors"
                   >
@@ -122,11 +129,64 @@ export const Sidebar = () => {
           <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">System Status</p>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-xs font-medium">Data Engine Ready</span>
+            <span className="text-xs font-medium text-slate-300">Data Engine Ready</span>
           </div>
         </div>
       </div>
 
+      <AnimatePresence>
+        {isEditModalOpen && editingCampaign && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4"
+            >
+              <h3 className="text-lg font-bold text-slate-900 border-b pb-2">캠페인 이름 수정</h3>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Master Campaign Name</label>
+                <input 
+                  autoFocus
+                  className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 font-bold"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const updated = { ...editingCampaign, campaign_name: tempName };
+                      updateCampaign(updated);
+                      saveCampaignAction(updated);
+                      setIsEditModalOpen(false);
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button 
+                  variant="outline" 
+                  className="flex-1 rounded-xl h-11 border-slate-200 text-slate-600 font-bold" 
+                  onClick={() => setIsEditModalOpen(false)}
+                >
+                  취소
+                </Button>
+                <Button 
+                  className="flex-1 rounded-xl h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold"
+                  onClick={() => {
+                    if (editingCampaign) {
+                      const updated = { ...editingCampaign, campaign_name: tempName };
+                      updateCampaign(updated);
+                      saveCampaignAction(updated);
+                    }
+                    setIsEditModalOpen(false);
+                  }}
+                >
+                  저장
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </aside>
   );
 };

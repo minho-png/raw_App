@@ -1,18 +1,19 @@
 export type MediaProvider = '네이버GFA' | '카카오Moment' | '구글Ads' | '메타Ads' | 'Kakao' | 'Google' | 'Meta';
 
+export interface SubCampaignConfig {
+  id: string; // Unique ID for this sub-campaign setting
+  excel_name: string; // Mapping name from Excel
+  media: MediaProvider;
+  fee_rate: number;
+  budget: number;
+  target_cpc?: number;
+  target_ctr?: number;
+}
+
 export interface CampaignConfig {
   campaign_id: string;
   campaign_name: string;
-  media: MediaProvider;
-  total_budget: number;
-  start_date: Date;
-  end_date: Date;
-  base_fee_rate: number; // Percentage, e.g., 10 for 10%
-  total_fee_rate: number; // Inputted total fee rate (%)
-  target_cpc?: number;
-  target_ctr?: number;
-  group_by?: 'daily' | 'ad_group' | 'dmp'; // Optional: for backward compatibility
-  group_by_columns?: string[]; // Dynamic group by columns
+  sub_campaigns: SubCampaignConfig[];
 }
 
 export interface PerformanceRecord {

@@ -37,7 +37,8 @@ import {
   Loader2,
   Edit3,
   Check,
-  X as CloseIcon
+  X as CloseIcon,
+  Trash2
 } from "lucide-react";
 import { BudgetStatus, PerformanceRecord, MediaProvider } from "@/types";
 import { useCampaignStore } from '@/store/useCampaignStore';
@@ -118,6 +119,11 @@ export const ReportCenter: React.FC = () => {
     return processedData.filter(d => d.campaign_id === selectedCampaignId);
   }, [processedData, selectedCampaignId]);
 
+  const totalBudget = useMemo(() => {
+    if (!selectedCampaign) return 0;
+    return selectedCampaign.sub_campaigns.reduce((sum, sub) => sum + (sub.budget || 0), 0);
+  }, [selectedCampaign]);
+
   // Derived stats for BudgetPacingCards
   const budgetStatus: BudgetStatus = useMemo(() => {
     const totalExecution = filteredData.reduce((sum, r) => sum + r.execution_amount, 0);
@@ -125,7 +131,7 @@ export const ReportCenter: React.FC = () => {
     const totalImpressions = filteredData.reduce((sum, r) => sum + r.impressions, 0);
     
     const spent = totalExecution;
-    const total = selectedCampaign?.total_budget || 0;
+    const total = totalBudget;
     const remaining = total - spent;
     
     const burnRate = total > 0 ? (spent / total) * 100 : 0;
@@ -144,7 +150,7 @@ export const ReportCenter: React.FC = () => {
       actual_cpc: actualCpc,
       actual_ctr: actualCtr
     };
-  }, [filteredData, selectedCampaign]);
+  }, [filteredData, totalBudget]);
 
   const handleAnalysisComplete = (data: PerformanceRecord[]) => {
     // Data is already saved to DB via Server Action in FileUploader
@@ -351,13 +357,24 @@ export const ReportCenter: React.FC = () => {
                           
                           const initialConfigs: Record<string, any> = {};
                           uniqueCampaigns.forEach(campName => {
-                            initialConfigs[campName] = {
-                              media: '네이버GFA',
-                              fee_rate: 10,
-                              budget: 0,
-                              cpc_goal: 0,
-                              ctr_goal: 0
-                            };
+                            const existing = selectedCampaign?.sub_campaigns.find(s => s.excel_name === campName);
+                            if (existing) {
+                              initialConfigs[campName] = {
+                                media: existing.media,
+                                fee_rate: existing.fee_rate,
+                                budget: existing.budget,
+                                cpc_goal: existing.target_cpc || 0,
+                                ctr_goal: existing.target_ctr || 0
+                              };
+                            } else {
+                              initialConfigs[campName] = {
+                                media: '네이버GFA',
+                                fee_rate: 10,
+                                budget: 0,
+                                cpc_goal: 0,
+                                ctr_goal: 0
+                              };
+                            }
                           });
                           
                           setExcelCampaignConfigs(initialConfigs);
@@ -471,6 +488,37 @@ export const ReportCenter: React.FC = () => {
                               columnMapping,
                               excelCampaignConfigs
                             );
+
+                            // Update master campaign with these sub-campaign configs for persistence
+                            if (selectedCampaign) {
+                              const updatedSubs = [...selectedCampaign.sub_campaigns];
+                              Object.entries(excelCampaignConfigs).forEach(([name, cfg]: [string, any]) => {
+                                const idx = updatedSubs.findIndex(s => s.excel_name === name);
+                                if (idx > -1) {
+                                  updatedSubs[idx] = { 
+                                    ...updatedSubs[idx], 
+                                    media: cfg.media, 
+                                    fee_rate: cfg.fee_rate, 
+                                    budget: cfg.budget,
+                                    target_cpc: cfg.cpc_goal,
+                                    target_ctr: cfg.ctr_goal
+                                  };
+                                } else {
+                                  updatedSubs.push({
+                                    id: `SUB-${Math.floor(Math.random() * 1000)}`,
+                                    excel_name: name,
+                                    media: cfg.media,
+                                    fee_rate: cfg.fee_rate,
+                                    budget: cfg.budget,
+                                    target_cpc: cfg.cpc_goal,
+                                    target_ctr: cfg.ctr_goal
+                                  });
+                                }
+                              });
+                              const updatedCamp = { ...selectedCampaign, sub_campaigns: updatedSubs };
+                              updateCampaign(updatedCamp);
+                              saveCampaignAction(updatedCamp);
+                            }
 
                             const result = await savePerformanceData(processed);
                             if (result.success) {
@@ -633,128 +681,191 @@ export const ReportCenter: React.FC = () => {
                 exit={{ opacity: 0, y: -20 }}
                 className="space-y-6"
               >
-                <div className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8">
-                  <div className="flex items-center justify-between border-b border-white/20 pb-6">
+                <div className="bg-white/60 backdrop-blur-xl border border-white/40 rounded-3xl p-8 shadow-xl">
+                  <div className="flex items-center justify-between mb-8">
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-blue-500 rounded-2xl flex items-center justify-center text-white shadow-xl">
-                        <Settings size={24} />
+                      <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-600/20">
+                        <Settings size={28} />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold text-slate-800">캠페인 및 수수료 관리</h3>
-                        <p className="text-sm text-slate-500">매체별 수수료율과 KPI 목표를 통합 관리합니다.</p>
+                        <h2 className="text-2xl font-black text-slate-900 tracking-tight">통합 마스터 캠페인 관리</h2>
+                        <p className="text-slate-500 text-sm mt-1">
+                          선택된 캠페인: <span className="text-blue-600 font-bold">{selectedCampaign?.campaign_name}</span>
+                        </p>
                       </div>
                     </div>
                     <Button 
                       onClick={() => {
-                        const newId = `CAMP-${Math.floor(Math.random() * 1000)}`;
-                        const newCamp = {
-                          campaign_id: newId,
-                          campaign_name: `신규 캠페인 ${campaigns.length + 1}`,
-                          media: '네이버GFA' as const,
-                          total_budget: 10000000,
-                          start_date: new Date(),
-                          end_date: new Date(),
-                          base_fee_rate: 10,
-                          total_fee_rate: 10
+                        if (!selectedCampaign) return;
+                        const newSub = {
+                          id: `SUB-${Math.floor(Math.random() * 1000)}`,
+                          excel_name: '신규 매체/캠페인(Excel)',
+                          media: '네이버GFA' as MediaProvider,
+                          fee_rate: 10,
+                          budget: 0
                         };
-                        saveCampaignAction(newCamp).then(() => addCampaign(newCamp));
+                        const updated = {
+                          ...selectedCampaign,
+                          sub_campaigns: [...selectedCampaign.sub_campaigns, newSub]
+                        };
+                        updateCampaign(updated);
+                        saveCampaignAction(updated);
                       }}
-                      className="rounded-xl h-12 px-6 bg-slate-900 text-white font-bold"
+                      className="rounded-xl h-12 px-6 bg-slate-900 text-white font-bold hover:bg-slate-800 transition-all shadow-lg"
                     >
-                      <Plus size={18} className="mr-2" /> 신규 캠페인 생성
+                      <Plus size={18} className="mr-2" /> 매체/sub-캠페인 추가
                     </Button>
                   </div>
 
                   <div className="grid gap-6">
-                    {campaigns.map(camp => (
-                      <div key={camp.campaign_id} className="bg-white/60 rounded-2xl p-6 border border-white/40 shadow-sm hover:shadow-md transition-shadow grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        <div className="space-y-4">
+                    {selectedCampaign?.sub_campaigns.map((sub, idx) => (
+                      <div key={sub.id} className="bg-white/80 rounded-2xl p-6 border border-white/40 shadow-sm hover:shadow-md transition-shadow grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                        <div className="lg:col-span-3 space-y-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400">
+                            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
                               <Layout size={16} />
                             </div>
-                            <h4 className="font-bold text-slate-800">{camp.campaign_name}</h4>
+                            <div className="flex-1">
+                              <Label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Excel 캠페인 명 맵핑</Label>
+                              <Input 
+                                value={sub.excel_name}
+                                onChange={(e) => {
+                                  if (!selectedCampaign) return;
+                                  const newSubs = [...selectedCampaign.sub_campaigns];
+                                  newSubs[idx] = { ...sub, excel_name: e.target.value };
+                                  const updated = { ...selectedCampaign, sub_campaigns: newSubs };
+                                  updateCampaign(updated);
+                                  saveCampaignAction(updated);
+                                }}
+                                className="h-8 font-bold text-slate-800 border-none bg-transparent p-0 focus-visible:ring-0"
+                              />
+                            </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-[11px]">
-                            <div className="bg-slate-50 p-2 rounded-lg">
-                              <p className="text-slate-400 mb-1">매체</p>
-                              <p className="font-bold text-slate-700">{camp.media}</p>
-                            </div>
-                            <div className="bg-slate-50 p-2 rounded-lg">
-                              <p className="text-slate-400 mb-1">ID</p>
-                              <p className="font-bold text-slate-700">{camp.campaign_id}</p>
-                            </div>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">매체사</Label>
+                            <Select 
+                              value={sub.media} 
+                              onValueChange={(val) => {
+                                if (!selectedCampaign) return;
+                                const newSubs = [...selectedCampaign.sub_campaigns];
+                                newSubs[idx] = { ...sub, media: val as MediaProvider };
+                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
+                                updateCampaign(updated);
+                                saveCampaignAction(updated);
+                              }}
+                            >
+                              <SelectTrigger className="h-9 rounded-lg border-slate-200 bg-white">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="네이버GFA">네이버GFA</SelectItem>
+                                <SelectItem value="카카오Moment">카카오Moment</SelectItem>
+                                <SelectItem value="구글Ads">구글Ads</SelectItem>
+                                <SelectItem value="메타Ads">메타Ads</SelectItem>
+                                <SelectItem value="Kakao">Kakao</SelectItem>
+                                <SelectItem value="Google">Google</SelectItem>
+                                <SelectItem value="Meta">Meta</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
 
-                        <div className="space-y-4 border-x border-slate-100 px-8">
-                          <Label className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">수수료 및 예산 설정</Label>
-                          <div className="grid gap-4">
-                            <div className="space-y-1.5">
-                              <Label className="text-xs text-slate-500">대행 수수료율 (%)</Label>
-                              <Input 
-                                type="number"
-                                value={camp.total_fee_rate}
-                                onChange={(e) => {
-                                  const updated = { ...camp, total_fee_rate: Number(e.target.value) };
-                                  updateCampaign(updated);
-                                  saveCampaignAction(updated);
-                                }}
-                                className="h-9 rounded-lg border-slate-200"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs text-slate-500">총 예산 (₩)</Label>
-                              <Input 
-                                type="number"
-                                value={camp.total_budget}
-                                onChange={(e) => {
-                                  const updated = { ...camp, total_budget: Number(e.target.value) };
-                                  updateCampaign(updated);
-                                  saveCampaignAction(updated);
-                                }}
-                                className="h-9 rounded-lg border-slate-200"
-                              />
-                            </div>
+                        <div className="lg:col-span-4 grid grid-cols-2 gap-4 border-slate-100 lg:border-x lg:px-6">
+                          <div className="space-y-1.5">
+                            <Label className="text-[10px] text-slate-500 font-bold">대행 수수료율 (%)</Label>
+                            <Input 
+                              type="number"
+                              value={sub.fee_rate}
+                              onChange={(e) => {
+                                if (!selectedCampaign) return;
+                                const newSubs = [...selectedCampaign.sub_campaigns];
+                                newSubs[idx] = { ...sub, fee_rate: Number(e.target.value) };
+                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
+                                updateCampaign(updated);
+                                saveCampaignAction(updated);
+                              }}
+                              className="h-9 rounded-lg border-slate-200 focus:border-blue-500 transition-colors"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[10px] text-slate-500 font-bold">매체 예산 (₩)</Label>
+                            <Input 
+                              type="number"
+                              value={sub.budget}
+                              onChange={(e) => {
+                                if (!selectedCampaign) return;
+                                const newSubs = [...selectedCampaign.sub_campaigns];
+                                newSubs[idx] = { ...sub, budget: Number(e.target.value) };
+                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
+                                updateCampaign(updated);
+                                saveCampaignAction(updated);
+                              }}
+                              className="h-9 rounded-lg border-slate-200 focus:border-blue-500 transition-colors"
+                            />
                           </div>
                         </div>
 
-                        <div className="space-y-4">
-                          <Label className="text-[11px] font-bold text-green-600 uppercase tracking-wider">KPI 성과 목표</Label>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <Label className="text-xs text-slate-500">목표 CPC (₩)</Label>
-                              <Input 
-                                type="number"
-                                value={camp.target_cpc || ''}
-                                placeholder="800"
-                                onChange={(e) => {
-                                  const updated = { ...camp, target_cpc: Number(e.target.value) };
-                                  updateCampaign(updated);
-                                  saveCampaignAction(updated);
-                                }}
-                                className="h-9 rounded-lg border-slate-200"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs text-slate-500">목표 CTR (%)</Label>
-                              <Input 
-                                type="number"
-                                step="0.01"
-                                value={camp.target_ctr || ''}
-                                placeholder="1.2"
-                                onChange={(e) => {
-                                  const updated = { ...camp, target_ctr: Number(e.target.value) };
-                                  updateCampaign(updated);
-                                  saveCampaignAction(updated);
-                                }}
-                                className="h-9 rounded-lg border-slate-200"
-                              />
-                            </div>
+                        <div className="lg:col-span-4 grid grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <Label className="text-[10px] text-slate-500 font-bold">목표 CPC (₩)</Label>
+                            <Input 
+                              type="number"
+                              value={sub.target_cpc || ''}
+                              placeholder="800"
+                              onChange={(e) => {
+                                if (!selectedCampaign) return;
+                                const newSubs = [...selectedCampaign.sub_campaigns];
+                                newSubs[idx] = { ...sub, target_cpc: Number(e.target.value) };
+                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
+                                updateCampaign(updated);
+                                saveCampaignAction(updated);
+                              }}
+                              className="h-9 rounded-lg border-slate-200 focus:border-blue-500 transition-colors"
+                            />
                           </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[10px] text-slate-500 font-bold">목표 CTR (%)</Label>
+                            <Input 
+                              type="number"
+                              step="0.01"
+                              value={sub.target_ctr || ''}
+                              placeholder="1.2"
+                              onChange={(e) => {
+                                if (!selectedCampaign) return;
+                                const newSubs = [...selectedCampaign.sub_campaigns];
+                                newSubs[idx] = { ...sub, target_ctr: Number(e.target.value) };
+                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
+                                updateCampaign(updated);
+                                saveCampaignAction(updated);
+                              }}
+                              className="h-9 rounded-lg border-slate-200 focus:border-blue-500 transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="lg:col-span-1 flex justify-end">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                            onClick={() => {
+                              if (!selectedCampaign) return;
+                              const newSubs = selectedCampaign.sub_campaigns.filter((_, i) => i !== idx);
+                              const updated = { ...selectedCampaign, sub_campaigns: newSubs };
+                              updateCampaign(updated);
+                              saveCampaignAction(updated);
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </Button>
                         </div>
                       </div>
                     ))}
+                    {(!selectedCampaign?.sub_campaigns || selectedCampaign.sub_campaigns.length === 0) && (
+                      <div className="text-center py-12 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200 text-slate-400">
+                        <p>등록된 매체/sub-캠페인 정보가 없습니다.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -770,7 +881,7 @@ export const ReportCenter: React.FC = () => {
                 <DmpSettlementNode 
                   campaignId={selectedCampaignId} 
                   campaignName={selectedCampaign?.campaign_name || ''}
-                  totalBudget={selectedCampaign?.total_budget || 0}
+                  totalBudget={totalBudget}
                 />
               </motion.div>
             </TabsContent>
