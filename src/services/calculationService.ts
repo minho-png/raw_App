@@ -17,6 +17,34 @@ export class CalculationService {
       });
     });
   }
+  /**
+   * ensureRecords: Robustly extracts row objects from a DataFrame, handling
+   * both row-oriented and column-oriented JSON output from Danfo.js.
+   */
+  private static ensureRecords(df: any): any[] {
+    // We try 'row' format as it's the recommended one for records
+    const jsonOutput = dfd.toJSON(df, { format: 'row' });
+    const data = typeof jsonOutput === 'string' ? JSON.parse(jsonOutput) : jsonOutput;
+    
+    if (Array.isArray(data)) return data;
+    
+    // If we got an object { col1: [v1, v2], ... }, pivot it back to rows (records)
+    // This happens in some environments/versions with Danfo.js
+    const columns = Object.keys(data);
+    if (columns.length === 0) return [];
+    
+    const rowCount = (data[columns[0]] as any[]).length;
+    const records = [];
+    for (let i = 0; i < rowCount; i++) {
+      const record: any = {};
+      columns.forEach(col => {
+        record[col] = data[col][i];
+      });
+      records.push(record);
+    }
+    return records;
+  }
+
 
   /**
    * processWithDanfo: Core logic using DataFrames for calculation and DMP detection.
@@ -92,8 +120,7 @@ export class CalculationService {
     const executionAmounts: number[] = [];
     const netAmounts: number[] = [];
 
-    const jsonOutput = dfd.toJSON(df, { format: 'column' });
-    const json = (typeof jsonOutput === 'string' ? JSON.parse(jsonOutput) : jsonOutput) as any[];
+    const json = this.ensureRecords(df);
     json.forEach(row => {
       const excelCampName = row.excel_campaign_name;
       const config = campaignConfigs && excelCampName ? (campaignConfigs as Record<string, any>)[excelCampName] : null;
@@ -118,8 +145,7 @@ export class CalculationService {
 
     // 4. Final Mapping to PerformanceRecord
     const records: PerformanceRecord[] = [];
-    const finalJsonOutput = dfd.toJSON(df, { format: 'column' });
-    const finalJson = (typeof finalJsonOutput === 'string' ? JSON.parse(finalJsonOutput) : finalJsonOutput) as any[];
+    const finalJson = this.ensureRecords(df);
 
     finalJson.forEach(row => {
       const excelCampName = row.excel_campaign_name;
