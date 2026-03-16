@@ -11,15 +11,16 @@ import {
   TrendingDown, 
   Zap 
 } from "lucide-react";
-import { BudgetStatus } from "../../types";
+import { BudgetStatus, CampaignConfig } from "../../types";
 import { cn } from "@/lib/utils";
 
 interface BudgetPacingCardsProps {
   status: BudgetStatus;
+  campaign?: CampaignConfig;
   isLoading?: boolean;
 }
 
-export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, isLoading }) => {
+export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, campaign, isLoading }) => {
   const getBurnRateColor = (rate: number) => {
     if (rate >= 90) return "bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]";
     if (rate >= 70) return "bg-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.5)]";
@@ -117,19 +118,47 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, is
       >
         <Card className="rounded-3xl border-white/40 bg-white/30 backdrop-blur-xl shadow-xl overflow-hidden border hover:border-white/60 transition-colors group">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-slate-400 uppercase tracking-wider">페이스 지수</CardTitle>
-            {getPacingBadge(status.pacing_status)}
+            <CardTitle className="text-xs font-bold text-slate-400 uppercase tracking-wider">KPI 성과 지표</CardTitle>
+            <Zap size={16} className="text-purple-500" />
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <div className="text-2xl font-black text-slate-900 tracking-tight">{status.pacing_index.toFixed(1)}</div>
-              {status.pacing_index > 100 ? (
-                <TrendingUp size={20} className="text-red-500" />
-              ) : (
-                <TrendingDown size={20} className="text-blue-500" />
+          <CardContent className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Actual CPC</p>
+                <div className="text-lg font-black text-slate-900">₩{Math.round(status.actual_cpc).toLocaleString()}</div>
+              </div>
+              {campaign?.target_cpc && (
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target ₩{campaign.target_cpc.toLocaleString()}</p>
+                  <div className={cn(
+                    "text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1",
+                    status.actual_cpc <= campaign.target_cpc ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                  )}>
+                    {status.actual_cpc <= campaign.target_cpc ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
+                    {Math.abs(((status.actual_cpc - campaign.target_cpc) / campaign.target_cpc) * 100).toFixed(1)}%
+                  </div>
+                </div>
               )}
             </div>
-            <p className="text-[10px] text-slate-400 mt-1 font-medium">권장 소진 속도 대비 <span className={status.pacing_index > 100 ? "text-red-500" : "text-blue-500"}>{status.pacing_index > 100 ? "상회" : "하회"}</span></p>
+
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Actual CTR</p>
+                <div className="text-lg font-black text-slate-900">{status.actual_ctr.toFixed(2)}%</div>
+              </div>
+              {campaign?.target_ctr && (
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target {campaign.target_ctr}%</p>
+                  <div className={cn(
+                    "text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1",
+                    status.actual_ctr >= campaign.target_ctr ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                  )}>
+                    {status.actual_ctr >= campaign.target_ctr ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                    {Math.abs(((status.actual_ctr - campaign.target_ctr) / campaign.target_ctr) * 100).toFixed(1)}%
+                  </div>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </motion.div>

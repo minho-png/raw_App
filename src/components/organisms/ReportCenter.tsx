@@ -65,12 +65,17 @@ export const ReportCenter: React.FC = () => {
 
   // Derived stats for BudgetPacingCards
   const budgetStatus: BudgetStatus = useMemo(() => {
-    const spent = filteredData.reduce((sum, r) => sum + r.execution_amount, 0);
+    const totalExecution = filteredData.reduce((sum, r) => sum + r.execution_amount, 0);
+    const totalClicks = filteredData.reduce((sum, r) => sum + r.clicks, 0);
+    const totalImpressions = filteredData.reduce((sum, r) => sum + r.impressions, 0);
+    
+    const spent = totalExecution;
     const total = selectedCampaign?.total_budget || 0;
     const remaining = total - spent;
     
-    // Mock burn rate and pacing for UI
     const burnRate = total > 0 ? (spent / total) * 100 : 0;
+    const actualCpc = totalClicks > 0 ? spent / totalClicks : 0;
+    const actualCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
     
     return {
       total_budget: total,
@@ -80,7 +85,9 @@ export const ReportCenter: React.FC = () => {
       remaining: remaining,
       burn_rate: burnRate,
       pacing_index: burnRate > 50 ? 110 : 95,
-      pacing_status: burnRate > 100 ? 'over' : (burnRate > 80 ? 'warning' : 'stable')
+      pacing_status: burnRate > 100 ? 'over' : (burnRate > 80 ? 'warning' : 'stable'),
+      actual_cpc: actualCpc,
+      actual_ctr: actualCtr
     };
   }, [filteredData, selectedCampaign]);
 
@@ -131,7 +138,7 @@ export const ReportCenter: React.FC = () => {
         </div>
       </header>
 
-      <BudgetPacingCards status={budgetStatus} />
+      <BudgetPacingCards status={budgetStatus} campaign={selectedCampaign} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-slate-100/50 p-1 rounded-2xl border border-slate-200 inline-flex">

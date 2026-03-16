@@ -1,15 +1,18 @@
 "use client";
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useCampaignStore } from '@/store/useCampaignStore';
-import { Plus, Trash2, Layout, BarChart3, Database, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Layout, BarChart3, Database, Loader2, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/server/actions/campaign';
+import { CampaignSettingsModal } from '@/components/molecules/CampaignSettingsModal';
+import { CampaignConfig } from '@/types';
 
 export const Sidebar = () => {
   const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading } = useCampaignStore();
+  const [settingsCampaign, setSettingsCampaign] = useState<CampaignConfig | null>(null);
 
   useEffect(() => {
     const fetchCampaigns = async () => {
@@ -89,15 +92,26 @@ export const Sidebar = () => {
                   <Database size={14} className={selectedCampaignId === camp.campaign_id ? "text-white" : "text-slate-400"} />
                   <span className="text-sm font-medium truncate">{camp.campaign_name}</span>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteCampaign(camp.campaign_id);
-                  }}
-                  className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 rounded text-red-400 transition-opacity"
-                >
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSettingsCampaign(camp);
+                    }}
+                    className="p-1 hover:bg-white/20 rounded text-blue-200 transition-colors"
+                  >
+                    <Settings size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteCampaign(camp.campaign_id);
+                    }}
+                    className="p-1 hover:bg-red-500/20 rounded text-red-400 transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </motion.div>
             ))}
           </AnimatePresence>
@@ -113,6 +127,14 @@ export const Sidebar = () => {
           </div>
         </div>
       </div>
+
+      {settingsCampaign && (
+        <CampaignSettingsModal 
+          campaign={settingsCampaign} 
+          isOpen={!!settingsCampaign} 
+          onClose={() => setSettingsCampaign(null)} 
+        />
+      )}
     </aside>
   );
 };

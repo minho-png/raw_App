@@ -9,6 +9,9 @@ export interface CampaignConfig {
   end_date: Date;
   base_fee_rate: number; // Percentage, e.g., 10 for 10%
   total_fee_rate: number; // Inputted total fee rate (%)
+  target_cpc?: number;
+  target_ctr?: number;
+  group_by?: 'daily' | 'ad_group' | 'dmp';
 }
 
 export interface PerformanceRecord {
@@ -36,6 +39,8 @@ export interface BudgetStatus {
   burn_rate: number;
   pacing_index: number;
   pacing_status: string;
+  actual_cpc: number;
+  actual_ctr: number;
 }
 
 export interface DmpSettlementRow {
