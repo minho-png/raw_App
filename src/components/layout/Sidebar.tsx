@@ -38,7 +38,8 @@ export const Sidebar = () => {
           excel_name: '기본 캠페인',
           media: '네이버GFA',
           fee_rate: 10,
-          budget: 10000000
+          budget: 10000000,
+          budget_type: 'individual'
         }
       ]
     };
