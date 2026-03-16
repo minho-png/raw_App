@@ -9,7 +9,7 @@ const testGroupBy = () => {
 
     console.log('--- Testing GroupBy Aggregation (by date) ---');
 
-    const results = CalculationService.processWithDanfo(
+    const { report } = CalculationService.processWithDanfo(
         rawData,
         'campaign-1',
         '네이버GFA',
@@ -17,15 +17,15 @@ const testGroupBy = () => {
         ['date_raw'] 
     );
 
-    console.log('Results count:', results.length);
-    results.forEach(r => {
+    console.log('Results count:', report.length);
+    report.forEach(r => {
         console.log(`Date: ${r.date.toISOString().split('T')[0]} | Impressions: ${r.impressions} | Clicks: ${r.clicks}`);
     });
 
-    const d1 = results.find(r => r.date.toISOString().startsWith('2024-03-01'));
-    const d2 = results.find(r => r.date.toISOString().startsWith('2024-03-02'));
+    const d1 = report.find(r => r.date.toISOString().startsWith('2024-03-01'));
+    const d2 = report.find(r => r.date.toISOString().startsWith('2024-03-02'));
 
-    const passed = results.length === 2 && 
+    const passed = report.length === 2 && 
                    d1?.impressions === 300 &&
                    d2?.impressions === 300;
 

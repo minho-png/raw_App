@@ -39,7 +39,7 @@ const testDMP = () => {
       10
     );
 
-    const actual = results[0].dmp_type;
+    const actual = results.raw[0].dmp_type;
     const passed = actual === tc.expected;
     console.log(`Input: ${tc.name} | Expected: ${tc.expected} | Actual: ${actual} | ${passed ? '✅' : '❌'}`);
     if (!passed) allPassed = false;
