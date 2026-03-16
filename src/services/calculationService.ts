@@ -92,7 +92,8 @@ export class CalculationService {
     const executionAmounts: number[] = [];
     const netAmounts: number[] = [];
 
-    const json = dfd.toJSON(df, { format: 'row' }) as any[];
+    const jsonOutput = dfd.toJSON(df, { format: 'column' });
+    const json = (typeof jsonOutput === 'string' ? JSON.parse(jsonOutput) : jsonOutput) as any[];
     json.forEach(row => {
       const excelCampName = row.excel_campaign_name;
       const config = campaignConfigs && excelCampName ? (campaignConfigs as Record<string, any>)[excelCampName] : null;
@@ -117,7 +118,8 @@ export class CalculationService {
 
     // 4. Final Mapping to PerformanceRecord
     const records: PerformanceRecord[] = [];
-    const finalJson = dfd.toJSON(df, { format: 'row' }) as any[];
+    const finalJsonOutput = dfd.toJSON(df, { format: 'column' });
+    const finalJson = (typeof finalJsonOutput === 'string' ? JSON.parse(finalJsonOutput) : finalJsonOutput) as any[];
 
     finalJson.forEach(row => {
       const excelCampName = row.excel_campaign_name;
