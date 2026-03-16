@@ -1,7 +1,0 @@
-libcairo2-dev
-pkg-config
-libgdk-pixbuf-2.0-0
-libpango-1.0-0
-libpangocairo-1.0-0
-libgl1-mesa-dev
-shared-mime-info
