@@ -51,8 +51,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete, 
       const processed = CalculationService.processWithDanfo(
         rawData, 
         selectedCampaignId, 
-        overrides?.media || (selectedCampaign?.media as MediaProvider) || '네이버GFA',
-        selectedCampaign?.total_fee_rate || 10,
+        overrides?.media || (selectedCampaign?.sub_campaigns[0]?.media as MediaProvider) || '네이버GFA',
+        selectedCampaign?.sub_campaigns[0]?.fee_rate || 10,
         overrides?.group_by_columns || []
       );
 
