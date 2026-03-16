@@ -21,7 +21,7 @@ export class CalculationService {
   /**
    * processWithDanfo: Core logic using DataFrames for calculation and DMP detection.
    */
-  public static processWithDanfo(rawData: any[], campaignId: string, media: MediaProvider, totalFeeRate: number): PerformanceRecord[] {
+  public static processWithDanfo(rawData: any[], campaignId: string, media: MediaProvider, totalFeeRate: number, groupByColumns?: string[]): PerformanceRecord[] {
     const df = new dfd.DataFrame(rawData);
 
     // 1. Column normalization & cleaning

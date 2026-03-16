@@ -7,6 +7,7 @@ import { BudgetPacingCards } from '@/components/molecules/BudgetPacingCards';
 import { FileUploader } from '@/components/molecules/FileUploader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Table, 
@@ -17,8 +18,8 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, Eye, FileSpreadsheet, Zap, BarChart4, Layout, Database, TrendingUp, Calculator } from "lucide-react";
-import { BudgetStatus, PerformanceRecord } from "@/types";
+import { Download, Eye, FileSpreadsheet, Zap, BarChart4, Layout, Database, TrendingUp, Calculator, Layers } from "lucide-react";
+import { BudgetStatus, PerformanceRecord, MediaProvider } from "@/types";
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { cn } from '@/lib/utils';
 import { DmpSettlementNode } from "@/components/settlement/DmpSettlementNode";
@@ -33,6 +34,8 @@ export const ReportCenter: React.FC = () => {
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
   const [reportType, setReportType] = useState('daily');
   const [activeTab, setActiveTab] = useState('upload');
+  const [activeMedia, setActiveMedia] = useState<MediaProvider>('네이버GFA');
+  const [groupByColumns, setGroupByColumns] = useState<string[]>([]);
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   
   // Inline Editing State
@@ -189,7 +192,80 @@ export const ReportCenter: React.FC = () => {
                 exit={{ opacity: 0, y: -20 }}
                 className="space-y-8"
               >
-                <FileUploader onAnalysisComplete={handleAnalysisComplete} />
+                <div className="bg-white/40 backdrop-blur-md rounded-3xl p-6 border border-white/40 shadow-xl">
+                  <div className="flex flex-col gap-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg">
+                          <Database size={20} />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-800">RAW 데이터 입수 설정</h3>
+                          <p className="text-xs text-slate-400">업로드할 매체와 분석 기준을 선택하세요.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-4">
+                        <Label className="text-slate-700 font-bold ml-1 text-sm">대상 매체 선택</Label>
+                        <div className="flex gap-2">
+                          {(['네이버GFA', 'Kakao', 'Google', 'Meta'] as MediaProvider[]).map((m) => (
+                            <button
+                              key={m}
+                              onClick={() => setActiveMedia(m)}
+                              className={cn(
+                                "flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border",
+                                activeMedia === m 
+                                  ? "bg-slate-900 border-slate-900 text-white shadow-lg" 
+                                  : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+                              )}
+                            >
+                              {m}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Layers size={14} className="text-blue-500" />
+                          <Label className="text-slate-700 font-bold text-sm">동적 그룹바이 기준</Label>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {['날짜', '광고 그룹', 'DMP', '소재', '캠페인'].map((col) => {
+                            const isSelected = groupByColumns.includes(col);
+                            return (
+                              <button
+                                key={col}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setGroupByColumns(groupByColumns.filter(c => c !== col));
+                                  } else {
+                                    setGroupByColumns([...groupByColumns, col]);
+                                  }
+                                }}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border",
+                                  isSelected 
+                                    ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/20" 
+                                    : "bg-white border-slate-200 text-slate-500 hover:border-blue-300"
+                                )}
+                              >
+                                {col}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <FileUploader 
+                  onAnalysisComplete={handleAnalysisComplete} 
+                  overrides={{ media: activeMedia, group_by_columns: groupByColumns }}
+                />
                 
                 {filteredData.length > 0 && (
                   <Card className="rounded-3xl border-white/40 bg-white/60 backdrop-blur-xl shadow-xl overflow-hidden border">

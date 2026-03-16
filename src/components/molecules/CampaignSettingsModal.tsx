@@ -84,64 +84,33 @@ export const CampaignSettingsModal: React.FC<CampaignSettingsModalProps> = ({ ca
               </button>
             </div>
 
-            <div className="p-8 space-y-6">
-              <div className="grid gap-4">
+            <div className="p-8 space-y-8">
+              <div className="grid gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="name">캠페인 명</Label>
+                  <Label htmlFor="name" className="text-slate-700 font-bold ml-1 text-sm">캠페인 명</Label>
                   <Input 
                     id="name" 
                     value={formData.campaign_name} 
                     onChange={(e) => handleChange('campaign_name', e.target.value)}
-                    className="rounded-xl border-slate-200"
+                    className="rounded-2xl border-slate-200 bg-white h-12 shadow-sm focus:ring-blue-500 text-slate-900 !bg-white" // Force !bg-white
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="budget">총 예산 (₩)</Label>
-                    <div className="relative">
-                      <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <Input 
-                        id="budget" 
-                        type="number"
-                        value={formData.total_budget} 
-                        onChange={(e) => handleChange('total_budget', Number(e.target.value))}
-                        className="rounded-xl border-slate-200 pl-9"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <Label htmlFor="groupby" className="text-slate-700 font-bold">동적 그룹바이 기준 (다중 선택)</Label>
-                    <div className="flex flex-wrap gap-2 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
-                      {['날짜', '광고 그룹', 'DMP', '소재', '캠페인'].map((col) => {
-                        const isSelected = (formData.group_by_columns || []).includes(col);
-                        return (
-                          <button
-                            key={col}
-                            onClick={() => {
-                              const current = formData.group_by_columns || [];
-                              if (isSelected) {
-                                handleChange('group_by_columns', current.filter(c => c !== col));
-                              } else {
-                                handleChange('group_by_columns', [...current, col]);
-                              }
-                            }}
-                            className={cn(
-                              "px-3 py-1.5 rounded-full text-xs font-semibold transition-all border",
-                              isSelected 
-                                ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/20" 
-                                : "bg-white border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-500"
-                            )}
-                          >
-                            {col}
-                            {isSelected && <X size={10} className="inline ml-1.5" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="text-[10px] text-slate-400">데이터 업로드 시 위 기준들에 맞춰 리포트가 자동 그룹화됩니다.</p>
+                <div className="space-y-2">
+                  <Label htmlFor="budget" className="text-slate-700 font-bold ml-1 text-sm">총 예산 (₩)</Label>
+                  <div className="relative">
+                    <DollarSign size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Input 
+                      id="budget" 
+                      type="number"
+                      value={formData.total_budget} 
+                      onChange={(e) => handleChange('total_budget', Number(e.target.value))}
+                      className="rounded-2xl border-slate-200 pl-10 bg-white h-12 shadow-sm focus:ring-blue-500 text-slate-900 !bg-white"
+                    />
                   </div>
                 </div>
+
+              </div>
 
                 <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50 space-y-4">
                   <div className="flex items-center gap-2 mb-2">
@@ -175,7 +144,6 @@ export const CampaignSettingsModal: React.FC<CampaignSettingsModalProps> = ({ ca
                   </div>
                 </div>
               </div>
-            </div>
 
             <div className="p-6 bg-slate-50 flex gap-3">
               <Button 

@@ -13,12 +13,16 @@ import { savePerformanceData } from '@/server/actions/settlement';
 
 interface FileUploaderProps {
   onAnalysisComplete: (data: any[]) => void;
+  overrides?: {
+    media: MediaProvider;
+    group_by_columns: string[];
+  };
 }
 
-export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete }) => {
+export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete, overrides }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-  const { selectedCampaignId, campaigns } = useCampaignStore();
+  const { selectedCampaignId, campaigns, selectCampaign } = useCampaignStore();
   const selectedCampaign = campaigns.find(c => c.campaign_id === selectedCampaignId);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
@@ -40,8 +44,9 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete }
       const processed = CalculationService.processWithDanfo(
         rawData, 
         selectedCampaignId, 
-        (selectedCampaign?.media as MediaProvider) || '네이버GFA',
-        selectedCampaign?.total_fee_rate || 10
+        overrides?.media || (selectedCampaign?.media as MediaProvider) || '네이버GFA',
+        selectedCampaign?.total_fee_rate || 10,
+        overrides?.group_by_columns || []
       );
 
       // Server Action CALL
@@ -142,9 +147,24 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete }
                 <Upload size={28} />
               </div>
               <h3 className="text-xl font-bold text-slate-800">CSV 리포트 업로드</h3>
-              <p className="text-sm text-slate-500 mt-2 text-center">
-                네이버 GFA 리포트 파일을 드래그하거나 클릭하여 업로드하세요.<br/>
-                <span className="text-blue-500 font-semibold">{selectedCampaign?.campaign_name || '캠페인을 선택하세요'}</span> 에 데이터가 귀속됩니다.
+              
+              <div className="mt-4 mb-6 w-full max-w-xs">
+                <select 
+                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-medium focus:ring-blue-500"
+                  value={selectedCampaignId || ''}
+                  onChange={(e) => selectCampaign(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <option value="" disabled>분석 대상 캠페인 선택</option>
+                  {campaigns.map(c => (
+                    <option key={c.campaign_id} value={c.campaign_id}>{c.campaign_name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <p className="text-sm text-slate-500 text-center">
+                파일을 드래그하거나 클릭하여 업로드하세요.<br/>
+                <span className="text-blue-500 font-semibold">{selectedCampaign?.campaign_name || '캠페인을 먼저 선택하세요'}</span> 에 데이터가 귀속됩니다.
               </p>
               <div className="mt-6 flex gap-2">
                 <span className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Papaparse Ready</span>
