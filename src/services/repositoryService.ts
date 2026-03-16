@@ -1,5 +1,5 @@
-import { Collection, Db, MongoClient } from 'mongodb';
-import { PerformanceRecord } from '../types';
+import { Collection, Db, MongoClient, Filter } from 'mongodb';
+import { PerformanceRecord } from '@/types';
 
 export class RepositoryService {
   private dbName = 'gfa_master_pro';
@@ -33,7 +33,7 @@ export class RepositoryService {
         });
       }
       return acc;
-    }, new Map<string, { campaign_id: string; media: string; date: Date }>());
+    }, new Map<string, { campaign_id: string; media: any; date: Date }>());
 
     // 2. Perform deletions for each unique combination found in the new data
     // Optimizing by grouping by campaign and media if possible, but simplest is to delete by the combinations
@@ -44,11 +44,11 @@ export class RepositoryService {
       campaign_id: k.campaign_id,
       media: k.media,
       date: k.date
-    }));
+    })) as Filter<PerformanceRecord>[];
 
     const deleteResult = await this.collection.deleteMany({
       $or: deleteFilters
-    });
+    } as any);
     
     totalDeleted = deleteResult.deletedCount;
 

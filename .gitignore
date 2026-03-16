@@ -1,16 +1,32 @@
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-env/
-venv/
-.env
-.ipynb_checkpoints/
-.DS_Store
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
 
-# Streamlit secrets (Security)
-.streamlit/
-secrets.toml
+# testing
+/coverage
 
-# Sample Report Templates (Private)
-트립앤샵 진행리포트.html
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

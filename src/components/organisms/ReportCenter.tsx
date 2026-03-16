@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BudgetPacingCards } from '../molecules/BudgetPacingCards';
+import { BudgetPacingCards } from '@/components/molecules/BudgetPacingCards';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { 
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, Eye } from "lucide-react";
-import { BudgetStatus, PerformanceRecord } from "../../types";
+import { BudgetStatus, PerformanceRecord } from "@/types";
 
 interface ReportCenterProps {
   budgetStatus: BudgetStatus;

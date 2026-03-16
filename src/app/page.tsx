@@ -1,8 +1,8 @@
 "use client";
 
 import React from 'react';
-import { ReportCenter } from '../components/organisms/ReportCenter';
-import { BudgetStatus, PerformanceRecord } from '../types';
+import { ReportCenter } from '@/components/organisms/ReportCenter';
+import { BudgetStatus, PerformanceRecord } from '@/types';
 
 export default function DashboardPage() {
   // Dummy data for initial display
