@@ -68,13 +68,13 @@ export const Sidebar = () => {
         </div>
         <div className="flex flex-col">
           <span className="font-outfit font-black text-xl tracking-tight leading-none bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">RAW MASTER</span>
-          <span className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mt-1">Intelligence Pro</span>
+          <span className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mt-1">인텔리전스 프로</span>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-1 pr-2 -mr-2 scrollbar-thin">
         <div className="flex items-center justify-between mb-6 px-2">
-          <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Master Campaigns</h2>
+          <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">캠페인 마스터 리스트</h2>
           <motion.button 
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
@@ -156,13 +156,13 @@ export const Sidebar = () => {
       <div className="pt-6 mt-6 border-t border-slate-800/50">
         <div className="p-4 bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-2xl border border-slate-700/30 relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/5 rounded-full blur-xl group-hover:bg-blue-500/10 transition-colors" />
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Engine Status</p>
+          <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">엔진 가동 상태</p>
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className="w-2.5 h-2.5 bg-green-500 rounded-full" />
               <div className="absolute inset-0 w-2.5 h-2.5 bg-green-500 rounded-full animate-ping opacity-75" />
             </div>
-            <span className="text-xs font-bold text-slate-300">Live Synchronization</span>
+            <span className="text-xs font-bold text-slate-300">실시간 데이터 동기화 중</span>
           </div>
         </div>
       </div>
@@ -178,7 +178,7 @@ export const Sidebar = () => {
             >
               <h3 className="text-lg font-bold text-slate-900 border-b pb-2">캠페인 이름 수정</h3>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Master Campaign Name</label>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">캠페인 명칭</label>
                 <input 
                   autoFocus
                   className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 font-bold"
@@ -186,11 +186,13 @@ export const Sidebar = () => {
                   onChange={(e) => setTempName(e.target.value)}
                   onKeyDown={async (e) => {
                     if (e.key === 'Enter') {
-                      const updated = { ...editingCampaign, campaign_name: tempName };
+                      setIsSyncing(true); // Prevent background sync overwrite
+                      const updated = { ...editingCampaign, campaign_name: tempName, updated_at: new Date() };
                       const result = await saveCampaignAction(updated);
                       if (result.success && result.campaigns) {
                         setCampaigns(result.campaigns);
                       }
+                      setIsSyncing(false);
                       setIsEditModalOpen(false);
                     }
                   }}
@@ -208,11 +210,13 @@ export const Sidebar = () => {
                   className="flex-1 rounded-xl h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold"
                   onClick={async () => {
                     if (editingCampaign) {
-                      const updated = { ...editingCampaign, campaign_name: tempName };
+                      setIsSyncing(true);
+                      const updated = { ...editingCampaign, campaign_name: tempName, updated_at: new Date() };
                       const result = await saveCampaignAction(updated);
                       if (result.success && result.campaigns) {
                         setCampaigns(result.campaigns);
                       }
+                      setIsSyncing(false);
                     }
                     setIsEditModalOpen(false);
                   }}

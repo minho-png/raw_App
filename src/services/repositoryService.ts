@@ -136,9 +136,16 @@ export class RepositoryService {
    * upsertCampaignConfig: Saves or updates a campaign configuration.
    */
   public async upsertCampaignConfig(campaign: any) {
+    const now = new Date();
     return await this.campaignCollection.updateOne(
       { campaign_id: campaign.campaign_id },
-      { $set: campaign },
+      { 
+        $set: { 
+          ...campaign, 
+          updated_at: now 
+        },
+        $setOnInsert: { created_at: now }
+      },
       { upsert: true }
     );
   }

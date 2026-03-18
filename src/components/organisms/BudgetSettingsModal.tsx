@@ -116,7 +116,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                       <h2 className="text-3xl font-black text-slate-900 tracking-tighter leading-tight">
                         정밀 예산 및 <span className="text-indigo-600">KPI 설정</span>
                       </h2>
-                      <p className="text-slate-500 font-medium mt-1">캠페인 효율 극대화를 위한 초정밀 예산 가디언</p>
+                      <p className="text-slate-500 font-medium mt-1">캠페인 효율 극대화를 위한 초정밀 예산 설정</p>
                     </div>
                   </div>
                   <Button 
@@ -130,9 +130,9 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                 </header>
 
                 {suggestedNames.length > 0 && (
-                  <div className="mb-8 p-6 bg-white/40 backdrop-blur-sm rounded-[32px] border border-white/60 shadow-sm">
-                    <h3 className="text-[10px] font-black text-indigo-400 mb-4 flex items-center gap-2 uppercase tracking-[0.2em]">
-                      <Plus size={14} /> Recommended Excel Matches
+                  <div className="mb-8 p-6 bg-white/40 backdrop-blur-sm rounded-[32px] border border-white/60 shadow-sm transition-all hover:bg-white/60">
+                    <h3 className="text-xs font-black text-indigo-400 mb-4 flex items-center gap-2 uppercase tracking-[0.2em]">
+                      <Plus size={14} /> 추천 엑셀 매칭 항목
                     </h3>
                     <div className="flex flex-wrap gap-2">
                       {suggestedNames.map(name => {
@@ -162,7 +162,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                   <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950" />
                   <div className="relative p-8 flex items-center justify-between">
                     <div className="z-10">
-                      <h3 className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em] mb-3">Live Campaign Pacing</h3>
+                      <h3 className="text-xs font-black text-indigo-300 uppercase tracking-[0.2em] mb-3">실시간 캠페인 소진율</h3>
                       <div className="flex items-baseline gap-4">
                         <span className="text-6xl font-black text-white tracking-tighter">
                           {Math.round((subCampaigns.reduce((acc, curr) => acc + (curr.enabled ? curr.budget : 0), 0) || 0) > 0 
@@ -170,7 +170,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                             : 0)}%
                         </span>
                         <div className="flex flex-col">
-                          <span className="text-indigo-200/60 font-bold text-xs">Total Integrated Progress</span>
+                          <span className="text-indigo-200/60 font-bold text-xs">전체 통합 집행률</span>
                           <div className="w-32 h-1.5 bg-white/10 rounded-full mt-2 overflow-hidden">
                             <motion.div 
                               initial={{ width: 0 }}
@@ -183,14 +183,14 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                     </div>
                     <div className="flex gap-10 text-right pr-6 z-10">
                       <div className="space-y-1">
-                        <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Target Budget</p>
+                        <p className="text-xs font-black text-indigo-300 uppercase tracking-widest">목표 예산</p>
                         <p className="text-2xl font-black text-white">
                           <span className="text-xs text-indigo-400 mr-1">₩</span>
                           {(subCampaigns.reduce((acc, curr) => acc + (curr.enabled ? curr.budget : 0), 0)).toLocaleString()}
                         </p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] font-black text-emerald-300 uppercase tracking-widest">Actual Spend</p>
+                        <p className="text-xs font-black text-emerald-300 uppercase tracking-widest">집행 금액 (실제)</p>
                         <p className="text-2xl font-black text-emerald-400">
                           <span className="text-xs mr-1">₩</span>
                           {totalSpent.toLocaleString()}
@@ -222,7 +222,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                       <div className="absolute -left-3 top-0 bottom-0 w-1 bg-indigo-500 rounded-full scale-y-0 group-hover:scale-y-100 transition-transform" />
                       
                       <Card className="p-10 border-slate-100 bg-white/60 backdrop-blur-xl shadow-xl hover:shadow-2xl hover:border-indigo-100 rounded-[40px] border-2 transition-all overflow-visible">
-                        <div className="flex justify-between items-center mb-10 pb-6 border-b border-slate-50">
+                        <div className="px-10 py-6 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
                           <div className="flex items-center gap-4">
                             <span className="w-8 h-8 bg-slate-900 text-white rounded-full flex items-center justify-center text-xs font-black">
                               {(index + 1).toString().padStart(2, '0')}
@@ -240,7 +240,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                                   sub.enabled ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600"
                                 )}
                               >
-                                ENABLED
+                                활성화함
                               </button>
                               <button 
                                 onClick={() => handleUpdateField(sub.id, { enabled: false })}
@@ -249,7 +249,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                                   !sub.enabled ? "bg-white text-rose-600 shadow-sm" : "text-slate-400 hover:text-slate-600"
                                 )}
                               >
-                                DISABLED
+                                비활성
                               </button>
                             </div>
                             <Button 
@@ -265,7 +265,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-10 gap-y-10">
                           <div className="space-y-3">
-                            <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Key Match Name</Label>
+                            <Label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">엑셀 매칭 키워드</Label>
                             <Input 
                               placeholder="Excel Campaign Name" 
                               value={sub.mapping_value || sub.excel_name}
@@ -274,7 +274,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                             />
                           </div>
                           <div className="space-y-3">
-                            <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Media Platform</Label>
+                            <Label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">매체 플랫폼</Label>
                             <Select 
                               value={sub.media} 
                               onValueChange={(val) => handleUpdateField(sub.id, { media: val as MediaProvider })}
@@ -290,7 +290,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                             </Select>
                           </div>
                           <div className="space-y-3">
-                            <Label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Assigned Budget</Label>
+                            <Label className="text-xs font-black text-indigo-400 uppercase tracking-widest ml-1">배정 목표 예산</Label>
                             <div className="relative group">
                               <span className="absolute left-6 top-1/2 -translate-y-1/2 text-indigo-300 font-bold">₩</span>
                               <Input 
@@ -302,7 +302,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                             </div>
                           </div>
                           <div className="space-y-3">
-                            <Label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Fee Rate (%)</Label>
+                            <Label className="text-xs font-black text-emerald-400 uppercase tracking-widest ml-1">대행 수수료율 (%)</Label>
                             <div className="relative">
                               <Input 
                                 type="number" 
@@ -314,7 +314,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                             </div>
                           </div>
                           <div className="space-y-3">
-                            <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Target CPC</Label>
+                            <Label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">목표 CPC (건당 비용)</Label>
                             <Input 
                               type="number" 
                               value={sub.target_cpc || ''}
@@ -323,7 +323,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                             />
                           </div>
                           <div className="space-y-3">
-                            <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Target CTR %</Label>
+                            <Label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">목표 CTR (%)</Label>
                             <Input 
                               type="number" 
                               step="0.01"
@@ -333,7 +333,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                             />
                           </div>
                           <div className="lg:col-span-2 space-y-3">
-                            <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">DMP Column Override</Label>
+                            <Label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">DMP 데이터 컬럼 명칭 (오버라이드)</Label>
                             <Input 
                               placeholder="DMP 정보를 가져올 엑셀 컬럼 명칭을 입력하세요" 
                               value={sub.dmp_column || ''}
@@ -365,10 +365,10 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                     <Table>
                       <TableHeader className="bg-white/5">
                         <TableRow className="border-white/5 hover:bg-transparent">
-                          <TableHead className="text-indigo-200/60 font-black h-14 px-8 uppercase text-[10px] tracking-widest">Master Name</TableHead>
-                          <TableHead className="text-indigo-200/60 font-black h-14 px-8 uppercase text-[10px] tracking-widest">Platform</TableHead>
-                          <TableHead className="text-indigo-200/60 font-black h-14 px-8 uppercase text-[10px] tracking-widest">Budget Config</TableHead>
-                          <TableHead className="text-indigo-200/60 font-black h-14 px-8 uppercase text-[10px] tracking-widest">Fee Status</TableHead>
+                          <TableHead className="text-indigo-200/60 font-black h-14 px-8 uppercase text-xs tracking-widest">마스터 명칭</TableHead>
+                          <TableHead className="text-indigo-200/60 font-black h-14 px-8 uppercase text-xs tracking-widest">플랫폼</TableHead>
+                          <TableHead className="text-indigo-200/60 font-black h-14 px-8 uppercase text-xs tracking-widest">예산 구성</TableHead>
+                          <TableHead className="text-indigo-200/60 font-black h-14 px-8 uppercase text-xs tracking-widest">수수료 상태</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>

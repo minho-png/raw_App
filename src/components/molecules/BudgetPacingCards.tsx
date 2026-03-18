@@ -29,9 +29,9 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
 
   const getPacingBadge = (pacing: string) => {
     switch (pacing) {
-      case 'over': return <Badge className="bg-red-500 border-none">OVER</Badge>;
-      case 'warning': return <Badge className="bg-orange-500 border-none">WARN</Badge>;
-      default: return <Badge className="bg-green-500 border-none">STABLE</Badge>;
+      case 'over': return <Badge className="bg-red-500 border-none">초과</Badge>;
+      case 'warning': return <Badge className="bg-orange-500 border-none">주의</Badge>;
+      default: return <Badge className="bg-green-500 border-none">정상</Badge>;
     }
   };
 
@@ -54,7 +54,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
       >
         <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-blue-500/10 hover:border-blue-500/30">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Spent (Execution)</CardTitle>
+            <CardTitle className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">집행 금액 (VAT 포함)</CardTitle>
             <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
               <CircleDollarSign size={18} />
             </div>
@@ -66,7 +66,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
             </div>
             <div className="flex items-center gap-2 mt-2">
               <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight italic">Acc. Implementation</p>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-tight italic">누적 집행 결과</p>
             </div>
           </CardContent>
         </Card>
@@ -79,7 +79,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
       >
         <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-slate-500/10 hover:border-slate-500/30">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Remaining Cap</CardTitle>
+            <CardTitle className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">잔여 예산</CardTitle>
             <div className="p-2.5 bg-slate-100 rounded-xl text-slate-500 group-hover:bg-slate-800 group-hover:text-white transition-all duration-300">
               <Wallet size={18} />
             </div>
@@ -91,7 +91,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
             </div>
             <div className="flex items-center gap-2 mt-2">
               <span className="w-1.5 h-1.5 bg-slate-300 rounded-full" />
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Available Balance</p>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-tight">가용 잔액</p>
             </div>
           </CardContent>
         </Card>
@@ -104,7 +104,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
       >
         <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-orange-500/10 hover:border-orange-500/30">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Burn Velocity</CardTitle>
+            <CardTitle className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">예산 소진 속도</CardTitle>
             <div className={cn("p-2.5 rounded-xl text-white group-hover:scale-110 transition-transform shadow-lg", getBurnRateColor(status.burn_rate))}>
               <Flame size={18} />
             </div>
@@ -113,7 +113,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
             <div className="flex items-end justify-between mb-3">
               <div className="text-3xl font-black text-slate-900 tracking-tight font-outfit">{status.burn_rate.toFixed(1)}<span className="text-sm ml-0.5">%</span></div>
               <div className="flex flex-col items-end">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Pacing</span>
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none mb-1">상태</span>
                   {getPacingBadge(status.pacing_status)}
               </div>
             </div>
@@ -129,7 +129,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
       >
         <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-purple-500/10 hover:border-purple-500/30">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">KPI Intelligence</CardTitle>
+            <CardTitle className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">KPI 인텔리전스</CardTitle>
             <div className="p-2.5 bg-purple-500/10 rounded-xl text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-all duration-300">
               <Zap size={18} />
             </div>
@@ -137,12 +137,12 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter leading-none mb-1">Effective CPC</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-tighter leading-none mb-1">실질 CPC</p>
                 <div className="text-xl font-black text-slate-900 font-outfit">₩{Math.round(status.actual_cpc).toLocaleString()}</div>
               </div>
               {status.target_cpc && (
                 <div className="text-right">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-1">Goal: ₩{status.target_cpc.toLocaleString()}</p>
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-tighter mb-1">목표: ₩{status.target_cpc.toLocaleString()}</p>
                   <div className={cn(
                     "text-[10px] font-black px-2 py-0.5 rounded-lg inline-flex items-center gap-1",
                     status.actual_cpc <= status.target_cpc ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
@@ -156,12 +156,12 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
 
             <div className="flex justify-between items-center pt-2 border-t border-slate-100/50">
               <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter leading-none mb-1">Interaction rate</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-tighter leading-none mb-1">광고 반응률 (CTR)</p>
                 <div className="text-xl font-black text-slate-900 font-outfit">{status.actual_ctr.toFixed(2)}%</div>
               </div>
               {status.target_ctr && (
                 <div className="text-right">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-1">Goal: {status.target_ctr}%</p>
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-tighter mb-1">목표: {status.target_ctr}%</p>
                   <div className={cn(
                     "text-[10px] font-black px-2 py-0.5 rounded-lg inline-flex items-center gap-1",
                     status.actual_ctr >= status.target_ctr ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600" // Inverse for CTR

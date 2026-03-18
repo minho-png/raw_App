@@ -45,7 +45,7 @@ import { BudgetSettingsModal } from "./BudgetSettingsModal";
 import { ReportService } from "@/services/reportService";
 
 export const ReportCenter: React.FC = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab, refreshCampaigns, setCampaigns } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab, refreshCampaigns, setCampaigns, setIsSyncing } = useCampaignStore();
   const selectedCampaign = campaigns.find(c => c.campaign_id === selectedCampaignId);
   
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
@@ -414,15 +414,15 @@ export const ReportCenter: React.FC = () => {
       <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <Badge className="bg-blue-600 text-white border-none px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">Live Intelligence</Badge>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] px-2 py-1 bg-slate-100 rounded-lg">ID: {selectedCampaignId}</span>
+            <Badge className="bg-blue-600 text-white border-none px-3 py-1 rounded-lg text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">실시간 인텔리전스</Badge>
+            <span className="text-xs text-slate-400 font-bold uppercase tracking-[0.2em] px-2 py-1 bg-slate-100 rounded-lg">ID: {selectedCampaignId}</span>
           </div>
           <h1 className="text-5xl font-black text-slate-900 tracking-tighter font-outfit drop-shadow-sm">
             {selectedCampaign?.campaign_name}
           </h1>
           <p className="text-slate-500 text-lg font-medium flex items-center gap-2">
             <Zap size={18} className="text-blue-500 fill-blue-500" />
-            Advanced Performance Settlement & Intelligence Engine
+            초정밀 퍼포먼스 정산 및 인텔리전스 엔진
           </p>
         </div>
         <div className="flex flex-wrap gap-4">
@@ -433,20 +433,20 @@ export const ReportCenter: React.FC = () => {
             className="rounded-2xl border-slate-200 bg-white/40 backdrop-blur-md h-12 px-6 font-bold shadow-sm hover:glass-card-hover transition-all border-2"
           >
             {isLoadingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4 text-blue-500" />}
-            Sync DB Data
+            DB 데이터 동기화
           </Button>
           <Button 
             variant="outline" 
             onClick={() => setIsBudgetModalOpen(true)}
             className="rounded-2xl border-slate-200 bg-white/40 backdrop-blur-md h-12 px-6 font-bold shadow-sm hover:glass-card-hover transition-all border-2"
           >
-            <Settings2 className="mr-2 h-4 w-4 text-purple-500" /> Manage Budgets
+            <Settings2 className="mr-2 h-4 w-4 text-purple-500" /> 예산 및 KPI 관리
           </Button>
           <Button 
             onClick={handleGenerateReport}
             className="rounded-2xl bg-slate-900 hover:bg-black text-white h-12 px-8 font-black shadow-xl transition-all hover:scale-[1.05] active:scale-95 border-b-4 border-slate-700"
           >
-            <BarChart4 className="mr-2 h-5 w-5" /> Export Report
+            <BarChart4 className="mr-2 h-5 w-5" /> 리포트 내보내기
           </Button>
         </div>
       </header>
@@ -459,10 +459,12 @@ export const ReportCenter: React.FC = () => {
           suggestedNames={suggestedExcelNames}
           totalSpent={budgetStatus.spent}
           onUpdate={async (updated) => {
+            setIsSyncing(true);
             const result = await saveCampaignAction(updated);
             if (result.success && result.campaigns) {
               setCampaigns(result.campaigns);
             }
+            setIsSyncing(false);
           }}
         />
       )}
@@ -475,9 +477,9 @@ export const ReportCenter: React.FC = () => {
         
         <div className="relative z-10 flex justify-between items-center max-w-4xl mx-auto">
           {[
-            { id: 'source', label: 'Data Modeling', icon: Database, step: '01' },
-            { id: 'processing', label: 'Verification', icon: Edit3, step: '02' },
-            { id: 'dashboard', label: 'Intelligence', icon: PieChartIcon, step: '03' }
+            { id: 'source', label: '데이터 모델링', icon: Database, step: '01' },
+            { id: 'processing', label: '데이터 검증', icon: Edit3, step: '02' },
+            { id: 'dashboard', label: '퍼포먼스 인사이트', icon: PieChartIcon, step: '03' }
           ].map((step, idx) => {
             const active = activeTabStep === step.id;
             const StepIcon = step.icon;
@@ -497,7 +499,7 @@ export const ReportCenter: React.FC = () => {
                 </div>
                 <div className="flex flex-col items-center">
                   <span className={cn(
-                    "text-[9px] font-black uppercase tracking-widest leading-none mb-1",
+                    "text-[10px] font-black uppercase tracking-widest leading-none mb-1",
                     active ? "text-blue-600" : "text-slate-400"
                   )}>Step {step.step}</span>
                   <span className={cn(
@@ -532,9 +534,9 @@ export const ReportCenter: React.FC = () => {
                       <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-xl">
                         <Database size={24} />
                       </div>
-                      01. Data Source & Modeling
+                      01. 데이터 모델링 & 소스 로드
                     </h2>
-                    <p className="text-slate-500 text-lg font-medium max-w-2xl">Load your advertisement data and define the aggregation dimensions for intelligence processing.</p>
+                    <p className="text-slate-500 text-lg font-medium max-w-2xl">광고 데이터를 로드하고 인텔리전스 프로세싱을 위한 결과값 집계 기준을 정의합니다.</p>
                   </div>
                   <div className="bg-white/40 p-2 rounded-3xl border border-white/60 shadow-inner">
                     <FileUploader onAnalysisComplete={handleAnalysisComplete} isSimpleButton={true} />
@@ -545,7 +547,7 @@ export const ReportCenter: React.FC = () => {
                   <div className="space-y-12">
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
                       <Card className="glass-card glass-card-hover rounded-3xl p-8 border-t-4 border-t-blue-500">
-                        <Label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 block">A. Provider Identity</Label>
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 block">A. 광고 매체 식별</Label>
                         <Select value={activeMedia} onValueChange={(val) => setActiveMedia(val as MediaProvider)}>
                           <SelectTrigger className="bg-white/50 border-slate-200 rounded-2xl h-14 text-base font-bold shadow-sm focus:ring-blue-500">
                             <SelectValue placeholder="Select Media" />
@@ -559,7 +561,7 @@ export const ReportCenter: React.FC = () => {
                       </Card>
 
                       <Card className="xl:col-span-2 glass-card glass-card-hover rounded-3xl p-8 border-t-4 border-t-purple-500">
-                        <Label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 block">B. Intelligence Modeling (Group By)</Label>
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 block">B. 인텔리전스 모델링 (집계 기준)</Label>
                         <div className="flex flex-wrap gap-2.5">
                           {[
                             { id: 'date_raw', label: 'Date', icon: '📅' },
@@ -592,21 +594,21 @@ export const ReportCenter: React.FC = () => {
                       </Card>
 
                       <Card className="glass-card bg-slate-900 rounded-3xl p-8 shadow-2xl border-none flex flex-col justify-between group">
-                        <Label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4 block group-hover:text-blue-400 transition-colors">C. Engine Execution</Label>
+                        <Label className="text-xs font-black text-slate-500 uppercase tracking-[0.3em] mb-4 block group-hover:text-blue-400 transition-colors">C. 엔진 가공 실행</Label>
                         <div className="space-y-4">
                           <Button 
                             variant="outline"
                             onClick={() => setIsBudgetModalOpen(true)}
                             className="w-full bg-slate-800/50 border-slate-700 text-white hover:bg-slate-800 h-14 rounded-2xl font-black text-xs transition-all border-2"
                           >
-                            <Settings2 className="mr-2 h-5 w-5 text-blue-400" /> SYNC EXTERNAL BUDGETS
+                            <Settings2 className="mr-2 h-5 w-5 text-blue-400" /> 외부 예산 데이터 동기화
                           </Button>
                           <Button 
                             onClick={handleProcessData} 
                             disabled={isProcessing}
                             className="w-full bg-blue-600 hover:bg-blue-500 h-16 rounded-2xl font-black text-lg shadow-xl shadow-blue-600/20 transition-all hover:translate-y-[-4px] active:translate-y-0"
                           >
-                            {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : "START AGGREGATION ➔"}
+                            {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : "데이터 가공 시작 ➔"}
                           </Button>
                         </div>
                       </Card>
@@ -615,10 +617,10 @@ export const ReportCenter: React.FC = () => {
                     <div className="space-y-6">
                       <div className="flex justify-between items-end px-4">
                         <div className="flex items-center gap-3">
-                          <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Raw Data Inspection</h3>
-                          <Badge variant="outline" className="text-[10px] font-bold text-slate-400 border-slate-200">Top 5 Records</Badge>
+                          <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">실시간 업로드 데이터 결과</h3>
+                          <Badge variant="outline" className="text-xs font-bold text-slate-400 border-slate-200">상위 5개 레코드</Badge>
                         </div>
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Intelligence Pool: {rawParsedData.length.toLocaleString()} Rows</span>
+                        <span className="text-xs font-black text-slate-400 uppercase tracking-widest">전체 데이터 풀: {rawParsedData.length.toLocaleString()} 행</span>
                       </div>
                       <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white/40 backdrop-blur-md shadow-2xl">
                         <Table>
@@ -649,8 +651,8 @@ export const ReportCenter: React.FC = () => {
                     <div className="w-32 h-32 bg-slate-100 rounded-[50px] flex items-center justify-center text-slate-300 mb-10 shadow-inner group">
                       <Database size={56} className="group-hover:scale-110 transition-transform duration-500" />
                     </div>
-                    <h3 className="text-3xl font-black text-slate-300 font-outfit uppercase tracking-tighter">Intelligence Engine Idle</h3>
-                    <p className="text-slate-400 mt-4 max-w-md text-lg font-medium leading-relaxed">System is awaiting data injection. Please upload your performance report to begin the modeling process.</p>
+                    <h3 className="text-3xl font-black text-slate-300 font-outfit uppercase tracking-tighter">데이터 처리 엔진 대기 중</h3>
+                    <p className="text-slate-400 mt-4 max-w-md text-lg font-medium leading-relaxed">시스템이 데이터 입력을 기다리고 있습니다. 성과 리포트 파일을 업로드하여 인텔리전스 가공을 시작해 주세요.</p>
                   </div>
                 )}
               </div>
@@ -668,8 +670,8 @@ export const ReportCenter: React.FC = () => {
               <div className="glass-card rounded-[40px] p-10 shadow-2xl border border-white/50">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
                   <div>
-                    <h2 className="text-3xl font-black text-slate-900 tracking-tight font-outfit uppercase">Verification & Manual Correction</h2>
-                    <p className="text-slate-500 font-medium text-lg mt-1">Review aggregated performance and refine actual execution costs.</p>
+                    <h2 className="text-3xl font-black text-slate-900 tracking-tight font-outfit uppercase">성과 검증 및 수동 보정</h2>
+                    <p className="text-slate-500 font-medium text-lg mt-1">집계된 성과를 검토하고 실제 집행 금액을 정밀하게 보정하십시오.</p>
                   </div>
                   <Button 
                     className="bg-green-600 hover:bg-green-700 h-14 px-8 rounded-2xl font-black text-lg shadow-xl shadow-green-600/20 transition-all hover:translate-y-[-4px] active:translate-y-0" 
@@ -677,7 +679,7 @@ export const ReportCenter: React.FC = () => {
                     disabled={isSavingReport || processedData.length === 0}
                   >
                     {isSavingReport ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Check size={20} className="mr-2 stroke-[3px]"/>}
-                    Commit Final Changes
+                    최종 변경 사항 반영
                   </Button>
                 </div>
 
@@ -685,13 +687,13 @@ export const ReportCenter: React.FC = () => {
                   <Table>
                     <TableHeader className="bg-slate-900 sticky top-0 z-20">
                       <TableRow className="hover:bg-slate-900 border-none">
-                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Schedule</TableHead>
-                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Campaign Meta</TableHead>
-                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Tech Stack</TableHead>
-                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8 text-right">Exposure</TableHead>
-                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8 text-right">Interactions</TableHead>
-                        <TableHead className="text-blue-400 font-black text-[10px] uppercase tracking-widest py-6 px-8 text-right bg-slate-800/50">Execution (KRW)</TableHead>
-                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Integrity</TableHead>
+                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">집행 일자</TableHead>
+                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">캠페인 메타</TableHead>
+                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">기술 스택</TableHead>
+                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8 text-right">노출수</TableHead>
+                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8 text-right">클릭수</TableHead>
+                        <TableHead className="text-blue-400 font-black text-xs uppercase tracking-widest py-6 px-8 text-right bg-slate-800/50">집행 금액 (KRW)</TableHead>
+                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">무결성</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -731,10 +733,10 @@ export const ReportCenter: React.FC = () => {
                           <TableCell className="py-6 px-8">
                             {record.is_edited ? (
                               <Badge className="bg-orange-100 text-orange-700 border-orange-200 font-bold px-3 py-1 rounded-lg flex items-center gap-1 w-fit">
-                                <Edit3 size={10} /> Verified
+                                <Edit3 size={10} /> 검증완료
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-slate-400 border-slate-200 font-bold px-3 py-1 rounded-lg">Original</Badge>
+                              <Badge variant="outline" className="text-slate-400 border-slate-200 font-bold px-3 py-1 rounded-lg">원본데이터</Badge>
                             )}
                           </TableCell>
                         </TableRow>
@@ -758,13 +760,13 @@ export const ReportCenter: React.FC = () => {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <Card className="lg:col-span-2 p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
                   <div className="flex justify-between items-center mb-10">
-                    <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight">Financial Velocity & Efficiency</h3>
+                    <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight">집행 속도 및 효율성 트렌드</h3>
                     <div className="flex items-center gap-2">
                       <span className="flex items-center gap-1.5 text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
-                        <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" /> Spent
+                        <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" /> 지출액
                       </span>
                       <span className="flex items-center gap-1.5 text-xs font-black text-orange-600 bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-100">
-                         CPC Trend
+                         CPC 추이
                       </span>
                     </div>
                   </div>
@@ -790,7 +792,7 @@ export const ReportCenter: React.FC = () => {
                 </Card>
 
                 <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50 flex flex-col">
-                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-8">Provider Dominance</h3>
+                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-8">매체별 점유율</h3>
                   <div className="grow flex items-center">
                     <div className="h-[350px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
