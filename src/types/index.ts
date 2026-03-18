@@ -15,6 +15,9 @@ export interface CampaignConfig {
   campaign_id: string;
   campaign_name: string;
   sub_campaigns: SubCampaignConfig[];
+  insights?: string;
+  target_cpc?: number;
+  target_ctr?: number;
 }
 
 export interface PerformanceRecord {

@@ -33,7 +33,9 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
       media: '네이버GFA',
       fee_rate: 10,
       budget: 0,
-      budget_type: 'individual'
+      budget_type: 'individual',
+      target_cpc: 0,
+      target_ctr: 0
     };
     setSubCampaigns([...subCampaigns, newField]);
   };
@@ -125,6 +127,27 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                             placeholder="0" 
                             value={sub.budget}
                             onChange={(e) => handleUpdateField(sub.id, { budget: Number(e.target.value) })}
+                            className="bg-slate-50/50 border-slate-200 focus:bg-white font-mono"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-slate-500">목표 CPC (₩)</Label>
+                          <Input 
+                            type="number" 
+                            placeholder="0" 
+                            value={sub.target_cpc || ''}
+                            onChange={(e) => handleUpdateField(sub.id, { target_cpc: Number(e.target.value) })}
+                            className="bg-slate-50/50 border-slate-200 focus:bg-white font-mono"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-slate-500">목표 CTR (%)</Label>
+                          <Input 
+                            type="number" 
+                            step="0.01"
+                            placeholder="0.00" 
+                            value={sub.target_ctr || ''}
+                            onChange={(e) => handleUpdateField(sub.id, { target_ctr: Number(e.target.value) })}
                             className="bg-slate-50/50 border-slate-200 focus:bg-white font-mono"
                           />
                         </div>

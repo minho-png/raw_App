@@ -29,7 +29,11 @@ import {
   Edit3,
   Check,
   Settings2,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon,
+  MessageSquare,
+  Users,
+  Layout as LayoutIcon,
+  BarChart4
 } from "lucide-react";
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { BudgetStatus, PerformanceRecord, MediaProvider } from "@/types";
@@ -55,6 +59,20 @@ export const ReportCenter: React.FC = () => {
   const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+  const [campaignInsights, setCampaignInsights] = useState(selectedCampaign?.insights || '');
+
+  // Update insights when campaign changes
+  useEffect(() => {
+    setCampaignInsights(selectedCampaign?.insights || '');
+  }, [selectedCampaignId, selectedCampaign?.insights]);
+
+  const handleSaveInsights = async () => {
+    if (!selectedCampaign) return;
+    const updated = { ...selectedCampaign, insights: campaignInsights };
+    updateCampaign(updated);
+    await saveCampaignAction(updated);
+    alert('인사이트가 저장되었습니다.');
+  };
 
   const handleUpdateAmount = async (id: string, newValue: number) => {
     setIsUpdating(true);
@@ -247,6 +265,39 @@ export const ReportCenter: React.FC = () => {
       };
     });
   }, [selectedCampaign, filteredData]);
+
+  const ageData = useMemo(() => {
+    const counts = filteredData.reduce((acc: any, curr) => {
+      const age = curr.age || 'Unknown';
+      acc[age] = (acc[age] || 0) + curr.execution_amount;
+      return acc;
+    }, {});
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [filteredData]);
+
+  const genderData = useMemo(() => {
+    const counts = filteredData.reduce((acc: any, curr) => {
+      const g = curr.gender || 'Unknown';
+      acc[g] = (acc[g] || 0) + curr.execution_amount;
+      return acc;
+    }, {});
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [filteredData]);
+
+  const creativeData = useMemo(() => {
+    const data = filteredData.reduce((acc: any, curr) => {
+      const c = curr.creative_name || 'N/A';
+      if (!acc[c]) acc[c] = { name: c, spend: 0, clicks: 0, imps: 0 };
+      acc[c].spend += curr.execution_amount;
+      acc[c].clicks += curr.clicks;
+      acc[c].imps += curr.impressions;
+      return acc;
+    }, {});
+    return Object.values(data).map((v: any) => ({
+      ...v,
+      ctr: v.imps > 0 ? (v.clicks / v.imps) * 100 : 0
+    })).sort((a, b) => b.spend - a.spend).slice(0, 10);
+  }, [filteredData]);
 
   if (!selectedCampaignId) {
     return (
@@ -546,6 +597,136 @@ export const ReportCenter: React.FC = () => {
                   </Card>
                 </div>
               )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                 {/* Age & Gender Distribution */}
+                 <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
+                  <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+                    <Users size={20} className="text-blue-500"/> 연령 및 성별 분포 (집행액 기준)
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4 h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={ageData} innerRadius={40} outerRadius={60} dataKey="value" nameKey="name">
+                          {ageData.map((_, i) => <Cell key={i} fill={['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe'][i % 4]} />)}
+                        </Pie>
+                        <Tooltip />
+                        <Legend verticalAlign="bottom" height={36}/>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={genderData} innerRadius={40} outerRadius={60} dataKey="value" nameKey="name">
+                          {genderData.map((_, i) => <Cell key={i} fill={['#ec4899', '#3b82f6', '#94a3b8'][i % 3]} />)}
+                        </Pie>
+                        <Tooltip />
+                        <Legend verticalAlign="bottom" height={36}/>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+
+                {/* Top Creatives */}
+                <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
+                  <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+                    <LayoutIcon size={20} className="text-purple-500"/> 소재별 성과 TOP 10 (Spend vs CTR)
+                  </h3>
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={creativeData} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 10}} />
+                        <Tooltip />
+                        <Bar dataKey="spend" name="집행액" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={12} />
+                        <Line dataKey="ctr" name="CTR (%)" stroke="#f59e0b" strokeWidth={2} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Performance Comparison Detail */}
+              <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl mt-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+                  <BarChart4 size={20} className="text-green-500"/> 매체별 목표 달성률 상세 비교
+                </h3>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>항목 (매체/캠페인)</TableHead>
+                        <TableHead className="text-right">집행액 / 예산</TableHead>
+                        <TableHead className="text-right">실제 CPC / 목표</TableHead>
+                        <TableHead className="text-right">실제 CTR / 목표</TableHead>
+                        <TableHead className="text-center">상태</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedCampaign?.sub_campaigns?.map((sub) => {
+                        const progress = budgetProgressData.find(p => p.id === sub.id);
+                        const subData = filteredData.filter(d => sub.excel_name ? d.excel_campaign_name === sub.excel_name : d.media === sub.media);
+                        const subSpent = subData.reduce((s, d) => s + d.execution_amount, 0);
+                        const subClicks = subData.reduce((s, d) => s + d.clicks, 0);
+                        const subImps = subData.reduce((s, d) => s + d.impressions, 0);
+                        
+                        const actualCpc = subClicks > 0 ? subSpent / subClicks : 0;
+                        const actualCtr = subImps > 0 ? (subClicks / subImps) * 100 : 0;
+                        
+                        const cpcStatus = sub.target_cpc ? (actualCpc <= sub.target_cpc ? 'Good' : 'High') : 'N/A';
+                        const ctrStatus = sub.target_ctr ? (actualCtr >= sub.target_ctr ? 'Good' : 'Low') : 'N/A';
+
+                        return (
+                          <TableRow key={sub.id}>
+                            <TableCell className="font-medium">{sub.excel_name || sub.media}</TableCell>
+                            <TableCell className="text-right">
+                              <span className="text-slate-900 font-bold">{Math.round(subSpent).toLocaleString()}</span>
+                              <span className="text-slate-400 text-xs"> / {sub.budget?.toLocaleString()}</span>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span className={cn("font-bold", cpcStatus === 'Good' ? 'text-green-600' : 'text-amber-600')}>
+                                ₩{Math.round(actualCpc).toLocaleString()}
+                              </span>
+                              <span className="text-slate-400 text-xs"> / {sub.target_cpc || '-'}</span>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span className={cn("font-bold", ctrStatus === 'Good' ? 'text-green-600' : 'text-amber-600')}>
+                                {actualCtr.toFixed(2)}%
+                              </span>
+                              <span className="text-slate-400 text-xs"> / {sub.target_ctr || '-'}%</span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge className={cn(
+                                progress && progress.percent > 90 ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"
+                              )}>
+                                {progress ? `${progress.percent.toFixed(0)}% 소진` : 'N/A'}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </Card>
+
+              {/* User Insights */}
+              <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl mt-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <MessageSquare size={20} className="text-blue-500"/> 캠페인 분석 인사이트
+                  </h3>
+                  <Button size="sm" onClick={handleSaveInsights} className="bg-blue-600 hover:bg-blue-700 rounded-xl">
+                    인사이트 저장
+                  </Button>
+                </div>
+                <textarea 
+                  className="w-full min-h-[150px] p-4 rounded-2xl border border-slate-200 bg-white/50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-slate-700 placeholder:text-slate-300"
+                  placeholder="분석 결과와 향후 전략을 기록하세요..."
+                  value={campaignInsights}
+                  onChange={(e) => setCampaignInsights(e.target.value)}
+                />
+              </Card>
             </TabsContent>
           </AnimatePresence>
         </div>
