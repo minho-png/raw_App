@@ -10,7 +10,7 @@ import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/
 import { CampaignConfig } from '@/types';
 
 export const Sidebar = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, isSyncing, setIsSyncing, updateCampaign, refreshCampaigns } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, updateCampaign, refreshCampaigns } = useCampaignStore();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<CampaignConfig | null>(null);
   const [tempName, setTempName] = useState("");
@@ -42,24 +42,18 @@ export const Sidebar = () => {
       ]
     };
     
-    setIsSyncing(true);
-    try {
-      await saveCampaignAction(newCampaign);
-      await refreshCampaigns(getCampaignsAction); // Sync with DB
+    const result = await saveCampaignAction(newCampaign);
+    if (result.success && result.campaigns) {
+      setCampaigns(result.campaigns);
       selectCampaign(newId);
-    } finally {
-      setIsSyncing(false);
     }
   };
 
   const handleDeleteCampaign = async (id: string) => {
     if (confirm('캠페인을 삭제하시겠습니까? 관련 데이터도 함께 삭제됩니다.')) {
-      setIsSyncing(true);
-      try {
-        await deleteCampaignAction(id);
-        await refreshCampaigns(getCampaignsAction); // Sync with DB
-      } finally {
-        setIsSyncing(false);
+      const result = await deleteCampaignAction(id);
+      if (result.success && result.campaigns) {
+        setCampaigns(result.campaigns);
       }
     }
   };
@@ -163,13 +157,9 @@ export const Sidebar = () => {
                   onKeyDown={async (e) => {
                     if (e.key === 'Enter') {
                       const updated = { ...editingCampaign, campaign_name: tempName };
-                      updateCampaign(updated); // Optimistic update
-                      setIsSyncing(true);
-                      try {
-                        await saveCampaignAction(updated);
-                        await refreshCampaigns(getCampaignsAction); // Sync with DB
-                      } finally {
-                        setIsSyncing(false);
+                      const result = await saveCampaignAction(updated);
+                      if (result.success && result.campaigns) {
+                        setCampaigns(result.campaigns);
                       }
                       setIsEditModalOpen(false);
                     }
@@ -189,13 +179,9 @@ export const Sidebar = () => {
                   onClick={async () => {
                     if (editingCampaign) {
                       const updated = { ...editingCampaign, campaign_name: tempName };
-                      updateCampaign(updated); // Optimistic update
-                      setIsSyncing(true);
-                      try {
-                        await saveCampaignAction(updated);
-                        await refreshCampaigns(getCampaignsAction); // Sync with DB
-                      } finally {
-                        setIsSyncing(false);
+                      const result = await saveCampaignAction(updated);
+                      if (result.success && result.campaigns) {
+                        setCampaigns(result.campaigns);
                       }
                     }
                     setIsEditModalOpen(false);

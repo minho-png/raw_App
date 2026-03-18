@@ -22,8 +22,9 @@ export async function saveCampaignAction(campaign: CampaignConfig) {
     const client = await clientPromise;
     const repo = new RepositoryService(client);
     await repo.upsertCampaignConfig(campaign);
+    const campaigns = await repo.getCampaigns();
     revalidatePath('/');
-    return { success: true };
+    return { success: true, campaigns: JSON.parse(JSON.stringify(campaigns)) };
   } catch (error) {
     console.error('Failed to save campaign:', error);
     return { success: false, error: String(error) };
@@ -35,8 +36,9 @@ export async function deleteCampaignAction(campaignId: string) {
     const client = await clientPromise;
     const repo = new RepositoryService(client);
     await repo.deleteCampaign(campaignId);
+    const campaigns = await repo.getCampaigns();
     revalidatePath('/');
-    return { success: true };
+    return { success: true, campaigns: JSON.parse(JSON.stringify(campaigns)) };
   } catch (error) {
     console.error('Failed to delete campaign:', error);
     return { success: false, error: String(error) };

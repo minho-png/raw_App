@@ -46,7 +46,7 @@ import { BudgetSettingsModal } from "./BudgetSettingsModal";
 import { ReportService } from "@/services/reportService";
 
 export const ReportCenter: React.FC = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab, refreshCampaigns } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab, refreshCampaigns, setCampaigns } = useCampaignStore();
   const selectedCampaign = campaigns.find(c => c.campaign_id === selectedCampaignId);
   
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
@@ -89,8 +89,10 @@ export const ReportCenter: React.FC = () => {
   const handleSaveInsights = async () => {
     if (!selectedCampaign) return;
     const updated = { ...selectedCampaign, insights: campaignInsights };
-    await saveCampaignAction(updated);
-    await refreshCampaigns(getCampaignsAction); // Sync with DB
+    const result = await saveCampaignAction(updated);
+    if (result.success && result.campaigns) {
+      setCampaigns(result.campaigns);
+    }
     alert('인사이트가 저장되었습니다.');
   };
 
@@ -451,8 +453,10 @@ export const ReportCenter: React.FC = () => {
           suggestedNames={suggestedExcelNames}
           totalSpent={budgetStatus.spent} // Pass spent for pacing calculation
           onUpdate={async (updated) => {
-            await saveCampaignAction(updated);
-            await refreshCampaigns(getCampaignsAction); // Sync with DB
+            const result = await saveCampaignAction(updated);
+            if (result.success && result.campaigns) {
+              setCampaigns(result.campaigns);
+            }
           }}
         />
       )}
