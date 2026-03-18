@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { 
   Table, 
   TableBody, 
@@ -27,6 +28,7 @@ import {
   Loader2,
   Edit3,
   Check,
+  Settings2,
   PieChart as PieChartIcon
 } from "lucide-react";
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -35,6 +37,8 @@ import { useCampaignStore } from '@/store/useCampaignStore';
 import { cn } from '@/lib/utils';
 import { getPerformanceDataAction, updatePerformanceDataAction } from '@/server/actions/settlement';
 import { CalculationService } from "@/services/calculationService";
+import { BudgetSettingsModal } from "./BudgetSettingsModal";
+import { saveCampaignAction } from '@/server/actions/campaign';
 
 export const ReportCenter: React.FC = () => {
   const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab } = useCampaignStore();
@@ -50,6 +54,7 @@ export const ReportCenter: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
 
   const handleUpdateAmount = async (id: string, newValue: number) => {
     setIsUpdating(true);
@@ -160,12 +165,22 @@ export const ReportCenter: React.FC = () => {
     
     setIsProcessing(true);
     try {
+      // Transform sub_campaigns array to record for CalculationService
+      const configs: Record<string, any> = {};
+      selectedCampaign?.sub_campaigns?.forEach(sub => {
+        if (sub.excel_name) {
+          configs[sub.excel_name] = sub;
+        }
+      });
+
       const { raw, report } = CalculationService.processWithDanfo(
         rawParsedData,
         selectedCampaignId,
         activeMedia,
         10, // Default fee rate if not configured
-        groupByColumns
+        groupByColumns,
+        undefined,
+        configs
       );
       
       setProcessedData(report);
@@ -196,6 +211,12 @@ export const ReportCenter: React.FC = () => {
     }));
   }, [filteredData]);
 
+  const formatDate = (date: Date | string) => {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return String(date);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const dmpShareData = useMemo(() => {
     const shares = filteredData.reduce((acc: any, curr) => {
       const dmp = curr.dmp_type || 'DIRECT';
@@ -205,6 +226,27 @@ export const ReportCenter: React.FC = () => {
 
     return Object.entries(shares).map(([name, value]) => ({ name, value }));
   }, [filteredData]);
+
+  const budgetProgressData = useMemo(() => {
+    if (!selectedCampaign || !selectedCampaign.sub_campaigns) return [];
+    
+    return selectedCampaign.sub_campaigns.map(sub => {
+      const spent = filteredData
+        .filter(d => {
+          if (sub.excel_name) return d.excel_campaign_name === sub.excel_name;
+          return d.media === sub.media;
+        })
+        .reduce((sum, d) => sum + d.execution_amount, 0);
+      
+      return {
+        id: sub.id,
+        name: sub.excel_name || sub.media,
+        budget: sub.budget || 0,
+        spent: spent,
+        percent: sub.budget > 0 ? Math.min((spent / sub.budget) * 100, 100) : 0
+      };
+    });
+  }, [selectedCampaign, filteredData]);
 
   if (!selectedCampaignId) {
     return (
@@ -241,11 +283,30 @@ export const ReportCenter: React.FC = () => {
             {isLoadingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
             DB 데이터 불러오기
           </Button>
+          <Button 
+            variant="outline" 
+            onClick={() => setIsBudgetModalOpen(true)}
+            className="rounded-xl border-slate-200 bg-white shadow-sm hover:translate-y-[-2px] transition-transform"
+          >
+            <Settings2 className="mr-2 h-4 w-4" /> 예산 관리
+          </Button>
           <Button className="rounded-xl bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20 hover:scale-[1.02] transition-all">
             <Zap className="mr-2 h-4 w-4" /> 리포트 즉시 발행
           </Button>
         </div>
       </header>
+
+      {selectedCampaign && (
+        <BudgetSettingsModal 
+          isOpen={isBudgetModalOpen}
+          onClose={() => setIsBudgetModalOpen(false)}
+          campaign={selectedCampaign}
+          onUpdate={async (updated) => {
+            updateCampaign(updated);
+            await saveCampaignAction(updated);
+          }}
+        />
+      )}
 
       <BudgetPacingCards status={budgetStatus} campaign={selectedCampaign} />
 
@@ -290,15 +351,23 @@ export const ReportCenter: React.FC = () => {
 
                       <div className="flex-[2] space-y-2">
                         <Label className="font-bold text-slate-700">그룹화 기준 (아래 데이터를 보고 선택하세요)</Label>
-                        <div className="flex gap-2">
-                          {['date_raw', 'ad_group_name', 'excel_campaign_name'].map(col => (
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { id: 'date_raw', label: '날짜' },
+                            { id: 'ad_group_name', label: '광고 그룹' },
+                            { id: 'excel_campaign_name', label: '캠페인' },
+                            { id: 'creative_name', label: '소재' },
+                            { id: 'age', label: '연령' },
+                            { id: 'gender', label: '성별' },
+                            { id: 'device', label: '기기' }
+                          ].map(col => (
                             <Badge 
-                              key={col}
-                              variant={groupByColumns.includes(col) ? 'default' : 'outline'}
-                              className={cn("cursor-pointer px-4 py-1.5 text-sm transition-all", groupByColumns.includes(col) && "bg-blue-600")}
-                              onClick={() => toggleGroupBy(col)}
+                              key={col.id}
+                              variant={groupByColumns.includes(col.id) ? 'default' : 'outline'}
+                              className={cn("cursor-pointer px-4 py-1.5 text-sm transition-all", groupByColumns.includes(col.id) && "bg-blue-600")}
+                              onClick={() => toggleGroupBy(col.id)}
                             >
-                              {col === 'date_raw' ? '날짜' : col === 'ad_group_name' ? '광고 그룹' : '캠페인'}
+                              {col.label}
                             </Badge>
                           ))}
                         </div>
@@ -323,8 +392,10 @@ export const ReportCenter: React.FC = () => {
                         <TableBody>
                           {rawParsedData.slice(0, 5).map((row, idx) => (
                             <TableRow key={idx}>
-                              {Object.values(row).slice(0, 8).map((val: any, i) => (
-                                <TableCell key={i} className="truncate max-w-[150px]">{String(val)}</TableCell>
+                              {Object.entries(row).slice(0, 10).map(([key, val]: [string, any], i) => (
+                                <TableCell key={i} className="truncate max-w-[150px]">
+                                  {(key.includes('날짜') || key === 'date_raw' || key === 'date') ? formatDate(val) : String(val)}
+                                </TableCell>
                               ))}
                             </TableRow>
                           ))}
@@ -365,7 +436,7 @@ export const ReportCenter: React.FC = () => {
                     <TableBody>
                       {filteredData.map((record) => (
                         <TableRow key={record._id || Math.random()} className="hover:bg-slate-50/50">
-                          <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
+                          <TableCell>{formatDate(record.date)}</TableCell>
                           <TableCell className="font-medium text-slate-700">{record.ad_group_name}</TableCell>
                           <TableCell className="text-right">{record.impressions.toLocaleString()}</TableCell>
                           <TableCell className="text-right">{record.clicks.toLocaleString()}</TableCell>
@@ -452,6 +523,29 @@ export const ReportCenter: React.FC = () => {
                   </div>
                 </Card>
               </div>
+
+              {budgetProgressData.length > 0 && (
+                <div className="mt-6">
+                  <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
+                    <h3 className="text-lg font-bold text-slate-800 mb-6">항목별 예산 소급율 (Budget Fulfillment)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {budgetProgressData.map((item) => (
+                        <div key={item.id} className="space-y-3 bg-white/40 p-4 rounded-2xl border border-white/60">
+                          <div className="flex justify-between items-end">
+                            <span className="text-sm font-bold text-slate-700 truncate max-w-[150px]">{item.name}</span>
+                            <span className="text-xs font-medium text-blue-600">{item.percent.toFixed(1)}%</span>
+                          </div>
+                          <Progress value={item.percent} className="h-2 bg-slate-100" />
+                          <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                            <span>₩{Math.round(item.spent).toLocaleString()}</span>
+                            <span>/ ₩{Math.round(item.budget).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              )}
             </TabsContent>
           </AnimatePresence>
         </div>

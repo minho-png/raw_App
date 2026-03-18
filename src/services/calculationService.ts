@@ -85,7 +85,11 @@ export class CalculationService {
         '광고 그룹': 'ad_group_name', '광고 그룹 이름': 'ad_group_name',
         '노출': 'impressions', '클릭': 'clicks',
         '집행 금액(VAT 별도)': 'supply_value', '총 비용': 'supply_value',
-        '캠페인': 'excel_campaign_name'
+        '캠페인': 'excel_campaign_name',
+        '소재': 'creative_name', '소재 이름': 'creative_name',
+        '연령': 'age',
+        '성별': 'gender',
+        '기기': 'device'
       };
       Object.keys(columnMap).forEach(key => {
         if (currentCols.includes(key)) renameObj[key] = columnMap[key];
@@ -131,11 +135,20 @@ export class CalculationService {
       executionAmounts.push(executionAmt);
       netAmounts.push(baseValue);
 
+      const rawDate = row.date_raw;
+      let parsedDate: Date;
+      if (rawDate instanceof Date) {
+        parsedDate = rawDate;
+      } else {
+        const dateStr = String(rawDate).replace(/\./g, '-');
+        parsedDate = new Date(dateStr);
+      }
+
       rawRecords.push({
         campaign_id: campaignId,
         excel_campaign_name: excelCampName,
         media: rowMedia,
-        date: new Date(row.date_raw),
+        date: parsedDate,
         ad_group_name: row.ad_group_name || 'Unknown',
         impressions: row.impressions || 0,
         clicks: row.clicks || 0,
@@ -144,7 +157,11 @@ export class CalculationService {
         dmp_type: row.dmp_type,
         has_dmp: row.dmp_type !== 'DIRECT' && row.dmp_type !== 'N/A',
         cost: supplyVal,
-        is_raw: true
+        is_raw: true,
+        creative_name: row.creative_name,
+        age: row.age,
+        gender: row.gender,
+        device: row.device
       });
     });
 
@@ -165,11 +182,20 @@ export class CalculationService {
       const finalJson = this.ensureRecords(groupDf);
       finalJson.forEach(row => {
         const dmp = row.dmp_type || 'N/A';
+        
+        // Handle date_raw from grouping (might be string or Date)
+        let reportDate: Date;
+        if (row.date_raw instanceof Date) {
+          reportDate = row.date_raw;
+        } else {
+          reportDate = new Date(String(row.date_raw).replace(/\./g, '-'));
+        }
+
         reportRecords.push({
           campaign_id: campaignId,
           excel_campaign_name: row.excel_campaign_name,
-          media: media, // Simplified for grouped view
-          date: new Date(row.date_raw),
+          media: media, 
+          date: reportDate,
           ad_group_name: row.ad_group_name || 'Grouped',
           impressions: row.impressions || 0,
           clicks: row.clicks || 0,
@@ -178,7 +204,11 @@ export class CalculationService {
           dmp_type: dmp,
           has_dmp: dmp !== 'DIRECT' && dmp !== 'N/A',
           cost: row.supply_value || 0,
-          is_raw: false
+          is_raw: false,
+          creative_name: row.creative_name,
+          age: row.age,
+          gender: row.gender,
+          device: row.device
         });
       });
     } else {
