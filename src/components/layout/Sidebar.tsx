@@ -10,7 +10,7 @@ import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/
 import { CampaignConfig } from '@/types';
 
 export const Sidebar = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, updateCampaign, refreshCampaigns } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, isSyncing, setIsSyncing, updateCampaign, refreshCampaigns } = useCampaignStore();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<CampaignConfig | null>(null);
   const [tempName, setTempName] = useState("");
@@ -25,35 +25,37 @@ export const Sidebar = () => {
   }, [refreshCampaigns]);
 
   const handleAddCampaign = async () => {
-    const newId = `CAMP-${Math.floor(Math.random() * 1000)}`;
+    setIsSyncing(true); // Prevent background sync
+    const newId = `CAMP-${Math.floor(Math.random() * 10000)}`;
+    const now = new Date().toISOString().split('T')[0];
     const newCampaign: CampaignConfig = {
       campaign_id: newId,
-      campaign_name: `신규 캠페인 ${campaigns.length + 1}`,
-      sub_campaigns: [
-        {
-          id: `SUB-${Math.floor(Math.random() * 1000)}`,
-          excel_name: '기본 캠페인',
-          media: '네이버GFA',
-          fee_rate: 10,
-          budget: 10000000,
-          budget_type: 'individual',
-          enabled: true
-        }
-      ]
+      campaign_name: `신규 캠페인 (${now})`,
+      created_at: new Date(),
+      sub_campaigns: []
     };
     
-    const result = await saveCampaignAction(newCampaign);
-    if (result.success && result.campaigns) {
-      setCampaigns(result.campaigns);
-      selectCampaign(newId);
+    try {
+      const result = await saveCampaignAction(newCampaign);
+      if (result.success && result.campaigns) {
+        setCampaigns(result.campaigns);
+        selectCampaign(newId);
+      }
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   const handleDeleteCampaign = async (id: string) => {
     if (confirm('캠페인을 삭제하시겠습니까? 관련 데이터도 함께 삭제됩니다.')) {
-      const result = await deleteCampaignAction(id);
-      if (result.success && result.campaigns) {
-        setCampaigns(result.campaigns);
+      setIsSyncing(true);
+      try {
+        const result = await deleteCampaignAction(id);
+        if (result.success && result.campaigns) {
+          setCampaigns(result.campaigns);
+        }
+      } finally {
+        setIsSyncing(false);
       }
     }
   };

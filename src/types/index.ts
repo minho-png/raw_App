@@ -2,20 +2,23 @@ export type MediaProvider = '네이버GFA' | '카카오Moment' | '구글Ads' | '
 
 export interface SubCampaignConfig {
   id: string; // Unique ID for this sub-campaign setting
-  excel_name: string; // Mapping name from Excel
+  mapping_value: string; // Explicitly what value in Excel to match (replaces ambiguous excel_name)
+  excel_name?: string; // Kept for backward compatibility but deprecated
   media: MediaProvider;
   fee_rate: number;
   budget: number;
-  budget_type: 'integrated' | 'individual'; // Added: integrated follows global, individual is separate
+  budget_type: 'integrated' | 'individual';
   target_cpc?: number;
   target_ctr?: number;
-  enabled: boolean; // Added: toggle to include/exclude media
-  dmp_column?: string; // Added: custom DMP column name
+  enabled: boolean;
+  dmp_column?: string;
 }
 
 export interface CampaignConfig {
   campaign_id: string;
   campaign_name: string;
+  created_at?: Date;
+  updated_at?: Date;
   sub_campaigns: SubCampaignConfig[];
   insights?: string;
   target_cpc?: number;
@@ -26,6 +29,7 @@ export interface PerformanceRecord {
   _id?: string;               // MongoDB Object ID
   campaign_id: string;
   excel_campaign_name?: string; 
+  mapping_value?: string; // Track which value was used for mapping
   media: string;
   date: Date;
   ad_group_name: string;

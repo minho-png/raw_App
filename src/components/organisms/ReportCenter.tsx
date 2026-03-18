@@ -216,9 +216,10 @@ export const ReportCenter: React.FC = () => {
 
       selectedCampaign?.sub_campaigns?.forEach(sub => {
         if (sub.enabled !== false) {
-          if (sub.excel_name) {
-            configs[sub.excel_name] = sub;
-            enabledExcelNames.add(sub.excel_name);
+          const mKey = sub.mapping_value || sub.excel_name;
+          if (mKey) {
+            configs[mKey] = sub;
+            enabledExcelNames.add(mKey);
           }
           enabledMedias.add(sub.media);
         }
@@ -345,14 +346,15 @@ export const ReportCenter: React.FC = () => {
       .map(sub => {
         const spent = filteredData
           .filter(d => {
-            if (sub.excel_name) return d.excel_campaign_name === sub.excel_name;
+            const mKey = sub.mapping_value || sub.excel_name;
+            if (mKey) return d.excel_campaign_name === mKey || d.mapping_value === mKey;
             return d.media === sub.media;
           })
           .reduce((sum, d) => sum + d.execution_amount, 0);
         
         return {
           id: sub.id,
-          name: sub.excel_name || sub.media,
+          name: sub.mapping_value || sub.excel_name || sub.media,
           budget: sub.budget || 0,
           spent: spent,
           percent: sub.budget > 0 ? Math.min((spent / sub.budget) * 100, 100) : 0

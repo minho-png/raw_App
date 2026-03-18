@@ -121,7 +121,11 @@ export class CalculationService {
     const json = this.ensureRecords(df);
     json.forEach((row, idx) => {
       const excelCampName = row.excel_campaign_name;
-      const config = campaignConfigs && excelCampName ? campaignConfigs[excelCampName] : null;
+      // Preference: mapping_value matching excel_campaign_name
+      // Fallback: older excel_name field if mapping_value is missing
+      const config = campaignConfigs && excelCampName 
+        ? (Object.values(campaignConfigs).find(c => (c as any).mapping_value === excelCampName || (c as any).excel_name === excelCampName))
+        : null;
       
       // Integrated vs Individual budget logic: 
       // Individual uses its own fee rate, Integrated uses global (totalFeeRate)
@@ -205,6 +209,7 @@ export class CalculationService {
         reportRecords.push({
           campaign_id: campaignId,
           excel_campaign_name: row.excel_campaign_name,
+          mapping_value: row.excel_campaign_name, // Explicitly track mapping source
           media: media, 
           date: reportDate,
           ad_group_name: row.ad_group_name || 'Grouped',

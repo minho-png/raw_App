@@ -41,6 +41,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
   const handleAddField = () => {
     const newField: SubCampaignConfig = {
       id: Math.random().toString(36).substr(2, 9),
+      mapping_value: '',
       excel_name: '',
       media: '네이버GFA',
       fee_rate: 10,
@@ -57,6 +58,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
     if (subCampaigns.some(s => s.excel_name === name)) return;
     const newField: SubCampaignConfig = {
       id: Math.random().toString(36).substr(2, 9),
+      mapping_value: name,
       excel_name: name,
       media: '네이버GFA',
       fee_rate: 10,
@@ -134,7 +136,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                     </h3>
                     <div className="flex flex-wrap gap-2">
                       {suggestedNames.map(name => {
-                        const isAdded = subCampaigns.some(s => s.excel_name === name);
+                        const isAdded = subCampaigns.some(s => s.mapping_value === name || s.excel_name === name);
                         return (
                           <button
                             key={name}
@@ -226,7 +228,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                               {(index + 1).toString().padStart(2, '0')}
                             </span>
                             <h4 className="text-xl font-black text-slate-800 tracking-tight">
-                              {sub.excel_name || "항목 이름을 입력하세요"}
+                              {sub.mapping_value || sub.excel_name || "항목 이름을 입력하세요"}
                             </h4>
                           </div>
                           <div className="flex items-center gap-3">
@@ -266,8 +268,8 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                             <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Key Match Name</Label>
                             <Input 
                               placeholder="Excel Campaign Name" 
-                              value={sub.excel_name}
-                              onChange={(e) => handleUpdateField(sub.id, { excel_name: e.target.value })}
+                              value={sub.mapping_value || sub.excel_name}
+                              onChange={(e) => handleUpdateField(sub.id, { mapping_value: e.target.value })}
                               className="bg-slate-50/50 border-none focus:bg-white focus:ring-4 focus:ring-indigo-500/10 rounded-2xl h-14 text-base font-bold text-slate-900 border-2 border-transparent transition-all px-6"
                             />
                           </div>
@@ -379,7 +381,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                         )}
                         {subCampaigns.map((sub) => (
                           <TableRow key={`raw-${sub.id}`} className="border-white/5 hover:bg-white/[0.03] transition-colors">
-                            <TableCell className="px-8 font-black text-indigo-400 whitespace-nowrap">{sub.excel_name || "???"}</TableCell>
+                            <TableCell className="px-8 font-black text-indigo-400 whitespace-nowrap">{sub.mapping_value || sub.excel_name || "???"}</TableCell>
                             <TableCell className="px-8">
                               <span className="px-3 py-1 bg-white/10 rounded-lg text-white font-black text-[10px]">{sub.media}</span>
                             </TableCell>
