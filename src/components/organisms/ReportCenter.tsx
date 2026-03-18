@@ -54,6 +54,16 @@ export const ReportCenter: React.FC = () => {
   const [activeMedia, setActiveMedia] = useState<MediaProvider>('네이버GFA');
   const [groupByColumns, setGroupByColumns] = useState<string[]>(['date_raw']); 
   const [rawParsedData, setRawParsedData] = useState<any[]>([]);
+
+  const suggestedExcelNames = useMemo(() => {
+    if (rawParsedData.length === 0) return [];
+    const firstRow = rawParsedData[0];
+    const keys = Object.keys(firstRow);
+    // Prefer columns that look like campaign names
+    const campaignCol = keys.find(k => k === 'excel_campaign_name' || k.includes('캠페인명') || k.includes('Campaign')) || keys[0];
+    const names = rawParsedData.map(r => String(r[campaignCol])).filter(Boolean);
+    return Array.from(new Set(names)).sort();
+  }, [rawParsedData]);
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
@@ -352,6 +362,7 @@ export const ReportCenter: React.FC = () => {
           isOpen={isBudgetModalOpen}
           onClose={() => setIsBudgetModalOpen(false)}
           campaign={selectedCampaign}
+          suggestedNames={suggestedExcelNames}
           onUpdate={async (updated) => {
             updateCampaign(updated);
             await saveCampaignAction(updated);
@@ -424,8 +435,15 @@ export const ReportCenter: React.FC = () => {
                         </div>
                       </div>
                       
-                      <div className="flex items-end">
-                        <Button onClick={handleProcessData} className="bg-blue-600 hover:bg-blue-700 h-10 px-8">
+                      <div className="flex items-end gap-3">
+                        <Button 
+                          variant="outline"
+                          onClick={() => setIsBudgetModalOpen(true)}
+                          className="border-slate-200 text-slate-600 hover:bg-slate-50 h-10 rounded-xl"
+                        >
+                          <Settings2 className="mr-2 h-4 w-4 text-blue-500" /> 엑셀 캠페인별 예산 설정
+                        </Button>
+                        <Button onClick={handleProcessData} className="bg-blue-600 hover:bg-blue-700 h-10 px-8 rounded-xl shadow-lg shadow-blue-500/20">
                           가공 탭으로 이동 ➔
                         </Button>
                       </div>

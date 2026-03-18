@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, Trash2, Wallet, Megaphone, Settings2 } from 'lucide-react';
+import { X, Plus, Trash2, Wallet, Megaphone } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,26 +10,50 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CampaignConfig, SubCampaignConfig, MediaProvider } from "@/types";
+import { cn } from "@/lib/utils";
 
 interface BudgetSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   campaign: CampaignConfig;
   onUpdate: (updatedCampaign: CampaignConfig) => void;
+  suggestedNames?: string[];
 }
 
 export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({ 
   isOpen, 
   onClose, 
   campaign, 
-  onUpdate 
+  onUpdate,
+  suggestedNames = []
 }) => {
-  const [subCampaigns, setSubCampaigns] = useState<SubCampaignConfig[]>(campaign.sub_campaigns || []);
+  const [subCampaigns, setSubCampaigns] = useState<SubCampaignConfig[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSubCampaigns(campaign.sub_campaigns || []);
+    }
+  }, [isOpen, campaign.sub_campaigns]);
 
   const handleAddField = () => {
     const newField: SubCampaignConfig = {
       id: Math.random().toString(36).substr(2, 9),
       excel_name: '',
+      media: '네이버GFA',
+      fee_rate: 10,
+      budget: 0,
+      budget_type: 'individual',
+      target_cpc: 0,
+      target_ctr: 0
+    };
+    setSubCampaigns([...subCampaigns, newField]);
+  };
+
+  const handleAddSuggested = (name: string) => {
+    if (subCampaigns.some(s => s.excel_name === name)) return;
+    const newField: SubCampaignConfig = {
+      id: Math.random().toString(36).substr(2, 9),
+      excel_name: name,
       media: '네이버GFA',
       fee_rate: 10,
       budget: 0,
@@ -56,112 +80,151 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 md:p-8"
+          onClick={onClose}
+        >
           <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100]"
-          />
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            initial={{ opacity: 0, scale: 0.95, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-3xl max-h-[85vh] overflow-hidden bg-white rounded-3xl shadow-2xl z-[101] border border-slate-200"
+            exit={{ opacity: 0, scale: 0.95, y: 30 }}
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-5xl max-h-[90vh] overflow-hidden bg-white rounded-[40px] shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] z-[101] border border-slate-200 flex flex-col"
           >
-            <div className="p-8 flex flex-col h-full">
-              <header className="flex justify-between items-start mb-8">
+            <div className="p-8 md:p-12 flex flex-col h-full overflow-hidden">
+              <header className="flex justify-between items-start mb-10">
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                    <Wallet className="text-blue-500" size={24} /> 예산 및 매체 설정
-                  </h2>
-                  <p className="text-slate-500 text-sm mt-1">캠페인별 예산과 수수료율을 세밀하게 제어하세요.</p>
+                  <div className="flex items-center gap-4 mb-3">
+                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-500/40">
+                      <Wallet size={24} />
+                    </div>
+                    <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+                      정밀 예산 및 KPI 설정
+                    </h2>
+                  </div>
+                  <p className="text-slate-500 text-lg">매체별 기본 설정에서 엑셀 캠페인명 매칭까지 세밀하게 관리하세요.</p>
                 </div>
-                <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-slate-100">
-                  <X size={20} />
+                <Button variant="ghost" size="icon" onClick={onClose} className="rounded-2xl hover:bg-slate-100 h-14 w-14 transition-all">
+                  <X size={28} className="text-slate-400" />
                 </Button>
               </header>
 
-              <div className="flex-1 overflow-y-auto pr-2 space-y-4 min-h-[400px]">
+              {suggestedNames.length > 0 && (
+                <div className="mb-8 p-8 bg-blue-50/40 rounded-[32px] border border-blue-100/50 shadow-inner">
+                  <h3 className="text-sm font-bold text-blue-900 mb-5 flex items-center gap-2 uppercase tracking-widest">
+                    <Plus size={16} /> 업로드된 파일 매칭 추천 (Excel Match)
+                  </h3>
+                  <div className="flex flex-wrap gap-3">
+                    {suggestedNames.map(name => {
+                      const isAdded = subCampaigns.some(s => s.excel_name === name);
+                      return (
+                        <Button
+                          key={name}
+                          variant={isAdded ? "secondary" : "outline"}
+                          size="sm"
+                          disabled={isAdded}
+                          onClick={() => handleAddSuggested(name)}
+                          className={cn(
+                            "text-xs font-bold rounded-2xl px-5 py-3 h-auto transition-all border-2",
+                            isAdded ? "bg-blue-100 text-blue-700 border-blue-200 opacity-60" : "bg-white border-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 hover:shadow-lg hover:shadow-blue-500/20"
+                          )}
+                        >
+                          {name} {isAdded && '✓'}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex-1 overflow-y-auto pr-4 space-y-6 custom-scrollbar pb-6">
                 {subCampaigns.length === 0 && (
-                  <div className="text-center py-20 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                    <Megaphone className="mx-auto text-slate-300 mb-4" size={48} />
-                    <p className="text-slate-400">등록된 상세 설정이 없습니다. 추가 버튼을 눌러 시작하세요.</p>
+                  <div className="text-center py-24 bg-slate-50/50 rounded-[32px] border-2 border-dashed border-slate-200">
+                    <Megaphone className="mx-auto text-slate-200 mb-6" size={64} />
+                    <p className="text-slate-400 text-lg font-medium">등록된 예산 항목이 없습니다.<br/>커스텀 항목을 추가하거나 엑셀 매칭을 활용하세요.</p>
                   </div>
                 )}
 
-                {subCampaigns.map((sub, index) => (
-                  <Card key={sub.id} className="p-5 border-slate-200 hover:border-blue-200 transition-colors bg-white shadow-sm overflow-visible">
-                    <div className="flex items-start gap-4">
-                      <div className="flex-1 grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold text-slate-500">엑셀 매칭 키워드 (캠페인명)</Label>
+                {subCampaigns.map((sub) => (
+                  <Card key={sub.id} className="p-8 border-slate-100 hover:border-blue-200 transition-all bg-white shadow-sm hover:shadow-xl overflow-visible rounded-[32px] group border-2">
+                    <div className="flex items-start gap-8">
+                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        <div className="space-y-3">
+                          <Label className="text-sm font-black text-slate-700 ml-1">매칭 키워드 (Excel Name)</Label>
                           <Input 
                             placeholder="예: GFA_메인_DA" 
                             value={sub.excel_name}
                             onChange={(e) => handleUpdateField(sub.id, { excel_name: e.target.value })}
-                            className="bg-slate-50/50 border-slate-200 focus:bg-white"
+                            className="bg-white border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 rounded-2xl h-14 transition-all text-base px-5 border-2"
                           />
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold text-slate-500">매체</Label>
+                        <div className="space-y-3">
+                          <Label className="text-sm font-black text-slate-700 ml-1">매체 구분</Label>
                           <Select 
                             value={sub.media} 
                             onValueChange={(val) => handleUpdateField(sub.id, { media: val as MediaProvider })}
                           >
-                            <SelectTrigger className="bg-slate-50/50 border-slate-200 focus:bg-white">
+                            <SelectTrigger className="bg-white border-slate-200 rounded-2xl h-14 focus:ring-4 focus:ring-blue-500/5 transition-all text-base px-5 border-2">
                               <SelectValue placeholder="매체 선택" />
                             </SelectTrigger>
-                            <SelectContent className="z-[200]">
-                              <SelectItem value="네이버GFA">네이버 GFA</SelectItem>
-                              <SelectItem value="카카오Moment">카카오 모먼트</SelectItem>
-                              <SelectItem value="메타Ads">메타 Ads</SelectItem>
+                            <SelectContent className="z-[200] rounded-2xl border-slate-200 p-2">
+                              <SelectItem value="네이버GFA" className="rounded-xl py-3">네이버 GFA</SelectItem>
+                              <SelectItem value="카카오Moment" className="rounded-xl py-3">카카오 모먼트</SelectItem>
+                              <SelectItem value="메타Ads" className="rounded-xl py-3">메타 Ads</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold text-slate-500">할당 예산 (₩)</Label>
-                          <Input 
-                            type="number" 
-                            placeholder="0" 
-                            value={sub.budget}
-                            onChange={(e) => handleUpdateField(sub.id, { budget: Number(e.target.value) })}
-                            className="bg-slate-50/50 border-slate-200 focus:bg-white font-mono"
-                          />
+                        <div className="space-y-3">
+                          <Label className="text-sm font-black text-slate-700 ml-1">할당 예산 (Total Budget)</Label>
+                          <div className="relative">
+                            <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₩</span>
+                            <Input 
+                              type="number" 
+                              placeholder="0" 
+                              value={sub.budget}
+                              onChange={(e) => handleUpdateField(sub.id, { budget: Number(e.target.value) })}
+                              className="bg-white border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 rounded-2xl h-14 transition-all font-mono font-black text-blue-600 pl-10 pr-5 text-lg border-2"
+                            />
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold text-slate-500">목표 CPC (₩)</Label>
+                        <div className="space-y-3">
+                          <Label className="text-sm font-black text-slate-700 ml-1">목표 CPC (Target)</Label>
                           <Input 
                             type="number" 
                             placeholder="0" 
                             value={sub.target_cpc || ''}
                             onChange={(e) => handleUpdateField(sub.id, { target_cpc: Number(e.target.value) })}
-                            className="bg-slate-50/50 border-slate-200 focus:bg-white font-mono"
+                            className="bg-white border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 rounded-2xl h-14 transition-all font-mono px-5 border-2"
                           />
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold text-slate-500">목표 CTR (%)</Label>
-                          <Input 
-                            type="number" 
-                            step="0.01"
-                            placeholder="0.00" 
-                            value={sub.target_ctr || ''}
-                            onChange={(e) => handleUpdateField(sub.id, { target_ctr: Number(e.target.value) })}
-                            className="bg-slate-50/50 border-slate-200 focus:bg-white font-mono"
-                          />
+                        <div className="space-y-3">
+                          <Label className="text-sm font-black text-slate-700 ml-1">목표 CTR (Target %)</Label>
+                          <div className="relative">
+                            <Input 
+                              type="number" 
+                              step="0.01"
+                              placeholder="0.00" 
+                              value={sub.target_ctr || ''}
+                              onChange={(e) => handleUpdateField(sub.id, { target_ctr: Number(e.target.value) })}
+                              className="bg-white border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 rounded-2xl h-14 transition-all font-mono pr-10 px-5 border-2"
+                            />
+                            <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold text-slate-500">수수료율 (%)</Label>
-                          <div className="flex items-center gap-2">
+                        <div className="space-y-3">
+                          <Label className="text-sm font-black text-slate-700 ml-1">수수료율 (Fee %)</Label>
+                          <div className="flex items-center gap-4">
                             <Input 
                               type="number" 
                               placeholder="10" 
                               value={sub.fee_rate}
                               onChange={(e) => handleUpdateField(sub.id, { fee_rate: Number(e.target.value) })}
-                              className="bg-slate-50/50 border-slate-200 focus:bg-white w-20 text-center"
+                              className="bg-white border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 rounded-2xl h-14 w-28 text-center transition-all font-mono font-bold border-2"
                             />
-                            <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-200 py-1">Standard 10%</Badge>
+                            <Badge variant="outline" className="text-xs text-slate-500 border-slate-200 py-2 px-4 rounded-xl bg-slate-50 font-bold border-2">Default 10%</Badge>
                           </div>
                         </div>
                       </div>
@@ -169,29 +232,29 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                         variant="ghost" 
                         size="icon" 
                         onClick={() => handleRemoveField(sub.id)}
-                        className="text-slate-400 hover:text-red-500 hover:bg-red-50"
+                        className="text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-2xl h-14 w-14 transition-all group-hover:text-slate-300"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={24} />
                       </Button>
                     </div>
                   </Card>
                 ))}
               </div>
 
-              <div className="mt-8 pt-6 border-t border-slate-100 flex justify-between items-center">
-                <Button variant="outline" onClick={handleAddField} className="rounded-xl border-slate-200">
-                  <Plus size={16} className="mr-2" /> 상세 항목 추가
+              <div className="mt-12 pt-10 border-t border-slate-100 flex justify-between items-center bg-white">
+                <Button variant="outline" onClick={handleAddField} className="rounded-[20px] border-slate-200 h-16 px-10 text-slate-600 hover:bg-slate-50 transition-all font-black text-lg border-2">
+                  <Plus size={24} className="mr-3" /> 직접 항목 추가
                 </Button>
-                <div className="flex gap-3">
-                  <Button variant="ghost" onClick={onClose} className="rounded-xl text-slate-500">취소</Button>
-                  <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 px-8 rounded-xl shadow-lg shadow-blue-500/20">
-                    설정 저장하기
+                <div className="flex gap-5">
+                  <Button variant="ghost" onClick={onClose} className="rounded-[20px] h-16 px-10 text-slate-400 hover:text-slate-600 transition-all font-bold text-lg">취소</Button>
+                  <Button onClick={handleSave} className="bg-slate-900 border-none hover:bg-black text-white px-12 rounded-[20px] h-16 shadow-2xl shadow-slate-300 transition-all hover:translate-y-[-4px] active:translate-y-0 font-black text-lg">
+                    설정 데이터 저장 및 상시 적용
                   </Button>
                 </div>
               </div>
             </div>
           </motion.div>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   );
