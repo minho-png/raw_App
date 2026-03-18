@@ -96,24 +96,34 @@ export const ReportCenter: React.FC = () => {
   };
 
   const handleUpdateAmount = async (id: string, newValue: number) => {
-    setIsUpdating(true);
-    try {
-      const result = await updatePerformanceDataAction(id, { 
-        execution_amount: newValue,
-        cost: newValue // Sync cost with execution_amount
-      });
-      if (result.success) {
-        setProcessedData(prev => prev.map(d => 
-          d._id === id ? { ...d, execution_amount: newValue, is_edited: true } : d
-        ));
-        setEditingCell(null);
-      } else {
-        alert('업데이트에 실패했습니다.');
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+    
+    if (isMongoId) {
+      setIsUpdating(true);
+      try {
+        const result = await updatePerformanceDataAction(id, { 
+          execution_amount: newValue,
+          cost: newValue 
+        });
+        if (result.success) {
+          setProcessedData(prev => prev.map(d => 
+            d._id === id ? { ...d, execution_amount: newValue, is_edited: true } : d
+          ));
+          setEditingCell(null);
+        } else {
+          alert('DB 업데이트에 실패했습니다.');
+        }
+      } catch (error) {
+        console.error('Update failed:', error);
+      } finally {
+        setIsUpdating(false);
       }
-    } catch (error) {
-      console.error('Update failed:', error);
-    } finally {
-      setIsUpdating(false);
+    } else {
+      // Local-only update for temp records
+      setProcessedData(prev => prev.map(d => 
+        d._id === id ? { ...d, execution_amount: newValue, is_edited: true } : d
+      ));
+      setEditingCell(null);
     }
   };
 
@@ -723,7 +733,7 @@ export const ReportCenter: React.FC = () => {
                             ) : (
                               <div 
                                 className="cursor-pointer hover:bg-blue-600 hover:text-white px-4 py-2 rounded-xl transition-all font-black text-lg text-blue-600 border-2 border-transparent hover:border-blue-700"
-                                onDoubleClick={() => record._id && setEditingCell({ id: record._id, value: record.cost || record.execution_amount })}
+                                onDoubleClick={() => setEditingCell({ id: record._id!, value: record.cost || record.execution_amount })}
                               >
                                 ₩{Math.round(record.cost || record.execution_amount).toLocaleString()}
                               </div>

@@ -207,6 +207,7 @@ export class CalculationService {
         }
 
         reportRecords.push({
+          _id: `temp_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`,
           campaign_id: campaignId,
           excel_campaign_name: row.excel_campaign_name,
           mapping_value: row.excel_campaign_name, // Explicitly track mapping source
