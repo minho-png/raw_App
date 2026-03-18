@@ -13,9 +13,10 @@ interface CampaignState {
   setCampaigns: (campaigns: CampaignConfig[]) => void;
   setIsLoading: (isLoading: boolean) => void;
   setActiveTab: (tab: string) => void;
+  refreshCampaigns: (fetchFn: () => Promise<{ success: boolean, campaigns?: CampaignConfig[] }>) => Promise<void>;
 }
 
-export const useCampaignStore = create<CampaignState>((set) => ({
+export const useCampaignStore = create<CampaignState>((set, get) => ({
   campaigns: [],
   selectedCampaignId: null,
   isLoading: false,
@@ -33,10 +34,26 @@ export const useCampaignStore = create<CampaignState>((set) => ({
       c.campaign_id === campaign.campaign_id ? campaign : c
     )
   })),
-  setCampaigns: (campaigns) => set({ 
-    campaigns, 
-    selectedCampaignId: campaigns.length > 0 ? campaigns[0].campaign_id : (campaigns.length === 0 ? null : campaigns[0].campaign_id)
-  }),
+  setCampaigns: (campaigns) => {
+    const currentId = get().selectedCampaignId;
+    set({ 
+      campaigns, 
+      selectedCampaignId: currentId && campaigns.some(c => c.campaign_id === currentId) 
+        ? currentId 
+        : (campaigns.length > 0 ? campaigns[0].campaign_id : null)
+    });
+  },
   setIsLoading: (isLoading) => set({ isLoading }),
   setActiveTab: (tab) => set({ activeTab: tab }),
+  refreshCampaigns: async (fetchFn) => {
+    set({ isLoading: true });
+    try {
+      const result = await fetchFn();
+      if (result.success && result.campaigns) {
+        get().setCampaigns(result.campaigns);
+      }
+    } finally {
+      set({ isLoading: false });
+    }
+  }
 }));

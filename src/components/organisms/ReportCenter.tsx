@@ -39,13 +39,13 @@ import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 import { BudgetStatus, PerformanceRecord, MediaProvider } from "@/types";
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { cn } from '@/lib/utils';
-import { getPerformanceDataAction, updatePerformanceDataAction } from '@/server/actions/settlement';
+import { getPerformanceDataAction, updatePerformanceDataAction, savePerformanceData } from '@/server/actions/settlement';
+import { getCampaignsAction, saveCampaignAction } from '@/server/actions/campaign';
 import { CalculationService } from "@/services/calculationService";
 import { BudgetSettingsModal } from "./BudgetSettingsModal";
-import { saveCampaignAction } from '@/server/actions/campaign';
 
 export const ReportCenter: React.FC = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab, refreshCampaigns } = useCampaignStore();
   const selectedCampaign = campaigns.find(c => c.campaign_id === selectedCampaignId);
   
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
@@ -88,15 +88,18 @@ export const ReportCenter: React.FC = () => {
   const handleSaveInsights = async () => {
     if (!selectedCampaign) return;
     const updated = { ...selectedCampaign, insights: campaignInsights };
-    updateCampaign(updated);
     await saveCampaignAction(updated);
+    await refreshCampaigns(getCampaignsAction); // Sync with DB
     alert('인사이트가 저장되었습니다.');
   };
 
   const handleUpdateAmount = async (id: string, newValue: number) => {
     setIsUpdating(true);
     try {
-      const result = await updatePerformanceDataAction(id, { execution_amount: newValue });
+      const result = await updatePerformanceDataAction(id, { 
+        execution_amount: newValue,
+        cost: newValue // Sync cost with execution_amount
+      });
       if (result.success) {
         setProcessedData(prev => prev.map(d => 
           d._id === id ? { ...d, execution_amount: newValue, is_edited: true } : d
@@ -143,7 +146,9 @@ export const ReportCenter: React.FC = () => {
 
   const totalBudget = useMemo(() => {
     if (!selectedCampaign || !selectedCampaign.sub_campaigns) return 0;
-    return selectedCampaign.sub_campaigns.reduce((sum, sub) => sum + (sub.budget || 0), 0);
+    return selectedCampaign.sub_campaigns
+      .filter(sub => sub.enabled !== false) // Ignore disabled media
+      .reduce((sum, sub) => sum + (sub.budget || 0), 0);
   }, [selectedCampaign]);
 
   // Derived stats for BudgetPacingCards
@@ -166,7 +171,7 @@ export const ReportCenter: React.FC = () => {
       ? subWithCpc.reduce((sum, s) => sum + (s.target_cpc || 0), 0) / subWithCpc.length 
       : undefined;
 
-    const subWithCtr = selectedCampaign?.sub_campaigns?.filter(s => s.target_ctr && s.target_ctr > 0) || [];
+    const subWithCtr = selectedCampaign?.sub_campaigns?.filter(s => s.enabled !== false && s.target_ctr && s.target_ctr > 0) || [];
     const avgTargetCtr = subWithCtr.length > 0 
       ? subWithCtr.reduce((sum, s) => sum + (s.target_ctr || 0), 0) / subWithCtr.length 
       : undefined;
@@ -204,14 +209,33 @@ export const ReportCenter: React.FC = () => {
     try {
       // Transform sub_campaigns array to record for CalculationService
       const configs: Record<string, any> = {};
+      const enabledExcelNames = new Set<string>();
+      const enabledMedias = new Set<string>();
+
       selectedCampaign?.sub_campaigns?.forEach(sub => {
-        if (sub.excel_name) {
-          configs[sub.excel_name] = sub;
+        if (sub.enabled !== false) {
+          if (sub.excel_name) {
+            configs[sub.excel_name] = sub;
+            enabledExcelNames.add(sub.excel_name);
+          }
+          enabledMedias.add(sub.media);
         }
       });
 
+      // Filter raw data to only include enabled media/campaigns
+      // If no sub-campaigns are defined, we check against the activeMedia
+      // If sub-campaigns are defined, we only include those that match enabled excel_names
+      const filteredRaw = rawParsedData.filter(row => {
+        // This is a simplified check; might need more robust matching logic
+        const rowCamp = String(row.excel_campaign_name || row['캠페인'] || row['캠페인명']);
+        if (selectedCampaign?.sub_campaigns && selectedCampaign.sub_campaigns.length > 0) {
+          return enabledExcelNames.has(rowCamp);
+        }
+        return true; // If no sub-campaigns, process all (standard behavior)
+      });
+
       const { raw, report } = CalculationService.processWithDanfo(
-        rawParsedData,
+        filteredRaw,
         selectedCampaignId,
         activeMedia,
         10, // Default fee rate if not configured
@@ -226,6 +250,33 @@ export const ReportCenter: React.FC = () => {
       console.error('Processing failed:', error);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const [isSavingReport, setIsSavingReport] = useState(false);
+  const handleSaveProcessedData = async () => {
+    if (!selectedCampaignId || processedData.length === 0) return;
+    
+    setIsSavingReport(true);
+    try {
+      // Normalize dates and ensure is_raw is false for report data
+      const normalized = processedData.map(d => ({
+        ...d,
+        date: new Date(d.date),
+        is_raw: false
+      }));
+
+      const res = await savePerformanceData(normalized as any);
+      if (res.success) {
+        alert('분석된 리포트 데이터가 DB에 저장되었습니다.');
+      } else {
+        alert('저장 실패: ' + res.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('저장 중 오류가 발생했습니다.');
+    } finally {
+      setIsSavingReport(false);
     }
   };
 
@@ -267,22 +318,24 @@ export const ReportCenter: React.FC = () => {
   const budgetProgressData = useMemo(() => {
     if (!selectedCampaign || !selectedCampaign.sub_campaigns) return [];
     
-    return selectedCampaign.sub_campaigns.map(sub => {
-      const spent = filteredData
-        .filter(d => {
-          if (sub.excel_name) return d.excel_campaign_name === sub.excel_name;
-          return d.media === sub.media;
-        })
-        .reduce((sum, d) => sum + d.execution_amount, 0);
-      
-      return {
-        id: sub.id,
-        name: sub.excel_name || sub.media,
-        budget: sub.budget || 0,
-        spent: spent,
-        percent: sub.budget > 0 ? Math.min((spent / sub.budget) * 100, 100) : 0
-      };
-    });
+    return selectedCampaign.sub_campaigns
+      .filter(sub => sub.enabled !== false)
+      .map(sub => {
+        const spent = filteredData
+          .filter(d => {
+            if (sub.excel_name) return d.excel_campaign_name === sub.excel_name;
+            return d.media === sub.media;
+          })
+          .reduce((sum, d) => sum + d.execution_amount, 0);
+        
+        return {
+          id: sub.id,
+          name: sub.excel_name || sub.media,
+          budget: sub.budget || 0,
+          spent: spent,
+          percent: sub.budget > 0 ? Math.min((spent / sub.budget) * 100, 100) : 0
+        };
+      });
   }, [selectedCampaign, filteredData]);
 
   const ageData = useMemo(() => {
@@ -372,9 +425,10 @@ export const ReportCenter: React.FC = () => {
           onClose={() => setIsBudgetModalOpen(false)}
           campaign={selectedCampaign}
           suggestedNames={suggestedExcelNames}
+          totalSpent={budgetStatus.spent} // Pass spent for pacing calculation
           onUpdate={async (updated) => {
-            updateCampaign(updated);
             await saveCampaignAction(updated);
+            await refreshCampaigns(getCampaignsAction); // Sync with DB
           }}
         />
       )}
@@ -538,8 +592,13 @@ export const ReportCenter: React.FC = () => {
                     <h2 className="text-xl font-bold text-slate-900">데이터 검수 및 수동 보정</h2>
                     <p className="text-slate-500 text-sm">실제 집행 금액과 차이가 있다면 셀을 클릭하여 수정하세요.</p>
                   </div>
-                  <Button className="bg-green-600 hover:bg-green-700" onClick={() => alert('변경사항이 저장되었습니다.')}>
-                    <Check size={16} className="mr-2"/> 변경사항 최종 저장
+                  <Button 
+                    className="bg-green-600 hover:bg-green-700" 
+                    onClick={handleSaveProcessedData}
+                    disabled={isSavingReport || processedData.length === 0}
+                  >
+                    {isSavingReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check size={16} className="mr-2"/>}
+                    변경사항 최종 저장
                   </Button>
                 </div>
 
@@ -548,11 +607,12 @@ export const ReportCenter: React.FC = () => {
                     <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                       <TableRow>
                         <TableHead>날짜</TableHead>
-                        <TableHead>광고 그룹</TableHead>
+                        <TableHead>캠페인명</TableHead>
+                        <TableHead>DMP</TableHead>
                         <TableHead className="text-right">노출</TableHead>
                         <TableHead className="text-right">클릭</TableHead>
                         <TableHead className="text-right text-blue-600 font-bold flex items-center justify-end gap-1">
-                          <Edit3 size={14}/> 집행 금액 (더블클릭하여 수정)
+                          <Edit3 size={14}/> 비용 (수정 가능)
                         </TableHead>
                         <TableHead>상태</TableHead>
                       </TableRow>
@@ -561,7 +621,12 @@ export const ReportCenter: React.FC = () => {
                       {filteredData.map((record) => (
                         <TableRow key={record._id || Math.random()} className="hover:bg-slate-50/50">
                           <TableCell>{formatDate(record.date)}</TableCell>
-                          <TableCell className="font-medium text-slate-700">{record.ad_group_name}</TableCell>
+                          <TableCell className="font-medium text-slate-700">{record.excel_campaign_name || record.ad_group_name}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-bold">
+                              {record.dmp || record.dmp_type}
+                            </Badge>
+                          </TableCell>
                           <TableCell className="text-right">{record.impressions.toLocaleString()}</TableCell>
                           <TableCell className="text-right">{record.clicks.toLocaleString()}</TableCell>
                           
@@ -579,9 +644,9 @@ export const ReportCenter: React.FC = () => {
                             ) : (
                               <div 
                                 className="cursor-pointer hover:bg-slate-100 px-2 py-1 rounded inline-block transition-colors font-semibold"
-                                onDoubleClick={() => record._id && setEditingCell({ id: record._id, value: record.execution_amount })}
+                                onDoubleClick={() => record._id && setEditingCell({ id: record._id, value: record.cost || record.execution_amount })}
                               >
-                                ₩{Math.round(record.execution_amount).toLocaleString()}
+                                ₩{Math.round(record.cost || record.execution_amount).toLocaleString()}
                               </div>
                             )}
                           </TableCell>

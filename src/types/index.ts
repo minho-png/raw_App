@@ -9,6 +9,8 @@ export interface SubCampaignConfig {
   budget_type: 'integrated' | 'individual'; // Added: integrated follows global, individual is separate
   target_cpc?: number;
   target_ctr?: number;
+  enabled: boolean; // Added: toggle to include/exclude media
+  dmp_column?: string; // Added: custom DMP column name
 }
 
 export interface CampaignConfig {
@@ -32,8 +34,10 @@ export interface PerformanceRecord {
   execution_amount: number; // 공급가액 / (1 - 수수료율)
   net_amount: number;       // 실제 집행 순액
   dmp_type: string;         // 추출된 DMP 종류 (SKP, KB 등)
+  dmp?: string;             // Added: separate DMP column
   has_dmp: boolean;
-  cost: number;             // 집행 금액과 동일하거나 별도 집계용
+  cost: number;             // DB에는 "비용"으로 저장 (수수료 적용된 최종 비용)
+  supply_value?: number;    // 원본 공급가액
   is_edited?: boolean;        // 사용자가 수정한 데이터인지 여부
   is_raw?: boolean;           // Added: raw data vs report data
   placement?: string;

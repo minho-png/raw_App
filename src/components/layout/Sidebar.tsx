@@ -10,22 +10,19 @@ import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/
 import { CampaignConfig } from '@/types';
 
 export const Sidebar = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, updateCampaign } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, updateCampaign, refreshCampaigns } = useCampaignStore();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<CampaignConfig | null>(null);
   const [tempName, setTempName] = useState("");
 
+  // Initial fetch and polling
   useEffect(() => {
-    const fetchCampaigns = async () => {
-      setIsLoading(true);
-      const result = await getCampaignsAction();
-      if (result.success && result.campaigns) {
-        setCampaigns(result.campaigns);
-      }
-      setIsLoading(false);
-    };
-    fetchCampaigns();
-  }, [setCampaigns, setIsLoading]);
+    const sync = () => refreshCampaigns(getCampaignsAction);
+    sync(); // Initial
+    
+    const interval = setInterval(sync, 30000); // Poll every 30s for "streaming" feel
+    return () => clearInterval(interval);
+  }, [refreshCampaigns]);
 
   const handleAddCampaign = async () => {
     const newId = `CAMP-${Math.floor(Math.random() * 1000)}`;
@@ -39,20 +36,21 @@ export const Sidebar = () => {
           media: '네이버GFA',
           fee_rate: 10,
           budget: 10000000,
-          budget_type: 'individual'
+          budget_type: 'individual',
+          enabled: true
         }
       ]
     };
     
     await saveCampaignAction(newCampaign);
-    addCampaign(newCampaign);
+    await refreshCampaigns(getCampaignsAction); // Sync with DB
     selectCampaign(newId);
   };
 
   const handleDeleteCampaign = async (id: string) => {
     if (confirm('캠페인을 삭제하시겠습니까? 관련 데이터도 함께 삭제됩니다.')) {
       await deleteCampaignAction(id);
-      deleteCampaign(id);
+      await refreshCampaigns(getCampaignsAction); // Sync with DB
     }
   };
 
@@ -152,11 +150,11 @@ export const Sidebar = () => {
                   className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 font-bold"
                   value={tempName}
                   onChange={(e) => setTempName(e.target.value)}
-                  onKeyDown={(e) => {
+                  onKeyDown={async (e) => {
                     if (e.key === 'Enter') {
                       const updated = { ...editingCampaign, campaign_name: tempName };
-                      updateCampaign(updated);
-                      saveCampaignAction(updated);
+                      await saveCampaignAction(updated);
+                      await refreshCampaigns(getCampaignsAction);
                       setIsEditModalOpen(false);
                     }
                   }}
@@ -172,11 +170,11 @@ export const Sidebar = () => {
                 </Button>
                 <Button 
                   className="flex-1 rounded-xl h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold"
-                  onClick={() => {
+                  onClick={async () => {
                     if (editingCampaign) {
                       const updated = { ...editingCampaign, campaign_name: tempName };
-                      updateCampaign(updated);
-                      saveCampaignAction(updated);
+                      await saveCampaignAction(updated);
+                      await refreshCampaigns(getCampaignsAction);
                     }
                     setIsEditModalOpen(false);
                   }}

@@ -63,7 +63,8 @@ export class CalculationService {
       budget: number,
       budget_type: 'integrated' | 'individual',
       cpc_goal?: number,
-      ctr_goal?: number
+      ctr_goal?: number,
+      dmp_column?: string
     }>
   ): { raw: PerformanceRecord[], report: PerformanceRecord[] } {
     const df = new dfd.DataFrame(rawData);
@@ -144,6 +145,12 @@ export class CalculationService {
         parsedDate = new Date(dateStr);
       }
 
+      // 2.1 Custom DMP Detection based on config mapping
+      let customDmp = row.dmp_type;
+      if (config?.dmp_column && row[config.dmp_column]) {
+        customDmp = String(row[config.dmp_column]);
+      }
+
       rawRecords.push({
         campaign_id: campaignId,
         excel_campaign_name: excelCampName,
@@ -155,8 +162,10 @@ export class CalculationService {
         execution_amount: executionAmt,
         net_amount: baseValue,
         dmp_type: row.dmp_type,
+        dmp: customDmp, // Added: separate DMP column
         has_dmp: row.dmp_type !== 'DIRECT' && row.dmp_type !== 'N/A',
-        cost: supplyVal,
+        cost: executionAmt, // Updated: DB "비용" 컬럼 (수수료 적용된 금액)
+        supply_value: supplyVal, // 원본 공급가액
         is_raw: true,
         creative_name: row.creative_name,
         age: row.age,
@@ -167,11 +176,12 @@ export class CalculationService {
 
     df.addColumn('execution_amount', executionAmounts, { inplace: true });
     df.addColumn('net_amount', netAmounts, { inplace: true });
+    df.addColumn('cost', executionAmounts, { inplace: true }); // "비용" 컬럼 추가
 
     // 4. Aggregation (Report Data)
     let reportRecords: PerformanceRecord[] = [];
     if (groupByColumns.length > 0) {
-      const sumCols = ['impressions', 'clicks', 'supply_value', 'execution_amount', 'net_amount'];
+      const sumCols = ['impressions', 'clicks', 'supply_value', 'execution_amount', 'net_amount', 'cost'];
       const availableSumCols = sumCols.filter(col => df.columns.includes(col));
       const groupDf = df.groupby(groupByColumns).col(availableSumCols).sum();
       
@@ -182,6 +192,7 @@ export class CalculationService {
       const finalJson = this.ensureRecords(groupDf);
       finalJson.forEach(row => {
         const dmp = row.dmp_type || 'N/A';
+        const customDmp = row.dmp || dmp;
         
         // Handle date_raw from grouping (might be string or Date)
         let reportDate: Date;
@@ -202,8 +213,10 @@ export class CalculationService {
           execution_amount: row.execution_amount || 0,
           net_amount: row.net_amount || 0,
           dmp_type: dmp,
+          dmp: customDmp,
           has_dmp: dmp !== 'DIRECT' && dmp !== 'N/A',
-          cost: row.supply_value || 0,
+          cost: row.cost || 0,
+          supply_value: row.supply_value || 0,
           is_raw: false,
           creative_name: row.creative_name,
           age: row.age,
