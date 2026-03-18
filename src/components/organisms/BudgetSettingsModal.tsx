@@ -107,7 +107,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
               <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
               
               <div className="p-8 md:p-10 flex flex-col h-full overflow-hidden relative z-10">
-                <header className="flex justify-between items-start mb-10">
+                <header className="flex justify-between items-start mb-6 flex-shrink-0">
                   <div className="flex items-center gap-6">
                     <div className="w-16 h-16 bg-gradient-to-br from-indigo-600 to-violet-700 rounded-[24px] flex items-center justify-center text-white shadow-2xl shadow-indigo-500/40 rotate-3 hover:rotate-0 transition-transform duration-500">
                       <Wallet size={32} />
@@ -129,6 +129,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                   </Button>
                 </header>
 
+                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-8 pb-4">
                 {suggestedNames.length > 0 && (
                   <div className="mb-8 p-6 bg-white/40 backdrop-blur-sm rounded-[32px] border border-white/60 shadow-sm transition-all hover:bg-white/60">
                     <h3 className="text-xs font-black text-indigo-400 mb-4 flex items-center gap-2 uppercase tracking-[0.2em]">
@@ -200,7 +201,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto pr-2 space-y-8 custom-scrollbar pb-10">
+                <div className="space-y-8">
                   {subCampaigns.length === 0 && (
                     <div className="text-center py-20 bg-slate-50/50 rounded-[40px] border-2 border-dashed border-slate-200">
                       <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-slate-100">
@@ -403,8 +404,9 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                     </Table>
                   </div>
                 </div>
+                </div>
 
-                <div className="mt-8 pt-8 border-t border-slate-100/50 flex justify-between items-center bg-transparent flex-shrink-0">
+                <div className="flex-shrink-0 mt-6 pt-6 border-t border-slate-100/50 flex justify-between items-center bg-white/50 backdrop-blur-md">
                   <Button 
                     variant="outline" 
                     onClick={handleAddField} 
