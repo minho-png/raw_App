@@ -153,8 +153,9 @@ export const Sidebar = () => {
                   onKeyDown={async (e) => {
                     if (e.key === 'Enter') {
                       const updated = { ...editingCampaign, campaign_name: tempName };
+                      updateCampaign(updated); // Optimistic update
                       await saveCampaignAction(updated);
-                      await refreshCampaigns(getCampaignsAction);
+                      await refreshCampaigns(getCampaignsAction); // Sync with DB
                       setIsEditModalOpen(false);
                     }
                   }}
@@ -173,8 +174,9 @@ export const Sidebar = () => {
                   onClick={async () => {
                     if (editingCampaign) {
                       const updated = { ...editingCampaign, campaign_name: tempName };
+                      updateCampaign(updated); // Optimistic update
                       await saveCampaignAction(updated);
-                      await refreshCampaigns(getCampaignsAction);
+                      await refreshCampaigns(getCampaignsAction); // Sync with DB
                     }
                     setIsEditModalOpen(false);
                   }}
