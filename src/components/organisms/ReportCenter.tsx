@@ -43,6 +43,7 @@ import { getPerformanceDataAction, updatePerformanceDataAction, savePerformanceD
 import { getCampaignsAction, saveCampaignAction } from '@/server/actions/campaign';
 import { CalculationService } from "@/services/calculationService";
 import { BudgetSettingsModal } from "./BudgetSettingsModal";
+import { ReportService } from "@/services/reportService";
 
 export const ReportCenter: React.FC = () => {
   const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab, refreshCampaigns } = useCampaignStore();
@@ -280,6 +281,26 @@ export const ReportCenter: React.FC = () => {
     }
   };
 
+  const handleGenerateReport = () => {
+    if (!selectedCampaign || filteredData.length === 0) return;
+    
+    try {
+      const html = ReportService.generateHtmlReport(selectedCampaign, filteredData, budgetStatus);
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedCampaign.campaign_name}_성과보고서_${new Date().toISOString().split('T')[0]}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Report generation failed:', error);
+      alert('리포트 생성 중 오류가 발생했습니다.');
+    }
+  };
+
   // Chart Data Derivation
   const dailyTrendData = useMemo(() => {
     // Process filteredData into { date, execution_amount, actual_cpc }
@@ -413,7 +434,10 @@ export const ReportCenter: React.FC = () => {
           >
             <Settings2 className="mr-2 h-4 w-4" /> 예산 관리
           </Button>
-          <Button className="rounded-xl bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20 hover:scale-[1.02] transition-all">
+          <Button 
+            onClick={handleGenerateReport}
+            className="rounded-xl bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20 hover:scale-[1.02] transition-all"
+          >
             <Zap className="mr-2 h-4 w-4" /> 리포트 즉시 발행
           </Button>
         </div>
