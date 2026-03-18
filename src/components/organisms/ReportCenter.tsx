@@ -21,31 +21,19 @@ import {
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
-  Download, 
-  Eye, 
-  FileSpreadsheet, 
   Zap, 
-  BarChart4, 
-  Layout, 
   Database, 
   TrendingUp, 
-  Calculator, 
-  Layers, 
-  Settings, 
-  X, 
-  Plus,
   Loader2,
   Edit3,
   Check,
-  X as CloseIcon,
-  Trash2
+  PieChart as PieChartIcon
 } from "lucide-react";
+import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { BudgetStatus, PerformanceRecord, MediaProvider } from "@/types";
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { cn } from '@/lib/utils';
-import { DmpSettlementNode } from "@/components/settlement/DmpSettlementNode";
-import { getPerformanceDataAction, updatePerformanceDataAction, savePerformanceData } from '@/server/actions/settlement';
-import { saveCampaignAction, deleteCampaignAction } from "@/server/actions/campaign";
+import { getPerformanceDataAction, updatePerformanceDataAction } from '@/server/actions/settlement';
 import { CalculationService } from "@/services/calculationService";
 
 export const ReportCenter: React.FC = () => {
@@ -54,26 +42,10 @@ export const ReportCenter: React.FC = () => {
   
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
   const [reportType, setReportType] = useState('daily');
-  const [uploadStep, setUploadStep] = useState<'media' | 'config' | 'mapping' | 'select_campaigns' | 'select_groupby' | 'setup' | 'complete'>('media');
+  const [activeTabStep, setActiveTabStep] = useState('source');
   const [activeMedia, setActiveMedia] = useState<MediaProvider>('네이버GFA');
-  const [groupByColumns, setGroupByColumns] = useState<string[]>(['date_raw']); // Default to date
+  const [groupByColumns, setGroupByColumns] = useState<string[]>(['date_raw']); 
   const [rawParsedData, setRawParsedData] = useState<any[]>([]);
-  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
-  const [selectedExcelCampNames, setSelectedExcelCampNames] = useState<string[]>([]);
-  const [excelCampaignConfigs, setExcelCampaignConfigs] = useState<Record<string, {
-    media: MediaProvider,
-    fee_rate: number,
-    budget: number,
-    budget_type: 'integrated' | 'individual', // Added
-    cpc_goal?: number,
-    ctr_goal?: number
-  }>>({});
-  const [bulkConfig, setBulkConfig] = useState({
-    fee_rate: 10,
-    budget: 0,
-    cpc_goal: 0,
-    budget_type: 'integrated' as const // Default to integrated
-  });
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
@@ -173,11 +145,66 @@ export const ReportCenter: React.FC = () => {
     };
   }, [filteredData, totalBudget, selectedCampaign]);
 
-  const handleAnalysisComplete = (data: PerformanceRecord[]) => {
-    // Data is already saved to DB via Server Action in FileUploader
-    setProcessedData(prev => [...prev, ...data]);
-    setActiveTab('upload');
+  const handleAnalysisComplete = (data: any[]) => {
+    setRawParsedData(data);
   };
+
+  const toggleGroupBy = (col: string) => {
+    setGroupByColumns(prev => 
+      prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]
+    );
+  };
+
+  const handleProcessData = async () => {
+    if (!selectedCampaignId || rawParsedData.length === 0) return;
+    
+    setIsProcessing(true);
+    try {
+      const { raw, report } = CalculationService.processWithDanfo(
+        rawParsedData,
+        selectedCampaignId,
+        activeMedia,
+        10, // Default fee rate if not configured
+        groupByColumns
+      );
+      
+      setProcessedData(report);
+      setActiveTabStep('processing');
+    } catch (error) {
+      console.error('Processing failed:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Chart Data Derivation
+  const dailyTrendData = useMemo(() => {
+    // Process filteredData into { date, execution_amount, actual_cpc }
+    const grouped = filteredData.reduce((acc: any, curr) => {
+      const dateStr = new Date(curr.date).toLocaleDateString();
+      if (!acc[dateStr]) {
+        acc[dateStr] = { date: dateStr, execution_amount: 0, clicks: 0 };
+      }
+      acc[dateStr].execution_amount += curr.execution_amount;
+      acc[dateStr].clicks += curr.clicks;
+      return acc;
+    }, {});
+
+    return Object.values(grouped).map((v: any) => ({
+      ...v,
+      actual_cpc: v.clicks > 0 ? Math.round(v.execution_amount / v.clicks) : 0
+    }));
+  }, [filteredData]);
+
+  const dmpShareData = useMemo(() => {
+    const shares = filteredData.reduce((acc: any, curr) => {
+      const dmp = curr.dmp_type || 'DIRECT';
+      acc[dmp] = (acc[dmp] || 0) + curr.execution_amount;
+      return acc;
+    }, {});
+
+    return Object.entries(shares).map(([name, value]) => ({ name, value }));
+  }, [filteredData]);
 
   if (!selectedCampaignId) {
     return (
@@ -222,1038 +249,209 @@ export const ReportCenter: React.FC = () => {
 
       <BudgetPacingCards status={budgetStatus} campaign={selectedCampaign} />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTabStep} onValueChange={setActiveTabStep} className="w-full">
         <TabsList className="bg-slate-100/50 p-1 rounded-2xl border border-slate-200 inline-flex">
-          <TabsTrigger value="upload" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
-            <FileSpreadsheet size={16} /> RAW 데이터 관리
+          <TabsTrigger value="source" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
+            1. 데이터 원본 설정
           </TabsTrigger>
-          <TabsTrigger value="settlement" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
-            <Calculator size={16} /> DMP 정산
+          <TabsTrigger value="processing" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
+            2. 데이터 가공 (수기 수정)
           </TabsTrigger>
-          <TabsTrigger value="dmp" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
-            <BarChart4 size={16} /> DMP 성과 분석
-          </TabsTrigger>
-          <TabsTrigger value="report" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
-            <Layout size={16} /> 통합 리포트
+          <TabsTrigger value="dashboard" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
+            3. 마케팅 대시보드
           </TabsTrigger>
         </TabsList>
 
         <div className="mt-8">
           <AnimatePresence mode="wait">
-            <TabsContent value="upload" className="m-0 focus-visible:ring-0">
-              {/* Persistent Campaign Selection for Wizard */}
-              <div className="mb-6 flex items-center justify-between bg-white/60 backdrop-blur-md p-4 rounded-2xl border border-white/40 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-                    <TrendingUp size={20} />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-800">분석 대행 캠페인</h4>
-                    <p className="text-[10px] text-slate-400 font-medium">데이터가 귀속될 마스터 캠페인을 선택하세요</p>
-                  </div>
-                </div>
-                <Select 
-                  value={selectedCampaignId || ''} 
-                  onValueChange={selectCampaign}
-                >
-                  <SelectTrigger className="w-[280px] bg-white border-slate-200 rounded-xl">
-                    <SelectValue placeholder="캠페인 선택" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-slate-200">
-                    {campaigns.map(c => (
-                      <SelectItem key={c.campaign_id} value={c.campaign_id} className="rounded-lg">
-                        {c.campaign_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <AnimatePresence mode="wait">
-                {uploadStep === 'media' && (
-                  <motion.div 
-                    key="media"
-                    initial={{ opacity: 0, y: 20 }} 
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="bg-white/40 backdrop-blur-md rounded-3xl p-12 border border-white/40 shadow-xl flex flex-col items-center justify-center text-center space-y-8"
-                  >
-                    <div className="w-16 h-16 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-                      <Layers size={32} />
-                    </div>
-                    <div className="space-y-2">
-                       <h3 className="text-2xl font-bold text-slate-800">1단계: 광고 매체 선택</h3>
-                       <p className="text-slate-500">업로드할 엑셀 파일의 광고 매체를 먼저 선택해 주세요.<br/>하나의 파일은 동일한 매체의 데이터로 구성되어야 합니다.</p>
-                    </div>
-
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-4xl">
-                      {[
-                        { id: '네이버GFA', name: '네이버 GFA', color: 'bg-green-500' },
-                        { id: '카카오Moment', name: '카카오 모먼트', color: 'bg-yellow-400' },
-                        { id: '구글Ads', name: '구글 Ads', color: 'bg-blue-500' },
-                        { id: '메타Ads', name: '메타 Ads', color: 'bg-blue-600' }
-                      ].map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => {
-                            setActiveMedia(m.id as MediaProvider);
-                            setUploadStep('config');
-                          }}
-                          className={cn(
-                            "group relative overflow-hidden p-6 rounded-2xl border-2 transition-all duration-300 text-left",
-                            activeMedia === m.id 
-                              ? "border-blue-500 bg-blue-50 shadow-lg scale-[1.02]" 
-                              : "border-slate-100 bg-white hover:border-blue-200"
-                          )}
-                        >
-                          <div className={cn("w-2 h-2 rounded-full mb-3", m.color)} />
-                          <div className="font-bold text-slate-800">{m.name}</div>
-                          <div className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">Provider</div>
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-
-                {uploadStep === 'config' && (
-                  <motion.div 
-                    key="config"
-                    initial={{ opacity: 0, y: 20 }} 
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="space-y-6"
-                  >
-                    <div className="bg-white/40 backdrop-blur-md rounded-3xl p-12 border border-white/40 shadow-xl flex flex-col items-center justify-center text-center space-y-8">
-                       <div className="flex items-center justify-between w-full mb-4">
-                        <button 
-                          onClick={() => setUploadStep('media')}
-                          className="flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors"
-                        >
-                          <X size={20} />
-                          <span className="text-sm font-bold">이전 단계</span>
-                        </button>
-                        <Badge variant="secondary" className="bg-blue-100 text-blue-600 border-none font-bold px-4 py-1">{activeMedia}</Badge>
-                      </div>
-
-                      <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-2xl mx-auto mb-2">
-                        <Database size={32} />
-                      </div>
-                      <h3 className="text-2xl font-black text-slate-800 tracking-tight">2단계: 원본 파일 업로드</h3>
-                      <p className="text-slate-500">선택하신 <span className="text-blue-600 font-bold">{activeMedia}</span> 리포트 원본 파일을 드래그하여 업로드해주세요.</p>
-
-                      {selectedCampaign ? (
-                        <div className="w-full max-w-xl">
-                          <FileUploader 
-                            onAnalysisComplete={async (data) => {
-                              setRawParsedData(data);
-                              if (data.length > 0) {
-                                const headers = Object.keys(data[0]);
-                                const mapping: Record<string, string> = {};
-                                if (activeMedia === '네이버GFA') {
-                                  if (headers.includes('기간')) mapping.date = '기간';
-                                  if (headers.includes('광고 그룹 이름')) mapping.ad_group = '광고 그룹 이름';
-                                  if (headers.includes('클릭')) mapping.clicks = '클릭';
-                                  if (headers.includes('노출')) mapping.impressions = '노출';
-                                  if (headers.includes('총 비용')) mapping.supply_value = '총 비용';
-                                  if (headers.includes('캠페인')) mapping.excel_campaign = '캠페인';
-                                }
-                                setColumnMapping(mapping);
-                              }
-                              setUploadStep('mapping');
-                            }} 
-                            overrides={{ media: activeMedia, group_by_columns: groupByColumns }}
-                          />
-                        </div>
-                      ) : (
-                        <div className="bg-rose-50 border border-rose-100 rounded-2xl p-6 text-center">
-                          <p className="text-rose-600 font-bold">왼쪽 사이드바에서 마스터 캠페인을 먼저 선택해주세요.</p>
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-
-                {uploadStep === 'mapping' && (
-                  <motion.div 
-                    key="mapping"
-                    initial={{ opacity: 0, y: 20 }} 
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8"
-                  >
-                    <div className="flex items-center gap-4 border-b border-white/20 pb-6">
-                      <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
-                        <Eye size={24} />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-slate-800">3단계: 데이터 컬럼 매핑</h3>
-                        <p className="text-sm text-slate-500">매체: <span className="font-bold text-blue-600">{activeMedia}</span> | 엑셀의 항목을 시스템 필드에 연결합니다.</p>
-                      </div>
-                    </div>
-
-                    <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-5 space-y-3">
-                      <div className="flex items-center gap-2 text-blue-700 font-bold text-sm">
-                        <Database size={14} />
-                        데이터 미리보기 (상위 3개 행)
-                      </div>
-                      <div className="overflow-x-auto rounded-lg border border-blue-200 bg-white shadow-inner">
-                        <table className="w-full text-[10px] text-slate-600">
-                          <thead className="bg-blue-50 border-b border-blue-100">
-                            <tr>
-                              {Object.keys(rawParsedData[0] || {}).map(k => (
-                                <th key={k} className="p-2 text-left whitespace-nowrap">{k}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rawParsedData.slice(0, 3).map((row, i) => (
-                              <tr key={i} className="border-b border-slate-50 last:border-0">
-                                {Object.values(row).map((v: any, j) => (
-                                  <td key={j} className="p-2">{String(v)}</td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {[
-                        { key: 'date', label: '날짜 컬럼', required: true },
-                        { key: 'excel_campaign', label: '캠페인 명(Excel) 컬럼', required: true },
-                        { key: 'ad_group', label: '광고 그룹 컬럼', required: true },
-                        { key: 'impressions', label: '노출수 컬럼', required: true },
-                        { key: 'clicks', label: '클릭수 컬럼', required: true },
-                        { key: 'supply_value', label: '집행 금액(VAT별도) 컬럼', required: true },
-                      ].map(field => (
-                        <div key={field.key} className="space-y-2">
-                          <Label className="text-slate-700 font-bold flex items-center gap-1">
-                            {field.label} {field.required && <span className="text-red-500">*</span>}
-                          </Label>
-                          <select 
-                            className="w-full h-12 bg-white border border-slate-200 rounded-xl px-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm"
-                            value={columnMapping[field.key] || ''}
-                            onChange={(e) => setColumnMapping(prev => ({ ...prev, [field.key]: e.target.value }))}
-                          >
-                            <option value="">컬럼 선택</option>
-                            {Object.keys(rawParsedData[0] || {}).map(k => (
-                              <option key={k} value={k}>{k}</option>
-                            ))}
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex gap-4 pt-4 border-t border-white/20">
-                      <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('config')}>
-                        이전 단계로
-                      </Button>
-                      <Button 
-                        className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/20"
-                        onClick={() => {
-                          const excelCampCol = columnMapping.excel_campaign;
-                          if (!excelCampCol) {
-                            alert('캠페인 명(Excel) 컬럼을 지정해주세요.');
-                            return;
-                          }
-                          const uniqueCamps = Array.from(new Set(rawParsedData.map(r => r[excelCampCol]).filter(Boolean)));
-                          setSelectedExcelCampNames(uniqueCamps as string[]);
-                          setUploadStep('select_campaigns');
-                        }}
-                      >
-                        다음 단계: 캠페인 선택
-                      </Button>
-                    </div>
-                  </motion.div>
-                )}
-
-                {uploadStep === 'select_campaigns' && (
-                  <motion.div 
-                    key="select_campaigns"
-                    initial={{ opacity: 0, y: 20 }} 
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8"
-                  >
-                    <div className="flex items-center gap-4 border-b border-white/20 pb-6">
-                      <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
-                        <Check size={24} />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-slate-800">4단계: 분석 대상 캠페인 선택</h3>
-                        <p className="text-sm text-slate-500">엑셀 파일에서 실제 분석에 포함할 캠페인을 선택해 주세요.</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto p-2">
-                      {Array.from(new Set(rawParsedData.map(r => r[columnMapping.excel_campaign!]).filter(Boolean))).map((camp: any) => (
-                        <div 
-                          key={camp}
-                          onClick={() => {
-                            setSelectedExcelCampNames(prev => 
-                              prev.includes(camp) ? prev.filter(c => c !== camp) : [...prev, camp]
-                            );
-                          }}
-                          className={cn(
-                            "p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between",
-                            selectedExcelCampNames.includes(camp)
-                              ? "border-blue-500 bg-blue-50 text-blue-700 font-bold"
-                              : "border-slate-100 bg-white text-slate-600"
-                          )}
-                        >
-                          <span className="truncate text-sm">{camp}</span>
-                          {selectedExcelCampNames.includes(camp) && <Check size={16} />}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex gap-4 pt-4">
-                      <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('mapping')}>
-                        이전 단계
-                      </Button>
-                      <Button 
-                        className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700"
-                        onClick={() => setUploadStep('select_groupby')}
-                        disabled={selectedExcelCampNames.length === 0}
-                      >
-                        다음 단계: 그룹화 설정
-                      </Button>
-                    </div>
-                  </motion.div>
-                )}
-
-                {uploadStep === 'select_groupby' && (
-                  <motion.div 
-                    key="select_groupby"
-                    initial={{ opacity: 0, y: 20 }} 
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8"
-                  >
-                    <div className="flex items-center gap-4 border-b border-white/20 pb-6">
-                      <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white shadow-xl">
-                        <Layers size={24} />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-slate-800">5단계: 리포트 그룹화 설정</h3>
-                        <p className="text-sm text-slate-500">리포트에서 데이터를 어떤 단위로 합산하여 보여줄지 선택하세요.</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <Label className="text-sm font-bold text-slate-700">그룹화 기준 (복수 선택 가능)</Label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[
-                          { id: 'date_raw', name: '날짜' },
-                          { id: 'ad_group_name', name: '광고 그룹' },
-                          { id: 'excel_campaign_name', name: '캠페인' },
-                          { id: 'dmp_type', name: 'DMP' }
-                        ].map(criterion => (
-                          <div 
-                            key={criterion.id}
-                            onClick={() => {
-                              setGroupByColumns(prev => 
-                                prev.includes(criterion.id) ? prev.filter(c => c !== criterion.id) : [...prev, criterion.id]
-                              );
-                            }}
-                            className={cn(
-                              "p-4 rounded-xl border-2 transition-all cursor-pointer text-center",
-                              groupByColumns.includes(criterion.id)
-                                ? "border-amber-500 bg-amber-50 text-amber-700 font-bold"
-                                : "border-slate-100 bg-white text-slate-600"
-                            )}
-                          >
-                            {criterion.name}
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-[10px] text-slate-400">※ 아무것도 선택하지 않으면 모든 행이 개별로 표시됩니다.</p>
-                    </div>
-
-                    <div className="flex gap-4 pt-4">
-                      <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('select_campaigns')}>
-                        이전 단계
-                      </Button>
-                      <Button 
-                        className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700"
-                        onClick={() => {
-                          const initialConfigs: Record<string, any> = {};
-                          selectedExcelCampNames.forEach(campName => {
-                            const existing = selectedCampaign?.sub_campaigns?.find(s => s.excel_name === campName);
-                            initialConfigs[campName] = {
-                              media: activeMedia, 
-                              fee_rate: existing?.fee_rate || 10,
-                              budget: existing?.budget || 0,
-                              budget_type: existing?.budget_type || 'integrated',
-                              cpc_goal: existing?.target_cpc || 0,
-                              ctr_goal: existing?.target_ctr || 0
-                            };
-                          });
-                          setExcelCampaignConfigs(initialConfigs);
-                          setUploadStep('setup');
-                        }}
-                      >
-                        다음 단계: 상세 설정 및 가공
-                      </Button>
-                    </div>
-                  </motion.div>
-                )}
-
-                {uploadStep === 'setup' && (
-                  <motion.div 
-                    key="setup"
-                    initial={{ opacity: 0, y: 20 }} 
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="bg-white/40 backdrop-blur-md rounded-3xl p-8 border border-white/40 shadow-xl space-y-8"
-                  >
-                    <div className="flex items-center gap-4 border-b border-white/20 pb-6">
-                      <div className="w-12 h-12 bg-purple-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
-                        <Settings size={24} />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-slate-800">4단계: 캠페인 상세 설정</h3>
-                        <p className="text-sm text-slate-500">
-                          통합 대상: <span className="text-blue-600 font-bold">[{selectedCampaign?.campaign_name}]</span> | 매체: <span className="font-bold text-blue-600">{activeMedia}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Bulk Configuration Section */}
-                    <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl space-y-4">
-                      <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-                            <Zap size={18} />
-                          </div>
-                          <h4 className="font-bold">캠페인 종합 설정 (Bulk Apply)</h4>
-                        </div>
-                        <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">통합 예산/수수료 적용</Badge>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                        <div className="space-y-2">
-                          <Label className="text-[10px] text-slate-400 font-bold uppercase">통합 수수료율 (%)</Label>
-                          <Input 
-                            type="number" 
-                            className="bg-white/10 border-white/20 text-white h-10" 
-                            value={bulkConfig.fee_rate}
-                            onChange={(e) => setBulkConfig(prev => ({ ...prev, fee_rate: Number(e.target.value) }))}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-[10px] text-slate-400 font-bold uppercase">통합 목표 CPC</Label>
-                          <Input 
-                            type="number" 
-                            className="bg-white/10 border-white/20 text-white h-10" 
-                            value={bulkConfig.cpc_goal}
-                            onChange={(e) => setBulkConfig(prev => ({ ...prev, cpc_goal: Number(e.target.value) }))}
-                          />
-                        </div>
-                        <div className="col-span-2">
-                           <Button 
-                            variant="secondary"
-                            className="w-full h-10 bg-blue-600 text-white font-bold hover:bg-blue-500 border-none"
-                            onClick={() => {
-                              const newConfigs = { ...excelCampaignConfigs };
-                              Object.keys(newConfigs).forEach(name => {
-                                newConfigs[name] = {
-                                  ...newConfigs[name],
-                                  fee_rate: bulkConfig.fee_rate,
-                                  cpc_goal: bulkConfig.cpc_goal,
-                                  budget_type: 'integrated'
-                                };
-                              });
-                              setExcelCampaignConfigs(newConfigs);
-                            }}
-                          >
-                            선택된 모든 캠페인에 통합 설정 적용
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                      {Object.entries(excelCampaignConfigs).map(([name, config]) => (
-                        <div key={name} className={cn(
-                          "bg-white/60 p-6 rounded-2xl border transition-all",
-                          config.budget_type === 'integrated' ? "border-blue-200 bg-blue-50/20" : "border-white/40 shadow-sm"
-                        )}>
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex flex-col">
-                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">엑셀 내 캠페인명</span>
-                              <Label className="text-lg font-black text-slate-800">{name}</Label>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-slate-500 mr-2">예산/수수료 방식:</span>
-                              <select 
-                                className="h-8 rounded-lg border-slate-200 text-xs font-bold px-2 outline-none focus:ring-2 focus:ring-blue-500"
-                                value={config.budget_type}
-                                onChange={(e) => setExcelCampaignConfigs(prev => ({
-                                  ...prev,
-                                  [name]: { ...prev[name], budget_type: e.target.value as 'integrated' | 'individual' }
-                                }))}
-                              >
-                                <option value="integrated">통합 (종합 설정 따름)</option>
-                                <option value="individual">개별 (직접 입력)</option>
-                              </select>
-                            </div>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">매체</Label>
-                              <div className="h-10 bg-slate-100/50 border border-slate-200 rounded-xl px-3 flex items-center text-xs text-slate-500 font-bold">
-                                {activeMedia}
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">수수료율 (%)</Label>
-                              <Input 
-                                type="number" 
-                                disabled={config.budget_type === 'integrated'}
-                                className={cn("h-10 rounded-xl", config.budget_type === 'integrated' ? "bg-slate-100 text-slate-400" : "border-slate-200")}
-                                value={config.budget_type === 'integrated' ? bulkConfig.fee_rate : config.fee_rate}
-                                onChange={(e) => setExcelCampaignConfigs(prev => ({
-                                  ...prev,
-                                  [name]: { ...prev[name], fee_rate: Number(e.target.value) }
-                                }))}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">개별 예산 (₩)</Label>
-                              <Input 
-                                type="number" 
-                                className="h-10 rounded-xl border-slate-200" 
-                                value={config.budget}
-                                onChange={(e) => setExcelCampaignConfigs(prev => ({
-                                  ...prev,
-                                  [name]: { ...prev[name], budget: Number(e.target.value) }
-                                }))}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-slate-500">목표 CPC</Label>
-                              <Input 
-                                type="number" 
-                                disabled={config.budget_type === 'integrated'}
-                                className={cn("h-10 rounded-xl", config.budget_type === 'integrated' ? "bg-slate-100 text-slate-400" : "border-slate-200")}
-                                value={config.budget_type === 'integrated' ? bulkConfig.cpc_goal : config.cpc_goal || 0}
-                                onChange={(e) => setExcelCampaignConfigs(prev => ({
-                                  ...prev,
-                                  [name]: { ...prev[name], cpc_goal: Number(e.target.value) }
-                                }))}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex gap-4 pt-4 border-t border-white/20">
-                      <Button variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setUploadStep('select_groupby')}>
-                        이전 단계로
-                      </Button>
-                      <Button 
-                        className="flex-3 h-14 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/20"
-                        onClick={async () => {
-                          setIsProcessing(true);
-                          try {
-                            // Filter raw data to only include selected campaigns
-                            const filteredRaw = rawParsedData.filter(r => 
-                              selectedExcelCampNames.includes(r[columnMapping.excel_campaign!])
-                            );
-
-                            const { raw, report } = CalculationService.processWithDanfo(
-                              filteredRaw,
-                              selectedCampaignId || 'UNASSIGNED',
-                              activeMedia,
-                              bulkConfig.fee_rate, 
-                              groupByColumns,
-                              columnMapping,
-                              excelCampaignConfigs
-                            );
-
-                            if (selectedCampaign) {
-                              const updatedSubs = [...(selectedCampaign.sub_campaigns || [])];
-                              Object.entries(excelCampaignConfigs).forEach(([name, cfg]: [string, any]) => {
-                                const idx = updatedSubs.findIndex(s => s.excel_name === name);
-                                const subConfig = {
-                                  excel_name: name,
-                                  media: activeMedia,
-                                  fee_rate: cfg.budget_type === 'integrated' ? bulkConfig.fee_rate : cfg.fee_rate, 
-                                  budget: cfg.budget,
-                                  budget_type: cfg.budget_type,
-                                  target_cpc: cfg.budget_type === 'integrated' ? bulkConfig.cpc_goal : cfg.cpc_goal,
-                                  target_ctr: cfg.ctr_goal
-                                };
-                                if (idx > -1) {
-                                  updatedSubs[idx] = { ...updatedSubs[idx], ...subConfig };
-                                } else {
-                                  updatedSubs.push({ id: `SUB-${Math.floor(Math.random() * 1000)}`, ...subConfig } as any);
-                                }
-                              });
-                              const updatedCamp = { ...selectedCampaign, sub_campaigns: updatedSubs };
-                              updateCampaign(updatedCamp);
-                              await saveCampaignAction(updatedCamp);
-                            }
-
-                            // Save both raw and report data
-                            // Note: RepositoryService should handle separation based on is_raw
-                            const result = await savePerformanceData([...raw, ...report]);
-                            if (result.success) {
-                              setProcessedData(prev => [...prev, ...report]); // Show report (grouped) data in UI
-                              setUploadStep('complete');
-                              alert('데이터가 성공적으로 분석 및 저장되었습니다. (Raw + Report 분리 저장)');
-                            } else {
-                              alert('저장 중 오류가 발생했습니다.');
-                            }
-                          } catch (err) {
-                            console.error(err);
-                            alert('분석 중 오류가 발생했습니다.');
-                          } finally {
-                            setIsProcessing(false);
-                          }
-                        }}
-                      >
-                        {isProcessing ? <Loader2 className="animate-spin mr-2" /> : <Zap size={18} className="mr-2" />}
-                        최종 분석 및 저장
-                      </Button>
-                    </div>
-                  </motion.div>
-                )}
-
-                {uploadStep === 'complete' && (
-                  <motion.div 
-                    key="complete"
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className="bg-white/40 backdrop-blur-md rounded-3xl p-12 border border-white/40 shadow-xl flex flex-col items-center justify-center text-center space-y-6"
-                   >
-                    <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex items-center justify-center shadow-lg">
-                      <Check size={40} />
-                    </div>
-                    <div className="space-y-2">
-                       <h3 className="text-3xl font-black text-slate-800">분석 완료!</h3>
-                       <p className="text-slate-500">데이터가 성공적으로 처리되어 데이터베이스에 반영되었습니다.</p>
-                    </div>
-                    <div className="flex gap-4 pt-4">
-                      <Button variant="outline" className="h-14 px-8 rounded-2xl font-bold" onClick={() => setUploadStep('media')}>
-                        새로운 파일 업로드
-                      </Button>
-                      <Button className="h-14 px-8 rounded-2xl font-bold bg-slate-900 text-white" onClick={() => setActiveTab('report')}>
-                        리포트 확인하기
-                      </Button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {filteredData.length > 0 && (
-                <div className="mt-12 space-y-6">
-                  <Card className="rounded-3xl border-white/40 bg-white/60 backdrop-blur-xl shadow-xl overflow-hidden border">
-                    <CardHeader className="border-b border-slate-100/50 bg-white/20 px-8 py-6">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <CardTitle className="text-xl font-bold text-slate-800">가공 완료 데이터 (Grouped View)</CardTitle>
-                          <p className="text-xs text-slate-400 mt-1 uppercase font-bold tracking-tight">기준: {groupByColumns.join(', ') || '전체(합계)'} | 통합 캠페인: {selectedCampaign?.campaign_name}</p>
-                        </div>
-                        <Button variant="ghost" size="sm" className="text-blue-500 font-semibold hover:bg-blue-50">CSV 다운로드</Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      <Tabs defaultValue="all" className="w-full">
-                        <div className="px-8 pt-4 pb-2 border-b border-slate-100/50 bg-slate-50/10">
-                          <TabsList className="bg-slate-100/50 p-1 rounded-xl">
-                            <TabsTrigger value="all" className="rounded-lg text-xs font-bold">전체</TabsTrigger>
-                            {Array.from(new Set(filteredData.map(d => d.media))).map(m => (
-                              <TabsTrigger key={m} value={m} className="rounded-lg text-xs font-bold">{m}</TabsTrigger>
-                            ))}
-                          </TabsList>
-                        </div>
-
-                        {["all", ...Array.from(new Set(filteredData.map(d => d.media)))].map(tabMedia => (
-                          <TabsContent key={tabMedia} value={tabMedia} className="m-0 border-none outline-none">
-                            <div className="overflow-x-auto">
-                              <Table>
-                                <TableHeader className="bg-slate-50/50">
-                                  <TableRow>
-                                    <TableHead className="px-8 font-bold text-slate-900">날짜</TableHead>
-                                    <TableHead className="font-bold text-slate-900">광고 그룹</TableHead>
-                                    <TableHead className="text-right font-bold text-slate-900">노출</TableHead>
-                                    <TableHead className="text-right font-bold text-slate-900">클릭</TableHead>
-                                    <TableHead className="text-right font-bold text-slate-900">집행 금액</TableHead>
-                                    <TableHead className="px-8 font-bold text-slate-900">DMP</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {(tabMedia === "all" ? filteredData : filteredData.filter(d => d.media === tabMedia)).slice(0, 10).map((record, idx) => (
-                                    <TableRow key={idx} className="hover:bg-slate-50/30 transition-colors">
-                                      <TableCell className="px-8">{new Date(record.date).toLocaleDateString()}</TableCell>
-                                      <TableCell className="max-w-[250px] truncate font-medium">{record.ad_group_name}</TableCell>
-                                      <TableCell className="text-right">{record.impressions.toLocaleString()}</TableCell>
-                                      <TableCell className="text-right">{record.clicks.toLocaleString()}</TableCell>
-                                      <TableCell className="text-right font-bold text-blue-600">
-                                        {editingCell?.id === record._id ? (
-                                          <div className="flex items-center justify-end gap-1">
-                                            <Input 
-                                              type="number"
-                                              className="w-24 h-8 text-right px-2 rounded-lg border-blue-200 focus:ring-blue-500"
-                                              value={editingCell?.value ?? 0}
-                                              autoFocus
-                                              disabled={isUpdating}
-                                              onChange={(e) => {
-                                                if (editingCell) {
-                                                  setEditingCell({ ...editingCell, value: Number(e.target.value) });
-                                                }
-                                              }}
-                                              onKeyDown={(e) => {
-                                                if (e.key === 'Enter' && editingCell) handleUpdateAmount(record._id!, editingCell.value);
-                                                if (e.key === 'Escape') setEditingCell(null);
-                                              }}
-                                            />
-                                            <button 
-                                              onClick={() => editingCell && handleUpdateAmount(record._id!, editingCell.value)}
-                                              disabled={isUpdating}
-                                              className="p-1 text-green-600 hover:bg-green-50 rounded"
-                                            >
-                                              <Check size={14} />
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <div 
-                                            className="group flex items-center justify-end gap-2 cursor-pointer hover:bg-white px-2 py-1 rounded transition-all"
-                                            onClick={() => record._id && setEditingCell({ id: record._id, value: record.execution_amount })}
-                                          >
-                                            {record.is_edited && (
-                                              <span className="bg-amber-100 text-amber-600 text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                                                <Edit3 size={8} /> 수정됨
-                                              </span>
-                                            )}
-                                            ₩{Math.round(record.execution_amount).toLocaleString()}
-                                          </div>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="px-8">
-                                        <span className={cn(
-                                          "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
-                                          record.has_dmp ? "bg-purple-100 text-purple-600" : "bg-slate-100 text-slate-500"
-                                        )}>
-                                          {record.dmp_type}
-                                        </span>
-                                      </TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          </TabsContent>
-                        ))}
-                      </Tabs>
-                      {filteredData.length > 10 && (
-                        <div className="p-4 text-center border-t border-slate-100/50 bg-slate-50/20 text-xs text-slate-400">
-                          외 {filteredData.length - 10}개의 데이터가 더 있습니다.
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="campaigns" className="m-0 focus-visible:ring-0">
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }} 
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-6"
-              >
-                <div className="bg-white/60 backdrop-blur-xl border border-white/40 rounded-3xl p-8 shadow-xl">
-                  <div className="flex items-center justify-between mb-8">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-600/20">
-                        <Settings size={28} />
-                      </div>
-                      <div>
-                        <h2 className="text-2xl font-black text-slate-900 tracking-tight">통합 마스터 캠페인 관리</h2>
-                        <p className="text-slate-500 text-sm mt-1">
-                          선택된 캠페인: <span className="text-blue-600 font-bold">{selectedCampaign?.campaign_name}</span>
-                        </p>
-                      </div>
-                    </div>
-                    <Button 
-                      onClick={() => {
-                        if (!selectedCampaign) return;
-                        const newSub = {
-                          id: `SUB-${Math.floor(Math.random() * 1000)}`,
-                          excel_name: '신규 매체/캠페인(Excel)',
-                          media: '네이버GFA' as MediaProvider,
-                          fee_rate: 10,
-                          budget: 0,
-                          budget_type: 'integrated' as const
-                        };
-                        const updated = {
-                          ...selectedCampaign,
-                          sub_campaigns: [...selectedCampaign.sub_campaigns, newSub]
-                        };
-                        updateCampaign(updated);
-                        saveCampaignAction(updated);
-                      }}
-                      className="rounded-xl h-12 px-6 bg-slate-900 text-white font-bold hover:bg-slate-800 transition-all shadow-lg"
-                    >
-                      <Plus size={18} className="mr-2" /> 매체/sub-캠페인 추가
-                    </Button>
-                  </div>
-
-                  <div className="grid gap-6">
-                    {selectedCampaign?.sub_campaigns?.map((sub, idx) => (
-                      <div key={sub.id} className="bg-white/80 rounded-2xl p-6 border border-white/40 shadow-sm hover:shadow-md transition-shadow grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                        <div className="lg:col-span-3 space-y-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
-                              <Layout size={16} />
-                            </div>
-                            <div className="flex-1">
-                              <Label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Excel 캠페인 명 맵핑</Label>
-                              <Input 
-                                value={sub.excel_name}
-                                onChange={(e) => {
-                                  if (!selectedCampaign) return;
-                                  const newSubs = [...selectedCampaign.sub_campaigns];
-                                  newSubs[idx] = { ...sub, excel_name: e.target.value };
-                                  const updated = { ...selectedCampaign, sub_campaigns: newSubs };
-                                  updateCampaign(updated);
-                                  saveCampaignAction(updated);
-                                }}
-                                className="h-8 font-bold text-slate-800 border-none bg-transparent p-0 focus-visible:ring-0"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">매체사</Label>
-                            <Select 
-                              value={sub.media} 
-                              onValueChange={(val) => {
-                                if (!selectedCampaign) return;
-                                const newSubs = [...selectedCampaign.sub_campaigns];
-                                newSubs[idx] = { ...sub, media: val as MediaProvider };
-                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
-                                updateCampaign(updated);
-                                saveCampaignAction(updated);
-                              }}
-                            >
-                              <SelectTrigger className="h-9 rounded-lg border-slate-200 bg-white">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="네이버GFA">네이버GFA</SelectItem>
-                                <SelectItem value="카카오Moment">카카오Moment</SelectItem>
-                                <SelectItem value="구글Ads">구글Ads</SelectItem>
-                                <SelectItem value="메타Ads">메타Ads</SelectItem>
-                                <SelectItem value="Kakao">Kakao</SelectItem>
-                                <SelectItem value="Google">Google</SelectItem>
-                                <SelectItem value="Meta">Meta</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-
-                        <div className="lg:col-span-4 grid grid-cols-2 gap-4 border-slate-100 lg:border-x lg:px-6">
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] text-slate-500 font-bold">대행 수수료율 (%)</Label>
-                            <Input 
-                              type="number"
-                              value={sub.fee_rate}
-                              onChange={(e) => {
-                                if (!selectedCampaign) return;
-                                const newSubs = [...selectedCampaign.sub_campaigns];
-                                newSubs[idx] = { ...sub, fee_rate: Number(e.target.value) };
-                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
-                                updateCampaign(updated);
-                                saveCampaignAction(updated);
-                              }}
-                              className="h-9 rounded-lg border-slate-200 focus:border-blue-500 transition-colors"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] text-slate-500 font-bold">매체 예산 (₩)</Label>
-                            <Input 
-                              type="number"
-                              value={sub.budget}
-                              onChange={(e) => {
-                                if (!selectedCampaign) return;
-                                const newSubs = [...selectedCampaign.sub_campaigns];
-                                newSubs[idx] = { ...sub, budget: Number(e.target.value) };
-                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
-                                updateCampaign(updated);
-                                saveCampaignAction(updated);
-                              }}
-                              className="h-9 rounded-lg border-slate-200 focus:border-blue-500 transition-colors"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="lg:col-span-4 grid grid-cols-2 gap-4">
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] text-slate-500 font-bold">목표 CPC (₩)</Label>
-                            <Input 
-                              type="number"
-                              value={sub.target_cpc || ''}
-                              placeholder="800"
-                              onChange={(e) => {
-                                if (!selectedCampaign) return;
-                                const newSubs = [...selectedCampaign.sub_campaigns];
-                                newSubs[idx] = { ...sub, target_cpc: Number(e.target.value) };
-                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
-                                updateCampaign(updated);
-                                saveCampaignAction(updated);
-                              }}
-                              className="h-9 rounded-lg border-slate-200 focus:border-blue-500 transition-colors"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] text-slate-500 font-bold">목표 CTR (%)</Label>
-                            <Input 
-                              type="number"
-                              step="0.01"
-                              value={sub.target_ctr || ''}
-                              placeholder="1.2"
-                              onChange={(e) => {
-                                if (!selectedCampaign) return;
-                                const newSubs = [...selectedCampaign.sub_campaigns];
-                                newSubs[idx] = { ...sub, target_ctr: Number(e.target.value) };
-                                const updated = { ...selectedCampaign, sub_campaigns: newSubs };
-                                updateCampaign(updated);
-                                saveCampaignAction(updated);
-                              }}
-                              className="h-9 rounded-lg border-slate-200 focus:border-blue-500 transition-colors"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="lg:col-span-1 flex justify-end">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                            onClick={() => {
-                              if (!selectedCampaign || !selectedCampaign.sub_campaigns) return;
-                              const newSubs = selectedCampaign.sub_campaigns.filter((_, i) => i !== idx);
-                              const updated = { ...selectedCampaign, sub_campaigns: newSubs };
-                              updateCampaign(updated);
-                              saveCampaignAction(updated);
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                    {(!selectedCampaign?.sub_campaigns || selectedCampaign.sub_campaigns.length === 0) && (
-                      <div className="text-center py-12 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200 text-slate-400">
-                        <p>등록된 매체/sub-캠페인 정보가 없습니다.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            </TabsContent>
-
-            <TabsContent value="settlement" className="m-0 focus-visible:ring-0">
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }} 
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-8"
-              >
-                <DmpSettlementNode 
-                  campaignId={selectedCampaignId} 
-                  campaignName={selectedCampaign?.campaign_name || ''}
-                  totalBudget={totalBudget}
+            <TabsContent key="source" value="source">
+              <div className="bg-white/60 backdrop-blur-xl border border-white/40 rounded-3xl p-8 shadow-xl">
+                <FileUploader 
+                  onAnalysisComplete={handleAnalysisComplete} 
+                  isSimpleButton={true} 
                 />
-              </motion.div>
-            </TabsContent>
 
-            <TabsContent value="dmp" className="m-0 focus-visible:ring-0">
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }} 
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="grid gap-6 md:grid-cols-2 lg:grid-cols-4"
-              >
-                {/* DMP Logic Placeholder */}
-                <div className="col-span-full text-center py-20 bg-white/40 rounded-3xl border border-dashed border-slate-300">
-                  <p className="text-slate-400">DMP별 분석 차트 및 가중치 집계 영역</p>
-                </div>
-              </motion.div>
-            </TabsContent>
-
-            <TabsContent value="report" className="m-0 focus-visible:ring-0">
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }} 
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="bg-white/60 backdrop-blur-xl border border-white/40 rounded-3xl p-8 shadow-xl"
-              >
-                <div className="grid gap-12 md:grid-cols-2">
-                  <div className="space-y-6">
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-900 tracking-tight">리포트 발행 설정</h2>
-                      <p className="text-slate-500 text-sm mt-1">발행할 리포트의 형식과 기간을 설정하십시오.</p>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">포맷 선택</label>
-                        <Select value={reportType} onValueChange={setReportType}>
-                          <SelectTrigger className="rounded-xl border-slate-200 bg-white shadow-sm h-12">
-                            <SelectValue placeholder="타입 선택" />
+                {rawParsedData.length > 0 && (
+                  <div className="mt-8 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="flex gap-6 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                      <div className="flex-1 space-y-2">
+                        <Label className="font-bold text-slate-700">매체 선택</Label>
+                        <Select value={activeMedia} onValueChange={(val) => setActiveMedia(val as MediaProvider)}>
+                          <SelectTrigger className="bg-white">
+                            <SelectValue placeholder="매체 선택" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="daily">일일 성과 리포트</SelectItem>
-                            <SelectItem value="final">최종 결과 리포트</SelectItem>
-                            <SelectItem value="dmp">DMP 정산 리포트</SelectItem>
+                            <SelectItem value="네이버GFA">네이버 GFA</SelectItem>
+                            <SelectItem value="카카오Moment">카카오 모먼트</SelectItem>
+                            <SelectItem value="메타Ads">메타 Ads</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                    </div>
 
-                    <div className="flex gap-4">
-                      <Button variant="outline" className="flex-1 rounded-xl h-12 font-bold border-slate-200 bg-white hover:bg-slate-50 transition-colors shadow-sm">
-                        <Eye className="mr-2 h-4 w-4 text-blue-500" /> 프리뷰 업데이트
-                      </Button>
-                      <Button className="flex-1 rounded-xl h-12 font-bold bg-green-600 hover:bg-green-700 transition-all shadow-lg shadow-green-600/20">
-                        <Download className="mr-2 h-4 w-4" /> HTML 내려받기
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="relative group">
-                    <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl blur opacity-10 group-hover:opacity-20 transition duration-1000"></div>
-                    <div className="relative border border-slate-200/60 rounded-2xl bg-slate-900/5 p-4 h-[400px] flex flex-col shadow-inner overflow-hidden">
-                      <div className="flex items-center gap-2 mb-4">
-                        <div className="w-2 h-2 rounded-full bg-red-400" />
-                        <div className="w-2 h-2 rounded-full bg-orange-400" />
-                        <div className="w-2 h-2 rounded-full bg-green-400" />
-                        <span className="ml-2 text-[10px] font-mono text-slate-400">preview_render_engine.v1</span>
-                      </div>
-                      <div className="flex-1 bg-white rounded-lg shadow-sm p-4 overflow-y-auto">
-                        {/* Preview Skeleton */}
-                        <div className="space-y-4 animate-pulse">
-                          <div className="h-6 bg-slate-100 rounded w-2/3" />
-                          <div className="h-32 bg-slate-50 rounded" />
-                          <div className="space-y-2">
-                            <div className="h-4 bg-slate-100 rounded w-full" />
-                            <div className="h-4 bg-slate-100 rounded w-5/6" />
-                          </div>
+                      <div className="flex-[2] space-y-2">
+                        <Label className="font-bold text-slate-700">그룹화 기준 (아래 데이터를 보고 선택하세요)</Label>
+                        <div className="flex gap-2">
+                          {['date_raw', 'ad_group_name', 'excel_campaign_name'].map(col => (
+                            <Badge 
+                              key={col}
+                              variant={groupByColumns.includes(col) ? 'default' : 'outline'}
+                              className={cn("cursor-pointer px-4 py-1.5 text-sm transition-all", groupByColumns.includes(col) && "bg-blue-600")}
+                              onClick={() => toggleGroupBy(col)}
+                            >
+                              {col === 'date_raw' ? '날짜' : col === 'ad_group_name' ? '광고 그룹' : '캠페인'}
+                            </Badge>
+                          ))}
                         </div>
-                        <p className="text-center text-xs text-slate-300 mt-20">프리뷰를 렌더링하려면 상단 버튼을 클릭하십시오.</p>
+                      </div>
+                      
+                      <div className="flex items-end">
+                        <Button onClick={handleProcessData} className="bg-blue-600 hover:bg-blue-700 h-10 px-8">
+                          가공 탭으로 이동 ➔
+                        </Button>
                       </div>
                     </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                      <Table>
+                        <TableHeader className="bg-slate-100">
+                          <TableRow>
+                            {Object.keys(rawParsedData[0]).slice(0, 8).map(header => (
+                              <TableHead key={header} className="font-bold text-slate-700">{header}</TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {rawParsedData.slice(0, 5).map((row, idx) => (
+                            <TableRow key={idx}>
+                              {Object.values(row).slice(0, 8).map((val: any, i) => (
+                                <TableCell key={i} className="truncate max-w-[150px]">{String(val)}</TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent key="processing" value="processing">
+              <div className="bg-white/60 backdrop-blur-xl border border-white/40 rounded-3xl p-8 shadow-xl">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">데이터 검수 및 수동 보정</h2>
+                    <p className="text-slate-500 text-sm">실제 집행 금액과 차이가 있다면 셀을 클릭하여 수정하세요.</p>
+                  </div>
+                  <Button className="bg-green-600 hover:bg-green-700" onClick={() => alert('변경사항이 저장되었습니다.')}>
+                    <Check size={16} className="mr-2"/> 변경사항 최종 저장
+                  </Button>
                 </div>
-              </motion.div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white max-h-[500px]">
+                  <Table>
+                    <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
+                      <TableRow>
+                        <TableHead>날짜</TableHead>
+                        <TableHead>광고 그룹</TableHead>
+                        <TableHead className="text-right">노출</TableHead>
+                        <TableHead className="text-right">클릭</TableHead>
+                        <TableHead className="text-right text-blue-600 font-bold flex items-center justify-end gap-1">
+                          <Edit3 size={14}/> 집행 금액 (더블클릭하여 수정)
+                        </TableHead>
+                        <TableHead>상태</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredData.map((record) => (
+                        <TableRow key={record._id || Math.random()} className="hover:bg-slate-50/50">
+                          <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
+                          <TableCell className="font-medium text-slate-700">{record.ad_group_name}</TableCell>
+                          <TableCell className="text-right">{record.impressions.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{record.clicks.toLocaleString()}</TableCell>
+                          
+                          <TableCell className="text-right">
+                            {editingCell?.id === record._id ? (
+                              <Input 
+                                type="number"
+                                autoFocus
+                                className="w-28 h-8 text-right float-right border-blue-400 focus:ring-blue-500"
+                                value={editingCell?.value || 0}
+                                onChange={(e) => setEditingCell({ id: record._id!, value: Number(e.target.value) })}
+                                onBlur={() => editingCell && handleUpdateAmount(record._id!, editingCell.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && editingCell && handleUpdateAmount(record._id!, editingCell.value)}
+                              />
+                            ) : (
+                              <div 
+                                className="cursor-pointer hover:bg-slate-100 px-2 py-1 rounded inline-block transition-colors font-semibold"
+                                onDoubleClick={() => record._id && setEditingCell({ id: record._id, value: record.execution_amount })}
+                              >
+                                ₩{Math.round(record.execution_amount).toLocaleString()}
+                              </div>
+                            )}
+                          </TableCell>
+
+                          <TableCell>
+                            {record.is_edited ? (
+                              <Badge className="bg-amber-100 text-amber-700 border-none">수동 보정됨</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-slate-400">원본</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent key="dashboard" value="dashboard">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <Card className="lg:col-span-2 p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
+                  <h3 className="text-lg font-bold text-slate-800 mb-6">일별 성과 추이 (Spend vs CPC)</h3>
+                  <div className="h-[350px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={dailyTrendData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="date" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                        <YAxis yAxisId="left" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                        <YAxis yAxisId="right" orientation="right" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}/>
+                        <Legend wrapperStyle={{ paddingTop: '20px' }}/>
+                        <Bar yAxisId="left" dataKey="execution_amount" name="집행액" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
+                        <Line yAxisId="right" type="monotone" dataKey="actual_cpc" name="CPC" stroke="#f59e0b" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+
+                <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
+                  <h3 className="text-lg font-bold text-slate-800 mb-6">DMP 예산 점유율</h3>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={dmpShareData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                          nameKey="name"
+                        >
+                          {dmpShareData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#64748b'][index % 5]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+              </div>
             </TabsContent>
           </AnimatePresence>
         </div>
