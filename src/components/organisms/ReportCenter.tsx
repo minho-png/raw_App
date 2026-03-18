@@ -59,8 +59,17 @@ export const ReportCenter: React.FC = () => {
     if (rawParsedData.length === 0) return [];
     const firstRow = rawParsedData[0];
     const keys = Object.keys(firstRow);
-    // Prefer columns that look like campaign names
-    const campaignCol = keys.find(k => k === 'excel_campaign_name' || k.includes('캠페인명') || k.includes('Campaign')) || keys[0];
+    
+    // Strict priority list for campaign-related columns
+    const priorityKeywords = ['캠페인명', '캠페인 이름', '캠페인', 'Campaign Name', 'Campaign'];
+    const excludeKeywords = ['소재', 'Creative', '그룹', 'Group', '번호', 'ID', '날짜', 'Date'];
+
+    const campaignCol = keys.find(k => 
+      priorityKeywords.some(pk => k.includes(pk)) && 
+      !excludeKeywords.some(ek => k.includes(ek))
+    ) || keys.find(k => priorityKeywords.some(pk => k.includes(pk))) || keys[0];
+
+    // Log the selected column for debugging if needed (internal)
     const names = rawParsedData.map(r => String(r[campaignCol])).filter(Boolean);
     return Array.from(new Set(names)).sort();
   }, [rawParsedData]);
@@ -387,90 +396,136 @@ export const ReportCenter: React.FC = () => {
 
         <div className="mt-8">
           <AnimatePresence mode="wait">
-            <TabsContent key="source" value="source">
-              <div className="bg-white/60 backdrop-blur-xl border border-white/40 rounded-3xl p-8 shadow-xl">
-                <FileUploader 
-                  onAnalysisComplete={handleAnalysisComplete} 
-                  isSimpleButton={true} 
-                />
+            <TabsContent key="source" value="source" className="space-y-6">
+              <div className="bg-white/60 backdrop-blur-xl border border-white/40 rounded-[32px] p-10 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-10 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10" />
+                
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+                  <div>
+                    <h2 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                        <Database size={20} />
+                      </div>
+                      1. 데이터 원본 및 모델링
+                    </h2>
+                    <p className="text-slate-500 mt-2 text-lg">데이터를 로드하고 분석 기준(Dimensions)을 설정하여 정밀한 리포트를 생성하세요.</p>
+                  </div>
+                  <FileUploader 
+                    onAnalysisComplete={handleAnalysisComplete} 
+                    isSimpleButton={true} 
+                  />
+                </div>
 
-                {rawParsedData.length > 0 && (
-                  <div className="mt-8 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="flex gap-6 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                      <div className="flex-1 space-y-2">
-                        <Label className="font-bold text-slate-700">매체 선택</Label>
+                {rawParsedData.length > 0 ? (
+                  <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                      {/* Config Card 1: Media */}
+                      <div className="lg:col-span-1 p-8 bg-white/80 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all border-b-4 border-b-blue-500">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 block">A. 매체 선택</Label>
                         <Select value={activeMedia} onValueChange={(val) => setActiveMedia(val as MediaProvider)}>
-                          <SelectTrigger className="bg-white">
+                          <SelectTrigger className="bg-slate-50 border-none rounded-2xl h-14 text-base font-bold shadow-inner">
                             <SelectValue placeholder="매체 선택" />
                           </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="네이버GFA">네이버 GFA</SelectItem>
-                            <SelectItem value="카카오Moment">카카오 모먼트</SelectItem>
-                            <SelectItem value="메타Ads">메타 Ads</SelectItem>
+                          <SelectContent className="rounded-2xl border-slate-100">
+                            <SelectItem value="네이버GFA" className="rounded-xl py-3 font-medium">네이버 GFA</SelectItem>
+                            <SelectItem value="카카오Moment" className="rounded-xl py-3 font-medium">카카오 모먼트</SelectItem>
+                            <SelectItem value="메타Ads" className="rounded-xl py-3 font-medium">메타 Ads</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
 
-                      <div className="flex-[2] space-y-2">
-                        <Label className="font-bold text-slate-700">그룹화 기준 (아래 데이터를 보고 선택하세요)</Label>
+                      {/* Config Card 2: Modeling */}
+                      <div className="lg:col-span-2 p-8 bg-white/80 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all border-b-4 border-b-purple-500">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 block">B. 데이터 모델링 (Group By)</Label>
                         <div className="flex flex-wrap gap-2">
                           {[
-                            { id: 'date_raw', label: '날짜' },
-                            { id: 'ad_group_name', label: '광고 그룹' },
-                            { id: 'excel_campaign_name', label: '캠페인' },
-                            { id: 'creative_name', label: '소재' },
-                            { id: 'age', label: '연령' },
-                            { id: 'gender', label: '성별' },
-                            { id: 'device', label: '기기' }
-                          ].map(col => (
-                            <Badge 
-                              key={col.id}
-                              variant={groupByColumns.includes(col.id) ? 'default' : 'outline'}
-                              className={cn("cursor-pointer px-4 py-1.5 text-sm transition-all", groupByColumns.includes(col.id) && "bg-blue-600")}
-                              onClick={() => toggleGroupBy(col.id)}
-                            >
-                              {col.label}
-                            </Badge>
-                          ))}
+                            { id: 'date_raw', label: '날짜', icon: '📅' },
+                            { id: 'ad_group_name', label: '광고 그룹', icon: '📁' },
+                            { id: 'excel_campaign_name', label: '캠페인', icon: '🎯' },
+                            { id: 'creative_name', label: '소재', icon: '🎨' },
+                            { id: 'age', label: '연령', icon: '👤' },
+                            { id: 'gender', label: '성별', icon: '🚻' },
+                            { id: 'device', label: '기기', icon: '📱' }
+                          ].map(col => {
+                            const active = groupByColumns.includes(col.id);
+                            return (
+                              <button 
+                                key={col.id}
+                                onClick={() => toggleGroupBy(col.id)}
+                                className={cn(
+                                  "px-4 py-2.5 rounded-2xl text-sm font-bold transition-all flex items-center gap-2 border-2",
+                                  active 
+                                    ? "bg-purple-600 border-purple-600 text-white shadow-lg shadow-purple-500/30 scale-105" 
+                                    : "bg-white border-slate-100 text-slate-600 hover:border-purple-200 hover:bg-purple-50"
+                                )}
+                              >
+                                <span>{col.icon}</span>
+                                {col.label}
+                                {active && <Check size={14} className="ml-1" />}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
-                      
-                      <div className="flex items-end gap-3">
-                        <Button 
-                          variant="outline"
-                          onClick={() => setIsBudgetModalOpen(true)}
-                          className="border-slate-200 text-slate-600 hover:bg-slate-50 h-10 rounded-xl"
-                        >
-                          <Settings2 className="mr-2 h-4 w-4 text-blue-500" /> 엑셀 캠페인별 예산 설정
-                        </Button>
-                        <Button onClick={handleProcessData} className="bg-blue-600 hover:bg-blue-700 h-10 px-8 rounded-xl shadow-lg shadow-blue-500/20">
-                          가공 탭으로 이동 ➔
-                        </Button>
+
+                      {/* Config Card 3: Budget & Process */}
+                      <div className="lg:col-span-1 p-8 bg-slate-900 rounded-[32px] shadow-2xl flex flex-col justify-between">
+                        <Label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 block">C. 최종 처리</Label>
+                        <div className="space-y-4">
+                          <Button 
+                            variant="outline"
+                            onClick={() => setIsBudgetModalOpen(true)}
+                            className="w-full bg-slate-800 border-slate-700 text-white hover:bg-slate-700 h-14 rounded-2xl font-bold transition-all border-2"
+                          >
+                            <Settings2 className="mr-2 h-5 w-5 text-blue-400" /> 엑셀 캠페인 예산 설정
+                          </Button>
+                          <Button 
+                            onClick={handleProcessData} 
+                            disabled={isProcessing}
+                            className="w-full bg-blue-600 hover:bg-blue-500 h-14 rounded-2xl font-black text-lg shadow-xl shadow-blue-500/40 transition-all hover:translate-y-[-2px] active:translate-y-0"
+                          >
+                            {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : "가공 탭으로 이동 ➔"}
+                          </Button>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                      <Table>
-                        <TableHeader className="bg-slate-100">
-                          <TableRow>
-                            {Object.keys(rawParsedData[0]).slice(0, 8).map(header => (
-                              <TableHead key={header} className="font-bold text-slate-700">{header}</TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {rawParsedData.slice(0, 5).map((row, idx) => (
-                            <TableRow key={idx}>
-                              {Object.entries(row).slice(0, 10).map(([key, val]: [string, any], i) => (
-                                <TableCell key={i} className="truncate max-w-[150px]">
-                                  {(key.includes('날짜') || key === 'date_raw' || key === 'date') ? formatDate(val) : String(val)}
-                                </TableCell>
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-end px-4">
+                        <Label className="text-sm font-black text-slate-500 uppercase tracking-widest">데이터 미리보기 (상위 5개 행)</Label>
+                        <span className="text-xs font-bold text-slate-400">Total Rows: {rawParsedData.length.toLocaleString()}</span>
+                      </div>
+                      <div className="overflow-hidden rounded-[32px] border-2 border-slate-100 bg-white/80 shadow-inner">
+                        <Table>
+                          <TableHeader className="bg-slate-50/50 border-b-2 border-slate-100">
+                            <TableRow>
+                              {Object.keys(rawParsedData[0]).slice(0, 8).map(header => (
+                                <TableHead key={header} className="font-black text-slate-700 py-6 px-6 text-xs uppercase">{header}</TableHead>
                               ))}
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {rawParsedData.slice(0, 5).map((row, idx) => (
+                              <TableRow key={idx} className="hover:bg-blue-50/30 transition-colors border-none">
+                                {Object.entries(row).slice(0, 8).map(([key, val]: [string, any], i) => (
+                                  <TableCell key={i} className="py-5 px-6 font-medium text-slate-600">
+                                    {(key.includes('날짜') || key === 'date_raw' || key === 'date') ? formatDate(val) : String(val)}
+                                  </TableCell>
+                                ))}
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
                     </div>
+                  </div>
+                ) : (
+                  <div className="py-32 flex flex-col items-center justify-center text-center animate-in fade-in duration-1000">
+                    <div className="w-24 h-24 bg-slate-50 rounded-[40px] flex items-center justify-center text-slate-200 mb-8 shadow-inner">
+                      <Database size={48} />
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-300">데이터가 로드되지 않았습니다.</h3>
+                    <p className="text-slate-400 mt-2 max-w-sm">상단의 파일 업로드 버튼을 눌러 분석할 엑셀 파일을 로드하세요.</p>
                   </div>
                 )}
               </div>
