@@ -48,90 +48,103 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card className="rounded-3xl border-white/40 bg-white/30 backdrop-blur-xl shadow-xl overflow-hidden border hover:border-white/60 transition-colors group">
+        <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-blue-500/10 hover:border-blue-500/30">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-slate-400 uppercase tracking-wider">소진액 (Spent)</CardTitle>
-            <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500 group-hover:scale-110 transition-transform">
-              <CircleDollarSign size={16} />
+            <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Spent (Execution)</CardTitle>
+            <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
+              <CircleDollarSign size={18} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-black text-slate-900 tracking-tight">
-              ₩{status.spent.toLocaleString()}
+            <div className="text-3xl font-black text-slate-900 tracking-tight font-outfit">
+              <span className="text-sm font-medium mr-1 text-slate-400">₩</span>
+              {status.spent.toLocaleString()}
             </div>
-            <p className="text-[10px] text-slate-400 mt-1 font-medium italic">당일 포함 누적 집행</p>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight italic">Acc. Implementation</p>
+            </div>
           </CardContent>
         </Card>
       </motion.div>
 
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <Card className="rounded-3xl border-white/40 bg-white/30 backdrop-blur-xl shadow-xl overflow-hidden border hover:border-white/60 transition-colors group">
+        <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-slate-500/10 hover:border-slate-500/30">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-slate-400 uppercase tracking-wider">잔여 예산 (Rem.)</CardTitle>
-            <div className="p-2 bg-slate-100 rounded-xl text-slate-400 group-hover:scale-110 transition-transform">
-              <Wallet size={16} />
+            <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Remaining Cap</CardTitle>
+            <div className="p-2.5 bg-slate-100 rounded-xl text-slate-500 group-hover:bg-slate-800 group-hover:text-white transition-all duration-300">
+              <Wallet size={18} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-black text-slate-800 tracking-tight">
-              ₩{status.remaining.toLocaleString()}
+            <div className="text-3xl font-black text-slate-800 tracking-tight font-outfit">
+              <span className="text-sm font-medium mr-1 text-slate-400">₩</span>
+              {status.remaining.toLocaleString()}
             </div>
-            <p className="text-[10px] text-slate-400 mt-1 font-medium">총 예산 대비 잔액</p>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="w-1.5 h-1.5 bg-slate-300 rounded-full" />
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Available Balance</p>
+            </div>
           </CardContent>
         </Card>
       </motion.div>
 
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
       >
-        <Card className="rounded-3xl border-white/40 bg-white/30 backdrop-blur-xl shadow-xl overflow-hidden border hover:border-white/60 transition-colors group">
+        <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-orange-500/10 hover:border-orange-500/30">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-slate-400 uppercase tracking-wider">소진율 (Burn)</CardTitle>
-            <div className={cn("p-2 rounded-xl text-white group-hover:scale-110 transition-transform shadow-lg", getBurnRateColor(status.burn_rate))}>
-              <Flame size={16} />
+            <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Burn Velocity</CardTitle>
+            <div className={cn("p-2.5 rounded-xl text-white group-hover:scale-110 transition-transform shadow-lg", getBurnRateColor(status.burn_rate))}>
+              <Flame size={18} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex items-end justify-between mb-2">
-              <div className="text-2xl font-black text-slate-900 tracking-tight">{status.burn_rate.toFixed(1)}%</div>
-              <span className="text-[10px] font-bold text-slate-400">Target 100%</span>
+            <div className="flex items-end justify-between mb-3">
+              <div className="text-3xl font-black text-slate-900 tracking-tight font-outfit">{status.burn_rate.toFixed(1)}<span className="text-sm ml-0.5">%</span></div>
+              <div className="flex flex-col items-end">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Pacing</span>
+                  {getPacingBadge(status.pacing_status)}
+              </div>
             </div>
-            <Progress value={status.burn_rate} className="h-1.5 bg-slate-100" indicatorClassName={getBurnRateColor(status.burn_rate)} />
+            <Progress value={status.burn_rate} className="h-2 bg-slate-100/50" indicatorClassName={getBurnRateColor(status.burn_rate)} />
           </CardContent>
         </Card>
       </motion.div>
 
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
       >
-        <Card className="rounded-3xl border-white/40 bg-white/30 backdrop-blur-xl shadow-xl overflow-hidden border hover:border-white/60 transition-colors group">
+        <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-purple-500/10 hover:border-purple-500/30">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-slate-400 uppercase tracking-wider">KPI 성과 지표</CardTitle>
-            <Zap size={16} className="text-purple-500" />
+            <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">KPI Intelligence</CardTitle>
+            <div className="p-2.5 bg-purple-500/10 rounded-xl text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-all duration-300">
+              <Zap size={18} />
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Actual CPC</p>
-                <div className="text-lg font-black text-slate-900">₩{Math.round(status.actual_cpc).toLocaleString()}</div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter leading-none mb-1">Effective CPC</p>
+                <div className="text-xl font-black text-slate-900 font-outfit">₩{Math.round(status.actual_cpc).toLocaleString()}</div>
               </div>
               {status.target_cpc && (
                 <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target ₩{status.target_cpc.toLocaleString()}</p>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-1">Goal: ₩{status.target_cpc.toLocaleString()}</p>
                   <div className={cn(
-                    "text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1",
+                    "text-[10px] font-black px-2 py-0.5 rounded-lg inline-flex items-center gap-1",
                     status.actual_cpc <= status.target_cpc ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
                   )}>
                     {status.actual_cpc <= status.target_cpc ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
@@ -141,17 +154,17 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
               )}
             </div>
 
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center pt-2 border-t border-slate-100/50">
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Actual CTR</p>
-                <div className="text-lg font-black text-slate-900">{status.actual_ctr.toFixed(2)}%</div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter leading-none mb-1">Interaction rate</p>
+                <div className="text-xl font-black text-slate-900 font-outfit">{status.actual_ctr.toFixed(2)}%</div>
               </div>
               {status.target_ctr && (
                 <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target {status.target_ctr}%</p>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-1">Goal: {status.target_ctr}%</p>
                   <div className={cn(
-                    "text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1",
-                    status.actual_ctr >= status.target_ctr ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                    "text-[10px] font-black px-2 py-0.5 rounded-lg inline-flex items-center gap-1",
+                    status.actual_ctr >= status.target_ctr ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600" // Inverse for CTR
                   )}>
                     {status.actual_ctr >= status.target_ctr ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
                     {Math.abs(((status.actual_ctr - status.target_ctr) / status.target_ctr) * 100).toFixed(1)}%

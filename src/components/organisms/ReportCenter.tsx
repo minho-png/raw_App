@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { BudgetPacingCards } from '@/components/molecules/BudgetPacingCards';
 import { FileUploader } from '@/components/molecules/FileUploader';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -409,38 +408,43 @@ export const ReportCenter: React.FC = () => {
   }
 
   return (
-    <div className="p-8 space-y-8 animate-in fade-in duration-700">
-      <header className="flex justify-between items-end">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 bg-blue-500 text-white text-[10px] font-bold rounded uppercase tracking-wider shadow-sm">Active</span>
-            <span className="text-xs text-slate-400 font-medium">Campaign ID: {selectedCampaignId}</span>
+    <div className="p-10 space-y-10 animate-in fade-in duration-1000">
+      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <Badge className="bg-blue-600 text-white border-none px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">Live Intelligence</Badge>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] px-2 py-1 bg-slate-100 rounded-lg">ID: {selectedCampaignId}</span>
           </div>
-          <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">{selectedCampaign?.campaign_name}</h1>
-          <p className="text-slate-500 mt-1">실시간 광고 정산 및 성과 분석 엔진</p>
+          <h1 className="text-5xl font-black text-slate-900 tracking-tighter font-outfit drop-shadow-sm">
+            {selectedCampaign?.campaign_name}
+          </h1>
+          <p className="text-slate-500 text-lg font-medium flex items-center gap-2">
+            <Zap size={18} className="text-blue-500 fill-blue-500" />
+            Advanced Performance Settlement & Intelligence Engine
+          </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-4">
           <Button 
             variant="outline" 
             onClick={handleFetchDbData}
             disabled={isLoadingDb}
-            className="rounded-xl border-slate-200 bg-white/50 backdrop-blur shadow-sm hover:translate-y-[-2px] transition-transform"
+            className="rounded-2xl border-slate-200 bg-white/40 backdrop-blur-md h-12 px-6 font-bold shadow-sm hover:glass-card-hover transition-all border-2"
           >
-            {isLoadingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-            DB 데이터 불러오기
+            {isLoadingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4 text-blue-500" />}
+            Sync DB Data
           </Button>
           <Button 
             variant="outline" 
             onClick={() => setIsBudgetModalOpen(true)}
-            className="rounded-xl border-slate-200 bg-white shadow-sm hover:translate-y-[-2px] transition-transform"
+            className="rounded-2xl border-slate-200 bg-white/40 backdrop-blur-md h-12 px-6 font-bold shadow-sm hover:glass-card-hover transition-all border-2"
           >
-            <Settings2 className="mr-2 h-4 w-4" /> 예산 관리
+            <Settings2 className="mr-2 h-4 w-4 text-purple-500" /> Manage Budgets
           </Button>
           <Button 
             onClick={handleGenerateReport}
-            className="rounded-xl bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20 hover:scale-[1.02] transition-all"
+            className="rounded-2xl bg-slate-900 hover:bg-black text-white h-12 px-8 font-black shadow-xl transition-all hover:scale-[1.05] active:scale-95 border-b-4 border-slate-700"
           >
-            <Zap className="mr-2 h-4 w-4" /> 리포트 즉시 발행
+            <BarChart4 className="mr-2 h-5 w-5" /> Export Report
           </Button>
         </div>
       </header>
@@ -451,7 +455,7 @@ export const ReportCenter: React.FC = () => {
           onClose={() => setIsBudgetModalOpen(false)}
           campaign={selectedCampaign}
           suggestedNames={suggestedExcelNames}
-          totalSpent={budgetStatus.spent} // Pass spent for pacing calculation
+          totalSpent={budgetStatus.spent}
           onUpdate={async (updated) => {
             const result = await saveCampaignAction(updated);
             if (result.success && result.campaigns) {
@@ -463,71 +467,106 @@ export const ReportCenter: React.FC = () => {
 
       <BudgetPacingCards status={budgetStatus} campaign={selectedCampaign} />
 
-      <Tabs value={activeTabStep} onValueChange={setActiveTabStep} className="w-full">
-        <TabsList className="bg-slate-100/50 p-1 rounded-2xl border border-slate-200 inline-flex">
-          <TabsTrigger value="source" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
-            1. 데이터 원본 설정
-          </TabsTrigger>
-          <TabsTrigger value="processing" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
-            2. 데이터 가공 (수기 수정)
-          </TabsTrigger>
-          <TabsTrigger value="dashboard" className="rounded-xl px-6 py-2.5 flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md">
-            3. 마케팅 대시보드
-          </TabsTrigger>
-        </TabsList>
+      <div className="relative">
+        {/* Horizontal Stepper Background Line */}
+        <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 -translate-y-1/2 z-0" />
+        
+        <div className="relative z-10 flex justify-between items-center max-w-4xl mx-auto">
+          {[
+            { id: 'source', label: 'Data Modeling', icon: Database, step: '01' },
+            { id: 'processing', label: 'Verification', icon: Edit3, step: '02' },
+            { id: 'dashboard', label: 'Intelligence', icon: PieChartIcon, step: '03' }
+          ].map((step, idx) => {
+            const active = activeTabStep === step.id;
+            const StepIcon = step.icon;
+            return (
+              <button
+                key={step.id}
+                onClick={() => setActiveTabStep(step.id)}
+                className="group flex flex-col items-center gap-3 focus:outline-none"
+              >
+                <div className={cn(
+                  "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-500 border-2",
+                  active 
+                    ? "bg-blue-600 border-blue-600 text-white shadow-2xl shadow-blue-500/40 scale-125" 
+                    : "bg-white border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500"
+                )}>
+                  <StepIcon size={20} />
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className={cn(
+                    "text-[9px] font-black uppercase tracking-widest leading-none mb-1",
+                    active ? "text-blue-600" : "text-slate-400"
+                  )}>Step {step.step}</span>
+                  <span className={cn(
+                    "text-xs font-black tracking-tight font-outfit transition-colors",
+                    active ? "text-slate-900" : "text-slate-500 group-hover:text-blue-500"
+                  )}>{step.label}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-        <div className="mt-8">
-          <AnimatePresence mode="wait">
-            <TabsContent key="source" value="source" className="space-y-6">
-              <div className="bg-white/60 backdrop-blur-xl border border-white/40 rounded-[32px] p-10 shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-10 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10" />
+      <div className="mt-12">
+        <AnimatePresence mode="wait">
+          {activeTabStep === 'source' && (
+            <motion.div
+              key="source"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="outline-none"
+            >
+              <div className="glass-card rounded-[40px] p-12 relative overflow-hidden shadow-2xl">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] -z-10" />
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 rounded-full blur-[80px] -z-10" />
                 
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
-                  <div>
-                    <h2 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
-                        <Database size={20} />
+                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-12 gap-8">
+                  <div className="space-y-2">
+                    <h2 className="text-4xl font-black text-slate-900 tracking-tight font-outfit flex items-center gap-4">
+                      <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-xl">
+                        <Database size={24} />
                       </div>
-                      1. 데이터 원본 및 모델링
+                      01. Data Source & Modeling
                     </h2>
-                    <p className="text-slate-500 mt-2 text-lg">데이터를 로드하고 분석 기준(Dimensions)을 설정하여 정밀한 리포트를 생성하세요.</p>
+                    <p className="text-slate-500 text-lg font-medium max-w-2xl">Load your advertisement data and define the aggregation dimensions for intelligence processing.</p>
                   </div>
-                  <FileUploader 
-                    onAnalysisComplete={handleAnalysisComplete} 
-                    isSimpleButton={true} 
-                  />
+                  <div className="bg-white/40 p-2 rounded-3xl border border-white/60 shadow-inner">
+                    <FileUploader onAnalysisComplete={handleAnalysisComplete} isSimpleButton={true} />
+                  </div>
                 </div>
 
                 {rawParsedData.length > 0 ? (
-                  <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                      {/* Config Card 1: Media */}
-                      <div className="lg:col-span-1 p-8 bg-white/80 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all border-b-4 border-b-blue-500">
-                        <Label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 block">A. 매체 선택</Label>
+                  <div className="space-y-12">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                      <Card className="glass-card glass-card-hover rounded-3xl p-8 border-t-4 border-t-blue-500">
+                        <Label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 block">A. Provider Identity</Label>
                         <Select value={activeMedia} onValueChange={(val) => setActiveMedia(val as MediaProvider)}>
-                          <SelectTrigger className="bg-slate-50 border-none rounded-2xl h-14 text-base font-bold shadow-inner">
-                            <SelectValue placeholder="매체 선택" />
+                          <SelectTrigger className="bg-white/50 border-slate-200 rounded-2xl h-14 text-base font-bold shadow-sm focus:ring-blue-500">
+                            <SelectValue placeholder="Select Media" />
                           </SelectTrigger>
-                          <SelectContent className="rounded-2xl border-slate-100">
-                            <SelectItem value="네이버GFA" className="rounded-xl py-3 font-medium">네이버 GFA</SelectItem>
-                            <SelectItem value="카카오Moment" className="rounded-xl py-3 font-medium">카카오 모먼트</SelectItem>
-                            <SelectItem value="메타Ads" className="rounded-xl py-3 font-medium">메타 Ads</SelectItem>
+                          <SelectContent className="rounded-2xl border-slate-100 shadow-2xl">
+                            <SelectItem value="네이버GFA" className="rounded-xl py-3 font-bold text-slate-700">Naver GFA Engine</SelectItem>
+                            <SelectItem value="카카오Moment" className="rounded-xl py-3 font-bold text-slate-700">Kakao Moment</SelectItem>
+                            <SelectItem value="메타Ads" className="rounded-xl py-3 font-bold text-slate-700">Meta Ads Manager</SelectItem>
                           </SelectContent>
                         </Select>
-                      </div>
+                      </Card>
 
-                      {/* Config Card 2: Modeling */}
-                      <div className="lg:col-span-2 p-8 bg-white/80 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all border-b-4 border-b-purple-500">
-                        <Label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 block">B. 데이터 모델링 (Group By)</Label>
-                        <div className="flex flex-wrap gap-2">
+                      <Card className="xl:col-span-2 glass-card glass-card-hover rounded-3xl p-8 border-t-4 border-t-purple-500">
+                        <Label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 block">B. Intelligence Modeling (Group By)</Label>
+                        <div className="flex flex-wrap gap-2.5">
                           {[
-                            { id: 'date_raw', label: '날짜', icon: '📅' },
-                            { id: 'ad_group_name', label: '광고 그룹', icon: '📁' },
-                            { id: 'excel_campaign_name', label: '캠페인', icon: '🎯' },
-                            { id: 'creative_name', label: '소재', icon: '🎨' },
-                            { id: 'age', label: '연령', icon: '👤' },
-                            { id: 'gender', label: '성별', icon: '🚻' },
-                            { id: 'device', label: '기기', icon: '📱' }
+                            { id: 'date_raw', label: 'Date', icon: '📅' },
+                            { id: 'ad_group_name', label: 'Ad Group', icon: '📁' },
+                            { id: 'excel_campaign_name', label: 'Campaign', icon: '🎯' },
+                            { id: 'creative_name', label: 'Creative', icon: '🎨' },
+                            { id: 'age', label: 'Age', icon: '👤' },
+                            { id: 'gender', label: 'Gender', icon: '🚻' },
+                            { id: 'device', label: 'Device', icon: '📱' }
                           ].map(col => {
                             const active = groupByColumns.includes(col.id);
                             return (
@@ -535,62 +574,64 @@ export const ReportCenter: React.FC = () => {
                                 key={col.id}
                                 onClick={() => toggleGroupBy(col.id)}
                                 className={cn(
-                                  "px-4 py-2.5 rounded-2xl text-sm font-bold transition-all flex items-center gap-2 border-2",
+                                  "px-5 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 border-2",
                                   active 
-                                    ? "bg-purple-600 border-purple-600 text-white shadow-lg shadow-purple-500/30 scale-105" 
-                                    : "bg-white border-slate-100 text-slate-600 hover:border-purple-200 hover:bg-purple-50"
+                                    ? "bg-slate-900 border-slate-900 text-white shadow-xl scale-105" 
+                                    : "bg-white/50 border-slate-100 text-slate-600 hover:border-slate-300 hover:bg-white"
                                 )}
                               >
-                                <span>{col.icon}</span>
+                                <span className="text-lg">{col.icon}</span>
                                 {col.label}
-                                {active && <Check size={14} className="ml-1" />}
+                                {active && <Check size={14} className="ml-1 text-blue-400" />}
                               </button>
                             );
                           })}
                         </div>
-                      </div>
+                      </Card>
 
-                      {/* Config Card 3: Budget & Process */}
-                      <div className="lg:col-span-1 p-8 bg-slate-900 rounded-[32px] shadow-2xl flex flex-col justify-between">
-                        <Label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 block">C. 최종 처리</Label>
+                      <Card className="glass-card bg-slate-900 rounded-3xl p-8 shadow-2xl border-none flex flex-col justify-between group">
+                        <Label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4 block group-hover:text-blue-400 transition-colors">C. Engine Execution</Label>
                         <div className="space-y-4">
                           <Button 
                             variant="outline"
                             onClick={() => setIsBudgetModalOpen(true)}
-                            className="w-full bg-slate-800 border-slate-700 text-white hover:bg-slate-700 h-14 rounded-2xl font-bold transition-all border-2"
+                            className="w-full bg-slate-800/50 border-slate-700 text-white hover:bg-slate-800 h-14 rounded-2xl font-black text-xs transition-all border-2"
                           >
-                            <Settings2 className="mr-2 h-5 w-5 text-blue-400" /> 엑셀 캠페인 예산 설정
+                            <Settings2 className="mr-2 h-5 w-5 text-blue-400" /> SYNC EXTERNAL BUDGETS
                           </Button>
                           <Button 
                             onClick={handleProcessData} 
                             disabled={isProcessing}
-                            className="w-full bg-blue-600 hover:bg-blue-500 h-14 rounded-2xl font-black text-lg shadow-xl shadow-blue-500/40 transition-all hover:translate-y-[-2px] active:translate-y-0"
+                            className="w-full bg-blue-600 hover:bg-blue-500 h-16 rounded-2xl font-black text-lg shadow-xl shadow-blue-600/20 transition-all hover:translate-y-[-4px] active:translate-y-0"
                           >
-                            {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : "가공 탭으로 이동 ➔"}
+                            {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : "START AGGREGATION ➔"}
                           </Button>
                         </div>
-                      </div>
+                      </Card>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div className="flex justify-between items-end px-4">
-                        <Label className="text-sm font-black text-slate-500 uppercase tracking-widest">데이터 미리보기 (상위 5개 행)</Label>
-                        <span className="text-xs font-bold text-slate-400">Total Rows: {rawParsedData.length.toLocaleString()}</span>
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Raw Data Inspection</h3>
+                          <Badge variant="outline" className="text-[10px] font-bold text-slate-400 border-slate-200">Top 5 Records</Badge>
+                        </div>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Intelligence Pool: {rawParsedData.length.toLocaleString()} Rows</span>
                       </div>
-                      <div className="overflow-hidden rounded-[32px] border-2 border-slate-100 bg-white/80 shadow-inner">
+                      <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white/40 backdrop-blur-md shadow-2xl">
                         <Table>
-                          <TableHeader className="bg-slate-50/50 border-b-2 border-slate-100">
-                            <TableRow>
+                          <TableHeader className="bg-slate-50">
+                            <TableRow className="hover:bg-transparent border-b-2 border-slate-100">
                               {Object.keys(rawParsedData[0]).slice(0, 8).map(header => (
-                                <TableHead key={header} className="font-black text-slate-700 py-6 px-6 text-xs uppercase">{header}</TableHead>
+                                <TableHead key={header} className="font-black text-slate-500 py-6 px-8 text-[10px] uppercase tracking-widest">{header}</TableHead>
                               ))}
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {rawParsedData.slice(0, 5).map((row, idx) => (
-                              <TableRow key={idx} className="hover:bg-blue-50/30 transition-colors border-none">
+                              <TableRow key={idx} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none">
                                 {Object.entries(row).slice(0, 8).map(([key, val]: [string, any], i) => (
-                                  <TableCell key={i} className="py-5 px-6 font-medium text-slate-600">
+                                  <TableCell key={i} className="py-6 px-8 font-bold text-slate-700 text-sm">
                                     {(key.includes('날짜') || key === 'date_raw' || key === 'date') ? formatDate(val) : String(val)}
                                   </TableCell>
                                 ))}
@@ -602,68 +643,74 @@ export const ReportCenter: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="py-32 flex flex-col items-center justify-center text-center animate-in fade-in duration-1000">
-                    <div className="w-24 h-24 bg-slate-50 rounded-[40px] flex items-center justify-center text-slate-200 mb-8 shadow-inner">
-                      <Database size={48} />
+                  <div className="py-40 flex flex-col items-center justify-center text-center animate-in fade-in duration-1000">
+                    <div className="w-32 h-32 bg-slate-100 rounded-[50px] flex items-center justify-center text-slate-300 mb-10 shadow-inner group">
+                      <Database size={56} className="group-hover:scale-110 transition-transform duration-500" />
                     </div>
-                    <h3 className="text-2xl font-black text-slate-300">데이터가 로드되지 않았습니다.</h3>
-                    <p className="text-slate-400 mt-2 max-w-sm">상단의 파일 업로드 버튼을 눌러 분석할 엑셀 파일을 로드하세요.</p>
+                    <h3 className="text-3xl font-black text-slate-300 font-outfit uppercase tracking-tighter">Intelligence Engine Idle</h3>
+                    <p className="text-slate-400 mt-4 max-w-md text-lg font-medium leading-relaxed">System is awaiting data injection. Please upload your performance report to begin the modeling process.</p>
                   </div>
                 )}
               </div>
-            </TabsContent>
+            </motion.div>
+          )}
 
-            <TabsContent key="processing" value="processing">
-              <div className="bg-white/60 backdrop-blur-xl border border-white/40 rounded-3xl p-8 shadow-xl">
-                <div className="flex justify-between items-center mb-6">
+          {activeTabStep === 'processing' && (
+            <motion.div
+              key="processing"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="glass-card rounded-[40px] p-10 shadow-2xl border border-white/50">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900">데이터 검수 및 수동 보정</h2>
-                    <p className="text-slate-500 text-sm">실제 집행 금액과 차이가 있다면 셀을 클릭하여 수정하세요.</p>
+                    <h2 className="text-3xl font-black text-slate-900 tracking-tight font-outfit uppercase">Verification & Manual Correction</h2>
+                    <p className="text-slate-500 font-medium text-lg mt-1">Review aggregated performance and refine actual execution costs.</p>
                   </div>
                   <Button 
-                    className="bg-green-600 hover:bg-green-700" 
+                    className="bg-green-600 hover:bg-green-700 h-14 px-8 rounded-2xl font-black text-lg shadow-xl shadow-green-600/20 transition-all hover:translate-y-[-4px] active:translate-y-0" 
                     onClick={handleSaveProcessedData}
                     disabled={isSavingReport || processedData.length === 0}
                   >
-                    {isSavingReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check size={16} className="mr-2"/>}
-                    변경사항 최종 저장
+                    {isSavingReport ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Check size={20} className="mr-2 stroke-[3px]"/>}
+                    Commit Final Changes
                   </Button>
                 </div>
 
-                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white max-h-[500px]">
+                <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white/40 backdrop-blur-md shadow-2xl max-h-[600px] overflow-y-auto custom-scrollbar">
                   <Table>
-                    <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
-                      <TableRow>
-                        <TableHead>날짜</TableHead>
-                        <TableHead>캠페인명</TableHead>
-                        <TableHead>DMP</TableHead>
-                        <TableHead className="text-right">노출</TableHead>
-                        <TableHead className="text-right">클릭</TableHead>
-                        <TableHead className="text-right text-blue-600 font-bold flex items-center justify-end gap-1">
-                          <Edit3 size={14}/> 비용 (수정 가능)
-                        </TableHead>
-                        <TableHead>상태</TableHead>
+                    <TableHeader className="bg-slate-900 sticky top-0 z-20">
+                      <TableRow className="hover:bg-slate-900 border-none">
+                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Schedule</TableHead>
+                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Campaign Meta</TableHead>
+                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Tech Stack</TableHead>
+                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8 text-right">Exposure</TableHead>
+                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8 text-right">Interactions</TableHead>
+                        <TableHead className="text-blue-400 font-black text-[10px] uppercase tracking-widest py-6 px-8 text-right bg-slate-800/50">Execution (KRW)</TableHead>
+                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Integrity</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredData.map((record) => (
-                        <TableRow key={record._id || Math.random()} className="hover:bg-slate-50/50">
-                          <TableCell>{formatDate(record.date)}</TableCell>
-                          <TableCell className="font-medium text-slate-700">{record.excel_campaign_name || record.ad_group_name}</TableCell>
-                          <TableCell>
-                            <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-bold">
+                        <TableRow key={record._id || Math.random()} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none group">
+                          <TableCell className="py-6 px-8 font-bold text-slate-500">{formatDate(record.date)}</TableCell>
+                          <TableCell className="py-6 px-8 font-black text-slate-900">{record.excel_campaign_name || record.ad_group_name}</TableCell>
+                          <TableCell className="py-6 px-8">
+                            <Badge className="bg-slate-100 text-slate-600 font-black border-none px-3 py-1 rounded-lg">
                               {record.dmp || record.dmp_type}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right">{record.impressions.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{record.clicks.toLocaleString()}</TableCell>
+                          <TableCell className="py-6 px-8 text-right font-bold text-slate-600">{record.impressions.toLocaleString()}</TableCell>
+                          <TableCell className="py-6 px-8 text-right font-bold text-slate-600">{record.clicks.toLocaleString()}</TableCell>
                           
-                          <TableCell className="text-right">
+                          <TableCell className="py-6 px-8 text-right bg-blue-50/30">
                             {editingCell?.id === record._id ? (
                               <Input 
                                 type="number"
                                 autoFocus
-                                className="w-28 h-8 text-right float-right border-blue-400 focus:ring-blue-500"
+                                className="w-32 h-10 text-right font-black border-2 border-blue-500 rounded-xl bg-white shadow-xl"
                                 value={editingCell?.value || 0}
                                 onChange={(e) => setEditingCell({ id: record._id!, value: Number(e.target.value) })}
                                 onBlur={() => editingCell && handleUpdateAmount(record._id!, editingCell.value)}
@@ -671,7 +718,7 @@ export const ReportCenter: React.FC = () => {
                               />
                             ) : (
                               <div 
-                                className="cursor-pointer hover:bg-slate-100 px-2 py-1 rounded inline-block transition-colors font-semibold"
+                                className="cursor-pointer hover:bg-blue-600 hover:text-white px-4 py-2 rounded-xl transition-all font-black text-lg text-blue-600 border-2 border-transparent hover:border-blue-700"
                                 onDoubleClick={() => record._id && setEditingCell({ id: record._id, value: record.cost || record.execution_amount })}
                               >
                                 ₩{Math.round(record.cost || record.execution_amount).toLocaleString()}
@@ -679,11 +726,13 @@ export const ReportCenter: React.FC = () => {
                             )}
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell className="py-6 px-8">
                             {record.is_edited ? (
-                              <Badge className="bg-amber-100 text-amber-700 border-none">수동 보정됨</Badge>
+                              <Badge className="bg-orange-100 text-orange-700 border-orange-200 font-bold px-3 py-1 rounded-lg flex items-center gap-1 w-fit">
+                                <Edit3 size={10} /> Verified
+                              </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-slate-400">원본</Badge>
+                              <Badge variant="outline" className="text-slate-400 border-slate-200 font-bold px-3 py-1 rounded-lg">Original</Badge>
                             )}
                           </TableCell>
                         </TableRow>
@@ -692,140 +741,171 @@ export const ReportCenter: React.FC = () => {
                   </Table>
                 </div>
               </div>
-            </TabsContent>
+            </motion.div>
+          )}
 
-            <TabsContent key="dashboard" value="dashboard">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card className="lg:col-span-2 p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
-                  <h3 className="text-lg font-bold text-slate-800 mb-6">일별 성과 추이 (Spend vs CPC)</h3>
-                  <div className="h-[350px]">
+          {activeTabStep === 'dashboard' && (
+            <motion.div
+              key="dashboard"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-8"
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <Card className="lg:col-span-2 p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
+                  <div className="flex justify-between items-center mb-10">
+                    <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight">Financial Velocity & Efficiency</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center gap-1.5 text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
+                        <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" /> Spent
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs font-black text-orange-600 bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-100">
+                         CPC Trend
+                      </span>
+                    </div>
+                  </div>
+                  <div className="h-[400px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={dailyTrendData}>
+                        <defs>
+                          <linearGradient id="colorSpent" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                        <XAxis dataKey="date" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="left" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="right" orientation="right" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}/>
-                        <Legend wrapperStyle={{ paddingTop: '20px' }}/>
-                        <Bar yAxisId="left" dataKey="execution_amount" name="집행액" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
-                        <Line yAxisId="right" type="monotone" dataKey="actual_cpc" name="CPC" stroke="#f59e0b" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
+                        <XAxis dataKey="date" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} dy={10} />
+                        <YAxis yAxisId="left" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                        <YAxis yAxisId="right" orientation="right" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', fontWeight: 800 }}/>
+                        <Bar yAxisId="left" dataKey="execution_amount" name="Daily Spend" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={32} />
+                        <Line yAxisId="right" type="monotone" dataKey="actual_cpc" name="Actual CPC" stroke="#f59e0b" strokeWidth={4} dot={{r: 6, fill: '#fff', stroke: '#f59e0b', strokeWidth: 3}} activeDot={{r: 8, strokeWidth: 0}} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </Card>
 
-                <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
-                  <h3 className="text-lg font-bold text-slate-800 mb-6">DMP 예산 점유율</h3>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={dmpShareData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                          nameKey="name"
-                        >
-                          {dmpShareData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#64748b'][index % 5]} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
-                      </PieChart>
-                    </ResponsiveContainer>
+                <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50 flex flex-col">
+                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-8">Provider Dominance</h3>
+                  <div className="grow flex items-center">
+                    <div className="h-[350px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={dmpShareData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={80}
+                            outerRadius={110}
+                            paddingAngle={8}
+                            dataKey="value"
+                            nameKey="name"
+                            stroke="none"
+                          >
+                            {dmpShareData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#0f172a'][index % 5]} className="hover:opacity-80 transition-opacity outline-none" />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend wrapperStyle={{ paddingTop: '32px' }} iconType="circle" />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 </Card>
               </div>
 
               {budgetProgressData.length > 0 && (
-                <div className="mt-6">
-                  <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
-                    <h3 className="text-lg font-bold text-slate-800 mb-6">항목별 예산 소급율 (Budget Fulfillment)</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {budgetProgressData.map((item) => (
-                        <div key={item.id} className="space-y-3 bg-white/40 p-4 rounded-2xl border border-white/60">
-                          <div className="flex justify-between items-end">
-                            <span className="text-sm font-bold text-slate-700 truncate max-w-[150px]">{item.name}</span>
-                            <span className="text-xs font-medium text-blue-600">{item.percent.toFixed(1)}%</span>
-                          </div>
-                          <Progress value={item.percent} className="h-2 bg-slate-100" />
-                          <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                            <span>₩{Math.round(item.spent).toLocaleString()}</span>
-                            <span>/ ₩{Math.round(item.budget).toLocaleString()}</span>
-                          </div>
+                <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
+                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-10">Strategic Budget Alignment</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                    {budgetProgressData.map((item) => (
+                      <div key={item.id} className="space-y-4 bg-white/40 p-6 rounded-3xl border border-white/60 group hover:shadow-xl transition-all">
+                        <div className="flex justify-between items-end">
+                          <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px]">{item.name}</span>
+                          <span className={cn(
+                            "text-xs font-black px-2 py-1 rounded-lg",
+                            item.percent > 90 ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"
+                          )}>{item.percent.toFixed(1)}%</span>
                         </div>
-                      ))}
-                    </div>
-                  </Card>
-                </div>
+                        <Progress value={item.percent} className="h-2.5 bg-slate-100/50" indicatorClassName={item.percent > 90 ? "bg-red-500" : "bg-blue-600"} />
+                        <div className="flex justify-between text-[11px] font-black text-slate-400 font-outfit tracking-tighter">
+                          <span className="text-slate-900">₩{Math.round(item.spent).toLocaleString()}</span>
+                          <span>OF ₩{Math.round(item.budget).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
               )}
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                 {/* Age & Gender Distribution */}
-                 <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
-                  <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-                    <Users size={20} className="text-blue-500"/> 연령 및 성별 분포 (집행액 기준)
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                 <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
+                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
+                    <Users size={24} className="text-blue-500"/> Audience Intelligence
                   </h3>
-                  <div className="grid grid-cols-2 gap-4 h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={ageData} innerRadius={40} outerRadius={60} dataKey="value" nameKey="name">
-                          {ageData.map((_, i) => <Cell key={i} fill={['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe'][i % 4]} />)}
-                        </Pie>
-                        <Tooltip />
-                        <Legend verticalAlign="bottom" height={36}/>
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={genderData} innerRadius={40} outerRadius={60} dataKey="value" nameKey="name">
-                          {genderData.map((_, i) => <Cell key={i} fill={['#ec4899', '#3b82f6', '#94a3b8'][i % 3]} />)}
-                        </Pie>
-                        <Tooltip />
-                        <Legend verticalAlign="bottom" height={36}/>
-                      </PieChart>
-                    </ResponsiveContainer>
+                  <div className="grid grid-cols-2 gap-8 h-[300px]">
+                    <div className="flex flex-col">
+                      <p className="text-[10px] font-black text-center text-slate-400 uppercase tracking-widest mb-4">Age Lifecycle</p>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={ageData} innerRadius={50} outerRadius={80} dataKey="value" nameKey="name" stroke="none">
+                            {ageData.map((_, i) => <Cell key={i} fill={['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe'][i % 4]} />)}
+                          </Pie>
+                          <Tooltip />
+                          <Legend verticalAlign="bottom" height={36} iconType="rect" iconSize={8}/>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex flex-col">
+                      <p className="text-[10px] font-black text-center text-slate-400 uppercase tracking-widest mb-4">Gender Binary</p>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={genderData} innerRadius={50} outerRadius={80} dataKey="value" nameKey="name" stroke="none">
+                            {genderData.map((_, i) => <Cell key={i} fill={['#f472b6', '#3b82f6', '#94a3b8'][i % 3]} />)}
+                          </Pie>
+                          <Tooltip />
+                          <Legend verticalAlign="bottom" height={36} iconType="rect" iconSize={8}/>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 </Card>
 
-                {/* Top Creatives */}
-                <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl">
-                  <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-                    <LayoutIcon size={20} className="text-purple-500"/> 소재별 성과 TOP 10 (Spend vs CTR)
+                <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
+                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
+                    <LayoutIcon size={24} className="text-purple-500"/> TOP 10 Creative Impact
                   </h3>
-                  <div className="h-[250px]">
+                  <div className="h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={creativeData} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                         <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 10}} />
+                        <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 10, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
                         <Tooltip />
-                        <Bar dataKey="spend" name="집행액" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={12} />
-                        <Line dataKey="ctr" name="CTR (%)" stroke="#f59e0b" strokeWidth={2} />
+                        <Bar dataKey="spend" name="Investment" fill="#8b5cf6" radius={[0, 6, 6, 0]} barSize={16} />
+                        <Line dataKey="ctr" name="CTR Performance" stroke="#f59e0b" strokeWidth={3} dot={false} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </Card>
               </div>
 
-              {/* Performance Comparison Detail */}
-              <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl mt-6">
-                <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-                  <BarChart4 size={20} className="text-green-500"/> 매체별 목표 달성률 상세 비교
+              <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
+                <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
+                  <BarChart4 size={24} className="text-green-500"/> Matrix Comparison Analytics
                 </h3>
-                <div className="overflow-x-auto">
+                <div className="overflow-hidden rounded-[32px] border border-slate-200">
                   <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>항목 (매체/캠페인)</TableHead>
-                        <TableHead className="text-right">집행액 / 예산</TableHead>
-                        <TableHead className="text-right">실제 CPC / 목표</TableHead>
-                        <TableHead className="text-right">실제 CTR / 목표</TableHead>
-                        <TableHead className="text-center">상태</TableHead>
+                    <TableHeader className="bg-slate-900 border-none">
+                      <TableRow className="hover:bg-slate-900 border-none">
+                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Vertical Solution</TableHead>
+                        <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Budget Fulfillment</TableHead>
+                        <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">CPM/CPC Efficiency</TableHead>
+                        <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Interaction rate</TableHead>
+                        <TableHead className="text-center text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Fulfillment Level</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -835,37 +915,33 @@ export const ReportCenter: React.FC = () => {
                         const subSpent = subData.reduce((s, d) => s + d.execution_amount, 0);
                         const subClicks = subData.reduce((s, d) => s + d.clicks, 0);
                         const subImps = subData.reduce((s, d) => s + d.impressions, 0);
-                        
                         const actualCpc = subClicks > 0 ? subSpent / subClicks : 0;
                         const actualCtr = subImps > 0 ? (subClicks / subImps) * 100 : 0;
-                        
                         const cpcStatus = sub.target_cpc ? (actualCpc <= sub.target_cpc ? 'Good' : 'High') : 'N/A';
-                        const ctrStatus = sub.target_ctr ? (actualCtr >= sub.target_ctr ? 'Good' : 'Low') : 'N/A';
 
                         return (
-                          <TableRow key={sub.id}>
-                            <TableCell className="font-medium">{sub.excel_name || sub.media}</TableCell>
-                            <TableCell className="text-right">
-                              <span className="text-slate-900 font-bold">{Math.round(subSpent).toLocaleString()}</span>
-                              <span className="text-slate-400 text-xs"> / {sub.budget?.toLocaleString()}</span>
+                          <TableRow key={sub.id} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none">
+                            <TableCell className="py-6 px-8 font-black text-slate-900">{sub.excel_name || sub.media}</TableCell>
+                            <TableCell className="py-6 px-8 text-right">
+                              <span className="text-slate-900 font-black block leading-none">₩{Math.round(subSpent).toLocaleString()}</span>
+                              <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">TARGET ₩{sub.budget?.toLocaleString()}</span>
                             </TableCell>
-                            <TableCell className="text-right">
-                              <span className={cn("font-bold", cpcStatus === 'Good' ? 'text-green-600' : 'text-amber-600')}>
+                            <TableCell className="py-6 px-8 text-right">
+                              <span className={cn("font-black block leading-none", cpcStatus === 'Good' ? 'text-green-600' : 'text-orange-600')}>
                                 ₩{Math.round(actualCpc).toLocaleString()}
                               </span>
-                              <span className="text-slate-400 text-xs"> / {sub.target_cpc || '-'}</span>
+                              <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">GOAL ₩{sub.target_cpc || '-'}</span>
                             </TableCell>
-                            <TableCell className="text-right">
-                              <span className={cn("font-bold", ctrStatus === 'Good' ? 'text-green-600' : 'text-amber-600')}>
-                                {actualCtr.toFixed(2)}%
-                              </span>
-                              <span className="text-slate-400 text-xs"> / {sub.target_ctr || '-'}%</span>
+                            <TableCell className="py-6 px-8 text-right">
+                              <span className="text-slate-900 font-black block leading-none">{actualCtr.toFixed(2)}%</span>
+                              <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">GOAL {sub.target_ctr || '-'}%</span>
                             </TableCell>
-                            <TableCell className="text-center">
+                            <TableCell className="py-6 px-8 text-center">
                               <Badge className={cn(
-                                progress && progress.percent > 90 ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"
+                                "font-black px-3 py-1 rounded-lg border-none shadow-sm",
+                                progress && progress.percent > 90 ? "bg-red-500 text-white" : "bg-blue-600 text-white"
                               )}>
-                                {progress ? `${progress.percent.toFixed(0)}% 소진` : 'N/A'}
+                                {progress ? `${progress.percent.toFixed(0)}% PACING` : 'N/A'}
                               </Badge>
                             </TableCell>
                           </TableRow>
@@ -876,27 +952,26 @@ export const ReportCenter: React.FC = () => {
                 </div>
               </Card>
 
-              {/* User Insights */}
-              <Card className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/40 shadow-xl mt-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                    <MessageSquare size={20} className="text-blue-500"/> 캠페인 분석 인사이트
+              <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
+                <div className="flex justify-between items-center mb-8">
+                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3">
+                    <MessageSquare size={24} className="text-blue-500"/> Intelligence Synthesis
                   </h3>
-                  <Button size="sm" onClick={handleSaveInsights} className="bg-blue-600 hover:bg-blue-700 rounded-xl">
-                    인사이트 저장
+                  <Button onClick={handleSaveInsights} className="bg-slate-900 hover:bg-black text-white px-8 rounded-2xl font-black border-b-4 border-slate-700 active:translate-y-[2px] active:border-b-0 transition-all">
+                    Commit Insights
                   </Button>
                 </div>
                 <textarea 
-                  className="w-full min-h-[150px] p-4 rounded-2xl border border-slate-200 bg-white/50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-slate-700 placeholder:text-slate-300"
-                  placeholder="분석 결과와 향후 전략을 기록하세요..."
+                  className="w-full min-h-[200px] p-8 rounded-[32px] border-2 border-slate-100 bg-white/40 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:outline-none transition-all text-slate-700 text-lg font-medium placeholder:text-slate-300 shadow-inner"
+                  placeholder="Synthesize performance results and outline strategic pivots..."
                   value={campaignInsights}
                   onChange={(e) => setCampaignInsights(e.target.value)}
                 />
               </Card>
-            </TabsContent>
-          </AnimatePresence>
-        </div>
-      </Tabs>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 };
