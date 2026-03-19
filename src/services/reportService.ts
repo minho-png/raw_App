@@ -4,12 +4,253 @@ export class ReportService {
   public static generateHtmlReport(
     campaign: CampaignConfig,
     data: PerformanceRecord[],
-    status: BudgetStatus
+    status: BudgetStatus,
+    layout?: string[]
   ): string {
     const today = new Date().toLocaleDateString();
     
     // Sort data for the table
     const sortedData = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const dashboardLayout = (layout && layout.length > 0)
+      ? Array.from(new Set(layout))
+      : (campaign.dashboard_layout && campaign.dashboard_layout.length > 0
+        ? Array.from(new Set(campaign.dashboard_layout))
+        : ['trend', 'share', 'budget', 'audience', 'creative', 'matrix', 'insights']);
+
+    const sumBy = <T extends string>(rows: PerformanceRecord[], keyFn: (r: PerformanceRecord) => T) => {
+      const acc = new Map<T, { spend: number; clicks: number; imps: number }>();
+      for (const r of rows) {
+        const k = keyFn(r);
+        const prev = acc.get(k) || { spend: 0, clicks: 0, imps: 0 };
+        prev.spend += Number(r.execution_amount ?? r.cost ?? 0) || 0;
+        prev.clicks += Number(r.clicks ?? 0) || 0;
+        prev.imps += Number(r.impressions ?? 0) || 0;
+        acc.set(k, prev);
+      }
+      return acc;
+    };
+
+    const renderSection = (id: string) => {
+      if (id === 'trend') {
+        return `
+          <h3>📈 Trend (Daily)</h3>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th class="text-right">Execution</th>
+                  <th class="text-right">Clicks</th>
+                  <th class="text-right">Impressions</th>
+                  <th class="text-right">CPC</th>
+                  <th class="text-right">CTR</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(() => {
+                  const daily = sumBy(sortedData, (r) => new Date(r.date).toISOString().split('T')[0] as any);
+                  const rows = Array.from(daily.entries())
+                    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+                    .slice(0, 31);
+                  return rows.map(([date, v]) => {
+                    const cpc = v.clicks > 0 ? v.spend / v.clicks : 0;
+                    const ctr = v.imps > 0 ? (v.clicks / v.imps) * 100 : 0;
+                    return `
+                      <tr>
+                        <td class="font-mono">${date}</td>
+                        <td class="text-right bold">₩${Math.round(v.spend).toLocaleString()}</td>
+                        <td class="text-right">${Math.round(v.clicks).toLocaleString()}</td>
+                        <td class="text-right">${Math.round(v.imps).toLocaleString()}</td>
+                        <td class="text-right">₩${Math.round(cpc).toLocaleString()}</td>
+                        <td class="text-right">${ctr.toFixed(2)}%</td>
+                      </tr>
+                    `;
+                  }).join('');
+                })()}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      if (id === 'share') {
+        const byDmp = sumBy(sortedData, (r) => (String(r.dmp || r.dmp_type || 'DIRECT') as any));
+        const rows = Array.from(byDmp.entries()).sort((a, b) => b[1].spend - a[1].spend).slice(0, 20);
+        return `
+          <h3>🧩 Share (DMP)</h3>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>DMP</th>
+                  <th class="text-right">Execution</th>
+                  <th class="text-right">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(() => {
+                  const total = rows.reduce((s, [, v]) => s + v.spend, 0) || 1;
+                  return rows.map(([name, v]) => {
+                    const share = (v.spend / total) * 100;
+                    return `
+                      <tr>
+                        <td class="bold">${name}</td>
+                        <td class="text-right">₩${Math.round(v.spend).toLocaleString()}</td>
+                        <td class="text-right">${share.toFixed(1)}%</td>
+                      </tr>
+                    `;
+                  }).join('');
+                })()}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      if (id === 'budget') {
+        const subs = (campaign.sub_campaigns || []).filter(s => s.enabled !== false);
+        if (subs.length === 0) return '';
+        return `
+          <h3>💳 Budget Alignment</h3>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Media</th>
+                  <th>Mapping</th>
+                  <th class="text-right">Budget</th>
+                  <th class="text-right">Execution</th>
+                  <th class="text-right">Pacing</th>
+                  <th>Placement</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${subs.map((sub) => {
+                  const mKey = sub.mapping_value || sub.excel_name || '';
+                  const rows = sortedData.filter(r => (mKey ? (r.excel_campaign_name === mKey || r.mapping_value === mKey) : r.media === sub.media));
+                  const spend = rows.reduce((s, r) => s + (Number(r.execution_amount ?? r.cost ?? 0) || 0), 0);
+                  const pacing = sub.budget > 0 ? (spend / sub.budget) * 100 : 0;
+                  const placements = Array.from(new Set(rows.map(r => String(r.placement || 'Unknown')))).slice(0, 3).join(', ');
+                  const statusClass = pacing > 90 ? 'text-red' : 'text-blue';
+                  return `
+                    <tr>
+                      <td class="bold">${sub.media}</td>
+                      <td>${mKey || '-'}</td>
+                      <td class="text-right">₩${Math.round(sub.budget || 0).toLocaleString()}</td>
+                      <td class="text-right">₩${Math.round(spend).toLocaleString()}</td>
+                      <td class="text-right ${statusClass}">${pacing.toFixed(1)}%</td>
+                      <td>${placements || 'Unknown'}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      if (id === 'audience') {
+        const byAge = sumBy(sortedData, (r) => (String((r as any).age || 'Unknown') as any));
+        const byGender = sumBy(sortedData, (r) => (String((r as any).gender || 'Unknown') as any));
+        const ageRows = Array.from(byAge.entries()).sort((a, b) => b[1].spend - a[1].spend).slice(0, 8);
+        const genderRows = Array.from(byGender.entries()).sort((a, b) => b[1].spend - a[1].spend).slice(0, 8);
+        return `
+          <h3>👥 Audience</h3>
+          <div class="summary-grid" style="grid-template-columns: repeat(2, 1fr);">
+            <div class="card">
+              <p class="card-label">Age (Top)</p>
+              ${ageRows.map(([k, v]) => `<p style="display:flex;justify-content:space-between;margin-top:6px;"><span class="bold">${k}</span><span class="font-mono">₩${Math.round(v.spend).toLocaleString()}</span></p>`).join('')}
+            </div>
+            <div class="card">
+              <p class="card-label">Gender (Top)</p>
+              ${genderRows.map(([k, v]) => `<p style="display:flex;justify-content:space-between;margin-top:6px;"><span class="bold">${k}</span><span class="font-mono">₩${Math.round(v.spend).toLocaleString()}</span></p>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      if (id === 'creative') {
+        const byCreative = sumBy(sortedData, (r) => (String((r as any).creative_name || 'N/A') as any));
+        const rows = Array.from(byCreative.entries()).sort((a, b) => b[1].spend - a[1].spend).slice(0, 10);
+        return `
+          <h3>🎨 Creative (Top 10)</h3>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Creative</th>
+                  <th class="text-right">Execution</th>
+                  <th class="text-right">Clicks</th>
+                  <th class="text-right">Impressions</th>
+                  <th class="text-right">CTR</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(([name, v]) => {
+                  const ctr = v.imps > 0 ? (v.clicks / v.imps) * 100 : 0;
+                  return `
+                    <tr>
+                      <td class="bold">${name}</td>
+                      <td class="text-right">₩${Math.round(v.spend).toLocaleString()}</td>
+                      <td class="text-right">${Math.round(v.clicks).toLocaleString()}</td>
+                      <td class="text-right">${Math.round(v.imps).toLocaleString()}</td>
+                      <td class="text-right">${ctr.toFixed(2)}%</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      if (id === 'matrix') {
+        // Keep lightweight: placement-aware rollup (campaign x placement)
+        const byPlacement = sumBy(sortedData, (r) => (String(r.placement || 'Unknown') as any));
+        const rows = Array.from(byPlacement.entries()).sort((a, b) => b[1].spend - a[1].spend).slice(0, 20);
+        return `
+          <h3>🧱 Placement Matrix</h3>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Placement</th>
+                  <th class="text-right">Execution</th>
+                  <th class="text-right">Clicks</th>
+                  <th class="text-right">Impressions</th>
+                  <th class="text-right">CTR</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(([p, v]) => {
+                  const ctr = v.imps > 0 ? (v.clicks / v.imps) * 100 : 0;
+                  return `
+                    <tr>
+                      <td class="bold">${p}</td>
+                      <td class="text-right">₩${Math.round(v.spend).toLocaleString()}</td>
+                      <td class="text-right">${Math.round(v.clicks).toLocaleString()}</td>
+                      <td class="text-right">${Math.round(v.imps).toLocaleString()}</td>
+                      <td class="text-right">${ctr.toFixed(2)}%</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      if (id === 'insights') {
+        return campaign.insights ? `
+          <div class="insights">
+            <h3 style="margin-bottom: 12px; color: var(--primary);">💡 Campaign Insights</h3>
+            <p style="color: var(--slate-600); white-space: pre-wrap; font-size: 15px; font-weight: 500;">${campaign.insights}</p>
+          </div>
+        ` : '';
+      }
+
+      return '';
+    };
 
     return `
 <!DOCTYPE html>
@@ -197,6 +438,8 @@ export class ReportService {
         .font-mono { font-family: monospace; font-weight: 600; }
         .text-right { text-align: right; }
         .bold { font-weight: 800; color: var(--slate-900); }
+        .text-blue { color: var(--primary); font-weight: 800; }
+        .text-red { color: #dc2626; font-weight: 800; }
 
         .badge {
             display: inline-block;
@@ -275,40 +518,7 @@ export class ReportService {
             </div>
         </div>
 
-        <h3>📅 Daily Performance Log</h3>
-        <div class="table-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Campaign Group</th>
-                        <th>DMP</th>
-                        <th class="text-right">Impressions</th>
-                        <th class="text-right">Clicks</th>
-                        <th class="text-right">Execution Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${sortedData.map(row => `
-                        <tr>
-                            <td class="font-mono">${new Date(row.date).toISOString().split('T')[0]}</td>
-                            <td class="bold">${row.excel_campaign_name || row.ad_group_name || '-'}</td>
-                            <td><span class="badge">${row.dmp || row.dmp_type || 'DIRECT'}</span></td>
-                            <td class="text-right">${row.impressions.toLocaleString()}</td>
-                            <td class="text-right">${row.clicks.toLocaleString()}</td>
-                            <td class="text-right bold">₩${Math.round(row.cost || row.execution_amount).toLocaleString()}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>
-
-        ${campaign.insights ? `
-            <div class="insights">
-                <h3 style="margin-bottom: 12px; color: var(--primary);">💡 Campaign Insights</h3>
-                <p style="color: var(--slate-600); white-space: pre-wrap; font-size: 15px; font-weight: 500;">${campaign.insights}</p>
-            </div>
-        ` : ''}
+        ${dashboardLayout.map(renderSection).join('<div style="height: 28px;"></div>')}
 
         <div class="footer">
             &copy; 2026 GFA RAW MASTER PRO. All rights reserved. <br/>

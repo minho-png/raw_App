@@ -45,7 +45,7 @@ export interface PerformanceRecord {
   supply_value?: number;    // 원본 공급가액
   is_edited?: boolean;        // 사용자가 수정한 데이터인지 여부
   is_raw?: boolean;           // Added: raw data vs report data
-  placement?: string;
+  placement?: string;         // 게재지면(필수): 누락 시 CalculationService에서 기본값 주입
   group_id?: string;          // Link grouped reports back to source groups
   [key: string]: any; // Catch-all for other CSV columns
 }

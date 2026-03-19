@@ -3,6 +3,91 @@ import Papa from 'papaparse';
 import { PerformanceRecord, MediaProvider } from '../types';
 
 export class CalculationService {
+  private static STANDARD_ALIASES: Record<string, string[]> = {
+    date_raw: ['날짜', '기간', 'Date', '일자', '집행일', 'Day'],
+    ad_group_name: ['광고 그룹', '광고 그룹 이름', '광고그룹명', 'Ad Group', '그룹'],
+    excel_campaign_name: ['캠페인', '캠페인명', '캠페인 이름', 'Campaign', 'Campaign Name'],
+    impressions: ['노출', '노출수', 'Impressions', 'Imps'],
+    clicks: ['클릭', '클릭수', 'Clicks'],
+    supply_value: ['집행 금액(VAT 별도)', '총 비용', '공급가액', '집행금액', 'Spend', 'Cost'],
+    placement: ['게재지면', '게재위치', '노출지면', 'Placement'],
+    creative_name: ['소재', '소재 이름', '소재명', 'Creative'],
+  };
+
+  private static normalizeHeader(value: any) {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/[_\-]/g, '');
+  }
+
+  private static buildFuzzyRenameMap(currentCols: string[]) {
+    const renameObj: Record<string, string> = {};
+    const normalizedCols = currentCols.map((c) => ({ original: c, norm: this.normalizeHeader(c) }));
+
+    const matchedTarget = new Set<string>();
+    const matchedSource = new Set<string>();
+
+    const tryMatch = (target: string, aliases: string[]) => {
+      if (matchedTarget.has(target)) return;
+      const aliasNorms = aliases.map(a => this.normalizeHeader(a));
+
+      // 1) exact normalized match
+      for (const col of normalizedCols) {
+        if (matchedSource.has(col.original)) continue;
+        if (aliasNorms.includes(col.norm)) {
+          renameObj[col.original] = target;
+          matchedTarget.add(target);
+          matchedSource.add(col.original);
+          return;
+        }
+      }
+
+      // 2) contains match (fuzzy)
+      for (const col of normalizedCols) {
+        if (matchedSource.has(col.original)) continue;
+        const hit = aliasNorms.some(a => col.norm.includes(a) || a.includes(col.norm));
+        if (hit) {
+          renameObj[col.original] = target;
+          matchedTarget.add(target);
+          matchedSource.add(col.original);
+          return;
+        }
+      }
+    };
+
+    Object.entries(this.STANDARD_ALIASES).forEach(([target, aliases]) => tryMatch(target, aliases));
+    return renameObj;
+  }
+
+  private static parseDateNormalized(raw: any): Date {
+    if (raw instanceof Date) return raw;
+    const s = String(raw ?? '').trim();
+    if (!s) return new Date();
+
+    // Normalize separators: 2024.03.01 / 2024/03/01 -> 2024-03-01
+    let normalized = s.replace(/[\.\/]/g, '-').replace(/\s+/g, '');
+
+    // Handle YY-MM-DD (e.g., 24-03-01 -> 2024-03-01)
+    const m = normalized.match(/^(\d{2})-(\d{1,2})-(\d{1,2})$/);
+    if (m) {
+      const yy = Number(m[1]);
+      const yyyy = yy >= 70 ? 1900 + yy : 2000 + yy;
+      normalized = `${yyyy}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    }
+
+    // Handle YYYYMMDD
+    const compact = normalized.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (compact) {
+      normalized = `${compact[1]}-${compact[2]}-${compact[3]}`;
+    }
+
+    const d = new Date(normalized);
+    if (isNaN(d.getTime())) return new Date(); // fallback to prevent data loss
+    return d;
+  }
+
   /**
    * parseCsv: Parses raw CSV string into an array of objects
    */
@@ -81,22 +166,19 @@ export class CalculationService {
       if (columnMapping.clicks && currentCols.includes(columnMapping.clicks)) renameObj[columnMapping.clicks] = 'clicks';
       if (columnMapping.supply_value && currentCols.includes(columnMapping.supply_value)) renameObj[columnMapping.supply_value] = 'supply_value';
     } else {
-      const columnMap: Record<string, string> = {
-        '날짜': 'date_raw', '기간': 'date_raw',
-        '광고 그룹': 'ad_group_name', '광고 그룹 이름': 'ad_group_name',
-        '노출': 'impressions', '클릭': 'clicks',
-        '집행 금액(VAT 별도)': 'supply_value', '총 비용': 'supply_value',
-        '캠페인': 'excel_campaign_name',
-        '소재': 'creative_name', '소재 이름': 'creative_name',
-        '연령': 'age',
-        '성별': 'gender',
-        '기기': 'device'
-      };
-      Object.keys(columnMap).forEach(key => {
-        if (currentCols.includes(key)) renameObj[key] = columnMap[key];
-      });
+      Object.assign(renameObj, this.buildFuzzyRenameMap(currentCols));
     }
     df.rename(renameObj, { inplace: true });
+
+    // 1.1 placement is required: inject default if missing
+    if (!df.columns.includes('placement')) {
+      df.addColumn('placement', new Array(df.shape[0]).fill('Unknown'), { inplace: true });
+    }
+
+    // 1.2 placement must be included in grouping
+    if (!groupByColumns.includes('placement')) {
+      groupByColumns = [...groupByColumns, 'placement'];
+    }
 
     // 2. DMP Detection
     const detectDMP = (name: any) => {
@@ -140,14 +222,7 @@ export class CalculationService {
       executionAmounts.push(executionAmt);
       netAmounts.push(baseValue);
 
-      const rawDate = row.date_raw;
-      let parsedDate: Date;
-      if (rawDate instanceof Date) {
-        parsedDate = rawDate;
-      } else {
-        const dateStr = String(rawDate).replace(/\./g, '-');
-        parsedDate = new Date(dateStr);
-      }
+      const parsedDate = this.parseDateNormalized(row.date_raw);
 
       // 2.1 Custom DMP Detection based on config mapping
       let customDmp = row.dmp_type;
@@ -171,6 +246,7 @@ export class CalculationService {
         cost: executionAmt, // Updated: DB "비용" 컬럼 (수수료 적용된 금액)
         supply_value: supplyVal, // 원본 공급가액
         is_raw: true,
+        placement: row.placement || 'Unknown',
         creative_name: row.creative_name,
         age: row.age,
         gender: row.gender,
@@ -199,12 +275,7 @@ export class CalculationService {
         const customDmp = row.dmp || dmp;
         
         // Handle date_raw from grouping (might be string or Date)
-        let reportDate: Date;
-        if (row.date_raw instanceof Date) {
-          reportDate = row.date_raw;
-        } else {
-          reportDate = new Date(String(row.date_raw).replace(/\./g, '-'));
-        }
+        const reportDate = this.parseDateNormalized(row.date_raw);
 
         reportRecords.push({
           _id: `temp_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`,
@@ -224,6 +295,7 @@ export class CalculationService {
           cost: row.cost || 0,
           supply_value: row.supply_value || 0,
           is_raw: false,
+          placement: row.placement || 'Unknown',
           creative_name: row.creative_name,
           age: row.age,
           gender: row.gender,

@@ -102,6 +102,50 @@ export const ReportCenter: React.FC = () => {
     setCampaignInsights(selectedCampaign?.insights || '');
   }, [selectedCampaignId, selectedCampaign?.insights]);
 
+  // Persist in-progress work per campaign (back/forward, tab switch)
+  useEffect(() => {
+    if (!selectedCampaignId) return;
+    const key = `gfa:reportcenter:${selectedCampaignId}`;
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.rawParsedData)) setRawParsedData(parsed.rawParsedData);
+      if (Array.isArray(parsed.processedData)) setProcessedData(parsed.processedData);
+      if (Array.isArray(parsed.groupByColumns)) setGroupByColumns(parsed.groupByColumns);
+      if (typeof parsed.activeMedia === 'string') setActiveMedia(parsed.activeMedia as MediaProvider);
+      if (typeof parsed.activeTabStep === 'string') setActiveTabStep(parsed.activeTabStep);
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCampaignId]);
+
+  const persistDraft = useMemo(() => {
+    return debounce((snapshot: any) => {
+      if (!selectedCampaignId) return;
+      const key = `gfa:reportcenter:${selectedCampaignId}`;
+      try {
+        sessionStorage.setItem(key, JSON.stringify(snapshot));
+      } catch {
+        // ignore
+      }
+    }, 250);
+  }, [selectedCampaignId]);
+
+  useEffect(() => {
+    persistDraft({
+      rawParsedData,
+      processedData,
+      groupByColumns,
+      activeMedia,
+      activeTabStep,
+    });
+    return () => {
+      persistDraft.cancel();
+    };
+  }, [rawParsedData, processedData, groupByColumns, activeMedia, activeTabStep, persistDraft]);
+
   const defaultDashboardLayout = useMemo(
     () => ['trend', 'share', 'budget', 'audience', 'creative', 'matrix', 'insights'],
     []
@@ -384,7 +428,12 @@ export const ReportCenter: React.FC = () => {
     if (!selectedCampaign || filteredData.length === 0) return;
     
     try {
-      const html = ReportService.generateHtmlReport(selectedCampaign, filteredData, budgetStatus);
+      const html = ReportService.generateHtmlReport(
+        selectedCampaign,
+        filteredData,
+        budgetStatus,
+        selectedCampaign.dashboard_layout
+      );
       const blob = new Blob([html], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
