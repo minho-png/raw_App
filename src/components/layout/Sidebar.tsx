@@ -186,14 +186,18 @@ export const Sidebar = () => {
                   onChange={(e) => setTempName(e.target.value)}
                   onKeyDown={async (e) => {
                     if (e.key === 'Enter') {
-                      setIsSyncing(true); // Prevent background sync overwrite
                       const updated = { ...editingCampaign, campaign_name: tempName, updated_at: new Date() };
-                      const result = await saveCampaignAction(updated);
-                      if (result.success && result.campaigns) {
-                        setCampaigns(result.campaigns);
-                      }
-                      setIsSyncing(false);
                       setIsEditModalOpen(false);
+                      updateCampaign(updated); // Optimistic update before API
+                      setIsSyncing(true); // Prevent background sync overwrite
+                      try {
+                        const result = await saveCampaignAction(updated);
+                        if (result.success && result.campaigns) {
+                          setCampaigns(result.campaigns);
+                        }
+                      } finally {
+                        setIsSyncing(false);
+                      }
                     }
                   }}
                 />
@@ -210,15 +214,19 @@ export const Sidebar = () => {
                   className="flex-1 rounded-xl h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold"
                   onClick={async () => {
                     if (editingCampaign) {
-                      setIsSyncing(true);
                       const updated = { ...editingCampaign, campaign_name: tempName, updated_at: new Date() };
-                      const result = await saveCampaignAction(updated);
-                      if (result.success && result.campaigns) {
-                        setCampaigns(result.campaigns);
+                      setIsEditModalOpen(false);
+                      updateCampaign(updated); // Optimistic update before API
+                      setIsSyncing(true);
+                      try {
+                        const result = await saveCampaignAction(updated);
+                        if (result.success && result.campaigns) {
+                          setCampaigns(result.campaigns);
+                        }
+                      } finally {
+                        setIsSyncing(false);
                       }
-                      setIsSyncing(false);
                     }
-                    setIsEditModalOpen(false);
                   }}
                 >
                   저장

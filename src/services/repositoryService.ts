@@ -3,12 +3,19 @@ import { PerformanceRecord } from '@/types';
 
 export class RepositoryService {
   private dbName = 'gfa_master_pro';
-  private collectionName = 'performance_data';
 
   constructor(private client: MongoClient) {}
 
-  private get collection(): Collection<PerformanceRecord> {
-    return this.client.db(this.dbName).collection(this.collectionName);
+  private get rawCollection(): Collection<PerformanceRecord> {
+    return this.client.db(this.dbName).collection('raw_metrics');
+  }
+
+  private get reportCollection(): Collection<PerformanceRecord> {
+    return this.client.db(this.dbName).collection('processed_reports');
+  }
+
+  private get settlementCollection(): Collection<PerformanceRecord> {
+    return this.client.db(this.dbName).collection('dmp_settlements');
   }
 
   private get campaignCollection(): Collection<any> {
@@ -26,43 +33,29 @@ export class RepositoryService {
   public async upsertCampaignData(data: PerformanceRecord[]): Promise<{ deletedCount: number; insertedCount: number }> {
     if (data.length === 0) return { deletedCount: 0, insertedCount: 0 };
 
-    // 1. Identify all unique { campaign_id, media, date } combinations in the input
-    const uniqueKeys = data.reduce((acc, curr) => {
-      const key = `${curr.campaign_id}|${curr.media}|${curr.date.toISOString()}|${!!curr.is_raw}`;
-      if (!acc.has(key)) {
-        acc.set(key, {
-          campaign_id: curr.campaign_id,
-          media: curr.media,
-          date: curr.date,
-          is_raw: !!curr.is_raw
-        });
-      }
-      return acc;
-    }, new Map<string, { campaign_id: string; media: any; date: Date; is_raw: boolean }>());
+    const campaignId = data[0].campaign_id;
+    const affectedMedias = Array.from(new Set(data.map(d => d.media).filter(Boolean)));
+    const affectedDates = Array.from(
+      new Set(
+        data
+          .map(d => new Date(d.date).toISOString())
+          .filter(Boolean)
+      )
+    ).map(d => new Date(d));
 
-    // 2. Perform deletions for each unique combination found in the new data
-    let totalDeleted = 0;
-    
-    // Using $or to delete all relevant records in one go
-    // Strict Unique Key: { campaign_id, media, date }
-    const deleteFilters = Array.from(uniqueKeys.values()).map(k => ({
-      campaign_id: k.campaign_id,
-      media: k.media,
-      date: k.date,
-      is_raw: k.is_raw
-    })) as Filter<PerformanceRecord>[];
+    const deleteFilter = {
+      campaign_id: campaignId,
+      media: { $in: affectedMedias },
+      date: { $in: affectedDates }
+    } as any;
 
-    const deleteResult = await this.collection.deleteMany({
-      $or: deleteFilters
-    } as any);
-    
-    totalDeleted = deleteResult.deletedCount || 0;
+    const rawDeleteResult = await this.rawCollection.deleteMany(deleteFilter);
+    await this.reportCollection.deleteMany(deleteFilter);
 
-    // 3. Insert the new data
-    const insertResult = await this.collection.insertMany(data);
+    const insertResult = await this.rawCollection.insertMany(data);
 
     return {
-      deletedCount: totalDeleted,
+      deletedCount: rawDeleteResult.deletedCount || 0,
       insertedCount: insertResult.insertedCount
     };
   }
@@ -84,7 +77,7 @@ export class RepositoryService {
       }
     ];
 
-    return await this.collection.aggregate(pipeline).toArray();
+    return await this.reportCollection.aggregate(pipeline).toArray();
   }
 
   /**
@@ -122,7 +115,7 @@ export class RepositoryService {
       { $sort: { total_execution: -1 } }
     ];
 
-    return await this.collection.aggregate(pipeline).toArray();
+    return await this.reportCollection.aggregate(pipeline).toArray();
   }
 
   /**
@@ -158,22 +151,23 @@ export class RepositoryService {
    */
   public async deleteCampaign(campaignId: string) {
     await this.campaignCollection.deleteOne({ campaign_id: campaignId });
-    return await this.collection.deleteMany({ campaign_id: campaignId });
+    await this.rawCollection.deleteMany({ campaign_id: campaignId });
+    await this.reportCollection.deleteMany({ campaign_id: campaignId });
+    return await this.settlementCollection.deleteMany({ campaign_id: campaignId });
   }
 
   /**
    * getPerformanceData: Fetches all performance records for a campaign.
    */
   public async getPerformanceData(campaignId: string) {
-    // Return only report data by default for the UI, or handle is_raw filtering elsewhere
-    return await this.collection.find({ campaign_id: campaignId, is_raw: { $ne: true } }).sort({ date: -1 }).toArray();
+    return await this.reportCollection.find({ campaign_id: campaignId }).sort({ date: -1 }).toArray();
   }
 
   /**
    * updatePerformanceData: Updates a single performance record.
    */
   public async updatePerformanceData(id: string, updates: Partial<PerformanceRecord>) {
-    return await this.collection.updateOne(
+    return await this.reportCollection.updateOne(
       { _id: new ObjectId(id) } as any,
       { $set: { ...updates, is_edited: true } }
     );

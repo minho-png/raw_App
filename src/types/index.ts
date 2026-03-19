@@ -23,6 +23,7 @@ export interface CampaignConfig {
   insights?: string;
   target_cpc?: number;
   target_ctr?: number;
+  dashboard_layout?: string[];
 }
 
 export interface PerformanceRecord {

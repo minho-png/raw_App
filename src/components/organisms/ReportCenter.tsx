@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sidebar } from '@/components/layout/Sidebar';
 import { BudgetPacingCards } from '@/components/molecules/BudgetPacingCards';
 import { FileUploader } from '@/components/molecules/FileUploader';
 import { Button } from "@/components/ui/button";
@@ -43,6 +42,24 @@ import { getCampaignsAction, saveCampaignAction } from '@/server/actions/campaig
 import { CalculationService } from "@/services/calculationService";
 import { BudgetSettingsModal } from "./BudgetSettingsModal";
 import { ReportService } from "@/services/reportService";
+import debounce from 'lodash/debounce';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 export const ReportCenter: React.FC = () => {
   const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab, refreshCampaigns, setCampaigns, setIsSyncing } = useCampaignStore();
@@ -84,6 +101,76 @@ export const ReportCenter: React.FC = () => {
   useEffect(() => {
     setCampaignInsights(selectedCampaign?.insights || '');
   }, [selectedCampaignId, selectedCampaign?.insights]);
+
+  const defaultDashboardLayout = useMemo(
+    () => ['trend', 'share', 'budget', 'audience', 'creative', 'matrix', 'insights'],
+    []
+  );
+
+  const dashboardLayout = useMemo(() => {
+    const layout = selectedCampaign?.dashboard_layout;
+    if (!layout || layout.length === 0) return defaultDashboardLayout;
+    const unique = Array.from(new Set(layout));
+    const withNewOnes = [...unique];
+    for (const id of defaultDashboardLayout) {
+      if (!withNewOnes.includes(id)) withNewOnes.push(id);
+    }
+    return withNewOnes;
+  }, [selectedCampaign?.dashboard_layout, defaultDashboardLayout]);
+
+  const debouncedSaveCampaign = useMemo(() => {
+    return debounce(async (updatedCampaign: any) => {
+      setIsSyncing(true);
+      try {
+        const result = await saveCampaignAction(updatedCampaign);
+        if (result.success && result.campaigns) {
+          setCampaigns(result.campaigns);
+        }
+      } finally {
+        setIsSyncing(false);
+      }
+    }, 1500);
+  }, [setCampaigns, setIsSyncing]);
+
+  useEffect(() => {
+    return () => {
+      debouncedSaveCampaign.cancel();
+    };
+  }, [debouncedSaveCampaign]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDashboardDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!selectedCampaign) return;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = dashboardLayout.indexOf(String(active.id));
+    const newIndex = dashboardLayout.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const nextLayout = arrayMove(dashboardLayout, oldIndex, newIndex);
+    const updated = { ...selectedCampaign, dashboard_layout: nextLayout, updated_at: new Date() };
+    updateCampaign(updated);
+    debouncedSaveCampaign(updated);
+  };
+
+  const SortableItem: React.FC<{ id: string; children: React.ReactNode }> = ({ id, children }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+    const style: React.CSSProperties = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.85 : 1,
+    };
+    return (
+      <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={cn("touch-none", isDragging && "z-10")}>
+        {children}
+      </div>
+    );
+  };
 
   const handleSaveInsights = async () => {
     if (!selectedCampaign) return;
@@ -408,7 +495,7 @@ export const ReportCenter: React.FC = () => {
   if (!selectedCampaignId) {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-50/50">
-        <div className="text-center p-8 bg-white/60 backdrop-blur-md border border-white/40 rounded-3xl shadow-xl max-w-md">
+        <div className="text-center p-8 bg-white border border-slate-200 shadow-sm rounded-2xl max-w-md">
           <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-500 mb-6 mx-auto shadow-inner">
             <TrendingUp size={32} />
           </div>
@@ -440,7 +527,7 @@ export const ReportCenter: React.FC = () => {
             variant="outline" 
             onClick={handleFetchDbData}
             disabled={isLoadingDb}
-            className="rounded-2xl border-slate-200 bg-white/40 backdrop-blur-md h-12 px-6 font-bold shadow-sm hover:glass-card-hover transition-all border-2"
+            className="rounded-2xl border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all border-2"
           >
             {isLoadingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4 text-blue-500" />}
             DB 데이터 동기화
@@ -448,9 +535,9 @@ export const ReportCenter: React.FC = () => {
           <Button 
             variant="outline" 
             onClick={() => setIsBudgetModalOpen(true)}
-            className="rounded-2xl border-slate-200 bg-white/40 backdrop-blur-md h-12 px-6 font-bold shadow-sm hover:glass-card-hover transition-all border-2"
+            className="rounded-2xl border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all border-2"
           >
-            <Settings2 className="mr-2 h-4 w-4 text-purple-500" /> 예산 및 KPI 관리
+            <Settings2 className="mr-2 h-4 w-4 text-blue-600" /> 예산 및 KPI 관리
           </Button>
           <Button 
             onClick={handleGenerateReport}
@@ -466,7 +553,6 @@ export const ReportCenter: React.FC = () => {
           isOpen={isBudgetModalOpen}
           onClose={() => setIsBudgetModalOpen(false)}
           campaign={selectedCampaign}
-          suggestedNames={suggestedExcelNames}
           totalSpent={budgetStatus.spent}
           onUpdate={async (updated) => {
             setIsSyncing(true);
@@ -534,9 +620,7 @@ export const ReportCenter: React.FC = () => {
               transition={{ duration: 0.3 }}
               className="outline-none"
             >
-              <div className="glass-card rounded-[40px] p-12 relative overflow-hidden shadow-2xl">
-                <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] -z-10" />
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 rounded-full blur-[80px] -z-10" />
+              <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-12 relative overflow-hidden">
                 
                 <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-12 gap-8">
                   <div className="space-y-2">
@@ -548,7 +632,7 @@ export const ReportCenter: React.FC = () => {
                     </h2>
                     <p className="text-slate-500 text-lg font-medium max-w-2xl">광고 데이터를 로드하고 인텔리전스 프로세싱을 위한 결과값 집계 기준을 정의합니다.</p>
                   </div>
-                  <div className="bg-white/40 p-2 rounded-3xl border border-white/60 shadow-inner">
+                  <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
                     <FileUploader onAnalysisComplete={handleAnalysisComplete} isSimpleButton={true} />
                   </div>
                 </div>
@@ -556,10 +640,10 @@ export const ReportCenter: React.FC = () => {
                 {rawParsedData.length > 0 ? (
                   <div className="space-y-12">
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                      <Card className="glass-card glass-card-hover rounded-3xl p-8 border-t-4 border-t-blue-500">
+                      <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-8 border-t-4 border-t-blue-600">
                         <Label className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 block">A. 광고 매체 식별</Label>
                         <Select value={activeMedia} onValueChange={(val) => setActiveMedia(val as MediaProvider)}>
-                          <SelectTrigger className="bg-white/50 border-slate-200 rounded-2xl h-14 text-base font-bold shadow-sm focus:ring-blue-500">
+                          <SelectTrigger className="bg-white border-slate-200 rounded-2xl h-14 text-base font-bold shadow-sm focus:ring-blue-500">
                             <SelectValue placeholder="Select Media" />
                           </SelectTrigger>
                           <SelectContent className="rounded-2xl border-slate-100 shadow-2xl">
@@ -570,7 +654,7 @@ export const ReportCenter: React.FC = () => {
                         </Select>
                       </Card>
 
-                      <Card className="xl:col-span-2 glass-card glass-card-hover rounded-3xl p-8 border-t-4 border-t-purple-500">
+                      <Card className="xl:col-span-2 bg-white border border-slate-200 shadow-sm rounded-2xl p-8 border-t-4 border-t-blue-600">
                         <Label className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 block">B. 인텔리전스 모델링 (집계 기준)</Label>
                         <div className="flex flex-wrap gap-2.5">
                           {[
@@ -591,7 +675,7 @@ export const ReportCenter: React.FC = () => {
                                   "px-5 py-3 rounded-2xl text-xs font-black transition-all flex items-center gap-2 border-2",
                                   active 
                                     ? "bg-slate-900 border-slate-900 text-white shadow-xl scale-105" 
-                                    : "bg-white/50 border-slate-100 text-slate-600 hover:border-slate-300 hover:bg-white"
+                                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-white"
                                 )}
                               >
                                 <span className="text-lg">{col.icon}</span>
@@ -603,7 +687,7 @@ export const ReportCenter: React.FC = () => {
                         </div>
                       </Card>
 
-                      <Card className="glass-card bg-slate-900 rounded-3xl p-8 shadow-2xl border-none flex flex-col justify-between group">
+                      <Card className="bg-slate-900 rounded-2xl p-8 shadow-sm border border-slate-800 flex flex-col justify-between group">
                         <Label className="text-xs font-black text-slate-500 uppercase tracking-[0.3em] mb-4 block group-hover:text-blue-400 transition-colors">C. 엔진 가공 실행</Label>
                         <div className="space-y-4">
                           <Button 
@@ -632,7 +716,7 @@ export const ReportCenter: React.FC = () => {
                         </div>
                         <span className="text-xs font-black text-slate-400 uppercase tracking-widest">전체 데이터 풀: {rawParsedData.length.toLocaleString()} 행</span>
                       </div>
-                      <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white/40 backdrop-blur-md shadow-2xl">
+                      <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white shadow-sm">
                         <Table>
                           <TableHeader className="bg-slate-50">
                             <TableRow className="hover:bg-transparent border-b-2 border-slate-100">
@@ -677,7 +761,7 @@ export const ReportCenter: React.FC = () => {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <div className="glass-card rounded-[40px] p-10 shadow-2xl border border-white/50">
+              <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
                   <div>
                     <h2 className="text-3xl font-black text-slate-900 tracking-tight font-outfit uppercase">성과 검증 및 수동 보정</h2>
@@ -693,7 +777,7 @@ export const ReportCenter: React.FC = () => {
                   </Button>
                 </div>
 
-                <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white/40 backdrop-blur-md shadow-2xl max-h-[600px] overflow-y-auto custom-scrollbar">
+                <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white shadow-sm max-h-[600px] overflow-y-auto custom-scrollbar">
                   <Table>
                     <TableHeader className="bg-slate-900 sticky top-0 z-20">
                       <TableRow className="hover:bg-slate-900 border-none">
@@ -767,221 +851,264 @@ export const ReportCenter: React.FC = () => {
               transition={{ duration: 0.3 }}
               className="space-y-8"
             >
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <Card className="lg:col-span-2 p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
-                  <div className="flex justify-between items-center mb-10">
-                    <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight">집행 속도 및 효율성 트렌드</h3>
-                    <div className="flex items-center gap-2">
-                      <span className="flex items-center gap-1.5 text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
-                        <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" /> 지출액
-                      </span>
-                      <span className="flex items-center gap-1.5 text-xs font-black text-orange-600 bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-100">
-                         CPC 추이
-                      </span>
-                    </div>
-                  </div>
-                  <div className="h-[400px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={dailyTrendData}>
-                        <defs>
-                          <linearGradient id="colorSpent" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                        <XAxis dataKey="date" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} dy={10} />
-                        <YAxis yAxisId="left" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="right" orientation="right" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                        <Tooltip contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', fontWeight: 800 }}/>
-                        <Bar yAxisId="left" dataKey="execution_amount" name="Daily Spend" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={32} />
-                        <Line yAxisId="right" type="monotone" dataKey="actual_cpc" name="Actual CPC" stroke="#f59e0b" strokeWidth={4} dot={{r: 6, fill: '#fff', stroke: '#f59e0b', strokeWidth: 3}} activeDot={{r: 8, strokeWidth: 0}} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card>
-
-                <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50 flex flex-col">
-                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-8">매체별 점유율</h3>
-                  <div className="grow flex items-center">
-                    <div className="h-[350px] w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={dmpShareData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={80}
-                            outerRadius={110}
-                            paddingAngle={8}
-                            dataKey="value"
-                            nameKey="name"
-                            stroke="none"
-                          >
-                            {dmpShareData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#0f172a'][index % 5]} className="hover:opacity-80 transition-opacity outline-none" />
-                            ))}
-                          </Pie>
-                          <Tooltip />
-                          <Legend wrapperStyle={{ paddingTop: '32px' }} iconType="circle" />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-
-              {budgetProgressData.length > 0 && (
-                <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
-                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-10">Strategic Budget Alignment</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-                    {budgetProgressData.map((item) => (
-                      <div key={item.id} className="space-y-4 bg-white/40 p-6 rounded-3xl border border-white/60 group hover:shadow-xl transition-all">
-                        <div className="flex justify-between items-end">
-                          <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px]">{item.name}</span>
-                          <span className={cn(
-                            "text-xs font-black px-2 py-1 rounded-lg",
-                            item.percent > 90 ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"
-                          )}>{item.percent.toFixed(1)}%</span>
-                        </div>
-                        <Progress value={item.percent} className="h-2.5 bg-slate-100/50" indicatorClassName={item.percent > 90 ? "bg-red-500" : "bg-blue-600"} />
-                        <div className="flex justify-between text-[11px] font-black text-slate-400 font-outfit tracking-tighter">
-                          <span className="text-slate-900">₩{Math.round(item.spent).toLocaleString()}</span>
-                          <span>OF ₩{Math.round(item.budget).toLocaleString()}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                 <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
-                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
-                    <Users size={24} className="text-blue-500"/> Audience Intelligence
-                  </h3>
-                  <div className="grid grid-cols-2 gap-8 h-[300px]">
-                    <div className="flex flex-col">
-                      <p className="text-[10px] font-black text-center text-slate-400 uppercase tracking-widest mb-4">Age Lifecycle</p>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={ageData} innerRadius={50} outerRadius={80} dataKey="value" nameKey="name" stroke="none">
-                            {ageData.map((_, i) => <Cell key={i} fill={['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe'][i % 4]} />)}
-                          </Pie>
-                          <Tooltip />
-                          <Legend verticalAlign="bottom" height={36} iconType="rect" iconSize={8}/>
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="flex flex-col">
-                      <p className="text-[10px] font-black text-center text-slate-400 uppercase tracking-widest mb-4">Gender Binary</p>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={genderData} innerRadius={50} outerRadius={80} dataKey="value" nameKey="name" stroke="none">
-                            {genderData.map((_, i) => <Cell key={i} fill={['#f472b6', '#3b82f6', '#94a3b8'][i % 3]} />)}
-                          </Pie>
-                          <Tooltip />
-                          <Legend verticalAlign="bottom" height={36} iconType="rect" iconSize={8}/>
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
-                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
-                    <LayoutIcon size={24} className="text-purple-500"/> TOP 10 Creative Impact
-                  </h3>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={creativeData} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                        <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 10, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                        <Tooltip />
-                        <Bar dataKey="spend" name="Investment" fill="#8b5cf6" radius={[0, 6, 6, 0]} barSize={16} />
-                        <Line dataKey="ctr" name="CTR Performance" stroke="#f59e0b" strokeWidth={3} dot={false} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card>
-              </div>
-
-              <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
-                <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
-                  <BarChart4 size={24} className="text-green-500"/> Matrix Comparison Analytics
-                </h3>
-                <div className="overflow-hidden rounded-[32px] border border-slate-200">
-                  <Table>
-                    <TableHeader className="bg-slate-900 border-none">
-                      <TableRow className="hover:bg-slate-900 border-none">
-                        <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Vertical Solution</TableHead>
-                        <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Budget Fulfillment</TableHead>
-                        <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">CPM/CPC Efficiency</TableHead>
-                        <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Interaction rate</TableHead>
-                        <TableHead className="text-center text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Fulfillment Level</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedCampaign?.sub_campaigns?.map((sub) => {
-                        const progress = budgetProgressData.find(p => p.id === sub.id);
-                        const subData = filteredData.filter(d => sub.excel_name ? d.excel_campaign_name === sub.excel_name : d.media === sub.media);
-                        const subSpent = subData.reduce((s, d) => s + d.execution_amount, 0);
-                        const subClicks = subData.reduce((s, d) => s + d.clicks, 0);
-                        const subImps = subData.reduce((s, d) => s + d.impressions, 0);
-                        const actualCpc = subClicks > 0 ? subSpent / subClicks : 0;
-                        const actualCtr = subImps > 0 ? (subClicks / subImps) * 100 : 0;
-                        const cpcStatus = sub.target_cpc ? (actualCpc <= sub.target_cpc ? 'Good' : 'High') : 'N/A';
-
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
+                <SortableContext items={dashboardLayout} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-8">
+                    {dashboardLayout.map((blockId) => {
+                      if (blockId === 'trend') {
                         return (
-                          <TableRow key={sub.id} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none">
-                            <TableCell className="py-6 px-8 font-black text-slate-900">{sub.excel_name || sub.media}</TableCell>
-                            <TableCell className="py-6 px-8 text-right">
-                              <span className="text-slate-900 font-black block leading-none">₩{Math.round(subSpent).toLocaleString()}</span>
-                              <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">TARGET ₩{sub.budget?.toLocaleString()}</span>
-                            </TableCell>
-                            <TableCell className="py-6 px-8 text-right">
-                              <span className={cn("font-black block leading-none", cpcStatus === 'Good' ? 'text-green-600' : 'text-orange-600')}>
-                                ₩{Math.round(actualCpc).toLocaleString()}
-                              </span>
-                              <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">GOAL ₩{sub.target_cpc || '-'}</span>
-                            </TableCell>
-                            <TableCell className="py-6 px-8 text-right">
-                              <span className="text-slate-900 font-black block leading-none">{actualCtr.toFixed(2)}%</span>
-                              <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">GOAL {sub.target_ctr || '-'}%</span>
-                            </TableCell>
-                            <TableCell className="py-6 px-8 text-center">
-                              <Badge className={cn(
-                                "font-black px-3 py-1 rounded-lg border-none shadow-sm",
-                                progress && progress.percent > 90 ? "bg-red-500 text-white" : "bg-blue-600 text-white"
-                              )}>
-                                {progress ? `${progress.percent.toFixed(0)}% PACING` : 'N/A'}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
+                          <SortableItem id="trend" key="trend">
+                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
+                              <div className="flex justify-between items-center mb-10">
+                                <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight">집행 속도 및 효율성 트렌드</h3>
+                                <div className="flex items-center gap-2">
+                                  <span className="flex items-center gap-1.5 text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
+                                    <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" /> 지출액
+                                  </span>
+                                  <span className="flex items-center gap-1.5 text-xs font-black text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                                    CPC 추이
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="h-[400px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <ComposedChart data={dailyTrendData}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="date" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} dy={10} />
+                                    <YAxis yAxisId="left" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                                    <YAxis yAxisId="right" orientation="right" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                                    <Tooltip contentStyle={{ borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)', fontWeight: 800 }}/>
+                                    <Bar yAxisId="left" dataKey="execution_amount" name="Daily Spend" fill="#2563eb" radius={[6, 6, 0, 0]} barSize={32} />
+                                    <Line yAxisId="right" type="monotone" dataKey="actual_cpc" name="Actual CPC" stroke="#0f172a" strokeWidth={3} dot={{r: 5, fill: '#fff', stroke: '#0f172a', strokeWidth: 2}} activeDot={{r: 7, strokeWidth: 0}} />
+                                  </ComposedChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </Card>
+                          </SortableItem>
                         );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </Card>
+                      }
 
-              <Card className="p-10 rounded-[40px] glass-card shadow-2xl border-white/50">
-                <div className="flex justify-between items-center mb-8">
-                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3">
-                    <MessageSquare size={24} className="text-blue-500"/> Intelligence Synthesis
-                  </h3>
-                  <Button onClick={handleSaveInsights} className="bg-slate-900 hover:bg-black text-white px-8 rounded-2xl font-black border-b-4 border-slate-700 active:translate-y-[2px] active:border-b-0 transition-all">
-                    Commit Insights
-                  </Button>
-                </div>
-                <textarea 
-                  className="w-full min-h-[200px] p-8 rounded-[32px] border-2 border-slate-100 bg-white/40 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:outline-none transition-all text-slate-700 text-lg font-medium placeholder:text-slate-300 shadow-inner"
-                  placeholder="Synthesize performance results and outline strategic pivots..."
-                  value={campaignInsights}
-                  onChange={(e) => setCampaignInsights(e.target.value)}
-                />
-              </Card>
+                      if (blockId === 'share') {
+                        return (
+                          <SortableItem id="share" key="share">
+                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
+                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-8">매체별 점유율</h3>
+                              <div className="h-[350px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart>
+                                    <Pie
+                                      data={dmpShareData}
+                                      cx="50%"
+                                      cy="50%"
+                                      innerRadius={80}
+                                      outerRadius={110}
+                                      paddingAngle={8}
+                                      dataKey="value"
+                                      nameKey="name"
+                                      stroke="none"
+                                    >
+                                      {dmpShareData.map((_, index) => (
+                                        <Cell
+                                          key={`cell-${index}`}
+                                          fill={['#2563eb', '#0f172a', '#10b981', '#f59e0b', '#94a3b8'][index % 5]}
+                                          className="hover:opacity-80 transition-opacity outline-none"
+                                        />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend wrapperStyle={{ paddingTop: '32px' }} iconType="circle" />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </Card>
+                          </SortableItem>
+                        );
+                      }
+
+                      if (blockId === 'budget') {
+                        if (budgetProgressData.length === 0) return null;
+                        return (
+                          <SortableItem id="budget" key="budget">
+                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
+                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-10">Strategic Budget Alignment</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                                {budgetProgressData.map((item) => (
+                                  <div key={item.id} className="space-y-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                                    <div className="flex justify-between items-end">
+                                      <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px]">{item.name}</span>
+                                      <span className={cn(
+                                        "text-xs font-black px-2 py-1 rounded-lg",
+                                        item.percent > 90 ? "text-red-600 bg-red-50" : "text-blue-600 bg-blue-50"
+                                      )}>{item.percent.toFixed(1)}%</span>
+                                    </div>
+                                    <Progress value={item.percent} className="h-2.5 bg-slate-100/50" indicatorClassName={item.percent > 90 ? "bg-red-500" : "bg-blue-600"} />
+                                    <div className="flex justify-between text-[11px] font-black text-slate-400 font-outfit tracking-tighter">
+                                      <span className="text-slate-900">₩{Math.round(item.spent).toLocaleString()}</span>
+                                      <span>OF ₩{Math.round(item.budget).toLocaleString()}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </Card>
+                          </SortableItem>
+                        );
+                      }
+
+                      if (blockId === 'audience') {
+                        return (
+                          <SortableItem id="audience" key="audience">
+                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
+                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
+                                <Users size={24} className="text-blue-600"/> Audience Intelligence
+                              </h3>
+                              <div className="grid grid-cols-2 gap-8 h-[300px]">
+                                <div className="flex flex-col">
+                                  <p className="text-[10px] font-black text-center text-slate-400 uppercase tracking-widest mb-4">Age Lifecycle</p>
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                      <Pie data={ageData} innerRadius={50} outerRadius={80} dataKey="value" nameKey="name" stroke="none">
+                                        {ageData.map((_, i) => <Cell key={i} fill={['#2563eb', '#60a5fa', '#93c5fd', '#bfdbfe'][i % 4]} />)}
+                                      </Pie>
+                                      <Tooltip />
+                                      <Legend verticalAlign="bottom" height={36} iconType="rect" iconSize={8}/>
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                </div>
+                                <div className="flex flex-col">
+                                  <p className="text-[10px] font-black text-center text-slate-400 uppercase tracking-widest mb-4">Gender Binary</p>
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                      <Pie data={genderData} innerRadius={50} outerRadius={80} dataKey="value" nameKey="name" stroke="none">
+                                        {genderData.map((_, i) => <Cell key={i} fill={['#0f172a', '#2563eb', '#94a3b8'][i % 3]} />)}
+                                      </Pie>
+                                      <Tooltip />
+                                      <Legend verticalAlign="bottom" height={36} iconType="rect" iconSize={8}/>
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              </div>
+                            </Card>
+                          </SortableItem>
+                        );
+                      }
+
+                      if (blockId === 'creative') {
+                        return (
+                          <SortableItem id="creative" key="creative">
+                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
+                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
+                                <LayoutIcon size={24} className="text-blue-600"/> TOP 10 Creative Impact
+                              </h3>
+                              <div className="h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <ComposedChart data={creativeData} layout="vertical">
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                                    <XAxis type="number" hide />
+                                    <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 10, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                                    <Tooltip />
+                                    <Bar dataKey="spend" name="Investment" fill="#2563eb" radius={[0, 6, 6, 0]} barSize={16} />
+                                    <Line dataKey="ctr" name="CTR Performance" stroke="#0f172a" strokeWidth={3} dot={false} />
+                                  </ComposedChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </Card>
+                          </SortableItem>
+                        );
+                      }
+
+                      if (blockId === 'matrix') {
+                        return (
+                          <SortableItem id="matrix" key="matrix">
+                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
+                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
+                                <BarChart4 size={24} className="text-blue-600"/> Matrix Comparison Analytics
+                              </h3>
+                              <div className="overflow-hidden rounded-[32px] border border-slate-200">
+                                <Table>
+                                  <TableHeader className="bg-slate-900 border-none">
+                                    <TableRow className="hover:bg-slate-900 border-none">
+                                      <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Vertical Solution</TableHead>
+                                      <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Budget Fulfillment</TableHead>
+                                      <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">CPM/CPC Efficiency</TableHead>
+                                      <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Interaction rate</TableHead>
+                                      <TableHead className="text-center text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Fulfillment Level</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {selectedCampaign?.sub_campaigns?.map((sub) => {
+                                      const progress = budgetProgressData.find(p => p.id === sub.id);
+                                      const subData = filteredData.filter(d => sub.excel_name ? d.excel_campaign_name === sub.excel_name : d.media === sub.media);
+                                      const subSpent = subData.reduce((s, d) => s + d.execution_amount, 0);
+                                      const subClicks = subData.reduce((s, d) => s + d.clicks, 0);
+                                      const subImps = subData.reduce((s, d) => s + d.impressions, 0);
+                                      const actualCpc = subClicks > 0 ? subSpent / subClicks : 0;
+                                      const actualCtr = subImps > 0 ? (subClicks / subImps) * 100 : 0;
+                                      const cpcStatus = sub.target_cpc ? (actualCpc <= sub.target_cpc ? 'Good' : 'High') : 'N/A';
+
+                                      return (
+                                        <TableRow key={sub.id} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none">
+                                          <TableCell className="py-6 px-8 font-black text-slate-900">{sub.excel_name || sub.media}</TableCell>
+                                          <TableCell className="py-6 px-8 text-right">
+                                            <span className="text-slate-900 font-black block leading-none">₩{Math.round(subSpent).toLocaleString()}</span>
+                                            <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">TARGET ₩{sub.budget?.toLocaleString()}</span>
+                                          </TableCell>
+                                          <TableCell className="py-6 px-8 text-right">
+                                            <span className={cn("font-black block leading-none", cpcStatus === 'Good' ? 'text-green-600' : 'text-orange-600')}>
+                                              ₩{Math.round(actualCpc).toLocaleString()}
+                                            </span>
+                                            <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">GOAL ₩{sub.target_cpc || '-'}</span>
+                                          </TableCell>
+                                          <TableCell className="py-6 px-8 text-right">
+                                            <span className="text-slate-900 font-black block leading-none">{actualCtr.toFixed(2)}%</span>
+                                            <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">GOAL {sub.target_ctr || '-'}%</span>
+                                          </TableCell>
+                                          <TableCell className="py-6 px-8 text-center">
+                                            <Badge className={cn(
+                                              "font-black px-3 py-1 rounded-lg border-none shadow-sm",
+                                              progress && progress.percent > 90 ? "bg-red-50 text-red-600" : "bg-blue-600 text-white"
+                                            )}>
+                                              {progress ? `${progress.percent.toFixed(0)}% PACING` : 'N/A'}
+                                            </Badge>
+                                          </TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </Card>
+                          </SortableItem>
+                        );
+                      }
+
+                      if (blockId === 'insights') {
+                        return (
+                          <SortableItem id="insights" key="insights">
+                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
+                              <div className="flex justify-between items-center mb-8">
+                                <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3">
+                                  <MessageSquare size={24} className="text-blue-600"/> Intelligence Synthesis
+                                </h3>
+                                <Button onClick={handleSaveInsights} className="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-2xl font-black shadow-sm transition-all">
+                                  Commit Insights
+                                </Button>
+                              </div>
+                              <textarea 
+                                className="w-full min-h-[200px] p-8 rounded-[24px] border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all text-slate-700 text-lg font-medium placeholder:text-slate-300"
+                                placeholder="Synthesize performance results and outline strategic pivots..."
+                                value={campaignInsights}
+                                onChange={(e) => setCampaignInsights(e.target.value)}
+                              />
+                            </Card>
+                          </SortableItem>
+                        );
+                      }
+
+                      return null;
+                    })}
+                  </div>
+                </SortableContext>
+              </DndContext>
             </motion.div>
           )}
         </AnimatePresence>

@@ -39,7 +39,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
     return (
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-32 rounded-3xl bg-white/40 backdrop-blur-md border border-white/40 animate-pulse" />
+          <div key={i} className="h-32 rounded-2xl bg-white border border-slate-200 shadow-sm animate-pulse" />
         ))}
       </div>
     );
@@ -52,10 +52,10 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-blue-500/10 hover:border-blue-500/30">
+        <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden group">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">집행 금액 (VAT 포함)</CardTitle>
-            <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
+            <div className="p-2.5 bg-blue-50 rounded-xl text-blue-600 border border-blue-100">
               <CircleDollarSign size={18} />
             </div>
           </CardHeader>
@@ -65,7 +65,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
               {status.spent.toLocaleString()}
             </div>
             <div className="flex items-center gap-2 mt-2">
-              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+              <span className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
               <p className="text-xs text-slate-400 font-bold uppercase tracking-tight italic">누적 집행 결과</p>
             </div>
           </CardContent>
@@ -77,10 +77,10 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-slate-500/10 hover:border-slate-500/30">
+        <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden group">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">잔여 예산</CardTitle>
-            <div className="p-2.5 bg-slate-100 rounded-xl text-slate-500 group-hover:bg-slate-800 group-hover:text-white transition-all duration-300">
+            <div className="p-2.5 bg-slate-50 rounded-xl text-slate-700 border border-slate-200">
               <Wallet size={18} />
             </div>
           </CardHeader>
@@ -102,7 +102,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
       >
-        <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-orange-500/10 hover:border-orange-500/30">
+        <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden group">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">예산 소진 속도</CardTitle>
             <div className={cn("p-2.5 rounded-xl text-white group-hover:scale-110 transition-transform shadow-lg", getBurnRateColor(status.burn_rate))}>
@@ -127,10 +127,10 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
       >
-        <Card className="glass-card glass-card-hover rounded-3xl overflow-hidden group border-purple-500/10 hover:border-purple-500/30">
+        <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden group">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">KPI 인텔리전스</CardTitle>
-            <div className="p-2.5 bg-purple-500/10 rounded-xl text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-all duration-300">
+            <div className="p-2.5 bg-blue-50 rounded-xl text-blue-600 border border-blue-100">
               <Zap size={18} />
             </div>
           </CardHeader>
@@ -145,7 +145,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
                   <p className="text-xs font-black text-slate-400 uppercase tracking-tighter mb-1">목표: ₩{status.target_cpc.toLocaleString()}</p>
                   <div className={cn(
                     "text-[10px] font-black px-2 py-0.5 rounded-lg inline-flex items-center gap-1",
-                    status.actual_cpc <= status.target_cpc ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                    status.actual_cpc <= status.target_cpc ? "text-green-600 bg-green-50" : "text-red-600 bg-red-50"
                   )}>
                     {status.actual_cpc <= status.target_cpc ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
                     {Math.abs(((status.actual_cpc - status.target_cpc) / status.target_cpc) * 100).toFixed(1)}%
@@ -164,7 +164,7 @@ export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, ca
                   <p className="text-xs font-black text-slate-400 uppercase tracking-tighter mb-1">목표: {status.target_ctr}%</p>
                   <div className={cn(
                     "text-[10px] font-black px-2 py-0.5 rounded-lg inline-flex items-center gap-1",
-                    status.actual_ctr >= status.target_ctr ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600" // Inverse for CTR
+                    status.actual_ctr >= status.target_ctr ? "text-green-600 bg-green-50" : "text-red-600 bg-red-50" // Inverse for CTR
                   )}>
                     {status.actual_ctr >= status.target_ctr ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
                     {Math.abs(((status.actual_ctr - status.target_ctr) / status.target_ctr) * 100).toFixed(1)}%
