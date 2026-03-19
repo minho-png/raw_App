@@ -170,6 +170,27 @@ export class CalculationService {
     }
     df.rename(renameObj, { inplace: true });
 
+    // 1.0 Ensure required standard columns exist (prevent Danfo groupby/sum crashes)
+    const rowCount = df.shape[0];
+    if (!df.columns.includes('date_raw')) {
+      df.addColumn('date_raw', new Array(rowCount).fill(new Date()), { inplace: true });
+    }
+    if (!df.columns.includes('ad_group_name')) {
+      df.addColumn('ad_group_name', new Array(rowCount).fill('Unknown'), { inplace: true });
+    }
+    if (!df.columns.includes('excel_campaign_name')) {
+      df.addColumn('excel_campaign_name', new Array(rowCount).fill(''), { inplace: true });
+    }
+    if (!df.columns.includes('impressions')) {
+      df.addColumn('impressions', new Array(rowCount).fill(0), { inplace: true });
+    }
+    if (!df.columns.includes('clicks')) {
+      df.addColumn('clicks', new Array(rowCount).fill(0), { inplace: true });
+    }
+    if (!df.columns.includes('supply_value')) {
+      df.addColumn('supply_value', new Array(rowCount).fill(0), { inplace: true });
+    }
+
     // 1.1 placement is required: inject default if missing
     if (!df.columns.includes('placement')) {
       df.addColumn('placement', new Array(df.shape[0]).fill('Unknown'), { inplace: true });
@@ -179,6 +200,9 @@ export class CalculationService {
     if (!groupByColumns.includes('placement')) {
       groupByColumns = [...groupByColumns, 'placement'];
     }
+
+    // 1.3 Guard: only group by columns that actually exist in DF
+    groupByColumns = groupByColumns.filter((c) => df.columns.includes(c));
 
     // 2. DMP Detection
     const detectDMP = (name: any) => {
@@ -263,6 +287,11 @@ export class CalculationService {
     if (groupByColumns.length > 0) {
       const sumCols = ['impressions', 'clicks', 'supply_value', 'execution_amount', 'net_amount', 'cost'];
       const availableSumCols = sumCols.filter(col => df.columns.includes(col));
+      if (availableSumCols.length === 0) {
+        reportRecords = rawRecords.map(r => ({ ...r, is_raw: false }));
+        return { raw: rawRecords, report: reportRecords };
+      }
+
       const groupDf = df.groupby(groupByColumns).col(availableSumCols).sum();
       
       const renameMap: Record<string, string> = {};
