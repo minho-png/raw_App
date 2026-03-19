@@ -131,7 +131,7 @@ export class RepositoryService {
   public async upsertCampaignConfig(campaign: any) {
     const now = new Date();
     // 💡 _id 필드를 제외한 나머지 데이터만 추출합니다.
-    const { _id, ...updateData } = campaign; 
+    const { _id, created_at, ...updateData } = campaign; 
 
     return await this.campaignCollection.updateOne(
       { campaign_id: campaign.campaign_id },
