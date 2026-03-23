@@ -320,10 +320,11 @@ export const ReportCenter: React.FC = () => {
   }, [selectedCampaign]);
 
   // Derived stats for BudgetPacingCards
+  // NaN 방어: DB에서 오는 값이 undefined/null일 수 있어 모든 numeric 필드에 ?? 0 적용
   const budgetStatus: BudgetStatus = useMemo(() => {
-    const totalExecution = filteredData.reduce((sum, r) => sum + r.execution_amount, 0);
-    const totalClicks = filteredData.reduce((sum, r) => sum + r.clicks, 0);
-    const totalImpressions = filteredData.reduce((sum, r) => sum + r.impressions, 0);
+    const totalExecution = filteredData.reduce((sum, r) => sum + (Number(r.execution_amount) || 0), 0);
+    const totalClicks = filteredData.reduce((sum, r) => sum + (Number(r.clicks) || 0), 0);
+    const totalImpressions = filteredData.reduce((sum, r) => sum + (Number(r.impressions) || 0), 0);
     
     const spent = totalExecution;
     const total = totalBudget;
@@ -520,21 +521,24 @@ export const ReportCenter: React.FC = () => {
 
   // Chart Data Derivation
   const dailyTrendData = useMemo(() => {
-    // Process filteredData into { date, execution_amount, actual_cpc }
     const grouped = filteredData.reduce((acc: any, curr) => {
       const dateStr = new Date(curr.date).toLocaleDateString();
       if (!acc[dateStr]) {
-        acc[dateStr] = { date: dateStr, execution_amount: 0, clicks: 0 };
+        acc[dateStr] = { date: dateStr, execution_amount: 0, clicks: 0, impressions: 0 };
       }
-      acc[dateStr].execution_amount += curr.execution_amount;
-      acc[dateStr].clicks += curr.clicks;
+      acc[dateStr].execution_amount += (Number(curr.execution_amount) || 0);
+      acc[dateStr].clicks += (Number(curr.clicks) || 0);
+      acc[dateStr].impressions += (Number(curr.impressions) || 0);
       return acc;
     }, {});
 
-    return Object.values(grouped).map((v: any) => ({
-      ...v,
-      actual_cpc: v.clicks > 0 ? Math.round(v.execution_amount / v.clicks) : 0
-    }));
+    return Object.values(grouped)
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map((v: any) => ({
+        ...v,
+        actual_cpc: v.clicks > 0 ? Math.round(v.execution_amount / v.clicks) : 0,
+        ctr: v.impressions > 0 ? ((v.clicks / v.impressions) * 100).toFixed(2) : '0.00',
+      }));
   }, [filteredData]);
 
   const formatDate = (date: Date | string) => {
@@ -546,11 +550,14 @@ export const ReportCenter: React.FC = () => {
   const dmpShareData = useMemo(() => {
     const shares = filteredData.reduce((acc: any, curr) => {
       const dmp = curr.dmp_type || 'DIRECT';
-      acc[dmp] = (acc[dmp] || 0) + curr.execution_amount;
+      acc[dmp] = (acc[dmp] || 0) + (Number(curr.execution_amount) || 0);
       return acc;
     }, {});
 
-    return Object.entries(shares).map(([name, value]) => ({ name, value }));
+    return Object.entries(shares)
+      .map(([name, value]) => ({ name, value: value as number }))
+      .filter(d => d.value > 0)
+      .sort((a, b) => b.value - a.value);
   }, [filteredData]);
 
   const budgetProgressData = useMemo(() => {
@@ -565,7 +572,7 @@ export const ReportCenter: React.FC = () => {
             if (mKey) return d.excel_campaign_name === mKey || d.mapping_value === mKey;
             return d.media === sub.media;
           })
-          .reduce((sum, d) => sum + d.execution_amount, 0);
+          .reduce((sum, d) => sum + (Number(d.execution_amount) || 0), 0);
         
         return {
           id: sub.id,
@@ -580,34 +587,39 @@ export const ReportCenter: React.FC = () => {
   const ageData = useMemo(() => {
     const counts = filteredData.reduce((acc: any, curr) => {
       const age = curr.age || 'Unknown';
-      acc[age] = (acc[age] || 0) + curr.execution_amount;
+      acc[age] = (acc[age] || 0) + (Number(curr.execution_amount) || 0);
       return acc;
     }, {});
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value: value as number }))
+      .filter(d => d.value > 0);
   }, [filteredData]);
 
   const genderData = useMemo(() => {
     const counts = filteredData.reduce((acc: any, curr) => {
       const g = curr.gender || 'Unknown';
-      acc[g] = (acc[g] || 0) + curr.execution_amount;
+      acc[g] = (acc[g] || 0) + (Number(curr.execution_amount) || 0);
       return acc;
     }, {});
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value: value as number }))
+      .filter(d => d.value > 0);
   }, [filteredData]);
 
   const creativeData = useMemo(() => {
     const data = filteredData.reduce((acc: any, curr) => {
       const c = curr.creative_name || 'N/A';
       if (!acc[c]) acc[c] = { name: c, spend: 0, clicks: 0, imps: 0 };
-      acc[c].spend += curr.execution_amount;
-      acc[c].clicks += curr.clicks;
-      acc[c].imps += curr.impressions;
+      acc[c].spend += (Number(curr.execution_amount) || 0);
+      acc[c].clicks += (Number(curr.clicks) || 0);
+      acc[c].imps += (Number(curr.impressions) || 0);
       return acc;
     }, {});
     return Object.values(data).map((v: any) => ({
       ...v,
-      ctr: v.imps > 0 ? (v.clicks / v.imps) * 100 : 0
-    })).sort((a, b) => b.spend - a.spend).slice(0, 10);
+      ctr: v.imps > 0 ? (v.clicks / v.imps) * 100 : 0,
+      cpc: v.clicks > 0 ? Math.round(v.spend / v.clicks) : 0,
+    })).sort((a: any, b: any) => b.spend - a.spend).slice(0, 10);
   }, [filteredData]);
 
   if (!selectedCampaignId) {
@@ -971,7 +983,7 @@ export const ReportCenter: React.FC = () => {
                             {record.impressions > 0 ? ((record.clicks / record.impressions) * 100).toFixed(2) : '0.00'}%
                           </TableCell>
                           <TableCell className="py-6 px-4 text-right font-bold text-slate-500 text-sm">
-                            {record.impressions > 0 ? `₩${Math.round(((record.execution_amount) / record.impressions) * 1000).toLocaleString()}` : '-'}
+                            {(Number(record.impressions) || 0) > 0 ? `₩${Math.round(((Number(record.execution_amount) || 0) / (Number(record.impressions) || 1)) * 1000).toLocaleString()}` : '-'}
                           </TableCell>
                           
                           <TableCell className="py-6 px-8 text-right bg-blue-50/30">
@@ -981,14 +993,15 @@ export const ReportCenter: React.FC = () => {
                                 autoFocus
                                 className="w-32 h-10 text-right font-black border-2 border-blue-500 rounded-xl bg-white shadow-xl"
                                 value={editingCell?.value || 0}
-                                onChange={(e) => setEditingCell({ id: record._id!, value: Number(e.target.value) })}
-                                onBlur={() => editingCell && handleUpdateAmount(record._id!, editingCell.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && editingCell && handleUpdateAmount(record._id!, editingCell.value)}
+                                onChange={(e) => record._id && setEditingCell({ id: record._id, value: Number(e.target.value) })}
+                                onBlur={() => editingCell && record._id && handleUpdateAmount(record._id, editingCell.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && editingCell && record._id && handleUpdateAmount(record._id, editingCell.value)}
                               />
                             ) : (
-                              <div 
-                                className="cursor-pointer hover:bg-blue-600 hover:text-white px-4 py-2 rounded-xl transition-all font-black text-lg text-blue-600 border-2 border-transparent hover:border-blue-700"
-                                onDoubleClick={() => setEditingCell({ id: record._id!, value: record.cost || record.execution_amount })}
+                              <div
+                                className={`px-4 py-2 rounded-xl transition-all font-black text-lg border-2 border-transparent ${record._id ? 'cursor-pointer hover:bg-blue-600 hover:text-white text-blue-600 hover:border-blue-700' : 'text-slate-400 cursor-not-allowed'}`}
+                                onDoubleClick={() => record._id && setEditingCell({ id: record._id, value: Number(record.cost) || Number(record.execution_amount) || 0 })}
+                                title={record._id ? '더블클릭하여 수정' : '저장 후 수정 가능'}
                               >
                                 ₩{Math.round(record.cost || record.execution_amount).toLocaleString()}
                               </div>
@@ -1022,6 +1035,43 @@ export const ReportCenter: React.FC = () => {
               transition={{ duration: 0.3 }}
               className="space-y-8"
             >
+              {/* Empty state — 디자이너 유진 요청: 데이터 없을 때 안내 UI */}
+              {filteredData.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <div className="w-20 h-20 rounded-3xl bg-slate-100 flex items-center justify-center mb-6">
+                    <Database size={36} className="text-slate-300" />
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-700 tracking-tight mb-2">표시할 데이터가 없습니다</h3>
+                  <p className="text-slate-400 font-medium mb-2">
+                    {(filterStartDate || filterEndDate) ? '선택한 기간에 해당하는 데이터가 없습니다.' : 'CSV를 업로드하거나 DB에서 데이터를 불러오세요.'}
+                  </p>
+                  {(filterStartDate || filterEndDate) && (
+                    <button
+                      onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }}
+                      className="mt-2 text-xs font-bold text-blue-500 hover:text-blue-700 underline"
+                    >
+                      기간 필터 초기화
+                    </button>
+                  )}
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      onClick={() => setActiveTabStep('source')}
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
+                    >
+                      CSV 업로드
+                    </button>
+                    <button
+                      onClick={handleFetchDbData}
+                      disabled={isLoadingDb}
+                      className="px-5 py-2.5 rounded-xl bg-white border-2 border-slate-200 text-slate-700 text-sm font-bold hover:border-slate-300 transition-colors"
+                    >
+                      {isLoadingDb ? <Loader2 size={14} className="inline animate-spin mr-1" /> : null}
+                      DB 동기화
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* 매체 믹스 비교 — IMC 마케터 + 브랜딩 마케터 요청 */}
               {filteredData.length > 0 && (() => {
                 const hasMultiMedia = new Set(filteredData.map(r => r.media).filter(Boolean)).size > 0;
@@ -1225,17 +1275,23 @@ export const ReportCenter: React.FC = () => {
                                   <TableBody>
                                     {selectedCampaign?.sub_campaigns?.map((sub) => {
                                       const progress = budgetProgressData.find(p => p.id === sub.id);
-                                      const subData = filteredData.filter(d => sub.excel_name ? d.excel_campaign_name === sub.excel_name : d.media === sub.media);
-                                      const subSpent = subData.reduce((s, d) => s + d.execution_amount, 0);
-                                      const subClicks = subData.reduce((s, d) => s + d.clicks, 0);
-                                      const subImps = subData.reduce((s, d) => s + d.impressions, 0);
+                                      // mapping_value 우선, excel_name은 deprecated fallback (CLAUDE.md 기준)
+                                      const mKey = sub.mapping_value || sub.excel_name;
+                                      const subData = filteredData.filter(d =>
+                                        mKey
+                                          ? (d.excel_campaign_name === mKey || d.mapping_value === mKey)
+                                          : d.media === sub.media
+                                      );
+                                      const subSpent = subData.reduce((s, d) => s + (Number(d.execution_amount) || 0), 0);
+                                      const subClicks = subData.reduce((s, d) => s + (Number(d.clicks) || 0), 0);
+                                      const subImps = subData.reduce((s, d) => s + (Number(d.impressions) || 0), 0);
                                       const actualCpc = subClicks > 0 ? subSpent / subClicks : 0;
                                       const actualCtr = subImps > 0 ? (subClicks / subImps) * 100 : 0;
                                       const cpcStatus = sub.target_cpc ? (actualCpc <= sub.target_cpc ? 'Good' : 'High') : 'N/A';
 
                                       return (
                                         <TableRow key={sub.id} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none">
-                                          <TableCell className="py-6 px-8 font-black text-slate-900">{sub.excel_name || sub.media}</TableCell>
+                                          <TableCell className="py-6 px-8 font-black text-slate-900">{mKey || sub.media}</TableCell>
                                           <TableCell className="py-6 px-8 text-right">
                                             <span className="text-slate-900 font-black block leading-none">₩{Math.round(subSpent).toLocaleString()}</span>
                                             <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">TARGET ₩{sub.budget?.toLocaleString()}</span>
