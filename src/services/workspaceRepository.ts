@@ -5,12 +5,7 @@
  */
 import { Collection, MongoClient } from 'mongodb';
 import { Workspace, WorkspaceMember, User, SharedReport, AlertRule, AlertEvent, AiInsight } from '@/types';
-
-// nanoid 대신 내장 함수로 ID 생성
-function genId(size = 12): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from({ length: size }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
+import { genId } from '@/lib/idGenerator';
 
 export const SYSTEM_WORKSPACE_ID = 'system';
 

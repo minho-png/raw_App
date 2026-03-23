@@ -62,9 +62,15 @@ export class CalculationService {
   }
 
   private static parseDateNormalized(raw: any): Date {
-    if (raw instanceof Date) return raw;
+    if (raw instanceof Date) {
+      // UTC 자정으로 정규화하여 DB 날짜 매칭 일관성 보장
+      return new Date(Date.UTC(raw.getFullYear(), raw.getMonth(), raw.getDate()));
+    }
     const s = String(raw ?? '').trim();
-    if (!s) return new Date();
+    if (!s) {
+      console.warn('[CalculationService] 빈 날짜 값 — 1970-01-01로 기록');
+      return new Date(0);
+    }
 
     // Normalize separators: 2024.03.01 / 2024/03/01 -> 2024-03-01
     let normalized = s.replace(/[\.\/]/g, '-').replace(/\s+/g, '');
@@ -83,9 +89,18 @@ export class CalculationService {
       normalized = `${compact[1]}-${compact[2]}-${compact[3]}`;
     }
 
+    // UTC 자정으로 파싱하여 타임존 차이로 인한 날짜 어긋남 방지
+    const parts = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (parts) {
+      return new Date(Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])));
+    }
+
     const d = new Date(normalized);
-    if (isNaN(d.getTime())) return new Date(); // fallback to prevent data loss
-    return d;
+    if (isNaN(d.getTime())) {
+      console.warn(`[CalculationService] 날짜 파싱 실패: "${raw}" — 1970-01-01로 기록`);
+      return new Date(0);
+    }
+    return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   }
 
   /**

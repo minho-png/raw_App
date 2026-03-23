@@ -35,10 +35,16 @@ export class RepositoryService {
 
     const campaignId = data[0].campaign_id;
     const affectedMedias = Array.from(new Set(data.map(d => d.media).filter(Boolean)));
+    // UTC 자정으로 정규화하여 타임존/밀리초 차이로 인한 날짜 중복 방지
+    const toUtcMidnight = (d: Date | string): Date => {
+      const dt = new Date(d);
+      return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
+    };
+
     const affectedDates = Array.from(
       new Set(
         data
-          .map(d => new Date(d.date).toISOString())
+          .map(d => toUtcMidnight(d.date).toISOString())
           .filter(Boolean)
       )
     ).map(d => new Date(d));

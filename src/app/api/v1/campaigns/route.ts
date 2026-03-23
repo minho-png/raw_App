@@ -7,11 +7,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import clientPromise from '@/lib/mongodb';
 import { RepositoryService } from '@/services/repositoryService';
-
-function genId(size = 12): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from({ length: size }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
+import { genId } from '@/lib/idGenerator';
 
 export async function GET() {
   try {

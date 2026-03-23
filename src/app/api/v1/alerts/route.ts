@@ -9,11 +9,7 @@ import clientPromise from '@/lib/mongodb';
 import { WorkspaceRepository, SYSTEM_WORKSPACE_ID } from '@/services/workspaceRepository';
 import { RepositoryService } from '@/services/repositoryService';
 import { AlertEvent, AlertRule } from '@/types';
-
-function genId(size = 16): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from({ length: size }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
+import { genId } from '@/lib/idGenerator';
 
 export async function GET() {
   try {

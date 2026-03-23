@@ -15,13 +15,14 @@ const STANDARD_ALIASES: Record<string, { label: string; aliases: string[] }> = {
   excel_campaign_name:  { label: '캠페인명',    aliases: ['캠페인', '캠페인명', '캠페인이름', 'campaign', 'campaignname'] },
   impressions:          { label: '노출수',      aliases: ['노출', '노출수', 'impressions', 'imps'] },
   clicks:               { label: '클릭수',      aliases: ['클릭', '클릭수', 'clicks'] },
-  supply_value:         { label: '집행금액',    aliases: ['집행금액', '총비용', '공급가액', '집행금액(vat별도)', 'spend', 'cost'] },
+  supply_value:         { label: '집행금액',    aliases: ['집행금액', '총비용', '공급가액', '집행금액(VAT별도)', '집행 금액(VAT 별도)', 'spend', 'cost'] },
   placement:            { label: '게재지면',    aliases: ['게재지면', '게재위치', '노출지면', 'placement'] },
   creative_name:        { label: '소재명',      aliases: ['소재', '소재이름', '소재명', 'creative'] },
 };
 
+// CalculationService.normalizeHeader()와 동일한 로직 유지
 function normalize(v: string) {
-  return v.toLowerCase().replace(/\s+/g, '').replace(/[_\-\(\)]/g, '');
+  return v.toLowerCase().replace(/\s+/g, '').replace(/[_\-]/g, '');
 }
 
 interface Props {

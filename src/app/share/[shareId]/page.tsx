@@ -38,10 +38,8 @@ const DMP_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b8
 export default function SharedReportPage() {
   const { shareId } = useParams<{ shareId: string }>();
   const [data, setData] = useState<ShareData | null>(null);
-  const [status, setStatus] = useState<'loading' | 'password' | 'ready' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
-  const [password, setPassword] = useState('');
-  const [pwError, setPwError] = useState('');
 
   useEffect(() => {
     fetchReport();
@@ -53,10 +51,6 @@ export default function SharedReportPage() {
       const res = await fetch(`/api/v1/share/${shareId}`);
       const json = await res.json();
 
-      if (json.password_required) {
-        setStatus('password');
-        return;
-      }
       if (!res.ok) {
         setErrorMsg(json.error ?? '알 수 없는 오류');
         setStatus('error');
@@ -67,22 +61,6 @@ export default function SharedReportPage() {
     } catch {
       setErrorMsg('보고서를 불러오는 중 오류가 발생했습니다.');
       setStatus('error');
-    }
-  }
-
-  async function submitPassword(e: React.FormEvent) {
-    e.preventDefault();
-    setPwError('');
-    const res = await fetch(`/api/v1/share/${shareId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    });
-    if (res.ok) {
-      fetchReport();
-    } else {
-      const json = await res.json();
-      setPwError(json.error ?? '비밀번호가 틀렸습니다.');
     }
   }
 
@@ -102,35 +80,6 @@ export default function SharedReportPage() {
         <div className="text-center">
           <div className="text-2xl font-bold text-white mb-2">보고서를 찾을 수 없습니다</div>
           <div className="text-gray-400 text-sm">{errorMsg}</div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── 비밀번호 입력 ──────────────────────────────────────────────────────────
-  if (status === 'password') {
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-sm">
-          <div className="text-white font-semibold text-lg mb-1">비밀번호 보호된 보고서</div>
-          <div className="text-gray-400 text-sm mb-6">이 보고서는 비밀번호로 보호되어 있습니다.</div>
-          <form onSubmit={submitPassword}>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="비밀번호 입력"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white text-sm mb-3 focus:outline-none focus:border-indigo-500"
-              autoFocus
-            />
-            {pwError && <div className="text-red-400 text-xs mb-3">{pwError}</div>}
-            <button
-              type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg py-2.5 text-sm font-medium transition-colors"
-            >
-              확인
-            </button>
-          </form>
         </div>
       </div>
     );

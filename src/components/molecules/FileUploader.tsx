@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { CalculationService } from '@/services/calculationService';
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { MediaProvider } from '@/types';
+import { useToast } from '@/context/ToastContext';
 
 
 interface FileUploaderProps {
@@ -23,11 +24,12 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onAnalysisComplete, 
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const { selectedCampaignId, campaigns, selectCampaign } = useCampaignStore();
+  const toast = useToast();
   const selectedCampaign = campaigns.find(c => c.campaign_id === selectedCampaignId);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!selectedCampaignId) {
-      alert("먼저 캠페인을 선택해 주세요.");
+      toast.warning('캠페인을 먼저 선택해 주세요.', '업로드할 캠페인을 선택한 후 파일을 드롭하세요.');
       return;
     }
 
