@@ -307,13 +307,23 @@ export class CalculationService {
         return { raw: rawRecords, report: reportRecords };
       }
 
-      const groupDf = df.groupby(groupByColumns).col(availableSumCols).sum();
-      
-      const renameMap: Record<string, string> = {};
-      availableSumCols.forEach(col => { renameMap[`${col}_sum`] = col; });
-      groupDf.rename(renameMap, { inplace: true });
+      // Danfo.js groupby().sum() crashes in Vercel/serverless bundles (undefined.length in
+      // getRowAndColValues). Replace with a plain-JS Map aggregation that is runtime-agnostic.
+      const jsonForGroup = this.ensureRecords(df);
+      const groups = new Map<string, any>();
+      jsonForGroup.forEach(row => {
+        const key = groupByColumns.map(col => String(row[col] ?? '')).join('\x00');
+        if (!groups.has(key)) {
+          const seed: any = {};
+          groupByColumns.forEach(col => { seed[col] = row[col]; });
+          availableSumCols.forEach(col => { seed[col] = 0; });
+          groups.set(key, seed);
+        }
+        const g = groups.get(key)!;
+        availableSumCols.forEach(col => { g[col] = (g[col] || 0) + (Number(row[col]) || 0); });
+      });
 
-      const finalJson = this.ensureRecords(groupDf);
+      const finalJson = Array.from(groups.values());
       finalJson.forEach(row => {
         const dmp = row.dmp_type || 'N/A';
         const customDmp = row.dmp || dmp;
