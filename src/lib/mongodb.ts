@@ -1,33 +1,35 @@
 import { MongoClient } from 'mongodb';
 
-if (!process.env.MONGODB_URI) {
-  throw new Error('Please add your Mongo URI to .env.local');
+// 빌드 타임에 환경변수가 없어도 오류가 나지 않도록 지연 평가
+function getUri(): string {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI 환경변수를 .env.local에 추가하세요.');
+  return uri;
 }
-
-const uri = process.env.MONGODB_URI;
-const options = {};
 
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
-if (process.env.NODE_VERSION === 'development') {
-  // In development mode, use a global variable so that the value
-  // is preserved across module reloads caused by HMR (Hot Module Replacement).
-  let globalWithMongo = global as typeof globalThis & {
-    _mongoClientPromise?: Promise<MongoClient>;
-  };
+const globalWithMongo = global as typeof globalThis & {
+  _mongoClientPromise?: Promise<MongoClient>;
+};
 
+if (process.env.NODE_ENV === 'development') {
   if (!globalWithMongo._mongoClientPromise) {
-    client = new MongoClient(uri, options);
+    client = new MongoClient(getUri());
     globalWithMongo._mongoClientPromise = client.connect();
   }
-  clientPromise = globalWithMongo._mongoClientPromise;
+  clientPromise = globalWithMongo._mongoClientPromise!;
 } else {
-  // In production mode, it's best to not use a global variable.
-  client = new MongoClient(uri, options);
-  clientPromise = client.connect();
+  // 프로덕션: 모듈 평가 시점이 아닌 첫 접근 시 연결
+  clientPromise = new Promise((resolve, reject) => {
+    try {
+      const c = new MongoClient(getUri());
+      resolve(c.connect());
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
-// Export a module-scoped MongoClient promise. By doing this in a
-// separate module, the client can be shared across functions.
 export default clientPromise;

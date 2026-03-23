@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { ToastProvider } from "@/context/ToastContext";
 
 const inter = Inter({ subsets: ["latin"], variable: '--font-inter' });
 const outfit = Outfit({ subsets: ["latin"], variable: '--font-outfit' });
@@ -19,7 +20,9 @@ export default function RootLayout({
   return (
     <html lang="ko" className={cn(inter.variable, outfit.variable)}>
       <body className={cn(inter.className, "antialiased selection:bg-blue-100 selection:text-blue-900")}>
-        {children}
+        <ToastProvider>
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );

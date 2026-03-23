@@ -1,5 +1,7 @@
 export type MediaProvider = '네이버GFA' | '카카오Moment' | '구글Ads' | '메타Ads' | 'Kakao' | 'Google' | 'Meta';
 
+export * from './workspace';
+
 export interface SubCampaignConfig {
   id: string; // Unique ID for this sub-campaign setting
   mapping_value: string; // Explicitly what value in Excel to match (replaces ambiguous excel_name)

@@ -19,10 +19,10 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { 
-  Zap, 
-  Database, 
-  TrendingUp, 
+import {
+  Zap,
+  Database,
+  TrendingUp,
   Loader2,
   Edit3,
   Check,
@@ -31,8 +31,14 @@ import {
   MessageSquare,
   Users,
   Layout as LayoutIcon,
-  BarChart4
+  BarChart4,
+  Download,
+  Share2,
+  Layers
 } from "lucide-react";
+import { useToast } from '@/context/ToastContext';
+import { ColumnMappingPreview } from '@/components/molecules/ColumnMappingPreview';
+import { MediaMixSection } from '@/components/molecules/MediaMixSection';
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { BudgetStatus, PerformanceRecord, MediaProvider } from "@/types";
 import { useCampaignStore } from '@/store/useCampaignStore';
@@ -62,6 +68,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 export const ReportCenter: React.FC = () => {
+  const toast = useToast();
   const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab, refreshCampaigns, setCampaigns, setIsSyncing } = useCampaignStore();
   const selectedCampaign = campaigns.find(c => c.campaign_id === selectedCampaignId);
   
@@ -222,8 +229,10 @@ export const ReportCenter: React.FC = () => {
     const result = await saveCampaignAction(updated);
     if (result.success && result.campaigns) {
       setCampaigns(result.campaigns);
+      toast.success('인사이트 저장 완료');
+    } else {
+      toast.error('저장 실패', '잠시 후 다시 시도해 주세요.');
     }
-    alert('인사이트가 저장되었습니다.');
   };
 
   const handleUpdateAmount = async (id: string, newValue: number) => {
@@ -232,17 +241,18 @@ export const ReportCenter: React.FC = () => {
     if (isMongoId) {
       setIsUpdating(true);
       try {
-        const result = await updatePerformanceDataAction(id, { 
+        const result = await updatePerformanceDataAction(id, {
           execution_amount: newValue,
-          cost: newValue 
+          cost: newValue
         });
         if (result.success) {
-          setProcessedData(prev => prev.map(d => 
+          setProcessedData(prev => prev.map(d =>
             d._id === id ? { ...d, execution_amount: newValue, is_edited: true } : d
           ));
           setEditingCell(null);
+          toast.success('금액 수정 완료', `₩${newValue.toLocaleString()}으로 업데이트되었습니다.`);
         } else {
-          alert('DB 업데이트에 실패했습니다.');
+          toast.error('DB 업데이트 실패', '잠시 후 다시 시도해 주세요.');
         }
       } catch (error) {
         console.error('Update failed:', error);
@@ -265,18 +275,18 @@ export const ReportCenter: React.FC = () => {
     try {
       const result = await getPerformanceDataAction(selectedCampaignId);
       if (result.success && result.data) {
-        // Replace current data with DB data for the selected campaign
         setProcessedData(prev => [
           ...prev.filter(d => d.campaign_id !== selectedCampaignId),
           ...result.data
         ]);
-        alert(`${result.data.length}건의 데이터를 DB에서 성공적으로 불러왔습니다.`);
+        toast.success('DB 동기화 완료', `${result.data.length.toLocaleString()}건의 데이터를 불러왔습니다.`);
+        setActiveTabStep('processing');
       } else {
-        alert('데이터를 불러오는데 실패했습니다.');
+        toast.error('동기화 실패', '데이터를 불러오는 데 실패했습니다.');
       }
     } catch (error) {
       console.error('Fetch DB data failed:', error);
-      alert('데이터 요청 중 오류가 발생했습니다.');
+      toast.error('요청 오류', '잠시 후 다시 시도해 주세요.');
     } finally {
       setIsLoadingDb(false);
     }
@@ -412,13 +422,13 @@ export const ReportCenter: React.FC = () => {
 
       const res = await savePerformanceData(normalized as any);
       if (res.success) {
-        alert('분석된 리포트 데이터가 DB에 저장되었습니다.');
+        toast.success('저장 완료', `${normalized.length.toLocaleString()}건의 데이터가 DB에 저장되었습니다.`);
       } else {
-        alert('저장 실패: ' + res.error);
+        toast.error('저장 실패', res.error);
       }
     } catch (err) {
       console.error(err);
-      alert('저장 중 오류가 발생했습니다.');
+      toast.error('저장 오류', '잠시 후 다시 시도해 주세요.');
     } finally {
       setIsSavingReport(false);
     }
@@ -445,8 +455,46 @@ export const ReportCenter: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Report generation failed:', error);
-      alert('리포트 생성 중 오류가 발생했습니다.');
+      toast.error('리포트 생성 실패', '잠시 후 다시 시도해 주세요.');
     }
+  };
+
+  // CSV 내보내기 — 브랜딩 마케터 + IMC 마케터 요청
+  const handleCsvExport = () => {
+    if (filteredData.length === 0) {
+      toast.warning('내보낼 데이터 없음', '먼저 데이터를 처리하거나 DB에서 불러오세요.');
+      return;
+    }
+    const headers = ['날짜', '캠페인명', '매체', 'DMP', '노출수', '클릭수', 'CTR(%)', 'CPC(₩)', 'CPM(₩)', '집행금액(₩)'];
+    const rows = filteredData.map(r => {
+      const imps = r.impressions ?? 0;
+      const clicks = r.clicks ?? 0;
+      const spend = r.execution_amount ?? 0;
+      return [
+        new Date(r.date).toISOString().slice(0, 10),
+        r.excel_campaign_name || r.ad_group_name || '',
+        r.media || '',
+        r.dmp_type || 'DIRECT',
+        imps,
+        clicks,
+        imps > 0 ? ((clicks / imps) * 100).toFixed(2) : '0.00',
+        clicks > 0 ? Math.round(spend / clicks) : 0,
+        imps > 0 ? Math.round((spend / imps) * 1000) : 0,
+        Math.round(spend),
+      ].join(',');
+    });
+    const csv = [headers.join(','), ...rows].join('\n');
+    const bom = '\uFEFF'; // 한글 깨짐 방지
+    const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedCampaign?.campaign_name ?? 'report'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('CSV 내보내기 완료', `${filteredData.length.toLocaleString()}건이 다운로드되었습니다.`);
   };
 
   // Chart Data Derivation
@@ -588,7 +636,15 @@ export const ReportCenter: React.FC = () => {
           >
             <Settings2 className="mr-2 h-4 w-4 text-blue-600" /> 예산 및 KPI 관리
           </Button>
-          <Button 
+          <Button
+            variant="outline"
+            onClick={handleCsvExport}
+            disabled={filteredData.length === 0}
+            className="rounded-2xl border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all border-2"
+          >
+            <Download className="mr-2 h-4 w-4 text-green-600" /> CSV 내보내기
+          </Button>
+          <Button
             onClick={handleGenerateReport}
             className="rounded-2xl bg-slate-900 hover:bg-black text-white h-12 px-8 font-black shadow-xl transition-all hover:scale-[1.05] active:scale-95 border-b-4 border-slate-700"
           >
@@ -757,6 +813,9 @@ export const ReportCenter: React.FC = () => {
                       </Card>
                     </div>
 
+                    {/* 컬럼 매핑 미리보기 — 디지털 마케터 요청 */}
+                    <ColumnMappingPreview rawHeaders={Object.keys(rawParsedData[0] ?? {})} />
+
                     <div className="space-y-6">
                       <div className="flex justify-between items-end px-4">
                         <div className="flex items-center gap-3">
@@ -816,14 +875,24 @@ export const ReportCenter: React.FC = () => {
                     <h2 className="text-3xl font-black text-slate-900 tracking-tight font-outfit uppercase">성과 검증 및 수동 보정</h2>
                     <p className="text-slate-500 font-medium text-lg mt-1">집계된 성과를 검토하고 실제 집행 금액을 정밀하게 보정하십시오.</p>
                   </div>
-                  <Button 
-                    className="bg-green-600 hover:bg-green-700 h-14 px-8 rounded-2xl font-black text-lg shadow-xl shadow-green-600/20 transition-all hover:translate-y-[-4px] active:translate-y-0" 
-                    onClick={handleSaveProcessedData}
-                    disabled={isSavingReport || processedData.length === 0}
-                  >
-                    {isSavingReport ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Check size={20} className="mr-2 stroke-[3px]"/>}
-                    최종 변경 사항 반영
-                  </Button>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={handleCsvExport}
+                      disabled={filteredData.length === 0}
+                      className="h-12 px-6 rounded-2xl border-slate-200 font-bold"
+                    >
+                      <Download className="mr-2 h-4 w-4 text-green-600" /> CSV
+                    </Button>
+                    <Button
+                      className="bg-green-600 hover:bg-green-700 h-14 px-8 rounded-2xl font-black text-lg shadow-xl shadow-green-600/20 transition-all hover:translate-y-[-4px] active:translate-y-0"
+                      onClick={handleSaveProcessedData}
+                      disabled={isSavingReport || processedData.length === 0}
+                    >
+                      {isSavingReport ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Check size={20} className="mr-2 stroke-[3px]"/>}
+                      최종 변경 사항 반영
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white shadow-sm max-h-[600px] overflow-y-auto custom-scrollbar">
@@ -835,6 +904,8 @@ export const ReportCenter: React.FC = () => {
                         <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">기술 스택</TableHead>
                         <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8 text-right">노출수</TableHead>
                         <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8 text-right">클릭수</TableHead>
+                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-4 text-right">CTR</TableHead>
+                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-4 text-right">CPM(₩)</TableHead>
                         <TableHead className="text-blue-400 font-black text-xs uppercase tracking-widest py-6 px-8 text-right bg-slate-800/50">집행 금액 (KRW)</TableHead>
                         <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">무결성</TableHead>
                       </TableRow>
@@ -851,6 +922,12 @@ export const ReportCenter: React.FC = () => {
                           </TableCell>
                           <TableCell className="py-6 px-8 text-right font-bold text-slate-600">{record.impressions.toLocaleString()}</TableCell>
                           <TableCell className="py-6 px-8 text-right font-bold text-slate-600">{record.clicks.toLocaleString()}</TableCell>
+                          <TableCell className="py-6 px-4 text-right font-bold text-slate-500 text-sm">
+                            {record.impressions > 0 ? ((record.clicks / record.impressions) * 100).toFixed(2) : '0.00'}%
+                          </TableCell>
+                          <TableCell className="py-6 px-4 text-right font-bold text-slate-500 text-sm">
+                            {record.impressions > 0 ? `₩${Math.round(((record.execution_amount) / record.impressions) * 1000).toLocaleString()}` : '-'}
+                          </TableCell>
                           
                           <TableCell className="py-6 px-8 text-right bg-blue-50/30">
                             {editingCell?.id === record._id ? (
@@ -900,6 +977,23 @@ export const ReportCenter: React.FC = () => {
               transition={{ duration: 0.3 }}
               className="space-y-8"
             >
+              {/* 매체 믹스 비교 — IMC 마케터 + 브랜딩 마케터 요청 */}
+              {filteredData.length > 0 && (() => {
+                const hasMultiMedia = new Set(filteredData.map(r => r.media).filter(Boolean)).size > 0;
+                if (!hasMultiMedia) return null;
+                return (
+                  <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
+                    <div className="flex items-center gap-3 mb-8">
+                      <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
+                        <Layers size={20} />
+                      </div>
+                      <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight">매체 믹스 성과 비교</h3>
+                    </div>
+                    <MediaMixSection records={filteredData} />
+                  </Card>
+                );
+              })()}
+
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
                 <SortableContext items={dashboardLayout} strategy={verticalListSortingStrategy}>
                   <div className="space-y-8">
