@@ -292,10 +292,25 @@ export const ReportCenter: React.FC = () => {
     }
   };
 
-  // Filter data by selected campaign
+  // 날짜 범위 필터 상태 (마케터 민수 요청: 정산 기간 필터)
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+
+  // Filter data by selected campaign + date range
   const filteredData = useMemo(() => {
-    return processedData.filter(d => d.campaign_id === selectedCampaignId);
-  }, [processedData, selectedCampaignId]);
+    return processedData.filter(d => {
+      if (d.campaign_id !== selectedCampaignId) return false;
+      if (filterStartDate) {
+        const start = new Date(filterStartDate + 'T00:00:00Z');
+        if (new Date(d.date) < start) return false;
+      }
+      if (filterEndDate) {
+        const end = new Date(filterEndDate + 'T23:59:59Z');
+        if (new Date(d.date) > end) return false;
+      }
+      return true;
+    });
+  }, [processedData, selectedCampaignId, filterStartDate, filterEndDate]);
 
   const totalBudget = useMemo(() => {
     if (!selectedCampaign || !selectedCampaign.sub_campaigns) return 0;
@@ -423,6 +438,12 @@ export const ReportCenter: React.FC = () => {
       const res = await savePerformanceData(normalized as any);
       if (res.success) {
         toast.success('저장 완료', `${normalized.length.toLocaleString()}건의 데이터가 DB에 저장되었습니다.`);
+        // 저장 성공 후 DB에서 재로드하여 대시보드로 자동 이동
+        const dbResult = await getPerformanceDataAction(selectedCampaignId);
+        if (dbResult.success && dbResult.data) {
+          setProcessedData(dbResult.data);
+        }
+        setActiveTabStep('dashboard');
       } else {
         toast.error('저장 실패', res.error);
       }
@@ -620,8 +641,8 @@ export const ReportCenter: React.FC = () => {
           </p>
         </div>
         <div className="flex flex-wrap gap-4">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={handleFetchDbData}
             disabled={isLoadingDb}
             className="rounded-2xl border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all border-2"
@@ -629,6 +650,30 @@ export const ReportCenter: React.FC = () => {
             {isLoadingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4 text-blue-500" />}
             DB 데이터 동기화
           </Button>
+          {/* 날짜 범위 필터 — 마케터 민수 요청: 정산 기간 필터링 */}
+          <div className="flex items-center gap-2 bg-white border-2 border-slate-200 rounded-2xl px-4 h-12 shadow-sm">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">기간</span>
+            <input
+              type="date"
+              value={filterStartDate}
+              onChange={e => setFilterStartDate(e.target.value)}
+              className="text-sm font-medium text-slate-700 bg-transparent border-none outline-none w-32"
+            />
+            <span className="text-slate-300 font-bold">—</span>
+            <input
+              type="date"
+              value={filterEndDate}
+              onChange={e => setFilterEndDate(e.target.value)}
+              className="text-sm font-medium text-slate-700 bg-transparent border-none outline-none w-32"
+            />
+            {(filterStartDate || filterEndDate) && (
+              <button
+                onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }}
+                className="ml-1 text-slate-400 hover:text-slate-600 text-xs font-black"
+                title="필터 초기화"
+              >✕</button>
+            )}
+          </div>
           <Button 
             variant="outline" 
             onClick={() => setIsBudgetModalOpen(true)}

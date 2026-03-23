@@ -6,6 +6,21 @@ export class RepositoryService {
 
   constructor(private client: MongoClient) {}
 
+  /**
+   * ensureIndexes: 쿼리 성능을 위한 인덱스 생성 (앱 시작 시 1회 호출)
+   * campaign_id + date + media 복합 인덱스 — upsert 필터와 조회 쿼리에서 사용
+   */
+  public async ensureIndexes(): Promise<void> {
+    const db = this.client.db(this.dbName);
+    await Promise.all([
+      db.collection('raw_metrics').createIndex({ campaign_id: 1, date: 1, media: 1 }, { background: true }),
+      db.collection('raw_metrics').createIndex({ campaign_id: 1, is_raw: 1 }, { background: true }),
+      db.collection('processed_reports').createIndex({ campaign_id: 1, date: 1, media: 1 }, { background: true }),
+      db.collection('processed_reports').createIndex({ campaign_id: 1 }, { background: true }),
+      db.collection('campaign_configs').createIndex({ campaign_id: 1 }, { unique: true, background: true }),
+    ]);
+  }
+
   private get rawCollection(): Collection<PerformanceRecord> {
     return this.client.db(this.dbName).collection('raw_metrics');
   }
@@ -35,6 +50,7 @@ export class RepositoryService {
 
     const campaignId = data[0].campaign_id;
     const affectedMedias = Array.from(new Set(data.map(d => d.media).filter(Boolean)));
+
     // UTC 자정으로 정규화하여 타임존/밀리초 차이로 인한 날짜 중복 방지
     const toUtcMidnight = (d: Date | string): Date => {
       const dt = new Date(d);
@@ -55,14 +71,27 @@ export class RepositoryService {
       date: { $in: affectedDates }
     } as any;
 
+    // is_raw 기준으로 컬렉션 분리: raw_metrics ↔ processed_reports
+    const rawRecords = data.filter(d => d.is_raw !== false);
+    const reportRecords = data.filter(d => d.is_raw === false);
+
     const rawDeleteResult = await this.rawCollection.deleteMany(deleteFilter);
     await this.reportCollection.deleteMany(deleteFilter);
 
-    const insertResult = await this.rawCollection.insertMany(data);
+    let insertedCount = 0;
+
+    if (rawRecords.length > 0) {
+      const rawInsert = await this.rawCollection.insertMany(rawRecords);
+      insertedCount += rawInsert.insertedCount;
+    }
+    if (reportRecords.length > 0) {
+      const reportInsert = await this.reportCollection.insertMany(reportRecords);
+      insertedCount += reportInsert.insertedCount;
+    }
 
     return {
       deletedCount: rawDeleteResult.deletedCount || 0,
-      insertedCount: insertResult.insertedCount
+      insertedCount
     };
   }
 

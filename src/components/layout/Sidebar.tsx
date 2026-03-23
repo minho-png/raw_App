@@ -2,18 +2,22 @@
 
 import React, { useEffect, useState } from 'react';
 import { useCampaignStore } from '@/store/useCampaignStore';
-import { Plus, Trash2, Layout, BarChart3, Database, Loader2, Settings } from 'lucide-react';
+import { Plus, Trash2, Layout, BarChart3, Database, Loader2, Settings, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/server/actions/campaign';
 import { CampaignConfig } from '@/types';
+import { genId } from '@/lib/idGenerator';
 
 export const Sidebar = () => {
   const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, isSyncing, setIsSyncing, updateCampaign, refreshCampaigns } = useCampaignStore();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<CampaignConfig | null>(null);
   const [tempName, setTempName] = useState("");
+  // 삭제 확인 모달 상태 (디자이너 유진: confirm() 대신 디자인된 모달)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const deletingCampaign = campaigns.find(c => c.campaign_id === deleteConfirmId);
 
   // Initial fetch and polling
   useEffect(() => {
@@ -26,7 +30,7 @@ export const Sidebar = () => {
 
   const handleAddCampaign = async () => {
     setIsSyncing(true); // Prevent background sync
-    const newId = `CAMP-${Math.floor(Math.random() * 10000)}`;
+    const newId = `CAMP-${genId(8)}`;
     const now = new Date().toISOString().split('T')[0];
     const newCampaign: CampaignConfig = {
       campaign_id: newId,
@@ -47,16 +51,20 @@ export const Sidebar = () => {
   };
 
   const handleDeleteCampaign = async (id: string) => {
-    if (confirm('캠페인을 삭제하시겠습니까? 관련 데이터도 함께 삭제됩니다.')) {
-      setIsSyncing(true);
-      try {
-        const result = await deleteCampaignAction(id);
-        if (result.success && result.campaigns) {
-          setCampaigns(result.campaigns);
-        }
-      } finally {
-        setIsSyncing(false);
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmId) return;
+    setDeleteConfirmId(null);
+    setIsSyncing(true);
+    try {
+      const result = await deleteCampaignAction(deleteConfirmId);
+      if (result.success && result.campaigns) {
+        setCampaigns(result.campaigns);
       }
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -166,6 +174,49 @@ export const Sidebar = () => {
           </div>
         </div>
       </div>
+
+      {/* 삭제 확인 모달 — 디자이너 유진: confirm() 대신 디자인된 경고 모달 */}
+      <AnimatePresence>
+        {deleteConfirmId && deletingCampaign && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+                  <AlertTriangle size={20} className="text-red-500" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">캠페인 삭제</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">이 작업은 되돌릴 수 없습니다.</p>
+                </div>
+              </div>
+              <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                <p className="text-sm font-bold text-red-700 truncate">"{deletingCampaign.campaign_name}"</p>
+                <p className="text-xs text-red-500 mt-1">캠페인과 관련된 모든 성과 데이터가 영구 삭제됩니다.</p>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  className="flex-1 rounded-xl h-11 border-slate-200 text-slate-600 font-bold"
+                  onClick={() => setDeleteConfirmId(null)}
+                >
+                  취소
+                </Button>
+                <Button
+                  className="flex-1 rounded-xl h-11 bg-red-600 hover:bg-red-700 text-white font-bold border-none"
+                  onClick={confirmDelete}
+                >
+                  삭제
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isEditModalOpen && editingCampaign && (
