@@ -392,17 +392,27 @@ export const ReportCenter: React.FC = () => {
         }
       });
 
-      // Filter raw data to only include enabled media/campaigns
-      // If no sub-campaigns are defined, we check against the activeMedia
-      // If sub-campaigns are defined, we only include those that match enabled excel_names
-      const filteredRaw = rawParsedData.filter(row => {
-        // This is a simplified check; might need more robust matching logic
-        const rowCamp = String(row.excel_campaign_name || row['캠페인'] || row['캠페인명']);
-        if (selectedCampaign?.sub_campaigns && selectedCampaign.sub_campaigns.length > 0) {
-          return enabledExcelNames.has(rowCamp);
+      // Filter raw data to only include enabled sub-campaigns.
+      // rawParsedData has original CSV column names (not normalized), so we must
+      // detect the campaign column from the raw headers before filtering.
+      const filteredRaw = (() => {
+        if (!selectedCampaign?.sub_campaigns || selectedCampaign.sub_campaigns.length === 0 || enabledExcelNames.size === 0) {
+          return rawParsedData; // No sub-campaign config → process all rows
         }
-        return true; // If no sub-campaigns, process all (standard behavior)
-      });
+        // Detect which column holds the campaign name value in the raw CSV.
+        // Matches the same priority list used by suggestedExcelNames above.
+        const rawKeys = Object.keys(rawParsedData[0] ?? {});
+        const campKeywords = ['캠페인명', '캠페인 이름', '캠페인', 'Campaign Name', 'Campaign'];
+        const excludeKeywords = ['소재', 'Creative', '그룹', 'Group', '번호', 'ID', '날짜', 'Date'];
+        const campCol = rawKeys.find(k =>
+          campKeywords.some(pk => k.includes(pk)) && !excludeKeywords.some(ek => k.includes(ek))
+        ) || rawKeys.find(k => campKeywords.some(pk => k.includes(pk)));
+
+        return rawParsedData.filter(row => {
+          const rowCamp = campCol ? String(row[campCol] ?? '') : '';
+          return enabledExcelNames.has(rowCamp);
+        });
+      })();
 
       const { raw, report } = CalculationService.processWithDanfo(
         filteredRaw,
@@ -418,6 +428,7 @@ export const ReportCenter: React.FC = () => {
       setActiveTabStep('processing');
     } catch (error) {
       console.error('Processing failed:', error);
+      toast.error('데이터 처리 실패', error instanceof Error ? error.message : '파일 형식 또는 컬럼 매핑을 확인하세요.');
     } finally {
       setIsProcessing(false);
     }
@@ -521,19 +532,22 @@ export const ReportCenter: React.FC = () => {
 
   // Chart Data Derivation
   const dailyTrendData = useMemo(() => {
+    // Key by ISO date string (YYYY-MM-DD) to avoid locale-dependent sort issues
     const grouped = filteredData.reduce((acc: any, curr) => {
-      const dateStr = new Date(curr.date).toLocaleDateString();
-      if (!acc[dateStr]) {
-        acc[dateStr] = { date: dateStr, execution_amount: 0, clicks: 0, impressions: 0 };
+      const d = new Date(curr.date);
+      const iso = isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+      if (!iso) return acc;
+      if (!acc[iso]) {
+        acc[iso] = { date: iso, execution_amount: 0, clicks: 0, impressions: 0 };
       }
-      acc[dateStr].execution_amount += (Number(curr.execution_amount) || 0);
-      acc[dateStr].clicks += (Number(curr.clicks) || 0);
-      acc[dateStr].impressions += (Number(curr.impressions) || 0);
+      acc[iso].execution_amount += (Number(curr.execution_amount) || 0);
+      acc[iso].clicks += (Number(curr.clicks) || 0);
+      acc[iso].impressions += (Number(curr.impressions) || 0);
       return acc;
     }, {});
 
     return Object.values(grouped)
-      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .sort((a: any, b: any) => a.date.localeCompare(b.date))
       .map((v: any) => ({
         ...v,
         actual_cpc: v.clicks > 0 ? Math.round(v.execution_amount / v.clicks) : 0,
@@ -968,8 +982,8 @@ export const ReportCenter: React.FC = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredData.map((record) => (
-                        <TableRow key={record._id || Math.random()} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none group">
+                      {filteredData.map((record, idx) => (
+                        <TableRow key={record._id || `row-${idx}`} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none group">
                           <TableCell className="py-6 px-8 font-bold text-slate-500">{formatDate(record.date)}</TableCell>
                           <TableCell className="py-6 px-8 font-black text-slate-900">{record.excel_campaign_name || record.ad_group_name}</TableCell>
                           <TableCell className="py-6 px-8">
@@ -1074,7 +1088,7 @@ export const ReportCenter: React.FC = () => {
 
               {/* 매체 믹스 비교 — IMC 마케터 + 브랜딩 마케터 요청 */}
               {filteredData.length > 0 && (() => {
-                const hasMultiMedia = new Set(filteredData.map(r => r.media).filter(Boolean)).size > 0;
+                const hasMultiMedia = new Set(filteredData.map(r => r.media).filter(Boolean)).size > 1;
                 if (!hasMultiMedia) return null;
                 return (
                   <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">

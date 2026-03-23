@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { CampaignConfig, SubCampaignConfig, MediaProvider } from "@/types";
 import { cn } from "@/lib/utils";
+import { genId } from "@/lib/idGenerator";
 
 interface BudgetSettingsModalProps {
   isOpen: boolean;
@@ -63,7 +64,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
       return;
     }
     const newField: SubCampaignConfig = {
-      id: Math.random().toString(36).slice(2, 11),
+      id: genId(9),
       mapping_value: '',
       media,
       fee_rate: 10,
