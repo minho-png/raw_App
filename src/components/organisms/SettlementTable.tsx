@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Receipt,
@@ -8,41 +8,63 @@ import {
   RefreshCcw,
   Download,
   TrendingDown,
-  ChevronUp,
-  ChevronDown,
+  Save,
   X,
 } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from '@/lib/utils';
 import { getAllCampaignsMonthlySettlement } from '@/server/actions/settlement';
-import { AllCampaignsSettlementResult, AllCampaignsSettlementRow } from '@/types';
+import { AllCampaignsSettlementResult } from '@/types';
 import { calcDmpFee, formatFeeRate } from '@/lib/dmpFeeRates';
+import { useToast } from '@/context/ToastContext';
 
-type SortKey = 'campaign_name' | 'dmp_type' | 'total_execution' | 'total_net' | 'fee_amount' | 'total_impressions' | 'total_clicks';
-type SortDir = 'asc' | 'desc';
+const DMP_ORDER = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH', 'WIFI', 'DIRECT', '미분류'] as const;
+type DmpType = typeof DMP_ORDER[number];
 
-const DMP_TYPES = ['전체', 'SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH', 'WIFI', 'DIRECT', '미분류'];
+type DmpCell = {
+  net: number;
+  fee: number;
+  dmpFee: number;
+  impressions: number;
+  clicks: number;
+};
+
+type CampaignPivotRow = {
+  campaign_id: string;
+  campaign_name: string;
+  byDmp: Record<string, DmpCell>;
+  totalNet: number;
+  totalFee: number;
+  totalDmpFee: number;
+  totalImpressions: number;
+  totalClicks: number;
+};
+
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_OPTIONS = Array.from(
+  { length: CURRENT_YEAR - 2022 + 1 },
+  (_, i) => (2022 + i).toString()
+);
 
 export const SettlementTable: React.FC = () => {
   const now = new Date();
+  const toast = useToast();
   const [year, setYear] = useState(now.getFullYear().toString());
   const [month, setMonth] = useState((now.getMonth() + 1).toString());
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [data, setData] = useState<AllCampaignsSettlementResult | null>(null);
-  const [search, setSearch] = useState('');
-  const [dmpFilter, setDmpFilter] = useState('전체');
-  const [sortKey, setSortKey] = useState<SortKey>('total_execution');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [searchQuery, setSearchQuery] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (y: string, m: string) => {
     setIsLoading(true);
     try {
-      const result = await getAllCampaignsMonthlySettlement(parseInt(year), parseInt(month));
+      const result = await getAllCampaignsMonthlySettlement(parseInt(y), parseInt(m));
       if ('error' in result) {
         console.error(result.error);
         setData(null);
@@ -54,56 +76,227 @@ export const SettlementTable: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [year, month]);
+  }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // year/month 변경 시 300ms debounce — 연속 변경 시 첫 번째 API 호출 방지
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchData(year, month);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [year, month, fetchData]);
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('desc'); }
+  const handleConfirmSettlement = async () => {
+    setIsSaving(true);
+    try {
+      // TODO: BE 성준 — POST /api/v1/settlements/confirm 구현 후 아래 주석 해제
+      // const res = await fetch('/api/v1/settlements/confirm', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ year: parseInt(year), month: parseInt(month) }),
+      // });
+      // if (!res.ok) throw new Error(await res.text());
+      // const json = await res.json();
+
+      // 임시: API 미구현 상태이므로 stub 처리
+      await new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('API 미구현 — BE 성준 작업 대기 중')), 200)
+      );
+
+      toast.success('정산 확정 완료', `${year}년 ${month}월 정산이 저장되었습니다.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '알 수 없는 오류';
+      toast.error('정산 확정 실패', message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const filteredRows = useMemo(() => {
-    if (!data) return [];
-    let rows = data.rows;
-    if (dmpFilter !== '전체') rows = rows.filter(r => r.dmp_type === dmpFilter);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      rows = rows.filter(r =>
-        r.campaign_name.toLowerCase().includes(q) ||
-        r.dmp_type.toLowerCase().includes(q)
-      );
-    }
-    return [...rows].sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number);
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [data, dmpFilter, search, sortKey, sortDir]);
+  const normalizeDmpType = (dmpType: string | null | undefined): DmpType => {
+    if (!dmpType || dmpType === 'N/A') return '미분류';
+    if (DMP_ORDER.includes(dmpType as DmpType)) return dmpType as DmpType;
+    return '미분류';
+  };
 
-  const filteredTotals = useMemo(() => ({
-    execution: filteredRows.reduce((s, r) => s + r.total_execution, 0),
-    net: filteredRows.reduce((s, r) => s + r.total_net, 0),
-    fee: filteredRows.reduce((s, r) => s + r.fee_amount, 0),
-    impressions: filteredRows.reduce((s, r) => s + r.total_impressions, 0),
-    clicks: filteredRows.reduce((s, r) => s + r.total_clicks, 0),
-  }), [filteredRows]);
+  const parseQuery = (query: string) => {
+    const tokens = query.trim().split(/\s+/).filter(Boolean);
+    const campaignFilters: string[] = [];
+    const dmpFilters: string[] = [];
+    const keywordFilters: string[] = [];
+
+    tokens.forEach(token => {
+      const idx = token.indexOf(':');
+      if (idx <= 0) {
+        keywordFilters.push(token.toLowerCase());
+        return;
+      }
+      const key = token.slice(0, idx).toLowerCase();
+      const value = token.slice(idx + 1).toLowerCase();
+      if (!value) return;
+      if (key === 'campaign' || key === 'camp') campaignFilters.push(value);
+      else if (key === 'dmp') dmpFilters.push(value);
+      else keywordFilters.push(token.toLowerCase());
+    });
+
+    return { campaignFilters, dmpFilters, keywordFilters };
+  };
+
+  const dmpColumns = useMemo(() => {
+    if (!data) return [...DMP_ORDER];
+    const detected = new Set<DmpType>();
+    data.rows.forEach(r => detected.add(normalizeDmpType(r.dmp_type)));
+    return DMP_ORDER.filter(type => detected.has(type));
+  }, [data]);
+
+  const campaignRows = useMemo<CampaignPivotRow[]>(() => {
+    if (!data) return [];
+    const byCampaign = new Map<string, CampaignPivotRow>();
+
+    data.rows.forEach(row => {
+      const dmpType = normalizeDmpType(row.dmp_type);
+      const campaignKey = row.campaign_id;
+      const existing = byCampaign.get(campaignKey);
+      const base = existing ?? {
+        campaign_id: row.campaign_id,
+        campaign_name: row.campaign_name,
+        byDmp: {},
+        totalNet: 0,
+        totalFee: 0,
+        totalDmpFee: 0,
+        totalImpressions: 0,
+        totalClicks: 0,
+      };
+
+      const prevCell = base.byDmp[dmpType] ?? { net: 0, fee: 0, dmpFee: 0, impressions: 0, clicks: 0 };
+      const cellNet = row.total_net || 0;
+      const cellFee = row.fee_amount || 0;
+      const cellDmpFee = calcDmpFee(dmpType, cellNet);
+      const cellImpressions = row.total_impressions || 0;
+      const cellClicks = row.total_clicks || 0;
+
+      base.byDmp[dmpType] = {
+        net: prevCell.net + cellNet,
+        fee: prevCell.fee + cellFee,
+        dmpFee: prevCell.dmpFee + cellDmpFee,
+        impressions: prevCell.impressions + cellImpressions,
+        clicks: prevCell.clicks + cellClicks,
+      };
+      base.totalNet += cellNet;
+      base.totalFee += cellFee;
+      base.totalDmpFee += cellDmpFee;
+      base.totalImpressions += cellImpressions;
+      base.totalClicks += cellClicks;
+
+      byCampaign.set(campaignKey, base);
+    });
+
+    const { campaignFilters, dmpFilters, keywordFilters } = parseQuery(searchQuery);
+
+    const filtered = Array.from(byCampaign.values()).filter(row => {
+      const campaignNameLower = row.campaign_name.toLowerCase();
+      const campaignMatch = campaignFilters.length === 0 || campaignFilters.every(f => campaignNameLower.includes(f));
+      if (!campaignMatch) return false;
+
+      const dmpMatch = dmpFilters.length === 0 || dmpFilters.every(f =>
+        Object.keys(row.byDmp).some(d => d.toLowerCase().includes(f))
+      );
+      if (!dmpMatch) return false;
+
+      const keywordMatch = keywordFilters.length === 0 || keywordFilters.every(k =>
+        campaignNameLower.includes(k) || Object.keys(row.byDmp).some(d => d.toLowerCase().includes(k))
+      );
+      if (!keywordMatch) return false;
+
+      return true;
+    });
+
+    return filtered.sort((a, b) => b.totalNet - a.totalNet);
+  }, [data, searchQuery]);
+
+  const totalsByDmp = useMemo(() => {
+    const totals: Record<string, DmpCell> = {};
+    dmpColumns.forEach(type => {
+      totals[type] = { net: 0, fee: 0, dmpFee: 0, impressions: 0, clicks: 0 };
+    });
+
+    campaignRows.forEach(row => {
+      dmpColumns.forEach(type => {
+        const cell = row.byDmp[type] ?? { net: 0, fee: 0, dmpFee: 0, impressions: 0, clicks: 0 };
+        totals[type].net += cell.net;
+        totals[type].fee += cell.fee;
+        totals[type].dmpFee += cell.dmpFee;
+        totals[type].impressions += cell.impressions;
+        totals[type].clicks += cell.clicks;
+      });
+    });
+
+    return totals;
+  }, [campaignRows, dmpColumns]);
+
+  const totalNet = useMemo(() => campaignRows.reduce((s, r) => s + r.totalNet, 0), [campaignRows]);
+  const totalFee = useMemo(() => campaignRows.reduce((s, r) => s + r.totalFee, 0), [campaignRows]);
+  const totalDmpFee = useMemo(() => campaignRows.reduce((s, r) => s + r.totalDmpFee, 0), [campaignRows]);
+  const totalImpressions = useMemo(() => campaignRows.reduce((s, r) => s + r.totalImpressions, 0), [campaignRows]);
+  const totalClicks = useMemo(() => campaignRows.reduce((s, r) => s + r.totalClicks, 0), [campaignRows]);
+
+  // CSV 셀 포맷: 숫자는 천단위 콤마(ko-KR), 따옴표로 감싸 콤마 구분자 충돌 방지
+  const formatCsvNumber = (value: number): string =>
+    `"${Math.round(value).toLocaleString('ko-KR')}"`;
+
+  const formatCsvText = (value: string): string =>
+    `"${value.replace(/"/g, '""')}"`;
+
+  const calcCtr = (clicks: number, impressions: number): string =>
+    impressions > 0 ? (clicks / impressions * 100).toFixed(2) : '0.00';
 
   const handleExportCSV = () => {
-    if (!filteredRows.length) return;
+    if (!campaignRows.length) return;
     const BOM = '\uFEFF';
-    const headers = ['캠페인명', 'DMP 종류', '총 집행액(Gross)', '매체 순액(Net)', 'DMP 수수료', '노출', '클릭', '데이터 건수'];
-    const rows = filteredRows.map(r => [
-      r.campaign_name,
-      r.dmp_type,
-      r.total_execution,
-      r.total_net,
-      r.fee_amount,
-      r.total_impressions,
-      r.total_clicks,
-      r.row_count,
-    ].join(','));
+    const headers = [formatCsvText('캠페인명')];
+    dmpColumns.forEach(type => {
+      headers.push(
+        formatCsvText(`${type} NET`),
+        formatCsvText(`${type} 노출`),
+        formatCsvText(`${type} 클릭`),
+        formatCsvText(`${type} CTR(%)`),
+        formatCsvText(`${type} DMP수수료`),
+      );
+    });
+    headers.push(
+      formatCsvText('캠페인 총 NET'),
+      formatCsvText('캠페인 총 노출'),
+      formatCsvText('캠페인 총 클릭'),
+      formatCsvText('캠페인 총 CTR(%)'),
+      formatCsvText('캠페인 총 수수료'),
+      formatCsvText('캠페인 총 DMP수수료'),
+    );
+
+    const rows = campaignRows.map(row => {
+      const rowValues = [formatCsvText(row.campaign_name)];
+      dmpColumns.forEach(type => {
+        const cell = row.byDmp[type] ?? { net: 0, fee: 0, dmpFee: 0, impressions: 0, clicks: 0 };
+        rowValues.push(
+          formatCsvNumber(cell.net),
+          formatCsvNumber(cell.impressions),
+          formatCsvNumber(cell.clicks),
+          `"${calcCtr(cell.clicks, cell.impressions)}"`,
+          formatCsvNumber(cell.dmpFee),
+        );
+      });
+      rowValues.push(
+        formatCsvNumber(row.totalNet),
+        formatCsvNumber(row.totalImpressions),
+        formatCsvNumber(row.totalClicks),
+        `"${calcCtr(row.totalClicks, row.totalImpressions)}"`,
+        formatCsvNumber(row.totalFee),
+        formatCsvNumber(row.totalDmpFee),
+      );
+      return rowValues.join(',');
+    });
+
     const csv = BOM + [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -116,49 +309,30 @@ export const SettlementTable: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const SortIcon = ({ k }: { k: SortKey }) => {
-    if (sortKey !== k) return <ChevronUp size={12} className="text-slate-300 ml-1" />;
-    return sortDir === 'asc'
-      ? <ChevronUp size={12} className="text-blue-500 ml-1" />
-      : <ChevronDown size={12} className="text-blue-500 ml-1" />;
-  };
-
-  const SortableHead = ({ k, children, className }: { k: SortKey; children: React.ReactNode; className?: string }) => (
-    <TableHead
-      className={cn("cursor-pointer select-none hover:text-blue-600 transition-colors font-bold text-slate-900", className)}
-      onClick={() => handleSort(k)}
-    >
-      <span className="inline-flex items-center">
-        {children}
-        <SortIcon k={k} />
-      </span>
-    </TableHead>
-  );
-
   return (
-    <div className="p-8 space-y-6 max-w-[1400px] mx-auto w-full">
+    <div className="mx-auto w-full max-w-[1400px] space-y-6 p-8 text-slate-100">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+          <h1 className="flex items-center gap-3 text-2xl font-black text-slate-100">
             <Receipt className="text-indigo-500" size={24} />
             DMP 월별 정산 테이블
           </h1>
-          <p className="text-sm text-slate-500 mt-1">전체 캠페인의 DMP 정산 데이터를 월별로 조회합니다.</p>
+          <p className="mt-1 text-sm text-slate-400">캠페인 마스터 선택과 무관하게 DB 전체 데이터를 월별로 조회합니다.</p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
           <Select value={year} onValueChange={setYear}>
-            <SelectTrigger className="w-28 rounded-xl bg-white border-slate-200">
+            <SelectTrigger className="w-28 rounded-xl border-white/10 bg-[#1e2433] text-slate-100">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {['2024', '2025', '2026'].map(y => <SelectItem key={y} value={y}>{y}년</SelectItem>)}
+              {YEAR_OPTIONS.map(y => <SelectItem key={y} value={y}>{y}년</SelectItem>)}
             </SelectContent>
           </Select>
 
           <Select value={month} onValueChange={setMonth}>
-            <SelectTrigger className="w-24 rounded-xl bg-white border-slate-200">
+            <SelectTrigger className="w-24 rounded-xl border-white/10 bg-[#1e2433] text-slate-100">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -171,19 +345,30 @@ export const SettlementTable: React.FC = () => {
           <Button
             variant="outline"
             size="icon"
-            onClick={fetchData}
+            onClick={() => fetchData(year, month)}
             disabled={isLoading}
-            className="rounded-xl bg-white border-slate-200 hover:bg-slate-50"
+            className="rounded-xl border-white/10 bg-[#1e2433] hover:bg-[#252d3f]"
           >
             <RefreshCcw size={15} className={cn(isLoading && "animate-spin")} />
           </Button>
 
           <Button
             onClick={handleExportCSV}
-            disabled={!filteredRows.length}
-            className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-5 shadow-lg shadow-indigo-500/20"
+            disabled={!campaignRows.length}
+            className="rounded-xl bg-indigo-600 px-5 text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-700"
           >
             <Download size={14} className="mr-2" /> CSV 내보내기
+          </Button>
+
+          {/* 정산 확정 저장 — BE 성준 /api/v1/settlements/confirm 구현 후 stub 제거 */}
+          <Button
+            onClick={handleConfirmSettlement}
+            disabled={isSaving || !campaignRows.length}
+            variant="outline"
+            className="rounded-xl border-emerald-500/40 bg-emerald-500/10 px-5 text-emerald-300 hover:bg-emerald-500/20"
+          >
+            <Save size={14} className={cn("mr-2", isSaving && "animate-pulse")} />
+            {isSaving ? '저장 중...' : '이 달 정산 확정'}
           </Button>
         </div>
       </div>
@@ -196,15 +381,15 @@ export const SettlementTable: React.FC = () => {
           className="grid grid-cols-1 sm:grid-cols-3 gap-4"
         >
           {[
-            { label: '총 집행액 (Gross)', value: filteredTotals.execution, color: 'text-slate-800' },
-            { label: '매체 순액 (Net)', value: filteredTotals.net, color: 'text-indigo-600' },
-            { label: 'DMP 수수료', value: filteredTotals.fee, color: 'text-purple-600' },
+            { label: '총 NET', value: totalNet, color: 'text-indigo-600' },
+            { label: '총 수수료', value: totalFee, color: 'text-purple-600' },
+            { label: '총 DMP 수수료', value: totalDmpFee, color: 'text-orange-600' },
           ].map(card => (
-            <Card key={card.label} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <Card key={card.label} className="rounded-2xl border border-white/10 bg-[#1e2433] shadow-sm">
               <CardContent className="p-5">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{card.label}</p>
+                <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{card.label}</p>
                 <p className={cn("text-xl font-black", card.color)}>&#8361;{card.value.toLocaleString()}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">{filteredRows.length}개 행 기준</p>
+                <p className="mt-0.5 text-[10px] text-slate-500">{campaignRows.length}개 캠페인 기준</p>
               </CardContent>
             </Card>
           ))}
@@ -212,44 +397,27 @@ export const SettlementTable: React.FC = () => {
       )}
 
       {/* Filters */}
-      <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <Card className="rounded-2xl border border-white/10 bg-[#1e2433] shadow-sm">
         <CardContent className="p-4 flex flex-col sm:flex-row gap-3 items-start sm:items-center">
           <div className="relative flex-1 min-w-0">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="캠페인명 또는 DMP 종류로 검색..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-8 rounded-xl bg-slate-50 border-slate-200 text-sm"
+              placeholder="검색어 또는 SQL 스타일 (예: campaign:롯데 dmp:SKP)"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="rounded-xl border-white/10 bg-[#161b27] pl-8 text-sm text-slate-100 placeholder:text-slate-500"
             />
-            {search && (
-              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                 <X size={14} />
               </button>
             )}
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            {DMP_TYPES.map(dmp => (
-              <button
-                key={dmp}
-                onClick={() => setDmpFilter(dmp)}
-                className={cn(
-                  "px-2.5 py-1 rounded-lg text-xs font-bold transition-all",
-                  dmpFilter === dmp
-                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
-                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                )}
-              >
-                {dmp}
-              </button>
-            ))}
           </div>
         </CardContent>
       </Card>
 
       {/* Table */}
-      <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <Card className="overflow-hidden rounded-2xl border border-white/10 bg-[#1e2433] shadow-sm">
         <AnimatePresence mode="wait">
           {isLoading ? (
             <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -257,83 +425,92 @@ export const SettlementTable: React.FC = () => {
               <RefreshCcw size={36} className="text-indigo-400 animate-spin" />
               <p className="text-slate-400 text-sm font-medium">MongoDB 집계 엔진 가동 중...</p>
             </motion.div>
-          ) : filteredRows.length > 0 ? (
+          ) : campaignRows.length > 0 ? (
             <motion.div key="table" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader className="bg-slate-50/80">
-                    <TableRow className="hover:bg-transparent border-b border-slate-100">
-                      <SortableHead k="campaign_name" className="px-6 min-w-[180px]">캠페인명</SortableHead>
-                      <SortableHead k="dmp_type" className="min-w-[100px]">DMP 종류</SortableHead>
-                      <SortableHead k="total_execution" className="text-right min-w-[140px]">집행액 (Gross)</SortableHead>
-                      <SortableHead k="total_net" className="text-right min-w-[130px]">순액 (Net)</SortableHead>
-                      <SortableHead k="fee_amount" className="text-right min-w-[120px]">매체 수수료</SortableHead>
-                      <TableHead className="text-right font-bold text-slate-900 min-w-[70px]">DMP 요율</TableHead>
-                      <TableHead className="text-right font-bold text-slate-900 min-w-[120px]">DMP 수수료</TableHead>
-                      <SortableHead k="total_impressions" className="text-right min-w-[80px]">노출</SortableHead>
-                      <SortableHead k="total_clicks" className="text-right min-w-[70px]">클릭</SortableHead>
-                      <TableHead className="text-center min-w-[60px] font-bold text-slate-900">건수</TableHead>
+                  <TableHeader className="bg-[#161b27]">
+                    <TableRow className="border-b border-white/10 hover:bg-transparent">
+                      <TableHead className="sticky left-0 z-10 min-w-[220px] bg-[#161b27] px-6 font-black text-slate-100">
+                        캠페인
+                      </TableHead>
+                      {dmpColumns.map((dmp) => (
+                        <TableHead key={dmp} className="min-w-[280px] text-right font-black text-slate-100">
+                          {dmp}
+                          <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
+                            NET / 노출 / 클릭 / CTR / DMP 수수료 ({formatFeeRate(dmp)})
+                          </span>
+                        </TableHead>
+                      ))}
+                      <TableHead className="min-w-[280px] text-right font-black text-slate-100">
+                        캠페인 합계
+                        <span className="mt-0.5 block text-[10px] font-medium text-slate-500">NET / 노출 / 클릭 / CTR / 수수료 / DMP 수수료</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRows.map((row, idx) => (
-                      <TableRow key={`${row.campaign_id}-${row.dmp_type}-${idx}`}
-                        className="hover:bg-slate-50/60 transition-colors group border-b border-slate-50">
-                        <TableCell className="px-6 font-semibold text-slate-700 group-hover:text-indigo-600 transition-colors max-w-[220px]">
+                    {campaignRows.map((row) => (
+                      <TableRow key={row.campaign_id} className="group border-b border-white/5 transition-colors hover:bg-[#252d3f]">
+                        <TableCell className="sticky left-0 z-10 max-w-[220px] bg-[#1e2433] px-6 font-semibold text-slate-200 transition-colors group-hover:bg-[#252d3f] group-hover:text-indigo-300">
                           <span className="truncate block">{row.campaign_name}</span>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={cn(
-                            "font-bold text-xs",
-                            row.dmp_type === 'DIRECT' || row.dmp_type === '미분류'
-                              ? "border-slate-200 text-slate-400"
-                              : "border-indigo-200 text-indigo-700 bg-indigo-50"
-                          )}>
-                            {row.dmp_type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-slate-700">
-                          &#8361;{row.total_execution.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-bold text-indigo-600">
-                          &#8361;{row.total_net.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-bold text-purple-600">
-                          &#8361;{row.fee_amount.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right text-slate-400 font-mono text-xs">{formatFeeRate(row.dmp_type)}</TableCell>
-                        <TableCell className="text-right font-bold text-orange-600">
-                          {calcDmpFee(row.dmp_type, row.total_net) > 0 ? `₩${calcDmpFee(row.dmp_type, row.total_net).toLocaleString()}` : '—'}
-                        </TableCell>
-                        <TableCell className="text-right text-slate-500 font-mono text-xs">
-                          {row.total_impressions.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right text-slate-500 font-mono text-xs">
-                          {row.total_clicks.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-center text-slate-400 font-mono text-xs">
-                          {row.row_count}
+                        {dmpColumns.map(type => {
+                          const cell = row.byDmp[type] ?? { net: 0, fee: 0, dmpFee: 0, impressions: 0, clicks: 0 };
+                          const ctr = cell.impressions > 0 ? (cell.clicks / cell.impressions * 100).toFixed(2) : '0.00';
+                          return (
+                            <TableCell key={type} className="text-right">
+                              <div className="text-xs leading-relaxed">
+                                <div className="font-bold text-indigo-300">NET: &#8361;{cell.net.toLocaleString()}</div>
+                                <div className="font-medium text-slate-400">노출: {cell.impressions.toLocaleString('ko-KR')}</div>
+                                <div className="font-medium text-slate-400">클릭: {cell.clicks.toLocaleString('ko-KR')}</div>
+                                <div className="font-medium text-teal-300">CTR: {ctr}%</div>
+                                <div className="font-medium text-orange-300">DMP: &#8361;{cell.dmpFee.toLocaleString()}</div>
+                              </div>
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="bg-[#161b27] text-right">
+                          <div className="text-xs leading-relaxed">
+                            <div className="font-black text-indigo-300">NET: &#8361;{row.totalNet.toLocaleString()}</div>
+                            <div className="font-semibold text-slate-400">노출: {row.totalImpressions.toLocaleString('ko-KR')}</div>
+                            <div className="font-semibold text-slate-400">클릭: {row.totalClicks.toLocaleString('ko-KR')}</div>
+                            <div className="font-semibold text-teal-300">CTR: {calcCtr(row.totalClicks, row.totalImpressions)}%</div>
+                            <div className="font-bold text-purple-300">수수료: &#8361;{row.totalFee.toLocaleString()}</div>
+                            <div className="font-bold text-orange-300">DMP: &#8361;{row.totalDmpFee.toLocaleString()}</div>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
                     {/* Totals row */}
-                    <TableRow className="bg-slate-50/80 border-t-2 border-slate-200 font-black">
-                      <TableCell className="px-6 text-slate-600 font-black">합계</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="border-slate-300 text-slate-500 text-xs">
-                          {filteredRows.length}행
-                        </Badge>
+                    <TableRow className="border-t-2 border-white/15 bg-[#161b27] font-black">
+                      <TableCell className="sticky left-0 z-10 bg-[#161b27] px-6 font-black text-slate-300">
+                        합계 ({campaignRows.length}개 캠페인)
                       </TableCell>
-                      <TableCell className="text-right font-black text-slate-800">&#8361;{filteredTotals.execution.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-black text-indigo-700">&#8361;{filteredTotals.net.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-black text-purple-700">&#8361;{filteredTotals.fee.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-slate-400 text-xs">—</TableCell>
-                      <TableCell className="text-right font-black text-orange-700">
-                        &#8361;{filteredRows.reduce((s, r) => s + calcDmpFee(r.dmp_type, r.total_net), 0).toLocaleString()}
+                      {dmpColumns.map(type => {
+                        const cell = totalsByDmp[type] ?? { net: 0, fee: 0, dmpFee: 0, impressions: 0, clicks: 0 };
+                        const ctr = cell.impressions > 0 ? (cell.clicks / cell.impressions * 100).toFixed(2) : '0.00';
+                        return (
+                          <TableCell key={type} className="text-right">
+                            <div className="text-xs leading-relaxed">
+                              <div className="font-black text-indigo-300">NET: &#8361;{cell.net.toLocaleString()}</div>
+                              <div className="font-black text-slate-400">노출: {cell.impressions.toLocaleString('ko-KR')}</div>
+                              <div className="font-black text-slate-400">클릭: {cell.clicks.toLocaleString('ko-KR')}</div>
+                              <div className="font-black text-teal-300">CTR: {ctr}%</div>
+                              <div className="font-black text-orange-300">DMP: &#8361;{cell.dmpFee.toLocaleString()}</div>
+                            </div>
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="bg-[#252d3f] text-right">
+                        <div className="text-xs leading-relaxed">
+                          <div className="font-black text-indigo-200">NET: &#8361;{totalNet.toLocaleString()}</div>
+                          <div className="font-black text-slate-300">노출: {totalImpressions.toLocaleString('ko-KR')}</div>
+                          <div className="font-black text-slate-300">클릭: {totalClicks.toLocaleString('ko-KR')}</div>
+                          <div className="font-black text-teal-200">CTR: {calcCtr(totalClicks, totalImpressions)}%</div>
+                          <div className="font-black text-purple-200">수수료: &#8361;{totalFee.toLocaleString()}</div>
+                          <div className="font-black text-orange-200">DMP: &#8361;{totalDmpFee.toLocaleString()}</div>
+                        </div>
                       </TableCell>
-                      <TableCell className="text-right font-black text-slate-600 font-mono text-xs">{filteredTotals.impressions.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-black text-slate-600 font-mono text-xs">{filteredTotals.clicks.toLocaleString()}</TableCell>
-                      <TableCell className="text-center text-slate-400 font-mono text-xs">—</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>

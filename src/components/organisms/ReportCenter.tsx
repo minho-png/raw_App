@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BudgetPacingCards } from '@/components/molecules/BudgetPacingCards';
 import { FileUploader } from '@/components/molecules/FileUploader';
@@ -8,14 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -27,22 +26,13 @@ import {
   Check,
   Settings2,
   PieChart as PieChartIcon,
-  MessageSquare,
-  Users,
-  Layout as LayoutIcon,
   BarChart4,
   Download,
   Layers,
-  Sparkles,
-  AlertTriangle,
-  ArrowUp,
-  ArrowDown,
-  Receipt,
 } from "lucide-react";
 import { useToast } from '@/context/ToastContext';
 import { ColumnMappingPreview } from '@/components/molecules/ColumnMappingPreview';
 import { MediaMixSection } from '@/components/molecules/MediaMixSection';
-import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { BudgetStatus, PerformanceRecord, MediaProvider } from "@/types";
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { cn } from '@/lib/utils';
@@ -54,7 +44,6 @@ import { ReportService } from "@/services/reportService";
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { TableFilterBar } from '@/components/molecules/TableFilterBar';
 import { DataTable } from '@/components/molecules/DataTable';
-import { StaleInsightBanner } from '@/components/molecules/StaleInsightBanner';
 import debounce from 'lodash/debounce';
 import {
   DndContext,
@@ -69,10 +58,30 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  useSortable,
   arrayMove,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { SortableItem } from '@/components/molecules/SortableItem';
+import { TrendBlock } from '@/components/organisms/dashboard/TrendBlock';
+import { ShareBlock } from '@/components/organisms/dashboard/ShareBlock';
+import { BudgetBlock } from '@/components/organisms/dashboard/BudgetBlock';
+import type { BudgetProgressItem } from '@/components/organisms/dashboard/BudgetBlock';
+import { AudienceBlock } from '@/components/organisms/dashboard/AudienceBlock';
+import { CreativeBlock } from '@/components/organisms/dashboard/CreativeBlock';
+import { MatrixBlock } from '@/components/organisms/dashboard/MatrixBlock';
+import { InsightsBlock } from '@/components/organisms/dashboard/InsightsBlock';
+import { DmpBlock } from '@/components/organisms/dashboard/DmpBlock';
+
+// Block registry — keyed by blockId from dashboardLayout
+const BLOCK_COMPONENTS: Record<string, React.ComponentType<any>> = {
+  trend:    TrendBlock,
+  share:    ShareBlock,
+  budget:   BudgetBlock,
+  audience: AudienceBlock,
+  creative: CreativeBlock,
+  matrix:   MatrixBlock,
+  insights: InsightsBlock,
+  dmp:      DmpBlock,
+};
 
 export const ReportCenter: React.FC = () => {
   const toast = useToast();
@@ -90,12 +99,6 @@ export const ReportCenter: React.FC = () => {
   const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
-  const [campaignInsights, setCampaignInsights] = useState(selectedCampaign?.insights || '');
-
-  // Update insights when campaign changes
-  useEffect(() => {
-    setCampaignInsights(selectedCampaign?.insights || '');
-  }, [selectedCampaignId, selectedCampaign?.insights]);
 
   // Persist in-progress work per campaign (back/forward, tab switch)
   useEffect(() => {
@@ -197,23 +200,9 @@ export const ReportCenter: React.FC = () => {
     debouncedSaveCampaign(updated);
   };
 
-  const SortableItem: React.FC<{ id: string; children: React.ReactNode }> = ({ id, children }) => {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-    const style: React.CSSProperties = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      opacity: isDragging ? 0.85 : 1,
-    };
-    return (
-      <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={cn("touch-none", isDragging && "z-10")}>
-        {children}
-      </div>
-    );
-  };
-
-  const handleSaveInsights = async () => {
+  const handleSaveInsights = useCallback(async (value: string) => {
     if (!selectedCampaign) return;
-    const updated = { ...selectedCampaign, insights: campaignInsights };
+    const updated = { ...selectedCampaign, insights: value };
     const result = await saveCampaignAction(updated);
     if (result.success && result.campaigns) {
       setCampaigns(result.campaigns);
@@ -221,7 +210,7 @@ export const ReportCenter: React.FC = () => {
     } else {
       toast.error('저장 실패', '잠시 후 다시 시도해 주세요.');
     }
-  };
+  }, [selectedCampaign, setCampaigns, toast]);
 
   const handleUpdateAmount = async (id: string, newValue: number) => {
     const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
@@ -450,9 +439,6 @@ export const ReportCenter: React.FC = () => {
 
   const [isSavingReport, setIsSavingReport] = useState(false);
 
-  // AI 인사이트 상태
-  const [aiInsight, setAiInsight] = useState<any>(null);
-  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [tablePage, setTablePage] = useState(0);
   const TABLE_PAGE_SIZE = 50;
 
@@ -460,7 +446,6 @@ export const ReportCenter: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMedia, setFilterMedia] = useState('all');
   const [filterDmp, setFilterDmp] = useState('all');
-  const [staleBannerDismissed, setStaleBannerDismissed] = useState(false);
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
 
   // 테이블 전용 필터 적용 — 차트는 filteredData를 그대로 사용하고 이 데이터만 테이블에 전달
@@ -521,29 +506,6 @@ export const ReportCenter: React.FC = () => {
       toast.error('저장 오류', '잠시 후 다시 시도해 주세요.');
     } finally {
       setIsSavingReport(false);
-    }
-  };
-
-  const handleGenerateAiInsight = async () => {
-    if (!selectedCampaignId || filteredData.length === 0) return;
-    setIsGeneratingAi(true);
-    try {
-      const res = await fetch('/api/v1/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaign_id: selectedCampaignId }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error('AI 분석 실패', json.error ?? '잠시 후 다시 시도해 주세요.');
-        return;
-      }
-      setAiInsight(json.data);
-      toast.success('AI 분석 완료', `${json.data.recommendations?.length ?? 0}개의 권장사항이 생성되었습니다.`);
-    } catch {
-      toast.error('AI 분석 오류', '네트워크 오류가 발생했습니다.');
-    } finally {
-      setIsGeneratingAi(false);
     }
   };
 
@@ -610,49 +572,11 @@ export const ReportCenter: React.FC = () => {
     toast.success('CSV 내보내기 완료', `${filteredData.length.toLocaleString()}건이 다운로드되었습니다.`);
   };
 
-  // Chart Data Derivation
-  const dailyTrendData = useMemo(() => {
-    // Key by ISO date string (YYYY-MM-DD) to avoid locale-dependent sort issues
-    const grouped = filteredData.reduce((acc: any, curr) => {
-      const d = new Date(curr.date);
-      const iso = isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
-      if (!iso) return acc;
-      if (!acc[iso]) {
-        acc[iso] = { date: iso, execution_amount: 0, clicks: 0, impressions: 0 };
-      }
-      acc[iso].execution_amount += (Number(curr.execution_amount) || 0);
-      acc[iso].clicks += (Number(curr.clicks) || 0);
-      acc[iso].impressions += (Number(curr.impressions) || 0);
-      return acc;
-    }, {});
-
-    return Object.values(grouped)
-      .sort((a: any, b: any) => a.date.localeCompare(b.date))
-      .map((v: any) => ({
-        ...v,
-        actual_cpc: v.clicks > 0 ? Math.round(v.execution_amount / v.clicks) : 0,
-        ctr: v.impressions > 0 ? ((v.clicks / v.impressions) * 100).toFixed(2) : '0.00',
-      }));
-  }, [filteredData]);
-
   const formatDate = (date: Date | string) => {
     const d = date instanceof Date ? date : new Date(date);
     if (isNaN(d.getTime())) return String(date);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
-
-  const dmpShareData = useMemo(() => {
-    const shares = filteredData.reduce((acc: any, curr) => {
-      const dmp = curr.dmp_type || 'DIRECT';
-      acc[dmp] = (acc[dmp] || 0) + (Number(curr.execution_amount) || 0);
-      return acc;
-    }, {});
-
-    return Object.entries(shares)
-      .map(([name, value]) => ({ name, value: value as number }))
-      .filter(d => d.value > 0)
-      .sort((a, b) => b.value - a.value);
-  }, [filteredData]);
 
   const budgetProgressData = useMemo(() => {
     if (!selectedCampaign || !selectedCampaign.sub_campaigns) return [];
@@ -678,43 +602,24 @@ export const ReportCenter: React.FC = () => {
       });
   }, [selectedCampaign, filteredData]);
 
-  const ageData = useMemo(() => {
-    const counts = filteredData.reduce((acc: any, curr) => {
-      const age = curr.age || 'Unknown';
-      acc[age] = (acc[age] || 0) + (Number(curr.execution_amount) || 0);
-      return acc;
-    }, {});
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name, value: value as number }))
-      .filter(d => d.value > 0);
-  }, [filteredData]);
-
-  const genderData = useMemo(() => {
-    const counts = filteredData.reduce((acc: any, curr) => {
-      const g = curr.gender || 'Unknown';
-      acc[g] = (acc[g] || 0) + (Number(curr.execution_amount) || 0);
-      return acc;
-    }, {});
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name, value: value as number }))
-      .filter(d => d.value > 0);
-  }, [filteredData]);
-
-  const creativeData = useMemo(() => {
-    const data = filteredData.reduce((acc: any, curr) => {
-      const c = curr.creative_name || 'N/A';
-      if (!acc[c]) acc[c] = { name: c, spend: 0, clicks: 0, imps: 0 };
-      acc[c].spend += (Number(curr.execution_amount) || 0);
-      acc[c].clicks += (Number(curr.clicks) || 0);
-      acc[c].imps += (Number(curr.impressions) || 0);
-      return acc;
-    }, {});
-    return Object.values(data).map((v: any) => ({
-      ...v,
-      ctr: v.imps > 0 ? (v.clicks / v.imps) * 100 : 0,
-      cpc: v.clicks > 0 ? Math.round(v.spend / v.clicks) : 0,
-    })).sort((a: any, b: any) => b.spend - a.spend).slice(0, 10);
-  }, [filteredData]);
+  const getBlockProps = useCallback((blockId: string) => {
+    switch (blockId) {
+      case 'trend':    return { filteredData };
+      case 'share':    return { filteredData };
+      case 'budget':   return { items: budgetProgressData as BudgetProgressItem[] };
+      case 'audience': return { filteredData };
+      case 'creative': return { filteredData };
+      case 'matrix':   return { subCampaigns: selectedCampaign?.sub_campaigns ?? [], filteredData, budgetProgressData };
+      case 'insights': return {
+        campaignId: selectedCampaignId ?? '',
+        hasData: filteredData.length > 0,
+        memoValue: selectedCampaign?.insights ?? '',
+        onMemoSave: handleSaveInsights,
+      };
+      case 'dmp':      return { filteredData };
+      default:         return {};
+    }
+  }, [filteredData, budgetProgressData, selectedCampaign, selectedCampaignId, handleSaveInsights]);
 
   if (!selectedCampaignId) {
     return (
@@ -731,7 +636,7 @@ export const ReportCenter: React.FC = () => {
   }
 
   return (
-    <div className="p-10 space-y-10 animate-in fade-in duration-1000">
+    <div className="animate-in fade-in space-y-10 p-10 duration-1000 [&_.bg-white]:!bg-[#1e2433] [&_.bg-slate-50]:!bg-[#161b27] [&_.bg-slate-50\/60]:!bg-[#161b27] [&_.bg-slate-50\/80]:!bg-[#161b27] [&_.bg-slate-100]:!bg-[#252d3f] [&_.border-slate-100]:!border-white/5 [&_.border-slate-200]:!border-white/10 [&_.text-slate-300]:!text-slate-300 [&_.text-slate-400]:!text-slate-500 [&_.text-slate-500]:!text-slate-400 [&_.text-slate-600]:!text-slate-300 [&_.text-slate-700]:!text-slate-200 [&_.text-slate-800]:!text-slate-100 [&_.text-slate-900]:!text-slate-100">
       <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
@@ -1176,520 +1081,13 @@ export const ReportCenter: React.FC = () => {
                 <SortableContext items={dashboardLayout} strategy={verticalListSortingStrategy}>
                   <div className="space-y-8">
                     {dashboardLayout.map((blockId) => {
-                      if (blockId === 'trend') {
-                        return (
-                          <SortableItem id="trend" key="trend">
-                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
-                              <div className="flex justify-between items-center mb-10">
-                                <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight">집행 속도 및 효율성 트렌드</h3>
-                                <div className="flex items-center gap-2">
-                                  <span className="flex items-center gap-1.5 text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
-                                    <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" /> 지출액
-                                  </span>
-                                  <span className="flex items-center gap-1.5 text-xs font-black text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-                                    CPC 추이
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="h-[400px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <ComposedChart data={dailyTrendData}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                    <XAxis dataKey="date" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} dy={10} />
-                                    <YAxis yAxisId="left" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                                    <YAxis yAxisId="right" orientation="right" tick={{fontSize: 11, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                                    <Tooltip contentStyle={{ borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)', fontWeight: 800 }}/>
-                                    <Bar yAxisId="left" dataKey="execution_amount" name="Daily Spend" fill="#2563eb" radius={[6, 6, 0, 0]} barSize={32} />
-                                    <Line yAxisId="right" type="monotone" dataKey="actual_cpc" name="Actual CPC" stroke="#0f172a" strokeWidth={3} dot={{r: 5, fill: '#fff', stroke: '#0f172a', strokeWidth: 2}} activeDot={{r: 7, strokeWidth: 0}} />
-                                  </ComposedChart>
-                                </ResponsiveContainer>
-                              </div>
-                            </Card>
-                          </SortableItem>
-                        );
-                      }
-
-                      if (blockId === 'share') {
-                        return (
-                          <SortableItem id="share" key="share">
-                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
-                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-8">매체별 점유율</h3>
-                              <div className="h-[350px] w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <PieChart>
-                                    <Pie
-                                      data={dmpShareData}
-                                      cx="50%"
-                                      cy="50%"
-                                      innerRadius={80}
-                                      outerRadius={110}
-                                      paddingAngle={8}
-                                      dataKey="value"
-                                      nameKey="name"
-                                      stroke="none"
-                                    >
-                                      {dmpShareData.map((_, index) => (
-                                        <Cell
-                                          key={`cell-${index}`}
-                                          fill={['#2563eb', '#0f172a', '#10b981', '#f59e0b', '#94a3b8'][index % 5]}
-                                          className="hover:opacity-80 transition-opacity outline-none"
-                                        />
-                                      ))}
-                                    </Pie>
-                                    <Tooltip />
-                                    <Legend wrapperStyle={{ paddingTop: '32px' }} iconType="circle" />
-                                  </PieChart>
-                                </ResponsiveContainer>
-                              </div>
-                            </Card>
-                          </SortableItem>
-                        );
-                      }
-
-                      if (blockId === 'budget') {
-                        if (budgetProgressData.length === 0) return null;
-                        return (
-                          <SortableItem id="budget" key="budget">
-                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
-                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight mb-10">Strategic Budget Alignment</h3>
-                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-                                {budgetProgressData.map((item) => (
-                                  <div key={item.id} className="space-y-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                                    <div className="flex justify-between items-end">
-                                      <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px]">{item.name}</span>
-                                      <span className={cn(
-                                        "text-xs font-black px-2 py-1 rounded-lg",
-                                        item.percent > 90 ? "text-red-600 bg-red-50" : "text-blue-600 bg-blue-50"
-                                      )}>{item.percent.toFixed(1)}%</span>
-                                    </div>
-                                    <Progress value={item.percent} className="h-2.5 bg-slate-100/50" indicatorClassName={item.percent > 90 ? "bg-red-500" : "bg-blue-600"} />
-                                    <div className="flex justify-between text-[11px] font-black text-slate-400 font-outfit tracking-tighter">
-                                      <span className="text-slate-900">₩{Math.round(item.spent).toLocaleString()}</span>
-                                      <span>OF ₩{Math.round(item.budget).toLocaleString()}</span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </Card>
-                          </SortableItem>
-                        );
-                      }
-
-                      if (blockId === 'audience') {
-                        return (
-                          <SortableItem id="audience" key="audience">
-                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
-                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
-                                <Users size={24} className="text-blue-600"/> Audience Intelligence
-                              </h3>
-                              <div className="grid grid-cols-2 gap-8 h-[300px]">
-                                <div className="flex flex-col">
-                                  <p className="text-[10px] font-black text-center text-slate-400 uppercase tracking-widest mb-4">Age Lifecycle</p>
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                      <Pie data={ageData} innerRadius={50} outerRadius={80} dataKey="value" nameKey="name" stroke="none">
-                                        {ageData.map((_, i) => <Cell key={i} fill={['#2563eb', '#60a5fa', '#93c5fd', '#bfdbfe'][i % 4]} />)}
-                                      </Pie>
-                                      <Tooltip />
-                                      <Legend verticalAlign="bottom" height={36} iconType="rect" iconSize={8}/>
-                                    </PieChart>
-                                  </ResponsiveContainer>
-                                </div>
-                                <div className="flex flex-col">
-                                  <p className="text-[10px] font-black text-center text-slate-400 uppercase tracking-widest mb-4">Gender Binary</p>
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                      <Pie data={genderData} innerRadius={50} outerRadius={80} dataKey="value" nameKey="name" stroke="none">
-                                        {genderData.map((_, i) => <Cell key={i} fill={['#0f172a', '#2563eb', '#94a3b8'][i % 3]} />)}
-                                      </Pie>
-                                      <Tooltip />
-                                      <Legend verticalAlign="bottom" height={36} iconType="rect" iconSize={8}/>
-                                    </PieChart>
-                                  </ResponsiveContainer>
-                                </div>
-                              </div>
-                            </Card>
-                          </SortableItem>
-                        );
-                      }
-
-                      if (blockId === 'creative') {
-                        return (
-                          <SortableItem id="creative" key="creative">
-                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
-                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
-                                <LayoutIcon size={24} className="text-blue-600"/> TOP 10 Creative Impact
-                              </h3>
-                              <div className="h-[300px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <ComposedChart data={creativeData} layout="vertical">
-                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                                    <XAxis type="number" hide />
-                                    <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 10, fontWeight: 700, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                                    <Tooltip />
-                                    <Bar dataKey="spend" name="Investment" fill="#2563eb" radius={[0, 6, 6, 0]} barSize={16} />
-                                    <Line dataKey="ctr" name="CTR Performance" stroke="#0f172a" strokeWidth={3} dot={false} />
-                                  </ComposedChart>
-                                </ResponsiveContainer>
-                              </div>
-                            </Card>
-                          </SortableItem>
-                        );
-                      }
-
-                      if (blockId === 'matrix') {
-                        return (
-                          <SortableItem id="matrix" key="matrix">
-                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
-                              <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3 mb-10">
-                                <BarChart4 size={24} className="text-blue-600"/> Matrix Comparison Analytics
-                              </h3>
-                              <div className="overflow-hidden rounded-[32px] border border-slate-200">
-                                <Table>
-                                  <TableHeader className="bg-slate-900 border-none">
-                                    <TableRow className="hover:bg-slate-900 border-none">
-                                      <TableHead className="text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Vertical Solution</TableHead>
-                                      <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Budget Fulfillment</TableHead>
-                                      <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">CPM/CPC Efficiency</TableHead>
-                                      <TableHead className="text-right text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Interaction rate</TableHead>
-                                      <TableHead className="text-center text-slate-400 font-black text-[10px] uppercase tracking-widest py-6 px-8">Fulfillment Level</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {selectedCampaign?.sub_campaigns?.map((sub) => {
-                                      const progress = budgetProgressData.find(p => p.id === sub.id);
-                                      // mapping_value 우선, excel_name은 deprecated fallback (CLAUDE.md 기준)
-                                      const mKey = sub.mapping_value || sub.excel_name;
-                                      const subData = filteredData.filter(d =>
-                                        mKey
-                                          ? (d.excel_campaign_name === mKey || d.mapping_value === mKey)
-                                          : d.media === sub.media
-                                      );
-                                      const subSpent = subData.reduce((s, d) => s + (Number(d.execution_amount) || 0), 0);
-                                      const subClicks = subData.reduce((s, d) => s + (Number(d.clicks) || 0), 0);
-                                      const subImps = subData.reduce((s, d) => s + (Number(d.impressions) || 0), 0);
-                                      const actualCpc = subClicks > 0 ? subSpent / subClicks : 0;
-                                      const actualCtr = subImps > 0 ? (subClicks / subImps) * 100 : 0;
-                                      const cpcStatus = sub.target_cpc ? (actualCpc <= sub.target_cpc ? 'Good' : 'High') : 'N/A';
-
-                                      return (
-                                        <TableRow key={sub.id} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none">
-                                          <TableCell className="py-6 px-8 font-black text-slate-900">{mKey || sub.media}</TableCell>
-                                          <TableCell className="py-6 px-8 text-right">
-                                            <span className="text-slate-900 font-black block leading-none">₩{Math.round(subSpent).toLocaleString()}</span>
-                                            <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">TARGET ₩{sub.budget?.toLocaleString()}</span>
-                                          </TableCell>
-                                          <TableCell className="py-6 px-8 text-right">
-                                            <span className={cn("font-black block leading-none", cpcStatus === 'Good' ? 'text-green-600' : 'text-orange-600')}>
-                                              ₩{Math.round(actualCpc).toLocaleString()}
-                                            </span>
-                                            <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">GOAL ₩{sub.target_cpc || '-'}</span>
-                                          </TableCell>
-                                          <TableCell className="py-6 px-8 text-right">
-                                            <span className="text-slate-900 font-black block leading-none">{actualCtr.toFixed(2)}%</span>
-                                            <span className="text-slate-400 text-[10px] font-bold uppercase mt-1 block">GOAL {sub.target_ctr || '-'}%</span>
-                                          </TableCell>
-                                          <TableCell className="py-6 px-8 text-center">
-                                            <Badge className={cn(
-                                              "font-black px-3 py-1 rounded-lg border-none shadow-sm",
-                                              progress && progress.percent > 90 ? "bg-red-50 text-red-600" : "bg-blue-600 text-white"
-                                            )}>
-                                              {progress ? `${progress.percent.toFixed(0)}% PACING` : 'N/A'}
-                                            </Badge>
-                                          </TableCell>
-                                        </TableRow>
-                                      );
-                                    })}
-                                  </TableBody>
-                                </Table>
-                              </div>
-                            </Card>
-                          </SortableItem>
-                        );
-                      }
-
-                      if (blockId === 'insights') {
-                        const priorityColor = (p: string) =>
-                          p === 'high' ? 'text-red-600 bg-red-50 border-red-100' :
-                          p === 'medium' ? 'text-amber-600 bg-amber-50 border-amber-100' :
-                          'text-slate-500 bg-slate-50 border-slate-200';
-                        const priorityLabel = (p: string) =>
-                          p === 'high' ? '긴급' : p === 'medium' ? '권장' : '참고';
-
-                        return (
-                          <SortableItem id="insights" key="insights">
-                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
-                              <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
-                                <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3">
-                                  <MessageSquare size={24} className="text-blue-600"/> Intelligence Synthesis
-                                </h3>
-                                <div className="flex items-center gap-3">
-                                  <Button
-                                    onClick={handleGenerateAiInsight}
-                                    disabled={isGeneratingAi || filteredData.length === 0}
-                                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 rounded-2xl font-black shadow-lg shadow-blue-500/20 transition-all"
-                                  >
-                                    {isGeneratingAi
-                                      ? <><Loader2 size={16} className="mr-2 animate-spin" />AI 분석 중...</>
-                                      : <><Sparkles size={16} className="mr-2" />AI 성과 분석</>
-                                    }
-                                  </Button>
-                                  <Button onClick={handleSaveInsights} variant="outline" className="rounded-2xl font-black border-slate-200">
-                                    메모 저장
-                                  </Button>
-                                </div>
-                              </div>
-
-                              {/* Stale 인사이트 배너 — 새 데이터 업로드 후 AI 미실행 시 표시 */}
-                              <AnimatePresence>
-                                {aiInsight?.is_stale && !staleBannerDismissed && (
-                                  <StaleInsightBanner
-                                    onReanalyze={handleGenerateAiInsight}
-                                    onDismiss={() => setStaleBannerDismissed(true)}
-                                  />
-                                )}
-                              </AnimatePresence>
-
-                              {/* AI 분석 결과 */}
-                              {aiInsight && (
-                                <div className="mb-8 space-y-6">
-                                  {/* 요약 */}
-                                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-6">
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <Sparkles size={16} className="text-blue-600" />
-                                      <span className="text-xs font-black text-blue-600 uppercase tracking-widest">AI 요약</span>
-                                      <span className="ml-auto text-[10px] font-bold text-slate-400">
-                                        {new Date(aiInsight.generated_at).toLocaleString('ko-KR')} · {aiInsight.model}
-                                      </span>
-                                    </div>
-                                    <p className="text-slate-700 font-medium leading-relaxed">{aiInsight.summary}</p>
-                                  </div>
-
-                                  {/* 이상 탐지 */}
-                                  {aiInsight.anomalies?.length > 0 && (
-                                    <div>
-                                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                        <AlertTriangle size={14} className="text-amber-500" /> 이상 탐지
-                                      </h4>
-                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        {aiInsight.anomalies.map((a: any, i: number) => (
-                                          <div key={i} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                                            <div className="flex items-center gap-2 mb-2">
-                                              {a.direction === 'spike'
-                                                ? <ArrowUp size={14} className="text-red-500" />
-                                                : <ArrowDown size={14} className="text-blue-500" />
-                                              }
-                                              <span className="text-xs font-black text-slate-600 uppercase">{a.metric}</span>
-                                              <span className="text-xs text-slate-400 ml-auto">{a.date}</span>
-                                            </div>
-                                            <p className="text-sm font-medium text-slate-600 leading-snug">{a.description}</p>
-                                            <div className="mt-3 flex items-center gap-2 text-xs font-black">
-                                              <span className="text-slate-900">{a.value?.toLocaleString()}</span>
-                                              <span className="text-slate-300">vs</span>
-                                              <span className="text-slate-400">{a.baseline?.toLocaleString()} 기준</span>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* 권장사항 */}
-                                  {aiInsight.recommendations?.length > 0 && (
-                                    <div>
-                                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">권장사항</h4>
-                                      <div className="space-y-3">
-                                        {aiInsight.recommendations.map((r: any, i: number) => (
-                                          <div key={i} className="flex items-start gap-4 bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
-                                            <span className={cn('text-[10px] font-black px-2.5 py-1 rounded-xl border mt-0.5 shrink-0', priorityColor(r.priority))}>
-                                              {priorityLabel(r.priority)}
-                                            </span>
-                                            <div>
-                                              <p className="font-black text-slate-800 text-sm">{r.title}</p>
-                                              <p className="text-slate-500 text-sm mt-1 leading-relaxed">{r.description}</p>
-                                              {r.action && (
-                                                <p className="text-blue-600 text-xs font-bold mt-2 flex items-center gap-1">
-                                                  <Check size={11} /> {r.action}
-                                                </p>
-                                              )}
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* 수동 메모 */}
-                              <div>
-                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">수동 메모</p>
-                                <textarea
-                                  className="w-full min-h-[140px] p-6 rounded-[20px] border border-slate-200 bg-slate-50 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all text-slate-700 text-base font-medium placeholder:text-slate-300"
-                                  placeholder="성과 결과를 종합하고 전략적 방향을 기록하세요..."
-                                  value={campaignInsights}
-                                  onChange={(e) => setCampaignInsights(e.target.value)}
-                                />
-                              </div>
-                            </Card>
-                          </SortableItem>
-                        );
-                      }
-
-                      if (blockId === 'dmp') {
-                        // DMP 집계 (plain-JS Map, no Danfo)
-                        const DMP_FEE_RATES: Record<string, number> = {
-                          SKP: 0.10, KB: 0.10, LOTTE: 0.08, TG360: 0.10,
-                          BC: 0, SH: 0, WIFI: 0, DIRECT: 0, 'N/A': 0,
-                        };
-                        const calcDmpFee = (type: string, net: number) =>
-                          Math.round(net * (DMP_FEE_RATES[type] ?? 0));
-                        const formatFeeRate = (type: string): string => {
-                          const rate = DMP_FEE_RATES[type] ?? 0;
-                          return rate === 0 ? '—' : `${(rate * 100).toFixed(0)}%`;
-                        };
-                        const dmpLabel: Record<string, string> = {
-                          SKP: 'SKP', KB: 'KB', LOTTE: 'LOTTE', TG360: 'TG360',
-                          WIFI: '실내위치 (WIFI)', BC: 'BC', SH: 'SH',
-                          DIRECT: '직접 집행', 'N/A': '직접 집행',
-                        };
-                        const dmpOrder = ['SKP', 'KB', 'LOTTE', 'TG360', 'WIFI', 'BC', 'SH', 'DIRECT', 'N/A'];
-
-                        const dmpMap = new Map<string, { execution: number; net: number; dmpFee: number; impressions: number; clicks: number; count: number }>();
-                        filteredData.forEach(r => {
-                          const key = r.dmp_type || 'DIRECT';
-                          const prev = dmpMap.get(key) ?? { execution: 0, net: 0, dmpFee: 0, impressions: 0, clicks: 0, count: 0 };
-                          const netVal = r.net_amount || 0;
-                          dmpMap.set(key, {
-                            execution: prev.execution + (r.execution_amount || 0),
-                            net: prev.net + netVal,
-                            dmpFee: prev.dmpFee + calcDmpFee(key, netVal),
-                            impressions: prev.impressions + (r.impressions || 0),
-                            clicks: prev.clicks + (r.clicks || 0),
-                            count: prev.count + 1,
-                          });
-                        });
-
-                        const dmpRows = dmpOrder
-                          .filter(k => dmpMap.has(k))
-                          .map(k => ({ key: k, label: dmpLabel[k] ?? k, ...dmpMap.get(k)! }));
-
-                        // Merge DIRECT + N/A into one row
-                        const directRow = dmpRows.filter(r => r.key === 'DIRECT' || r.key === 'N/A')
-                          .reduce<{ key: string; label: string; execution: number; net: number; dmpFee: number; impressions: number; clicks: number; count: number } | null>((acc, r) => {
-                            if (!acc) return { ...r, key: 'DIRECT', label: '직접 집행' };
-                            return { ...acc, execution: acc.execution + r.execution, net: acc.net + r.net, dmpFee: acc.dmpFee + r.dmpFee, impressions: acc.impressions + r.impressions, clicks: acc.clicks + r.clicks, count: acc.count + r.count };
-                          }, null);
-                        const dmpOnlyRows = dmpRows.filter(r => r.key !== 'DIRECT' && r.key !== 'N/A');
-                        const allDmpRows = directRow ? [...dmpOnlyRows, directRow] : dmpOnlyRows;
-
-                        const totalExecution = allDmpRows.reduce((s, r) => s + r.execution, 0);
-                        const totalNet = allDmpRows.reduce((s, r) => s + r.net, 0);
-
-                        if (allDmpRows.length === 0) return null;
-
-                        return (
-                          <SortableItem id="dmp" key="dmp">
-                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
-                              <div className="flex items-center gap-3 mb-8">
-                                <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
-                                  <Receipt size={20} />
-                                </div>
-                                <div>
-                                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight">DMP 집행 분석</h3>
-                                  <p className="text-xs text-slate-400 mt-0.5 font-medium">광고 그룹명 키워드 기반 자동 분류 · WIFI = 실내위치</p>
-                                </div>
-                              </div>
-
-                              {/* Summary strip */}
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-                                {[
-                                  { label: 'DMP 종류', value: String(dmpOnlyRows.length), unit: '개', color: 'text-indigo-600' },
-                                  { label: '총 집행액', value: `₩${totalExecution.toLocaleString()}`, unit: '', color: 'text-slate-800' },
-                                  { label: '매체 순액', value: `₩${totalNet.toLocaleString()}`, unit: '', color: 'text-blue-600' },
-                                  { label: 'DMP 수수료', value: `₩${allDmpRows.reduce((s, r) => s + r.dmpFee, 0).toLocaleString()}`, unit: '', color: 'text-orange-600' },
-                                ].map(c => (
-                                  <div key={c.label} className="bg-slate-50 rounded-2xl p-4">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{c.label}</p>
-                                    <p className={cn("text-lg font-black", c.color)}>{c.value}<span className="text-sm ml-0.5">{c.unit}</span></p>
-                                  </div>
-                                ))}
-                              </div>
-
-                              <div className="overflow-x-auto rounded-xl border border-slate-100">
-                                <Table>
-                                  <TableHeader className="bg-slate-50/80">
-                                    <TableRow className="hover:bg-transparent border-b border-slate-100">
-                                      <TableHead className="px-6 font-black text-slate-700 min-w-[160px]">DMP 종류</TableHead>
-                                      <TableHead className="font-black text-slate-700 min-w-[120px] text-xs">감지 키워드</TableHead>
-                                      <TableHead className="text-right font-black text-slate-700 min-w-[140px]">집행액 (Gross)</TableHead>
-                                      <TableHead className="text-right font-black text-slate-700 min-w-[130px]">순액 (Net)</TableHead>
-                                      <TableHead className="text-right font-black text-slate-700 min-w-[70px]">요율</TableHead>
-                                      <TableHead className="text-right font-black text-slate-700 min-w-[120px]">DMP 수수료</TableHead>
-                                      <TableHead className="text-right font-black text-slate-700 min-w-[80px]">노출</TableHead>
-                                      <TableHead className="text-right font-black text-slate-700 min-w-[70px]">클릭</TableHead>
-                                      <TableHead className="text-center font-black text-slate-700 min-w-[60px]">건수</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {allDmpRows.map((row) => {
-                                      const isDirect = row.key === 'DIRECT' || row.key === 'N/A';
-                                      const keywordHint: Record<string, string> = {
-                                        SKP: 'SKP', KB: 'KB', LOTTE: 'LOTTE', TG360: 'TG360',
-                                        WIFI: 'WIFI, 실내위치', BC: 'BC', SH: 'SH', DIRECT: '—',
-                                      };
-                                      return (
-                                        <TableRow key={row.key} className={cn("hover:bg-slate-50/60 transition-colors border-b border-slate-50", isDirect && "opacity-60")}>
-                                          <TableCell className="px-6 font-bold text-slate-700">
-                                            {isDirect ? (
-                                              <span className="text-slate-400">{row.label}</span>
-                                            ) : (
-                                              <span className="inline-flex items-center gap-2">
-                                                <span className="w-2 h-2 rounded-full bg-indigo-400 inline-block" />
-                                                {row.label}
-                                              </span>
-                                            )}
-                                          </TableCell>
-                                          <TableCell className="text-xs text-slate-400 font-mono">{keywordHint[row.key] ?? '—'}</TableCell>
-                                          <TableCell className="text-right font-medium text-slate-700">₩{row.execution.toLocaleString()}</TableCell>
-                                          <TableCell className="text-right font-bold text-blue-600">₩{row.net.toLocaleString()}</TableCell>
-                                          <TableCell className="text-right text-slate-400 font-mono text-xs">{formatFeeRate(row.key)}</TableCell>
-                                          <TableCell className="text-right font-bold text-orange-600">
-                                            {row.dmpFee > 0 ? `₩${row.dmpFee.toLocaleString()}` : '—'}
-                                          </TableCell>
-                                          <TableCell className="text-right text-slate-500 font-mono text-xs">{row.impressions.toLocaleString()}</TableCell>
-                                          <TableCell className="text-right text-slate-500 font-mono text-xs">{row.clicks.toLocaleString()}</TableCell>
-                                          <TableCell className="text-center text-slate-400 font-mono text-xs">{row.count}</TableCell>
-                                        </TableRow>
-                                      );
-                                    })}
-                                    {/* 합계 */}
-                                    <TableRow className="bg-slate-50 border-t-2 border-slate-200 font-black">
-                                      <TableCell className="px-6 font-black text-slate-700">합계</TableCell>
-                                      <TableCell />
-                                      <TableCell className="text-right font-black text-slate-800">₩{totalExecution.toLocaleString()}</TableCell>
-                                      <TableCell className="text-right font-black text-blue-700">₩{totalNet.toLocaleString()}</TableCell>
-                                      <TableCell className="text-right text-slate-400 text-xs">—</TableCell>
-                                      <TableCell className="text-right font-black text-orange-700">₩{allDmpRows.reduce((s, r) => s + r.dmpFee, 0).toLocaleString()}</TableCell>
-                                      <TableCell className="text-right font-black text-slate-600 font-mono text-xs">
-                                        {allDmpRows.reduce((s, r) => s + r.impressions, 0).toLocaleString()}
-                                      </TableCell>
-                                      <TableCell className="text-right font-black text-slate-600 font-mono text-xs">
-                                        {allDmpRows.reduce((s, r) => s + r.clicks, 0).toLocaleString()}
-                                      </TableCell>
-                                      <TableCell className="text-center text-slate-400 font-mono text-xs">
-                                        {allDmpRows.reduce((s, r) => s + r.count, 0)}
-                                      </TableCell>
-                                    </TableRow>
-                                  </TableBody>
-                                </Table>
-                              </div>
-                            </Card>
-                          </SortableItem>
-                        );
-                      }
-
-                      return null;
+                      const Block = BLOCK_COMPONENTS[blockId];
+                      if (!Block) return null;
+                      return (
+                        <SortableItem key={blockId} id={blockId}>
+                          <Block {...getBlockProps(blockId)} />
+                        </SortableItem>
+                      );
                     })}
                   </div>
                 </SortableContext>

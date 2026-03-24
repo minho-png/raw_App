@@ -1,5 +1,6 @@
 import { Collection, Db, MongoClient, ClientSession, Filter, ObjectId } from 'mongodb';
-import { PerformanceRecord } from '@/types';
+import { PerformanceRecord, MonthlySettlementResult, DmpSettlementSnapshot } from '@/types';
+import { SYSTEM_WORKSPACE_ID } from '@/services/workspaceRepository';
 
 export class RepositoryService {
   private dbName = 'gfa_master_pro';
@@ -18,6 +19,11 @@ export class RepositoryService {
       db.collection('processed_reports').createIndex({ campaign_id: 1, date: 1, media: 1 }, { background: true }),
       db.collection('processed_reports').createIndex({ campaign_id: 1 }, { background: true }),
       db.collection('campaign_configs').createIndex({ campaign_id: 1 }, { unique: true, background: true }),
+      // v2.0 멀티테넌시: workspace_id 격리 쿼리용 인덱스
+      db.collection('campaign_configs').createIndex({ workspace_id: 1 }, { background: true }),
+      db.collection('processed_reports').createIndex({ workspace_id: 1, date: 1 }, { background: true }),
+      // B-06: dmp_settlements 월별 정산 조회 및 upsert 키 — workspace_id + year + month
+      db.collection('dmp_settlements').createIndex({ workspace_id: 1, year: 1, month: 1 }, { background: true }),
     ]);
   }
 
@@ -148,8 +154,10 @@ export class RepositoryService {
    * getMonthlySettlementData: Aggregates execution and net amounts by dmp_type for a given month.
    */
   public async getMonthlySettlementData(year: number, month: number, campaignId: string) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    // UTC 자정 기준으로 생성 — 로컬타임 new Date(year, month-1, 1)은 KST(UTC+9)에서
+    // 전달 오후 15:00Z로 해석되어 월초 데이터가 누락되는 버그 방지
+    const startDate = new Date(Date.UTC(year, month - 1, 1));
+    const endDate = new Date(Date.UTC(year, month, 1) - 1); // 월말 23:59:59.999 UTC
 
     const pipeline = [
       {
@@ -159,8 +167,11 @@ export class RepositoryService {
         }
       },
       {
+        // dmp 필드 기준 집계: config.dmp_column 오버라이드가 반영된 최종 DMP 값.
+        // dmp_type(키워드 탐지 원시값) 대신 dmp를 사용해야 커스텀 DMP 컬럼 설정이 정산에 반영됨.
+        // dmp 필드가 없는 레거시 도큐먼트는 $ifNull로 dmp_type 폴백 처리.
         $group: {
-          _id: '$dmp_type',
+          _id: { $ifNull: ['$dmp', '$dmp_type'] },
           total_execution: { $sum: '$execution_amount' },
           total_net: { $sum: '$net_amount' },
           row_count: { $count: {} }
@@ -184,7 +195,8 @@ export class RepositoryService {
 
   /**
    * getAllCampaignsMonthlySettlementData: 전체 캠페인 월별 DMP 정산 집계
-   * campaign_id + dmp_type 기준으로 그룹화 후 campaign_configs에서 이름 조인
+   * campaign_id + dmp(최종 확정 DMP 값) 기준으로 그룹화 후 campaign_configs에서 이름 조인.
+   * dmp_type(키워드 탐지 원시값)이 아닌 dmp 필드를 사용하여 config.dmp_column 오버라이드가 반영됨.
    */
   public async getAllCampaignsMonthlySettlementData(year: number, month: number) {
     const startDate = new Date(Date.UTC(year, month - 1, 1));
@@ -197,8 +209,15 @@ export class RepositoryService {
         }
       },
       {
+        // dmp 필드(최종 확정 DMP 값) 기준 집계.
+        // dmp_type은 ad_group_name 키워드 매칭 원시값이고,
+        // dmp는 config.dmp_column 오버라이드가 반영된 최종값이다.
+        // 레거시 도큐먼트(dmp 필드 미존재)는 $ifNull로 dmp_type 폴백.
         $group: {
-          _id: { campaign_id: '$campaign_id', dmp_type: '$dmp_type' },
+          _id: {
+            campaign_id: '$campaign_id',
+            dmp: { $ifNull: ['$dmp', '$dmp_type'] }
+          },
           total_execution: { $sum: '$execution_amount' },
           total_net: { $sum: '$net_amount' },
           total_impressions: { $sum: '$impressions' },
@@ -218,7 +237,8 @@ export class RepositoryService {
         $project: {
           campaign_id: '$_id.campaign_id',
           campaign_name: { $ifNull: [{ $arrayElemAt: ['$campaign_info.campaign_name', 0] }, '$_id.campaign_id'] },
-          dmp_type: '$_id.dmp_type',
+          // 출력 필드명은 dmp_type으로 유지 — UI/타입 변경 없이 소스만 dmp로 교체
+          dmp_type: '$_id.dmp',
           total_execution: 1,
           total_net: 1,
           fee_amount: { $subtract: ['$total_execution', '$total_net'] },
@@ -235,10 +255,25 @@ export class RepositoryService {
   }
 
   /**
-   * getCampaigns: Fetches all campaign configurations.
+   * getCampaigns: Fetches all campaign configurations for a given workspace.
+   *
+   * @param workspaceId  워크스페이스 격리 키. 기본값 SYSTEM_WORKSPACE_ID (단일 테넌트 모드).
+   *
+   * 하위호환성: 기존 레코드 중 workspace_id 필드가 없는 도큐먼트는 마이그레이션 전까지
+   * SYSTEM_WORKSPACE_ID 쿼리에서 계속 노출되도록 $or 조건을 사용한다.
+   * 실제 멀티테넌시 전환 시 backfill 마이그레이션 후 단순 `{ workspace_id: workspaceId }` 로 교체할 것.
+   *
+   * TODO(migration): workspace_id 없는 레코드를 SYSTEM_WORKSPACE_ID로 backfill하는
+   *   일회성 마이그레이션 스크립트 실행 후 $or 조건 제거.
    */
-  public async getCampaigns() {
-    return await this.campaignCollection.find({}).toArray();
+  public async getCampaigns(workspaceId: string = SYSTEM_WORKSPACE_ID) {
+    const filter = {
+      $or: [
+        { workspace_id: workspaceId },
+        { workspace_id: { $exists: false } },
+      ],
+    };
+    return await this.campaignCollection.find(filter).toArray();
   }
 
   /**
@@ -313,5 +348,57 @@ export class RepositoryService {
       { _id: new ObjectId(id) } as any,
       { $set: { ...updates, is_edited: true } }
     );
+  }
+
+  /**
+   * saveMonthlySettlement: 월별 DMP 정산 데이터를 dmp_settlements에 스냅샷으로 저장.
+   *
+   * Upsert 키: { workspace_id, year, month, campaign_id }
+   * - 동일 키가 존재하면 전체 rows 및 집계값을 덮어씀 (재정산 시 멱등성 보장)
+   * - campaign_id가 없는 전체 집계 저장 시 campaign_id = '__ALL__' 사용
+   *
+   * @param workspaceId  워크스페이스 격리 키 — 반드시 호출자가 검증된 값을 전달할 것
+   * @param data         getMonthlySettlementData 또는 getAllCampaigns... 에서 반환된 집계 결과
+   */
+  public async saveMonthlySettlement(
+    workspaceId: string,
+    data: MonthlySettlementResult
+  ): Promise<{ upsertedId: unknown; matchedCount: number; modifiedCount: number }> {
+    const now = new Date();
+
+    // campaign_id 없는 전체 집계인 경우 sentinel 값 사용
+    const campaignId = data.campaign_id ?? '__ALL__';
+
+    const snapshot: Omit<DmpSettlementSnapshot, 'created_at'> = {
+      workspace_id: workspaceId,
+      year: data.year,
+      month: data.month,
+      campaign_id: campaignId,
+      rows: data.rows,
+      total_execution: data.total_execution,
+      total_net: data.total_net,
+      total_fee: data.total_fee,
+      verification_status: data.verification_status,
+      diff_percentage: data.diff_percentage,
+      // snapshotted_at은 항상 갱신 — 마지막 정산 시각 추적용
+      snapshotted_at: now,
+      updated_at: now,
+    };
+
+    const result = await this.settlementCollection.updateOne(
+      // upsert 필터: workspace_id 격리 + 월별 스냅샷 고유 키
+      { workspace_id: workspaceId, year: data.year, month: data.month, campaign_id: campaignId },
+      {
+        $set: snapshot,
+        $setOnInsert: { created_at: now },
+      },
+      { upsert: true }
+    );
+
+    return {
+      upsertedId: result.upsertedId,
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    };
   }
 }

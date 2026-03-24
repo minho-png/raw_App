@@ -222,12 +222,25 @@ export class CalculationService {
     groupByColumns = groupByColumns.filter((c) => df.columns.includes(c));
 
     // 2. DMP Detection
+    // 알려진 DMP 키워드: SKP, KB, LOTTE, TG360, BC, SH, WIFI(실내위치)
+    // 실제 네이버 GFA 데이터에서 확인된 패턴 (result.csv, 2026-03 기준):
+    //   "1)SKP"   → SKP 탐지 OK (숫자)접두어 패턴)
+    //   "1)SKP_N" → SKP 탐지 OK (includes('SKP') 매칭)
+    //   "2)TG360" → TG360 탐지 OK
+    // 네이밍 규칙: "숫자)DMP명_접미사" 형태이며, 접두어(숫자))와 접미사(_N, _B, _M 등)는
+    // 네이버 GFA 내부 소재 분류 코드로 추정됨. DMP명 매칭에는 영향 없음 (includes 방식으로 처리).
+    // 신규 DMP 파트너 패턴(e.g., "숫자)KB_B", "숫자)LOTTE_M")이 추가될 경우
+    // 아래 배열에 키워드만 추가하면 자동 탐지됨.
+    // 매칭 실패 시 DIRECT로 폴백하되 광고 그룹명이 존재하는 경우 warn 로깅 — 신규 DMP 파트너 탐지용
     const detectDMP = (name: any): string => {
       if (typeof name !== 'string' || !name.trim()) return 'DIRECT';
       const upperName = name.toUpperCase();
       if (upperName.includes('WIFI') || upperName.includes('실내위치')) return 'WIFI';
       const found = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH'].find(k => upperName.includes(k));
-      return found ?? 'DIRECT';
+      if (found) return found;
+      // B-02: 광고 그룹명이 있지만 알려진 DMP 패턴과 불일치 — 미분류 케이스 추적
+      console.warn(`[DMP] 미분류 ad_group_name: "${name}" → DIRECT 처리`);
+      return 'DIRECT';
     };
 
     if (df.columns.includes('ad_group_name')) {

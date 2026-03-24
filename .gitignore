@@ -33,3 +33,7 @@ next-env.d.ts
 
 # Claude Code local config
 .claude/
+
+# local sandbox / export artifacts
+result.csv
+code_sandbox_light_*/

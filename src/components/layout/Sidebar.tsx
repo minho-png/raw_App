@@ -2,22 +2,33 @@
 
 import React, { useEffect, useState } from 'react';
 import { useCampaignStore } from '@/store/useCampaignStore';
-import { Plus, Trash2, Layout, BarChart3, Database, Loader2, Settings, AlertTriangle, Receipt } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, BarChart3, AlertTriangle, Receipt, Search, LayoutGrid } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/server/actions/campaign';
 import { CampaignConfig } from '@/types';
 import { genId } from '@/lib/idGenerator';
+import { CampaignListItem } from '@/components/molecules/CampaignListItem';
+import { AnimatedModal } from '@/components/atoms/AnimatedModal';
 
 export const Sidebar = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, isSyncing, setIsSyncing, updateCampaign, refreshCampaigns, activeMainView, setActiveMainView } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, setCampaigns, isSyncing, setIsSyncing, updateCampaign, refreshCampaigns, activeMainView, setActiveMainView } = useCampaignStore();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<CampaignConfig | null>(null);
   const [tempName, setTempName] = useState("");
+  const [searchQuery, setSearchQuery] = useState('');
+  const [mediaFilter, setMediaFilter] = useState<'all' | '네이버GFA' | '카카오Moment' | '구글Ads' | '메타Ads'>('all');
   // 삭제 확인 모달 상태 (디자이너 유진: confirm() 대신 디자인된 모달)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const deletingCampaign = campaigns.find(c => c.campaign_id === deleteConfirmId);
+
+  const filteredCampaigns = campaigns.filter((campaign) => {
+    const nameMatch = campaign.campaign_name.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!nameMatch) return false;
+    if (mediaFilter === 'all') return true;
+    return (campaign.sub_campaigns || []).some((sub) => sub.media === mediaFilter);
+  });
 
   // Initial fetch and polling
   useEffect(() => {
@@ -85,8 +96,8 @@ export const Sidebar = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-1 pr-2 -mr-2 scrollbar-thin">
-        <div className="flex items-center justify-between mb-6 px-2">
-          <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">캠페인 마스터 리스트</h2>
+        <div className="mb-4 flex items-center justify-between px-2">
+          <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">캠페인 관리</h2>
           <motion.button 
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
@@ -97,75 +108,92 @@ export const Sidebar = () => {
           </motion.button>
         </div>
 
-        <nav className="space-y-1.5">
-          <AnimatePresence mode="popLayout">
-            {campaigns.map((camp) => (
-              <motion.div
-                key={camp.campaign_id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                whileHover={{ x: 4 }}
-                layout
-                className={cn(
-                  "group flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all relative overflow-hidden",
-                  selectedCampaignId === camp.campaign_id 
-                    ? "bg-blue-600/10 border border-blue-500/30 shadow-[0_0_20px_rgba(37,99,235,0.1)]" 
-                    : "hover:bg-slate-800/40 border border-transparent"
-                )}
-                onClick={() => selectCampaign(camp.campaign_id)}
-              >
-                {selectedCampaignId === camp.campaign_id && (
-                  <motion.div 
-                    layoutId="active-indicator"
-                    className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-blue-500 rounded-r-full"
-                  />
-                )}
-                
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
-                    selectedCampaignId === camp.campaign_id ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 group-hover:bg-slate-700"
-                  )}>
-                    <Database size={14} />
-                  </div>
-                  <span className={cn(
-                    "text-sm font-bold truncate tracking-tight transition-colors",
-                    selectedCampaignId === camp.campaign_id ? "text-white" : "text-slate-400 group-hover:text-slate-200"
-                  )}>
-                    {camp.campaign_name}
-                  </span>
-                </div>
+        <div className="mb-3 px-2">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2">
+            <Search size={13} className="text-slate-500" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="캠페인 검색"
+              className="w-full bg-transparent text-xs font-semibold text-slate-200 outline-none placeholder:text-slate-500"
+            />
+          </div>
+        </div>
 
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingCampaign(camp);
-                      setTempName(camp.campaign_name);
-                      setIsEditModalOpen(true);
-                    }}
-                    className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"
-                  >
-                    <Settings size={14} />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteCampaign(camp.campaign_id);
-                    }}
-                    className="p-1.5 hover:bg-red-500/20 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+        <div className="mb-5 flex gap-1 overflow-x-auto px-2 pb-1">
+          {[
+            { key: 'all', label: '전체' },
+            { key: '네이버GFA', label: '네이버' },
+            { key: '카카오Moment', label: '카카오' },
+            { key: '구글Ads', label: '구글' },
+            { key: '메타Ads', label: '메타' },
+          ].map((chip) => (
+            <button
+              key={chip.key}
+              onClick={() => setMediaFilter(chip.key as typeof mediaFilter)}
+              className={cn(
+                "whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold transition-colors",
+                mediaFilter === chip.key
+                  ? "border-indigo-500 bg-indigo-500/20 text-indigo-300"
+                  : "border-slate-700 text-slate-500 hover:border-slate-600 hover:text-slate-300"
+              )}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+
+        <nav className="space-y-1.5">
+          {filteredCampaigns.map((camp) => (
+            <CampaignListItem
+              key={camp.campaign_id}
+              campaign={camp}
+              isSelected={selectedCampaignId === camp.campaign_id}
+              onSelect={selectCampaign}
+              onEditClick={(c) => {
+                setEditingCampaign(c);
+                setTempName(c.campaign_name);
+                setIsEditModalOpen(true);
+              }}
+              onDeleteClick={handleDeleteCampaign}
+            />
+          ))}
+          {filteredCampaigns.length === 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-6 text-center">
+              <p className="text-xs font-semibold text-slate-500">조건에 맞는 캠페인이 없습니다.</p>
+            </div>
+          )}
         </nav>
       </div>
 
       <div className="pt-4 mt-4 border-t border-slate-800/30">
+        <div className="mb-3 grid grid-cols-2 gap-2">
+          <button
+            onClick={() => setActiveMainView('campaigns')}
+            className={cn(
+              "flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all",
+              activeMainView === 'campaigns'
+                ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
+                : "border-slate-700/60 text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
+            )}
+          >
+            <LayoutGrid size={13} />
+            <span className="text-[11px] font-extrabold">캠페인 정산</span>
+          </button>
+          <button
+            onClick={() => setActiveMainView('settlement')}
+            className={cn(
+              "flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all",
+              activeMainView === 'settlement'
+                ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
+                : "border-slate-700/60 text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
+            )}
+          >
+            <Receipt size={13} />
+            <span className="text-[11px] font-extrabold">DMP 정산</span>
+          </button>
+        </div>
+
         <button
           onClick={() => setActiveMainView(activeMainView === 'settlement' ? 'campaigns' : 'settlement')}
           className={cn(
@@ -191,7 +219,17 @@ export const Sidebar = () => {
       <div className="pt-6 mt-6 border-t border-slate-800/50">
         <div className="p-4 bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-2xl border border-slate-700/30 relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/5 rounded-full blur-xl group-hover:bg-blue-500/10 transition-colors" />
-          <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">엔진 가동 상태</p>
+          <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">요약 현황</p>
+          <div className="mb-3 grid grid-cols-2 gap-2">
+            <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-2 py-1.5">
+              <p className="text-[10px] text-slate-500">활성 캠페인</p>
+              <p className="text-xs font-extrabold text-slate-200">{campaigns.length}</p>
+            </div>
+            <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-2 py-1.5">
+              <p className="text-[10px] text-slate-500">필터 결과</p>
+              <p className="text-xs font-extrabold text-slate-200">{filteredCampaigns.length}</p>
+            </div>
+          </div>
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className="w-2.5 h-2.5 bg-green-500 rounded-full" />
@@ -203,117 +241,101 @@ export const Sidebar = () => {
       </div>
 
       {/* 삭제 확인 모달 — 디자이너 유진: confirm() 대신 디자인된 경고 모달 */}
-      <AnimatePresence>
-        {deleteConfirmId && deletingCampaign && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
-                  <AlertTriangle size={20} className="text-red-500" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">캠페인 삭제</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">이 작업은 되돌릴 수 없습니다.</p>
-                </div>
-              </div>
-              <div className="bg-red-50 border border-red-100 rounded-xl p-3">
-                <p className="text-sm font-bold text-red-700 truncate">"{deletingCampaign.campaign_name}"</p>
-                <p className="text-xs text-red-500 mt-1">캠페인과 관련된 모든 성과 데이터가 영구 삭제됩니다.</p>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <Button
-                  variant="outline"
-                  className="flex-1 rounded-xl h-11 border-slate-200 text-slate-600 font-bold"
-                  onClick={() => setDeleteConfirmId(null)}
-                >
-                  취소
-                </Button>
-                <Button
-                  className="flex-1 rounded-xl h-11 bg-red-600 hover:bg-red-700 text-white font-bold border-none"
-                  onClick={confirmDelete}
-                >
-                  삭제
-                </Button>
-              </div>
-            </motion.div>
+      <AnimatedModal isOpen={!!(deleteConfirmId && deletingCampaign)} onClose={() => setDeleteConfirmId(null)} maxWidth="sm">
+        <div className="p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+              <AlertTriangle size={20} className="text-red-500" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">캠페인 삭제</h3>
+              <p className="text-xs text-slate-500 mt-0.5">이 작업은 되돌릴 수 없습니다.</p>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+          {deletingCampaign && (
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+              <p className="text-sm font-bold text-red-700 truncate">"{deletingCampaign.campaign_name}"</p>
+              <p className="text-xs text-red-500 mt-1">캠페인과 관련된 모든 성과 데이터가 영구 삭제됩니다.</p>
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <Button
+              variant="outline"
+              className="flex-1 rounded-xl h-11 border-slate-200 text-slate-600 font-bold"
+              onClick={() => setDeleteConfirmId(null)}
+            >
+              취소
+            </Button>
+            <Button
+              className="flex-1 rounded-xl h-11 bg-red-600 hover:bg-red-700 text-white font-bold border-none"
+              onClick={confirmDelete}
+            >
+              삭제
+            </Button>
+          </div>
+        </div>
+      </AnimatedModal>
 
-      <AnimatePresence>
-        {isEditModalOpen && editingCampaign && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4"
-            >
-              <h3 className="text-lg font-bold text-slate-900 border-b pb-2">캠페인 이름 수정</h3>
-              <div className="space-y-2">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">캠페인 명칭</label>
-                <input 
-                  autoFocus
-                  className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 font-bold"
-                  value={tempName}
-                  onChange={(e) => setTempName(e.target.value)}
-                  onKeyDown={async (e) => {
-                    if (e.key === 'Enter') {
-                      const updated = { ...editingCampaign, campaign_name: tempName, updated_at: new Date() };
-                      setIsEditModalOpen(false);
-                      updateCampaign(updated); // Optimistic update before API
-                      setIsSyncing(true); // Prevent background sync overwrite
-                      try {
-                        const result = await saveCampaignAction(updated);
-                        if (result.success && result.campaigns) {
-                          setCampaigns(result.campaigns);
-                        }
-                      } finally {
-                        setIsSyncing(false);
-                      }
+      <AnimatedModal isOpen={isEditModalOpen && !!editingCampaign} onClose={() => setIsEditModalOpen(false)} maxWidth="sm">
+        <div className="p-6 space-y-4">
+          <h3 className="text-lg font-bold text-slate-900 border-b pb-2">캠페인 이름 수정</h3>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest">캠페인 명칭</label>
+            <input
+              autoFocus
+              className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 font-bold"
+              value={tempName}
+              onChange={(e) => setTempName(e.target.value)}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter' && editingCampaign) {
+                  const updated = { ...editingCampaign, campaign_name: tempName, updated_at: new Date() };
+                  setIsEditModalOpen(false);
+                  updateCampaign(updated);
+                  setIsSyncing(true);
+                  try {
+                    const result = await saveCampaignAction(updated);
+                    if (result.success && result.campaigns) {
+                      setCampaigns(result.campaigns);
                     }
-                  }}
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button 
-                  variant="outline" 
-                  className="flex-1 rounded-xl h-11 border-slate-200 text-slate-600 font-bold" 
-                  onClick={() => setIsEditModalOpen(false)}
-                >
-                  취소
-                </Button>
-                <Button 
-                  className="flex-1 rounded-xl h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold"
-                  onClick={async () => {
-                    if (editingCampaign) {
-                      const updated = { ...editingCampaign, campaign_name: tempName, updated_at: new Date() };
-                      setIsEditModalOpen(false);
-                      updateCampaign(updated); // Optimistic update before API
-                      setIsSyncing(true);
-                      try {
-                        const result = await saveCampaignAction(updated);
-                        if (result.success && result.campaigns) {
-                          setCampaigns(result.campaigns);
-                        }
-                      } finally {
-                        setIsSyncing(false);
-                      }
-                    }
-                  }}
-                >
-                  저장
-                </Button>
-              </div>
-            </motion.div>
+                  } finally {
+                    setIsSyncing(false);
+                  }
+                }
+              }}
+            />
           </div>
-        )}
-      </AnimatePresence>
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1 rounded-xl h-11 border-slate-200 text-slate-600 font-bold"
+              onClick={() => setIsEditModalOpen(false)}
+            >
+              취소
+            </Button>
+            <Button
+              className="flex-1 rounded-xl h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold"
+              onClick={async () => {
+                if (editingCampaign) {
+                  const updated = { ...editingCampaign, campaign_name: tempName, updated_at: new Date() };
+                  setIsEditModalOpen(false);
+                  updateCampaign(updated);
+                  setIsSyncing(true);
+                  try {
+                    const result = await saveCampaignAction(updated);
+                    if (result.success && result.campaigns) {
+                      setCampaigns(result.campaigns);
+                    }
+                  } finally {
+                    setIsSyncing(false);
+                  }
+                }
+              }}
+            >
+              저장
+            </Button>
+          </div>
+        </div>
+      </AnimatedModal>
     </aside>
   );
 };

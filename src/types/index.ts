@@ -19,6 +19,7 @@ export interface SubCampaignConfig {
 export interface CampaignConfig {
   campaign_id: string;
   campaign_name: string;
+  workspace_id?: string;  // v2.0 멀티테넌시 격리 키 — 없는 레코드는 SYSTEM_WORKSPACE_ID로 취급
   created_at?: Date;
   updated_at?: Date;
   sub_campaigns: SubCampaignConfig[];
@@ -106,4 +107,25 @@ export interface AllCampaignsSettlementResult {
   total_execution: number;
   total_net: number;
   total_fee: number;
+}
+
+/**
+ * DmpSettlementSnapshot: dmp_settlements 컬렉션에 저장되는 월별 정산 스냅샷 도큐먼트.
+ * upsert 키: { workspace_id, year, month, campaign_id }
+ * - campaign_id가 없는 경우(전체 집계) campaign_id = '__ALL__' 사용
+ */
+export interface DmpSettlementSnapshot {
+  workspace_id: string;
+  year: number;
+  month: number;
+  campaign_id: string;          // 단일 캠페인 정산이면 campaign_id, 전체 집계면 '__ALL__'
+  rows: DmpSettlementRow[];
+  total_execution: number;
+  total_net: number;
+  total_fee: number;
+  verification_status: 'valid' | 'warning';
+  diff_percentage: number;
+  snapshotted_at: Date;         // 스냅샷 생성 시각 (UTC)
+  created_at?: Date;
+  updated_at: Date;
 }
