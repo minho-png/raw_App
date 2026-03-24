@@ -38,12 +38,16 @@ export const Sidebar = () => {
       created_at: new Date(),
       sub_campaigns: []
     };
-    
+
     try {
       const result = await saveCampaignAction(newCampaign);
       if (result.success && result.campaigns) {
         setCampaigns(result.campaigns);
         selectCampaign(newId);
+        // 생성 즉시 이름 편집 모달 오픈 — 사용자가 바로 이름을 지정할 수 있도록
+        setEditingCampaign(newCampaign);
+        setTempName(newCampaign.campaign_name);
+        setIsEditModalOpen(true);
       }
     } finally {
       setIsSyncing(false);

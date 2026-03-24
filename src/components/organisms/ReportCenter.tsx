@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BudgetPacingCards } from '@/components/molecules/BudgetPacingCards';
 import { FileUploader } from '@/components/molecules/FileUploader';
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -33,7 +33,6 @@ import {
   Layout as LayoutIcon,
   BarChart4,
   Download,
-  Share2,
   Layers
 } from "lucide-react";
 import { useToast } from '@/context/ToastContext';
@@ -44,7 +43,7 @@ import { BudgetStatus, PerformanceRecord, MediaProvider } from "@/types";
 import { useCampaignStore } from '@/store/useCampaignStore';
 import { cn } from '@/lib/utils';
 import { getPerformanceDataAction, updatePerformanceDataAction, savePerformanceData } from '@/server/actions/settlement';
-import { getCampaignsAction, saveCampaignAction } from '@/server/actions/campaign';
+import { saveCampaignAction } from '@/server/actions/campaign';
 import { CalculationService } from "@/services/calculationService";
 import { BudgetSettingsModal } from "./BudgetSettingsModal";
 import { ReportService } from "@/services/reportService";
@@ -69,34 +68,15 @@ import { CSS } from '@dnd-kit/utilities';
 
 export const ReportCenter: React.FC = () => {
   const toast = useToast();
-  const { campaigns, selectedCampaignId, selectCampaign, updateCampaign, addCampaign, activeTab, setActiveTab, refreshCampaigns, setCampaigns, setIsSyncing } = useCampaignStore();
+  const { campaigns, selectedCampaignId, updateCampaign, setCampaigns, setIsSyncing } = useCampaignStore();
   const selectedCampaign = campaigns.find(c => c.campaign_id === selectedCampaignId);
   
   const [processedData, setProcessedData] = useState<PerformanceRecord[]>([]);
-  const [reportType, setReportType] = useState('daily');
   const [activeTabStep, setActiveTabStep] = useState('source');
   const [activeMedia, setActiveMedia] = useState<MediaProvider>('네이버GFA');
   const [groupByColumns, setGroupByColumns] = useState<string[]>(['date_raw']); 
   const [rawParsedData, setRawParsedData] = useState<any[]>([]);
 
-  const suggestedExcelNames = useMemo(() => {
-    if (rawParsedData.length === 0) return [];
-    const firstRow = rawParsedData[0];
-    const keys = Object.keys(firstRow);
-    
-    // Strict priority list for campaign-related columns
-    const priorityKeywords = ['캠페인명', '캠페인 이름', '캠페인', 'Campaign Name', 'Campaign'];
-    const excludeKeywords = ['소재', 'Creative', '그룹', 'Group', '번호', 'ID', '날짜', 'Date'];
-
-    const campaignCol = keys.find(k => 
-      priorityKeywords.some(pk => k.includes(pk)) && 
-      !excludeKeywords.some(ek => k.includes(ek))
-    ) || keys.find(k => priorityKeywords.some(pk => k.includes(pk))) || keys[0];
-
-    // Log the selected column for debugging if needed (internal)
-    const names = rawParsedData.map(r => String(r[campaignCol])).filter(Boolean);
-    return Array.from(new Set(names)).sort();
-  }, [rawParsedData]);
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
@@ -280,7 +260,7 @@ export const ReportCenter: React.FC = () => {
           ...result.data
         ]);
         toast.success('DB 동기화 완료', `${result.data.length.toLocaleString()}건의 데이터를 불러왔습니다.`);
-        setActiveTabStep('processing');
+        setActiveTabStep('dashboard');
       } else {
         toast.error('동기화 실패', '데이터를 불러오는 데 실패했습니다.');
       }
@@ -424,6 +404,16 @@ export const ReportCenter: React.FC = () => {
         configs
       );
       
+      if (report.length === 0) {
+        toast.warning(
+          '처리 결과가 없습니다',
+          enabledExcelNames.size > 0
+            ? 'mapping_value와 일치하는 CSV 행이 없습니다. 예산 설정에서 매핑 값을 확인하세요.'
+            : 'CSV 파일에 처리 가능한 데이터가 없습니다.'
+        );
+        return;
+      }
+
       setProcessedData(report);
       setActiveTabStep('processing');
     } catch (error) {
@@ -966,6 +956,33 @@ export const ReportCenter: React.FC = () => {
                   </div>
                 </div>
 
+                {filteredData.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center mb-5">
+                      <Settings2 size={28} className="text-amber-400" />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-700 tracking-tight mb-2">처리된 데이터가 없습니다</h3>
+                    <p className="text-slate-400 text-sm font-medium max-w-sm mb-6">
+                      서브캠페인의 <span className="font-black text-slate-600">mapping_value</span>와 CSV 캠페인명이 일치하지 않거나, 아직 CSV를 업로드하지 않았습니다.
+                    </p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setActiveTabStep('source')}
+                        className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
+                      >
+                        01. 데이터 로드로 돌아가기
+                      </button>
+                      <button
+                        onClick={() => setIsBudgetModalOpen(true)}
+                        className="px-5 py-2.5 rounded-xl bg-white border-2 border-slate-200 text-slate-700 text-sm font-bold hover:border-blue-300 transition-colors"
+                      >
+                        매핑 설정 확인
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {filteredData.length > 0 && (
                 <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white shadow-sm max-h-[600px] overflow-y-auto custom-scrollbar">
                   <Table>
                     <TableHeader className="bg-slate-900 sticky top-0 z-20">
@@ -1036,6 +1053,7 @@ export const ReportCenter: React.FC = () => {
                     </TableBody>
                   </Table>
                 </div>
+                )}
               </div>
             </motion.div>
           )}
