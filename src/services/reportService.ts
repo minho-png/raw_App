@@ -74,10 +74,24 @@ export class ReportService {
       }
 
       if (id === 'share') {
+        const dmpData = sortedData.filter(r => r.dmp_type && r.dmp_type !== 'DIRECT');
+        const directData = sortedData.filter(r => !r.dmp_type || r.dmp_type === 'DIRECT');
         const byDmp = sumBy(sortedData, (r) => (String(r.dmp || r.dmp_type || 'DIRECT') as any));
         const rows = Array.from(byDmp.entries()).sort((a, b) => b[1].spend - a[1].spend).slice(0, 20);
+        const totalDmpSpend = dmpData.reduce((s, r) => s + (Number(r.execution_amount ?? r.cost ?? 0) || 0), 0);
+        const totalDirectSpend = directData.reduce((s, r) => s + (Number(r.execution_amount ?? r.cost ?? 0) || 0), 0);
         return `
-          <h3>🧩 Share (DMP)</h3>
+          <h3>🧩 DMP Share</h3>
+          <div class="dmp-split" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <div class="card" style="border-left:4px solid #2563eb;">
+              <p class="card-label">DMP 타겟</p>
+              <p class="card-value highlight">₩${Math.round(totalDmpSpend).toLocaleString()}</p>
+            </div>
+            <div class="card" style="border-left:4px solid #94a3b8;">
+              <p class="card-label">Direct (비타겟)</p>
+              <p class="card-value" style="color:#94a3b8;">₩${Math.round(totalDirectSpend).toLocaleString()}</p>
+            </div>
+          </div>
           <div class="table-container">
             <table>
               <thead>
@@ -92,11 +106,12 @@ export class ReportService {
                   const total = rows.reduce((s, [, v]) => s + v.spend, 0) || 1;
                   return rows.map(([name, v]) => {
                     const share = (v.spend / total) * 100;
+                    const isUnknown = name === 'Unknown' || name === 'DIRECT';
                     return `
-                      <tr>
-                        <td class="bold">${name}</td>
-                        <td class="text-right">₩${Math.round(v.spend).toLocaleString()}</td>
-                        <td class="text-right">${share.toFixed(1)}%</td>
+                      <tr style="${isUnknown ? 'opacity:0.45;' : ''}">
+                        <td class="${isUnknown ? '' : 'bold'}" style="${isUnknown ? 'color:#94a3b8;' : ''}">${name}</td>
+                        <td class="text-right" style="${isUnknown ? 'color:#94a3b8;' : ''}">₩${Math.round(v.spend).toLocaleString()}</td>
+                        <td class="text-right" style="${isUnknown ? 'color:#94a3b8;' : ''}">${share.toFixed(1)}%</td>
                       </tr>
                     `;
                   }).join('');
@@ -150,20 +165,26 @@ export class ReportService {
       }
 
       if (id === 'audience') {
-        const byAge = sumBy(sortedData, (r) => (String((r as any).age || 'Unknown') as any));
-        const byGender = sumBy(sortedData, (r) => (String((r as any).gender || 'Unknown') as any));
+        const audienceData = sortedData.filter(r => (r as any).age || (r as any).gender);
+        const byAge = sumBy(audienceData.length > 0 ? audienceData : sortedData, (r) => (String((r as any).age || 'Unknown') as any));
+        const byGender = sumBy(audienceData.length > 0 ? audienceData : sortedData, (r) => (String((r as any).gender || 'Unknown') as any));
         const ageRows = Array.from(byAge.entries()).sort((a, b) => b[1].spend - a[1].spend).slice(0, 8);
         const genderRows = Array.from(byGender.entries()).sort((a, b) => b[1].spend - a[1].spend).slice(0, 8);
+        const renderAudienceRow = (k: string, v: { spend: number }) =>
+          `<p style="display:flex;justify-content:space-between;margin-top:6px;${k === 'Unknown' ? 'opacity:0.4;' : ''}">
+            <span class="${k === 'Unknown' ? '' : 'bold'}" style="${k === 'Unknown' ? 'color:#94a3b8;' : ''}">${k}</span>
+            <span class="font-mono" style="${k === 'Unknown' ? 'color:#94a3b8;' : ''}">₩${Math.round(v.spend).toLocaleString()}</span>
+          </p>`;
         return `
-          <h3>👥 Audience</h3>
+          <h3>👥 Audience Intelligence</h3>
           <div class="summary-grid" style="grid-template-columns: repeat(2, 1fr);">
             <div class="card">
-              <p class="card-label">Age (Top)</p>
-              ${ageRows.map(([k, v]) => `<p style="display:flex;justify-content:space-between;margin-top:6px;"><span class="bold">${k}</span><span class="font-mono">₩${Math.round(v.spend).toLocaleString()}</span></p>`).join('')}
+              <p class="card-label">연령 (Age)</p>
+              ${ageRows.map(([k, v]) => renderAudienceRow(k, v)).join('')}
             </div>
             <div class="card">
-              <p class="card-label">Gender (Top)</p>
-              ${genderRows.map(([k, v]) => `<p style="display:flex;justify-content:space-between;margin-top:6px;"><span class="bold">${k}</span><span class="font-mono">₩${Math.round(v.spend).toLocaleString()}</span></p>`).join('')}
+              <p class="card-label">성별 (Gender)</p>
+              ${genderRows.map(([k, v]) => renderAudienceRow(k, v)).join('')}
             </div>
           </div>
         `;

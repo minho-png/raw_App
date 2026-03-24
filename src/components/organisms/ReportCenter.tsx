@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { 
   Table, 
@@ -33,7 +32,12 @@ import {
   Layout as LayoutIcon,
   BarChart4,
   Download,
-  Layers
+  Layers,
+  Sparkles,
+  AlertTriangle,
+  ArrowUp,
+  ArrowDown,
+  Receipt,
 } from "lucide-react";
 import { useToast } from '@/context/ToastContext';
 import { ColumnMappingPreview } from '@/components/molecules/ColumnMappingPreview';
@@ -47,6 +51,10 @@ import { saveCampaignAction } from '@/server/actions/campaign';
 import { CalculationService } from "@/services/calculationService";
 import { BudgetSettingsModal } from "./BudgetSettingsModal";
 import { ReportService } from "@/services/reportService";
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { TableFilterBar } from '@/components/molecules/TableFilterBar';
+import { DataTable } from '@/components/molecules/DataTable';
+import { StaleInsightBanner } from '@/components/molecules/StaleInsightBanner';
 import debounce from 'lodash/debounce';
 import {
   DndContext,
@@ -134,7 +142,7 @@ export const ReportCenter: React.FC = () => {
   }, [rawParsedData, processedData, groupByColumns, activeMedia, activeTabStep, persistDraft]);
 
   const defaultDashboardLayout = useMemo(
-    () => ['trend', 'share', 'budget', 'audience', 'creative', 'matrix', 'insights'],
+    () => ['trend', 'share', 'budget', 'dmp', 'audience', 'creative', 'matrix', 'insights'],
     []
   );
 
@@ -314,17 +322,33 @@ export const ReportCenter: React.FC = () => {
     const actualCpc = totalClicks > 0 ? spent / totalClicks : 0;
     const actualCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
 
+    // pacing_index: 실제 집행비율 / 기간경과비율 × 100
+    // 데이터 날짜 범위를 기준으로 "오늘이 몇 % 경과했는지" 계산
+    let pacingIndex = 100;
+    if (filteredData.length > 0 && total > 0) {
+      const dates = filteredData.map(r => new Date(r.date).getTime()).filter(t => !isNaN(t));
+      if (dates.length > 0) {
+        const startTs = Math.min(...dates);
+        const endTs = Math.max(...dates);
+        const rangeMs = endTs - startTs;
+        const nowTs = Date.now();
+        const elapsedRatio = rangeMs > 0 ? Math.min((nowTs - startTs) / rangeMs, 1) : 1;
+        const spendRatio = total > 0 ? spent / total : 0;
+        pacingIndex = elapsedRatio > 0 ? Math.round((spendRatio / elapsedRatio) * 100) : 100;
+      }
+    }
+
     // Calculate Master Target CPC/CTR (Simple Average of sub-campaigns that have targets)
     const subWithCpc = selectedCampaign?.sub_campaigns?.filter(s => s.target_cpc && s.target_cpc > 0) || [];
-    const avgTargetCpc = subWithCpc.length > 0 
-      ? subWithCpc.reduce((sum, s) => sum + (s.target_cpc || 0), 0) / subWithCpc.length 
+    const avgTargetCpc = subWithCpc.length > 0
+      ? subWithCpc.reduce((sum, s) => sum + (s.target_cpc || 0), 0) / subWithCpc.length
       : undefined;
 
     const subWithCtr = selectedCampaign?.sub_campaigns?.filter(s => s.enabled !== false && s.target_ctr && s.target_ctr > 0) || [];
-    const avgTargetCtr = subWithCtr.length > 0 
-      ? subWithCtr.reduce((sum, s) => sum + (s.target_ctr || 0), 0) / subWithCtr.length 
+    const avgTargetCtr = subWithCtr.length > 0
+      ? subWithCtr.reduce((sum, s) => sum + (s.target_ctr || 0), 0) / subWithCtr.length
       : undefined;
-    
+
     return {
       total_budget: total,
       spent_budget: spent,
@@ -332,7 +356,7 @@ export const ReportCenter: React.FC = () => {
       spent: spent,
       remaining: remaining,
       burn_rate: burnRate,
-      pacing_index: burnRate > 50 ? 110 : 95,
+      pacing_index: pacingIndex,
       pacing_status: burnRate > 100 ? 'over' : (burnRate > 80 ? 'warning' : 'stable'),
       actual_cpc: actualCpc,
       actual_ctr: actualCtr,
@@ -425,6 +449,49 @@ export const ReportCenter: React.FC = () => {
   };
 
   const [isSavingReport, setIsSavingReport] = useState(false);
+
+  // AI 인사이트 상태
+  const [aiInsight, setAiInsight] = useState<any>(null);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [tablePage, setTablePage] = useState(0);
+  const TABLE_PAGE_SIZE = 50;
+
+  // 테이블 전용 필터 state (차트에는 영향 없음 — filteredData와 분리)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMedia, setFilterMedia] = useState('all');
+  const [filterDmp, setFilterDmp] = useState('all');
+  const [staleBannerDismissed, setStaleBannerDismissed] = useState(false);
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
+
+  // 테이블 전용 필터 적용 — 차트는 filteredData를 그대로 사용하고 이 데이터만 테이블에 전달
+  const tableFilteredData = useMemo(() => {
+    return filteredData.filter(d => {
+      if (filterMedia !== 'all' && d.media !== filterMedia) return false;
+      if (filterDmp !== 'all' && (d.dmp_type || 'DIRECT') !== filterDmp) return false;
+      if (debouncedSearchQuery) {
+        const q = debouncedSearchQuery.toLowerCase();
+        const name = (d.excel_campaign_name || d.ad_group_name || '').toLowerCase();
+        if (!name.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [filteredData, debouncedSearchQuery, filterMedia, filterDmp]);
+
+  // 필터 변경 시 테이블 1페이지로 자동 리셋
+  useEffect(() => {
+    setTablePage(0);
+  }, [debouncedSearchQuery, filterMedia, filterDmp, filterStartDate, filterEndDate]);
+
+  // 매체 / DMP 옵션 동적 생성 (filteredData 기준 — 날짜 필터 반영, 검색어는 미반영)
+  const mediaOptions = useMemo(
+    () => ['all', ...Array.from(new Set(filteredData.map(d => d.media).filter(Boolean)))],
+    [filteredData]
+  );
+  const dmpOptions = useMemo(
+    () => ['all', ...Array.from(new Set(filteredData.map(d => d.dmp_type || 'DIRECT').filter(Boolean)))],
+    [filteredData]
+  );
+
   const handleSaveProcessedData = async () => {
     if (!selectedCampaignId || processedData.length === 0) return;
     
@@ -454,6 +521,29 @@ export const ReportCenter: React.FC = () => {
       toast.error('저장 오류', '잠시 후 다시 시도해 주세요.');
     } finally {
       setIsSavingReport(false);
+    }
+  };
+
+  const handleGenerateAiInsight = async () => {
+    if (!selectedCampaignId || filteredData.length === 0) return;
+    setIsGeneratingAi(true);
+    try {
+      const res = await fetch('/api/v1/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaign_id: selectedCampaignId }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error('AI 분석 실패', json.error ?? '잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      setAiInsight(json.data);
+      toast.success('AI 분석 완료', `${json.data.recommendations?.length ?? 0}개의 권장사항이 생성되었습니다.`);
+    } catch {
+      toast.error('AI 분석 오류', '네트워크 오류가 발생했습니다.');
+    } finally {
+      setIsGeneratingAi(false);
     }
   };
 
@@ -983,76 +1073,37 @@ export const ReportCenter: React.FC = () => {
                 )}
 
                 {filteredData.length > 0 && (
-                <div className="overflow-hidden rounded-[40px] border border-slate-200 bg-white shadow-sm max-h-[600px] overflow-y-auto custom-scrollbar">
-                  <Table>
-                    <TableHeader className="bg-slate-900 sticky top-0 z-20">
-                      <TableRow className="hover:bg-slate-900 border-none">
-                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">집행 일자</TableHead>
-                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">캠페인 메타</TableHead>
-                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">기술 스택</TableHead>
-                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8 text-right">노출수</TableHead>
-                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8 text-right">클릭수</TableHead>
-                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-4 text-right">CTR</TableHead>
-                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-4 text-right">CPM(₩)</TableHead>
-                        <TableHead className="text-blue-400 font-black text-xs uppercase tracking-widest py-6 px-8 text-right bg-slate-800/50">집행 금액 (KRW)</TableHead>
-                        <TableHead className="text-slate-400 font-black text-xs uppercase tracking-widest py-6 px-8">무결성</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredData.map((record, idx) => (
-                        <TableRow key={record._id || `row-${idx}`} className="hover:bg-blue-50/50 transition-colors border-b border-slate-100 last:border-none group">
-                          <TableCell className="py-6 px-8 font-bold text-slate-500">{formatDate(record.date)}</TableCell>
-                          <TableCell className="py-6 px-8 font-black text-slate-900">{record.excel_campaign_name || record.ad_group_name}</TableCell>
-                          <TableCell className="py-6 px-8">
-                            <Badge className="bg-slate-100 text-slate-600 font-black border-none px-3 py-1 rounded-lg">
-                              {record.dmp || record.dmp_type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="py-6 px-8 text-right font-bold text-slate-600">{record.impressions.toLocaleString()}</TableCell>
-                          <TableCell className="py-6 px-8 text-right font-bold text-slate-600">{record.clicks.toLocaleString()}</TableCell>
-                          <TableCell className="py-6 px-4 text-right font-bold text-slate-500 text-sm">
-                            {record.impressions > 0 ? ((record.clicks / record.impressions) * 100).toFixed(2) : '0.00'}%
-                          </TableCell>
-                          <TableCell className="py-6 px-4 text-right font-bold text-slate-500 text-sm">
-                            {(Number(record.impressions) || 0) > 0 ? `₩${Math.round(((Number(record.execution_amount) || 0) / (Number(record.impressions) || 1)) * 1000).toLocaleString()}` : '-'}
-                          </TableCell>
-                          
-                          <TableCell className="py-6 px-8 text-right bg-blue-50/30">
-                            {editingCell?.id === record._id ? (
-                              <Input 
-                                type="number"
-                                autoFocus
-                                className="w-32 h-10 text-right font-black border-2 border-blue-500 rounded-xl bg-white shadow-xl"
-                                value={editingCell?.value || 0}
-                                onChange={(e) => record._id && setEditingCell({ id: record._id, value: Number(e.target.value) })}
-                                onBlur={() => editingCell && record._id && handleUpdateAmount(record._id, editingCell.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && editingCell && record._id && handleUpdateAmount(record._id, editingCell.value)}
-                              />
-                            ) : (
-                              <div
-                                className={`px-4 py-2 rounded-xl transition-all font-black text-lg border-2 border-transparent ${record._id ? 'cursor-pointer hover:bg-blue-600 hover:text-white text-blue-600 hover:border-blue-700' : 'text-slate-400 cursor-not-allowed'}`}
-                                onDoubleClick={() => record._id && setEditingCell({ id: record._id, value: Number(record.cost) || Number(record.execution_amount) || 0 })}
-                                title={record._id ? '더블클릭하여 수정' : '저장 후 수정 가능'}
-                              >
-                                ₩{Math.round(record.cost || record.execution_amount).toLocaleString()}
-                              </div>
-                            )}
-                          </TableCell>
-
-                          <TableCell className="py-6 px-8">
-                            {record.is_edited ? (
-                              <Badge className="bg-orange-100 text-orange-700 border-orange-200 font-bold px-3 py-1 rounded-lg flex items-center gap-1 w-fit">
-                                <Edit3 size={10} /> 검증완료
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-slate-400 border-slate-200 font-bold px-3 py-1 rounded-lg">원본데이터</Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                  <div className="space-y-0">
+                    <TableFilterBar
+                      searchQuery={searchQuery}
+                      onSearchChange={setSearchQuery}
+                      filterMedia={filterMedia}
+                      onMediaChange={setFilterMedia}
+                      filterDmp={filterDmp}
+                      onDmpChange={setFilterDmp}
+                      mediaOptions={mediaOptions}
+                      dmpOptions={dmpOptions}
+                      totalCount={filteredData.length}
+                      filteredCount={tableFilteredData.length}
+                      onReset={() => {
+                        setSearchQuery('');
+                        setFilterMedia('all');
+                        setFilterDmp('all');
+                      }}
+                    />
+                    <DataTable
+                      data={tableFilteredData}
+                      editingCell={editingCell}
+                      onEditStart={(id, value) => setEditingCell({ id, value })}
+                      onEditChange={(id, value) => setEditingCell({ id, value })}
+                      onEditConfirm={handleUpdateAmount}
+                      onEditCancel={() => setEditingCell(null)}
+                      isUpdating={isUpdating}
+                      page={tablePage}
+                      pageSize={TABLE_PAGE_SIZE}
+                      onPageChange={setTablePage}
+                    />
+                  </div>
                 )}
               </div>
             </motion.div>
@@ -1358,23 +1409,281 @@ export const ReportCenter: React.FC = () => {
                       }
 
                       if (blockId === 'insights') {
+                        const priorityColor = (p: string) =>
+                          p === 'high' ? 'text-red-600 bg-red-50 border-red-100' :
+                          p === 'medium' ? 'text-amber-600 bg-amber-50 border-amber-100' :
+                          'text-slate-500 bg-slate-50 border-slate-200';
+                        const priorityLabel = (p: string) =>
+                          p === 'high' ? '긴급' : p === 'medium' ? '권장' : '참고';
+
                         return (
                           <SortableItem id="insights" key="insights">
                             <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
-                              <div className="flex justify-between items-center mb-8">
+                              <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
                                 <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase flex items-center gap-3">
                                   <MessageSquare size={24} className="text-blue-600"/> Intelligence Synthesis
                                 </h3>
-                                <Button onClick={handleSaveInsights} className="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-2xl font-black shadow-sm transition-all">
-                                  Commit Insights
-                                </Button>
+                                <div className="flex items-center gap-3">
+                                  <Button
+                                    onClick={handleGenerateAiInsight}
+                                    disabled={isGeneratingAi || filteredData.length === 0}
+                                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 rounded-2xl font-black shadow-lg shadow-blue-500/20 transition-all"
+                                  >
+                                    {isGeneratingAi
+                                      ? <><Loader2 size={16} className="mr-2 animate-spin" />AI 분석 중...</>
+                                      : <><Sparkles size={16} className="mr-2" />AI 성과 분석</>
+                                    }
+                                  </Button>
+                                  <Button onClick={handleSaveInsights} variant="outline" className="rounded-2xl font-black border-slate-200">
+                                    메모 저장
+                                  </Button>
+                                </div>
                               </div>
-                              <textarea 
-                                className="w-full min-h-[200px] p-8 rounded-[24px] border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all text-slate-700 text-lg font-medium placeholder:text-slate-300"
-                                placeholder="Synthesize performance results and outline strategic pivots..."
-                                value={campaignInsights}
-                                onChange={(e) => setCampaignInsights(e.target.value)}
-                              />
+
+                              {/* Stale 인사이트 배너 — 새 데이터 업로드 후 AI 미실행 시 표시 */}
+                              <AnimatePresence>
+                                {aiInsight?.is_stale && !staleBannerDismissed && (
+                                  <StaleInsightBanner
+                                    onReanalyze={handleGenerateAiInsight}
+                                    onDismiss={() => setStaleBannerDismissed(true)}
+                                  />
+                                )}
+                              </AnimatePresence>
+
+                              {/* AI 분석 결과 */}
+                              {aiInsight && (
+                                <div className="mb-8 space-y-6">
+                                  {/* 요약 */}
+                                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-6">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <Sparkles size={16} className="text-blue-600" />
+                                      <span className="text-xs font-black text-blue-600 uppercase tracking-widest">AI 요약</span>
+                                      <span className="ml-auto text-[10px] font-bold text-slate-400">
+                                        {new Date(aiInsight.generated_at).toLocaleString('ko-KR')} · {aiInsight.model}
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-700 font-medium leading-relaxed">{aiInsight.summary}</p>
+                                  </div>
+
+                                  {/* 이상 탐지 */}
+                                  {aiInsight.anomalies?.length > 0 && (
+                                    <div>
+                                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                        <AlertTriangle size={14} className="text-amber-500" /> 이상 탐지
+                                      </h4>
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        {aiInsight.anomalies.map((a: any, i: number) => (
+                                          <div key={i} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                                            <div className="flex items-center gap-2 mb-2">
+                                              {a.direction === 'spike'
+                                                ? <ArrowUp size={14} className="text-red-500" />
+                                                : <ArrowDown size={14} className="text-blue-500" />
+                                              }
+                                              <span className="text-xs font-black text-slate-600 uppercase">{a.metric}</span>
+                                              <span className="text-xs text-slate-400 ml-auto">{a.date}</span>
+                                            </div>
+                                            <p className="text-sm font-medium text-slate-600 leading-snug">{a.description}</p>
+                                            <div className="mt-3 flex items-center gap-2 text-xs font-black">
+                                              <span className="text-slate-900">{a.value?.toLocaleString()}</span>
+                                              <span className="text-slate-300">vs</span>
+                                              <span className="text-slate-400">{a.baseline?.toLocaleString()} 기준</span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* 권장사항 */}
+                                  {aiInsight.recommendations?.length > 0 && (
+                                    <div>
+                                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">권장사항</h4>
+                                      <div className="space-y-3">
+                                        {aiInsight.recommendations.map((r: any, i: number) => (
+                                          <div key={i} className="flex items-start gap-4 bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                                            <span className={cn('text-[10px] font-black px-2.5 py-1 rounded-xl border mt-0.5 shrink-0', priorityColor(r.priority))}>
+                                              {priorityLabel(r.priority)}
+                                            </span>
+                                            <div>
+                                              <p className="font-black text-slate-800 text-sm">{r.title}</p>
+                                              <p className="text-slate-500 text-sm mt-1 leading-relaxed">{r.description}</p>
+                                              {r.action && (
+                                                <p className="text-blue-600 text-xs font-bold mt-2 flex items-center gap-1">
+                                                  <Check size={11} /> {r.action}
+                                                </p>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* 수동 메모 */}
+                              <div>
+                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">수동 메모</p>
+                                <textarea
+                                  className="w-full min-h-[140px] p-6 rounded-[20px] border border-slate-200 bg-slate-50 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all text-slate-700 text-base font-medium placeholder:text-slate-300"
+                                  placeholder="성과 결과를 종합하고 전략적 방향을 기록하세요..."
+                                  value={campaignInsights}
+                                  onChange={(e) => setCampaignInsights(e.target.value)}
+                                />
+                              </div>
+                            </Card>
+                          </SortableItem>
+                        );
+                      }
+
+                      if (blockId === 'dmp') {
+                        // DMP 집계 (plain-JS Map, no Danfo)
+                        const DMP_FEE_RATES: Record<string, number> = {
+                          SKP: 0.10, KB: 0.10, LOTTE: 0.08, TG360: 0.10,
+                          BC: 0, SH: 0, WIFI: 0, DIRECT: 0, 'N/A': 0,
+                        };
+                        const calcDmpFee = (type: string, net: number) =>
+                          Math.round(net * (DMP_FEE_RATES[type] ?? 0));
+                        const formatFeeRate = (type: string): string => {
+                          const rate = DMP_FEE_RATES[type] ?? 0;
+                          return rate === 0 ? '—' : `${(rate * 100).toFixed(0)}%`;
+                        };
+                        const dmpLabel: Record<string, string> = {
+                          SKP: 'SKP', KB: 'KB', LOTTE: 'LOTTE', TG360: 'TG360',
+                          WIFI: '실내위치 (WIFI)', BC: 'BC', SH: 'SH',
+                          DIRECT: '직접 집행', 'N/A': '직접 집행',
+                        };
+                        const dmpOrder = ['SKP', 'KB', 'LOTTE', 'TG360', 'WIFI', 'BC', 'SH', 'DIRECT', 'N/A'];
+
+                        const dmpMap = new Map<string, { execution: number; net: number; dmpFee: number; impressions: number; clicks: number; count: number }>();
+                        filteredData.forEach(r => {
+                          const key = r.dmp_type || 'DIRECT';
+                          const prev = dmpMap.get(key) ?? { execution: 0, net: 0, dmpFee: 0, impressions: 0, clicks: 0, count: 0 };
+                          const netVal = r.net_amount || 0;
+                          dmpMap.set(key, {
+                            execution: prev.execution + (r.execution_amount || 0),
+                            net: prev.net + netVal,
+                            dmpFee: prev.dmpFee + calcDmpFee(key, netVal),
+                            impressions: prev.impressions + (r.impressions || 0),
+                            clicks: prev.clicks + (r.clicks || 0),
+                            count: prev.count + 1,
+                          });
+                        });
+
+                        const dmpRows = dmpOrder
+                          .filter(k => dmpMap.has(k))
+                          .map(k => ({ key: k, label: dmpLabel[k] ?? k, ...dmpMap.get(k)! }));
+
+                        // Merge DIRECT + N/A into one row
+                        const directRow = dmpRows.filter(r => r.key === 'DIRECT' || r.key === 'N/A')
+                          .reduce<{ key: string; label: string; execution: number; net: number; dmpFee: number; impressions: number; clicks: number; count: number } | null>((acc, r) => {
+                            if (!acc) return { ...r, key: 'DIRECT', label: '직접 집행' };
+                            return { ...acc, execution: acc.execution + r.execution, net: acc.net + r.net, dmpFee: acc.dmpFee + r.dmpFee, impressions: acc.impressions + r.impressions, clicks: acc.clicks + r.clicks, count: acc.count + r.count };
+                          }, null);
+                        const dmpOnlyRows = dmpRows.filter(r => r.key !== 'DIRECT' && r.key !== 'N/A');
+                        const allDmpRows = directRow ? [...dmpOnlyRows, directRow] : dmpOnlyRows;
+
+                        const totalExecution = allDmpRows.reduce((s, r) => s + r.execution, 0);
+                        const totalNet = allDmpRows.reduce((s, r) => s + r.net, 0);
+
+                        if (allDmpRows.length === 0) return null;
+
+                        return (
+                          <SortableItem id="dmp" key="dmp">
+                            <Card className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10">
+                              <div className="flex items-center gap-3 mb-8">
+                                <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
+                                  <Receipt size={20} />
+                                </div>
+                                <div>
+                                  <h3 className="text-2xl font-black text-slate-800 font-outfit uppercase tracking-tight">DMP 집행 분석</h3>
+                                  <p className="text-xs text-slate-400 mt-0.5 font-medium">광고 그룹명 키워드 기반 자동 분류 · WIFI = 실내위치</p>
+                                </div>
+                              </div>
+
+                              {/* Summary strip */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+                                {[
+                                  { label: 'DMP 종류', value: String(dmpOnlyRows.length), unit: '개', color: 'text-indigo-600' },
+                                  { label: '총 집행액', value: `₩${totalExecution.toLocaleString()}`, unit: '', color: 'text-slate-800' },
+                                  { label: '매체 순액', value: `₩${totalNet.toLocaleString()}`, unit: '', color: 'text-blue-600' },
+                                  { label: 'DMP 수수료', value: `₩${allDmpRows.reduce((s, r) => s + r.dmpFee, 0).toLocaleString()}`, unit: '', color: 'text-orange-600' },
+                                ].map(c => (
+                                  <div key={c.label} className="bg-slate-50 rounded-2xl p-4">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{c.label}</p>
+                                    <p className={cn("text-lg font-black", c.color)}>{c.value}<span className="text-sm ml-0.5">{c.unit}</span></p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                                <Table>
+                                  <TableHeader className="bg-slate-50/80">
+                                    <TableRow className="hover:bg-transparent border-b border-slate-100">
+                                      <TableHead className="px-6 font-black text-slate-700 min-w-[160px]">DMP 종류</TableHead>
+                                      <TableHead className="font-black text-slate-700 min-w-[120px] text-xs">감지 키워드</TableHead>
+                                      <TableHead className="text-right font-black text-slate-700 min-w-[140px]">집행액 (Gross)</TableHead>
+                                      <TableHead className="text-right font-black text-slate-700 min-w-[130px]">순액 (Net)</TableHead>
+                                      <TableHead className="text-right font-black text-slate-700 min-w-[70px]">요율</TableHead>
+                                      <TableHead className="text-right font-black text-slate-700 min-w-[120px]">DMP 수수료</TableHead>
+                                      <TableHead className="text-right font-black text-slate-700 min-w-[80px]">노출</TableHead>
+                                      <TableHead className="text-right font-black text-slate-700 min-w-[70px]">클릭</TableHead>
+                                      <TableHead className="text-center font-black text-slate-700 min-w-[60px]">건수</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {allDmpRows.map((row) => {
+                                      const isDirect = row.key === 'DIRECT' || row.key === 'N/A';
+                                      const keywordHint: Record<string, string> = {
+                                        SKP: 'SKP', KB: 'KB', LOTTE: 'LOTTE', TG360: 'TG360',
+                                        WIFI: 'WIFI, 실내위치', BC: 'BC', SH: 'SH', DIRECT: '—',
+                                      };
+                                      return (
+                                        <TableRow key={row.key} className={cn("hover:bg-slate-50/60 transition-colors border-b border-slate-50", isDirect && "opacity-60")}>
+                                          <TableCell className="px-6 font-bold text-slate-700">
+                                            {isDirect ? (
+                                              <span className="text-slate-400">{row.label}</span>
+                                            ) : (
+                                              <span className="inline-flex items-center gap-2">
+                                                <span className="w-2 h-2 rounded-full bg-indigo-400 inline-block" />
+                                                {row.label}
+                                              </span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="text-xs text-slate-400 font-mono">{keywordHint[row.key] ?? '—'}</TableCell>
+                                          <TableCell className="text-right font-medium text-slate-700">₩{row.execution.toLocaleString()}</TableCell>
+                                          <TableCell className="text-right font-bold text-blue-600">₩{row.net.toLocaleString()}</TableCell>
+                                          <TableCell className="text-right text-slate-400 font-mono text-xs">{formatFeeRate(row.key)}</TableCell>
+                                          <TableCell className="text-right font-bold text-orange-600">
+                                            {row.dmpFee > 0 ? `₩${row.dmpFee.toLocaleString()}` : '—'}
+                                          </TableCell>
+                                          <TableCell className="text-right text-slate-500 font-mono text-xs">{row.impressions.toLocaleString()}</TableCell>
+                                          <TableCell className="text-right text-slate-500 font-mono text-xs">{row.clicks.toLocaleString()}</TableCell>
+                                          <TableCell className="text-center text-slate-400 font-mono text-xs">{row.count}</TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                    {/* 합계 */}
+                                    <TableRow className="bg-slate-50 border-t-2 border-slate-200 font-black">
+                                      <TableCell className="px-6 font-black text-slate-700">합계</TableCell>
+                                      <TableCell />
+                                      <TableCell className="text-right font-black text-slate-800">₩{totalExecution.toLocaleString()}</TableCell>
+                                      <TableCell className="text-right font-black text-blue-700">₩{totalNet.toLocaleString()}</TableCell>
+                                      <TableCell className="text-right text-slate-400 text-xs">—</TableCell>
+                                      <TableCell className="text-right font-black text-orange-700">₩{allDmpRows.reduce((s, r) => s + r.dmpFee, 0).toLocaleString()}</TableCell>
+                                      <TableCell className="text-right font-black text-slate-600 font-mono text-xs">
+                                        {allDmpRows.reduce((s, r) => s + r.impressions, 0).toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-right font-black text-slate-600 font-mono text-xs">
+                                        {allDmpRows.reduce((s, r) => s + r.clicks, 0).toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-center text-slate-400 font-mono text-xs">
+                                        {allDmpRows.reduce((s, r) => s + r.count, 0)}
+                                      </TableCell>
+                                    </TableRow>
+                                  </TableBody>
+                                </Table>
+                              </div>
                             </Card>
                           </SortableItem>
                         );

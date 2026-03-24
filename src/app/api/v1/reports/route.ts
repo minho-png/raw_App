@@ -5,13 +5,33 @@ export const dynamic = 'force-dynamic';
  * Auth 비활성화 모드로 동작
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import clientPromise from '@/lib/mongodb';
 import { WorkspaceRepository, SYSTEM_WORKSPACE_ID } from '@/services/workspaceRepository';
+
+const SharedReportCreateSchema = z.object({
+  campaign_id: z.string().min(1),
+  expires_in_days: z.number().int().min(1).max(365).optional(),
+  config: z.object({
+    sections: z.array(z.string()).default([]),
+    date_range: z.object({ start: z.string(), end: z.string() }).optional(),
+    show_budget: z.boolean(),
+    branding: z.boolean().default(true),
+  }).optional(),
+});
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { campaign_id, config, expires_in_days } = body;
+    const parseResult = SharedReportCreateSchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json({
+        error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
+        details: parseResult.error.flatten(),
+      }, { status: 400 });
+    }
+    const { campaign_id, config, expires_in_days } = parseResult.data;
 
     const client = await clientPromise;
     const wsRepo = new WorkspaceRepository(client);

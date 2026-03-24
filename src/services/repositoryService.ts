@@ -1,4 +1,4 @@
-import { Collection, Db, MongoClient, Filter, ObjectId } from 'mongodb';
+import { Collection, Db, MongoClient, ClientSession, Filter, ObjectId } from 'mongodb';
 import { PerformanceRecord } from '@/types';
 
 export class RepositoryService {
@@ -75,24 +75,53 @@ export class RepositoryService {
     const rawRecords = data.filter(d => d.is_raw !== false);
     const reportRecords = data.filter(d => d.is_raw === false);
 
-    const rawDeleteResult = await this.rawCollection.deleteMany(deleteFilter);
-    await this.reportCollection.deleteMany(deleteFilter);
+    /**
+     * 트랜잭션 래핑: deleteMany x2 → insertMany x2 를 원자적으로 실행.
+     * standalone MongoDB (replica set 없음)에서는 트랜잭션 미지원 → fallback 처리.
+     */
+    const executeOps = async (session?: ClientSession): Promise<{ deletedCount: number; insertedCount: number }> => {
+      const opts = session ? { session } : {};
 
-    let insertedCount = 0;
+      const rawDeleteResult = await this.rawCollection.deleteMany(deleteFilter, opts);
+      await this.reportCollection.deleteMany(deleteFilter, opts);
 
-    if (rawRecords.length > 0) {
-      const rawInsert = await this.rawCollection.insertMany(rawRecords);
-      insertedCount += rawInsert.insertedCount;
-    }
-    if (reportRecords.length > 0) {
-      const reportInsert = await this.reportCollection.insertMany(reportRecords);
-      insertedCount += reportInsert.insertedCount;
-    }
+      let insertedCount = 0;
 
-    return {
-      deletedCount: rawDeleteResult.deletedCount || 0,
-      insertedCount
+      if (rawRecords.length > 0) {
+        const rawInsert = await this.rawCollection.insertMany(rawRecords, opts);
+        insertedCount += rawInsert.insertedCount;
+      }
+      if (reportRecords.length > 0) {
+        const reportInsert = await this.reportCollection.insertMany(reportRecords, opts);
+        insertedCount += reportInsert.insertedCount;
+      }
+
+      return {
+        deletedCount: rawDeleteResult.deletedCount || 0,
+        insertedCount,
+      };
     };
+
+    try {
+      const session = this.client.startSession();
+      try {
+        let result: { deletedCount: number; insertedCount: number } = { deletedCount: 0, insertedCount: 0 };
+        await session.withTransaction(async () => {
+          result = await executeOps(session);
+        });
+        return result;
+      } finally {
+        await session.endSession();
+      }
+    } catch (e: any) {
+      // MongoDB error code 20: Transaction not supported (standalone, no replica set)
+      // MongoDB error code 263: OperationNotSupportedInTransaction variant
+      if (e.code === 20 || e.codeName === 'IllegalOperation' || e.message?.includes('transaction')) {
+        console.warn('[upsertCampaignData] 트랜잭션 미지원 환경 — fallback to non-transactional');
+        return await executeOps();
+      }
+      throw e;
+    }
   }
 
   /**
@@ -154,6 +183,58 @@ export class RepositoryService {
   }
 
   /**
+   * getAllCampaignsMonthlySettlementData: 전체 캠페인 월별 DMP 정산 집계
+   * campaign_id + dmp_type 기준으로 그룹화 후 campaign_configs에서 이름 조인
+   */
+  public async getAllCampaignsMonthlySettlementData(year: number, month: number) {
+    const startDate = new Date(Date.UTC(year, month - 1, 1));
+    const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+
+    const pipeline = [
+      {
+        $match: {
+          date: { $gte: startDate, $lte: endDate }
+        }
+      },
+      {
+        $group: {
+          _id: { campaign_id: '$campaign_id', dmp_type: '$dmp_type' },
+          total_execution: { $sum: '$execution_amount' },
+          total_net: { $sum: '$net_amount' },
+          total_impressions: { $sum: '$impressions' },
+          total_clicks: { $sum: '$clicks' },
+          row_count: { $count: {} }
+        }
+      },
+      {
+        $lookup: {
+          from: 'campaign_configs',
+          localField: '_id.campaign_id',
+          foreignField: 'campaign_id',
+          as: 'campaign_info'
+        }
+      },
+      {
+        $project: {
+          campaign_id: '$_id.campaign_id',
+          campaign_name: { $ifNull: [{ $arrayElemAt: ['$campaign_info.campaign_name', 0] }, '$_id.campaign_id'] },
+          dmp_type: '$_id.dmp_type',
+          total_execution: 1,
+          total_net: 1,
+          fee_amount: { $subtract: ['$total_execution', '$total_net'] },
+          total_impressions: 1,
+          total_clicks: 1,
+          row_count: 1,
+          _id: 0
+        }
+      },
+      { $sort: { campaign_name: 1, total_execution: -1 } }
+    ];
+
+    return await this.reportCollection.aggregate(pipeline).toArray();
+  }
+
+  /**
    * getCampaigns: Fetches all campaign configurations.
    */
   public async getCampaigns() {
@@ -185,10 +266,36 @@ export class RepositoryService {
    * deleteCampaignConfig: Deletes a campaign configuration and its associated performance data.
    */
   public async deleteCampaign(campaignId: string) {
-    await this.campaignCollection.deleteOne({ campaign_id: campaignId });
-    await this.rawCollection.deleteMany({ campaign_id: campaignId });
-    await this.reportCollection.deleteMany({ campaign_id: campaignId });
-    return await this.settlementCollection.deleteMany({ campaign_id: campaignId });
+    /**
+     * 4개 컬렉션 순차 삭제를 트랜잭션으로 래핑.
+     * 중간 실패 시 고아 데이터 방지. standalone 환경에서는 fallback.
+     */
+    const executeOps = async (session?: ClientSession) => {
+      const opts = session ? { session } : {};
+      await this.campaignCollection.deleteOne({ campaign_id: campaignId }, opts);
+      await this.rawCollection.deleteMany({ campaign_id: campaignId }, opts);
+      await this.reportCollection.deleteMany({ campaign_id: campaignId }, opts);
+      return await this.settlementCollection.deleteMany({ campaign_id: campaignId }, opts);
+    };
+
+    try {
+      const session = this.client.startSession();
+      try {
+        let result: any;
+        await session.withTransaction(async () => {
+          result = await executeOps(session);
+        });
+        return result;
+      } finally {
+        await session.endSession();
+      }
+    } catch (e: any) {
+      if (e.code === 20 || e.codeName === 'IllegalOperation' || e.message?.includes('transaction')) {
+        console.warn('[deleteCampaign] 트랜잭션 미지원 환경 — fallback to non-transactional');
+        return await executeOps();
+      }
+      throw e;
+    }
   }
 
   /**

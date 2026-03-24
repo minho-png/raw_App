@@ -1,82 +1,82 @@
-# CLAUDE.md
+# GFA RAW MASTER PRO — Claude Code 가이드
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 프로젝트 개요
+한국 디지털 광고(Naver GFA, Kakao, Meta, Google) 캠페인 CSV 데이터를 정제·분석·보고서화하는 SaaS 플랫폼.
 
-## Commands
+## 기술 스택
+- **프레임워크**: Next.js 14 (App Router), TypeScript
+- **DB**: MongoDB (`gfa_master_pro`)
+- **상태관리**: Zustand (`useCampaignStore`)
+- **데이터처리**: Danfo.js (클라이언트), PapaParse (CSV)
+- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`)
+- **UI**: Tailwind CSS, Radix UI, Recharts, Framer Motion, DnD Kit
 
-```bash
-# Development
-npm run dev        # Start Next.js dev server (port 3000)
-npm run build      # Production build
-npm run start      # Start production server
-npm run lint       # ESLint check
+## 핵심 규칙
 
-# Docker (full stack with MongoDB)
-docker-compose up --build    # Start app + MongoDB
-docker-compose down          # Stop services
+### API 설계
+- 외부 API: `/api/v1/` Route Handler
+- 내부 UI용: Server Actions (`src/server/actions/`)
+- 신규 엔드포인트는 반드시 `/api/v1/` 하위에 작성
 
-# MongoDB connects automatically via MONGODB_URI env var
-# Copy .env.example → .env.local and fill in values before running locally
+### 멀티테넌시
+- 모든 DB 쿼리에 `workspace_id` 격리 유지
+- 현재는 `SYSTEM_WORKSPACE_ID` 단일 테넌트로 동작
+
+### 데이터 처리
+- Danfo.js `groupby().sum()`은 Vercel/serverless에서 크래시 발생 → 반드시 plain-JS Map 집계 사용
+- 날짜는 반드시 UTC 자정으로 정규화 (`Date.UTC(y, m, d)`)
+- 네이버GFA 공급가액은 VAT 별도: `supply / 1.1`
+
+### DMP 탐지
+- `ad_group_name` 내 키워드 매칭: SKP, KB, LOTTE, TG360, BC, SH, WIFI
+
+## DB 컬렉션
+```
+campaign_configs    — 캠페인 및 서브캠페인 설정
+raw_metrics         — 원본 CSV 행 데이터 (is_raw: true)
+processed_reports   — 집계된 리포트 데이터 (is_raw: false)
+dmp_settlements     — DMP 정산 기록
+workspaces          — 워크스페이스 (v2.0)
+workspace_members   — 멤버 역할 (v2.0)
+users               — 사용자 (v2.0)
+shared_reports      — 공유 보고서 링크
+alert_rules         — 알림 규칙
+alert_events        — 알림 이벤트
+ai_insights         — AI 분석 결과 캐시
 ```
 
-There are no test commands — `scripts/test_dmp_wifi.ts` and `scripts/test_groupby.ts` are manual utility scripts, not a test suite.
+## 주요 파일
+| 파일 | 역할 |
+|------|------|
+| `src/services/calculationService.ts` | CSV 파싱, 컬럼 매핑, DMP 탐지, 집계 |
+| `src/services/repositoryService.ts` | MongoDB CRUD (캠페인, 성과 데이터) |
+| `src/services/workspaceRepository.ts` | 공유 보고서, 알림, AI 인사이트 |
+| `src/services/ai/insightService.ts` | Claude AI 캠페인 분석 |
+| `src/services/reportService.ts` | HTML 보고서 생성 |
+| `src/components/organisms/ReportCenter.tsx` | 메인 대시보드 (업로드→처리→분석) |
+| `src/components/layout/Sidebar.tsx` | 캠페인 목록 및 CRUD |
+| `src/lib/mongodb.ts` | MongoDB 연결 풀 + 인덱스 생성 |
 
-## Architecture
+## 환경 변수 (`.env.local`)
+```
+MONGODB_URI=mongodb://localhost:27017/gfa_master_pro
+ANTHROPIC_API_KEY=sk-ant-...   # AI 인사이트 필수
+WORKER_SECRET=...               # 알림 워커 인증
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
 
-### Data Flow
-CSV Upload → `CalculationService.processWithDanfo()` → Server Action `savePerformanceData()` → `RepositoryService.upsertCampaignData()` → MongoDB
+## 개발 명령
+```bash
+npm run dev    # 개발 서버
+npm run build  # 프로덕션 빌드
+npm run lint   # ESLint
+```
 
-The upsert strategy is **delete-then-insert** keyed on `{ campaign_id, media, date }`: existing records for the same campaign/media/dates are deleted, then new records are inserted. This intentionally overwrites re-uploaded date ranges while appending new ones.
-
-### Layer Responsibilities
-
-**`src/services/calculationService.ts`** — Pure data transformation, no DB access
-- Column fuzzy-matching: normalizes Korean/English headers to internal field names via `STANDARD_ALIASES`
-- DMP type detection from `ad_group_name` patterns (SKP, KB, LOTTE, TG360, BC, SH, WIFI, DIRECT)
-- Danfo.js DataFrame processing — always call `ensureRecords()` after `dfd.toJSON()` because Danfo can return either row-oriented or column-oriented JSON depending on environment
-- Naver GFA costs are VAT-inclusive: divide `supply_value` by 1.1 before fee calculation
-- `budget_type: 'integrated'` uses a single fee rate across all sub-campaigns; `'individual'` uses per-sub-campaign rates
-
-**`src/services/repositoryService.ts`** — All MongoDB queries
-- DB name: `gfa_master_pro`
-- Collections: `campaign_configs`, `raw_metrics`, `processed_reports`, `dmp_settlements`
-- `raw_metrics`: one record per CSV row (`is_raw: true`)
-- `processed_reports`: Danfo-aggregated records (`is_raw: false`); this is what the UI reads for reports
-
-**`src/server/actions/`** — Next.js Server Actions (UI-facing only)
-- `campaign.ts`: CRUD for `CampaignConfig` — always runs `normalizeCampaignInput()` before saving to coerce string numbers and sanitize dates
-- `settlement.ts`: performance data save/fetch and DMP settlement calculation
-
-**`src/services/reportService.ts`** — Stateless HTML report generator
-- Takes `PerformanceRecord[]` + `BudgetStatus` + optional `layout` (ordered section IDs)
-- Section IDs: `trend`, `share`, `budget`, `audience`, `creative`, `matrix`, `insights`
-- Output is a self-contained HTML string (inline CSS, no external deps) — intended for download
-
-**`src/store/useCampaignStore.ts`** — Zustand store (client state only)
-- Holds `campaigns[]`, `selectedCampaignId`, `activeTab`
-- `isSyncing` flag prevents background 30-second polls from overwriting state during manual operations
-- `setCampaigns()` preserves the current selection if the selected campaign still exists in the new list
-
-**`src/services/workspaceRepository.ts`** — v2.0 multi-tenancy layer
-- Handles workspace CRUD, member roles, shared report links, alert rules, AI insights
-- New collections: `workspaces`, `workspace_members`, `users`, `shared_reports`, `alert_rules`, `alert_events`, `ai_insights`
-- Call `ensureIndexes()` once on app startup
-
-### v2.0 API Architecture
-REST endpoints live under `/api/v1/` (Route Handlers) and are intended for external integrations. Internal UI still uses Server Actions. All `/api/v1/` routes require an `x-workspace-id` request header alongside NextAuth session auth.
-
-Public share route `/share/[shareId]` is excluded from auth middleware — data is served via `/api/v1/share/[shareId]` which strips budget fields when `config.show_budget: false`.
-
-### Key Types (`src/types/index.ts`)
-- `CampaignConfig` — campaign settings with `sub_campaigns[]` (one per media/mapping_value)
-- `SubCampaignConfig.mapping_value` — the exact string from the uploaded CSV that identifies this sub-campaign (replaces the deprecated `excel_name`)
-- `PerformanceRecord` — one row of ad performance data; `[key: string]: any` catch-all preserves unmapped CSV columns
-- `BudgetStatus` — computed pacing metrics (not stored in DB, always calculated at render time)
-
-### Environment Variables
-See `.env.example`. Required for v2.0:
-- `MONGODB_URI` — MongoDB connection string
-- `NEXTAUTH_SECRET` — NextAuth JWT signing key
-- `ANTHROPIC_API_KEY` — Claude API for AI insights
-- `WORKER_SECRET` — Shared secret between Docker worker and `/api/v1/alerts/check`
-- `NEXT_PUBLIC_APP_URL` — Used in share link generation
+## v2.0 진행 상황
+- [x] Sprint 0: 타입 시스템 (workspace.ts)
+- [x] Sprint 1: DB 멀티테넌시 기반 (workspaceRepository.ts)
+- [x] Sprint 2: REST API /api/v1/* + Claude AI 인사이트
+- [x] Sprint 3: 공유 보고서 URL (/share/[shareId])
+- [x] Sprint 4: 알림 시스템
+- [ ] Auth: NextAuth.js OAuth (현재 비활성화)
+- [ ] 실제 멀티테넌시 (현재 SYSTEM_WORKSPACE_ID 단일 운영)

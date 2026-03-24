@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useCampaignStore } from '@/store/useCampaignStore';
-import { Plus, Trash2, Layout, BarChart3, Database, Loader2, Settings, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Layout, BarChart3, Database, Loader2, Settings, AlertTriangle, Receipt } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { CampaignConfig } from '@/types';
 import { genId } from '@/lib/idGenerator';
 
 export const Sidebar = () => {
-  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, isSyncing, setIsSyncing, updateCampaign, refreshCampaigns } = useCampaignStore();
+  const { campaigns, selectedCampaignId, selectCampaign, deleteCampaign, addCampaign, setCampaigns, isLoading, setIsLoading, isSyncing, setIsSyncing, updateCampaign, refreshCampaigns, activeMainView, setActiveMainView } = useCampaignStore();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<CampaignConfig | null>(null);
   const [tempName, setTempName] = useState("");
@@ -163,6 +163,29 @@ export const Sidebar = () => {
             ))}
           </AnimatePresence>
         </nav>
+      </div>
+
+      <div className="pt-4 mt-4 border-t border-slate-800/30">
+        <button
+          onClick={() => setActiveMainView(activeMainView === 'settlement' ? 'campaigns' : 'settlement')}
+          className={cn(
+            "w-full flex items-center gap-3 p-3.5 rounded-xl transition-all text-left",
+            activeMainView === 'settlement'
+              ? "bg-indigo-600/15 border border-indigo-500/30 text-indigo-300"
+              : "hover:bg-slate-800/40 border border-transparent text-slate-400 hover:text-slate-200"
+          )}
+        >
+          <div className={cn(
+            "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
+            activeMainView === 'settlement' ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400"
+          )}>
+            <Receipt size={14} />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-black tracking-tight">DMP 정산</span>
+            <span className="text-[10px] text-slate-500 mt-0.5">월별 전체 캠페인</span>
+          </div>
+        </button>
       </div>
 
       <div className="pt-6 mt-6 border-t border-slate-800/50">

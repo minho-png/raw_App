@@ -29,7 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: { shareId: str
 
     const safeRecords = shared.config.show_budget
       ? records
-      : records.map(({ execution_amount, net_amount, cost, ...r }: any) => r);
+      : records.map(({ execution_amount, net_amount, cost, supply_value, ...r }: any) => r);
 
     return NextResponse.json({
       campaign: shared.config.show_budget

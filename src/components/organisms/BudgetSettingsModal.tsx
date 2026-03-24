@@ -217,7 +217,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                                   value={sub.mapping_value || ''}
                                   onChange={(e) => handleUpdateByMedia(media, { mapping_value: e.target.value })}
                                   placeholder="엑셀 식별용 키워드"
-                                  className="h-12 rounded-xl border-slate-200 focus-visible:ring-blue-600"
+                                  className="h-12 rounded-xl bg-white text-slate-800 border-slate-200 focus-visible:ring-blue-600 dark:bg-white dark:text-slate-800 dark:border-slate-200"
                                 />
                               </div>
 
@@ -227,7 +227,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                                   type="number"
                                   value={sub.budget ?? 0}
                                   onChange={(e) => handleUpdateByMedia(media, { budget: Number(e.target.value) })}
-                                  className="h-12 rounded-xl border-slate-200 focus-visible:ring-blue-600"
+                                  className="h-12 rounded-xl bg-white text-slate-800 border-slate-200 focus-visible:ring-blue-600 dark:bg-white dark:text-slate-800 dark:border-slate-200"
                                 />
                               </div>
 
@@ -237,7 +237,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                                   type="number"
                                   value={sub.fee_rate ?? 10}
                                   onChange={(e) => handleUpdateByMedia(media, { fee_rate: Number(e.target.value) })}
-                                  className="h-12 rounded-xl border-slate-200 focus-visible:ring-blue-600"
+                                  className="h-12 rounded-xl bg-white text-slate-800 border-slate-200 focus-visible:ring-blue-600 dark:bg-white dark:text-slate-800 dark:border-slate-200"
                                 />
                                 <p className="text-[11px] text-slate-500 font-medium">기본값: 10%</p>
                               </div>
@@ -248,7 +248,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                                   type="number"
                                   value={sub.target_cpc ?? 0}
                                   onChange={(e) => handleUpdateByMedia(media, { target_cpc: Number(e.target.value) })}
-                                  className="h-12 rounded-xl border-slate-200 focus-visible:ring-blue-600"
+                                  className="h-12 rounded-xl bg-white text-slate-800 border-slate-200 focus-visible:ring-blue-600 dark:bg-white dark:text-slate-800 dark:border-slate-200"
                                 />
                               </div>
 
@@ -258,7 +258,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                                   type="number"
                                   value={sub.target_ctr ?? 0}
                                   onChange={(e) => handleUpdateByMedia(media, { target_ctr: Number(e.target.value) })}
-                                  className="h-12 rounded-xl border-slate-200 focus-visible:ring-blue-600"
+                                  className="h-12 rounded-xl bg-white text-slate-800 border-slate-200 focus-visible:ring-blue-600 dark:bg-white dark:text-slate-800 dark:border-slate-200"
                                 />
                               </div>
                             </div>

@@ -5,11 +5,21 @@ export const dynamic = 'force-dynamic';
  * Auth 비활성화 모드
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import clientPromise from '@/lib/mongodb';
 import { WorkspaceRepository, SYSTEM_WORKSPACE_ID } from '@/services/workspaceRepository';
 import { RepositoryService } from '@/services/repositoryService';
 import { AlertEvent, AlertRule } from '@/types';
 import { genId } from '@/lib/idGenerator';
+
+const AlertRuleSchema = z.object({
+  rule_id: z.string().min(1).optional(),
+  campaign_id: z.string().min(1),
+  type: z.enum(['budget_threshold', 'cpc_spike', 'ctr_drop', 'daily_spend']),
+  threshold: z.number().min(0),
+  notify_channels: z.array(z.enum(['email', 'slack', 'webhook'])).min(1),
+  is_active: z.boolean().default(true),
+});
 
 export async function GET() {
   try {
@@ -35,9 +45,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const result = AlertRuleSchema.safeParse(body);
+    if (!result.success) {
+      return NextResponse.json({
+        error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
+        details: result.error.flatten(),
+      }, { status: 400 });
+    }
+
     const rule: AlertRule = {
-      ...body,
-      rule_id: body.rule_id ?? genId(),
+      ...result.data,
+      rule_id: result.data.rule_id ?? genId(),
       workspace_id: SYSTEM_WORKSPACE_ID,
       created_by: 'system',
       created_at: new Date(),
@@ -47,7 +66,7 @@ export async function POST(req: NextRequest) {
     await wsRepo.upsertAlertRule(rule);
     return NextResponse.json({ data: rule }, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error', code: 'INTERNAL_ERROR' }, { status: 500 });
   }
 }
 

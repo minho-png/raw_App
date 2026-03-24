@@ -68,12 +68,14 @@ export class CalculationService {
     }
     const s = String(raw ?? '').trim();
     if (!s) {
-      console.warn('[CalculationService] 빈 날짜 값 — 1970-01-01로 기록');
-      return new Date(0);
+      return new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
     }
 
+    // Strip trailing dot: 네이버 표준 YYYY.MM.DD. 형식 지원
+    const cleaned = s.replace(/\.$/, '');
+
     // Normalize separators: 2024.03.01 / 2024/03/01 -> 2024-03-01
-    let normalized = s.replace(/[\.\/]/g, '-').replace(/\s+/g, '');
+    let normalized = cleaned.replace(/[\.\/]/g, '-').replace(/\s+/g, '');
 
     // Handle YY-MM-DD (e.g., 24-03-01 -> 2024-03-01)
     const m = normalized.match(/^(\d{2})-(\d{1,2})-(\d{1,2})$/);
@@ -97,8 +99,8 @@ export class CalculationService {
 
     const d = new Date(normalized);
     if (isNaN(d.getTime())) {
-      console.warn(`[CalculationService] 날짜 파싱 실패: "${raw}" — 1970-01-01로 기록`);
-      return new Date(0);
+      console.warn(`[CalculationService] 날짜 파싱 실패: "${raw}" — 오늘 날짜로 대체`);
+      return new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
     }
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   }
@@ -220,18 +222,18 @@ export class CalculationService {
     groupByColumns = groupByColumns.filter((c) => df.columns.includes(c));
 
     // 2. DMP Detection
-    const detectDMP = (name: any) => {
-      if (typeof name !== 'string') return 'N/A';
+    const detectDMP = (name: any): string => {
+      if (typeof name !== 'string' || !name.trim()) return 'DIRECT';
       const upperName = name.toUpperCase();
-      if (upperName.includes('WIFI') || name.includes('실내위치')) return 'WIFI';
-      const found = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH'].find(k => upperName.includes(k.toUpperCase()));
-      return found || 'DIRECT';
+      if (upperName.includes('WIFI') || upperName.includes('실내위치')) return 'WIFI';
+      const found = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH'].find(k => upperName.includes(k));
+      return found ?? 'DIRECT';
     };
 
     if (df.columns.includes('ad_group_name')) {
       df.addColumn('dmp_type', df['ad_group_name'].map(detectDMP), { inplace: true });
     } else {
-      df.addColumn('dmp_type', new Array(df.shape[0]).fill('N/A'), { inplace: true });
+      df.addColumn('dmp_type', new Array(df.shape[0]).fill('DIRECT'), { inplace: true });
     }
 
     // 3. Calculation & Raw Records

@@ -86,3 +86,24 @@ export interface MonthlySettlementResult {
   verification_status: 'valid' | 'warning';
   diff_percentage: number;
 }
+
+export interface AllCampaignsSettlementRow {
+  campaign_id: string;
+  campaign_name: string;
+  dmp_type: string;
+  total_execution: number;
+  total_net: number;
+  fee_amount: number;
+  total_impressions: number;
+  total_clicks: number;
+  row_count: number;
+}
+
+export interface AllCampaignsSettlementResult {
+  year: number;
+  month: number;
+  rows: AllCampaignsSettlementRow[];
+  total_execution: number;
+  total_net: number;
+  total_fee: number;
+}

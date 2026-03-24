@@ -119,4 +119,16 @@ export class WorkspaceRepository {
         { sort: { generated_at: -1 } }
       ) as any;
   }
+
+  /**
+   * invalidateAiInsights: 데이터 갱신 시 관련 캠페인의 AI 인사이트를 stale로 표시.
+   * UI에서 stale 인사이트를 감지하여 재생성을 유도함.
+   */
+  async invalidateAiInsights(campaignIds: string[]): Promise<void> {
+    if (campaignIds.length === 0) return;
+    await this.aiInsightsCol.updateMany(
+      { campaign_id: { $in: campaignIds } },
+      { $set: { is_stale: true } }
+    );
+  }
 }

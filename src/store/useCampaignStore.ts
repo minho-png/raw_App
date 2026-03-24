@@ -16,6 +16,8 @@ interface CampaignState {
   setIsSyncing: (isSyncing: boolean) => void;
   setActiveTab: (tab: string) => void;
   refreshCampaigns: (fetchFn: () => Promise<{ success: boolean, campaigns?: CampaignConfig[] }>) => Promise<void>;
+  activeMainView: 'campaigns' | 'settlement';
+  setActiveMainView: (view: 'campaigns' | 'settlement') => void;
 }
 
 export const useCampaignStore = create<CampaignState>((set, get) => ({
@@ -24,6 +26,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   isLoading: false,
   isSyncing: false,
   activeTab: 'upload',
+  activeMainView: 'campaigns',
   addCampaign: (campaign) => set((state) => ({ 
     campaigns: [...state.campaigns, campaign] 
   })),
@@ -54,6 +57,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   },
   setIsLoading: (isLoading) => set({ isLoading }),
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveMainView: (view) => set({ activeMainView: view }),
   refreshCampaigns: async (fetchFn) => {
     // If we're manually syncing (e.g. adding/deleting), skip background refreshes
     if (get().isSyncing) return;

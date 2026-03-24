@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import clientPromise from '@/lib/mongodb';
 import { RepositoryService } from '@/services/repositoryService';
-import { PerformanceRecord, MonthlySettlementResult, DmpSettlementRow } from '@/types';
+import { WorkspaceRepository } from '@/services/workspaceRepository';
+import { PerformanceRecord, MonthlySettlementResult, DmpSettlementRow, AllCampaignsSettlementRow, AllCampaignsSettlementResult } from '@/types';
 
 /**
  * savePerformanceData: Saves processed CSV records to MongoDB.
@@ -20,7 +21,12 @@ export async function savePerformanceData(records: PerformanceRecord[]) {
     }));
 
     const result = await repo.upsertCampaignData(normalizedRecords);
-    
+
+    // 데이터 갱신 후 관련 캠페인의 AI 인사이트를 stale로 표시
+    const uniqueCampaignIds = Array.from(new Set(normalizedRecords.map(r => r.campaign_id)));
+    const wsRepo = new WorkspaceRepository(client);
+    await wsRepo.invalidateAiInsights(uniqueCampaignIds);
+
     revalidatePath('/');
     return { success: true, ...result };
   } catch (error) {
@@ -79,6 +85,27 @@ export async function getPerformanceDataAction(campaignId: string) {
   } catch (error) {
     console.error('Failed to get performance data:', error);
     return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * getAllCampaignsMonthlySettlement: 전체 캠페인 월별 DMP 정산 조회
+ */
+export async function getAllCampaignsMonthlySettlement(year: number, month: number): Promise<AllCampaignsSettlementResult | { error: string }> {
+  try {
+    const client = await clientPromise;
+    const repo = new RepositoryService(client);
+
+    const rows = await repo.getAllCampaignsMonthlySettlementData(year, month) as AllCampaignsSettlementRow[];
+
+    const total_execution = rows.reduce((s, r) => s + r.total_execution, 0);
+    const total_net = rows.reduce((s, r) => s + r.total_net, 0);
+    const total_fee = rows.reduce((s, r) => s + r.fee_amount, 0);
+
+    return { year, month, rows, total_execution, total_net, total_fee };
+  } catch (error) {
+    console.error('Failed to get all campaigns monthly settlement:', error);
+    return { error: String(error) };
   }
 }
 

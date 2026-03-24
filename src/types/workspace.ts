@@ -75,6 +75,7 @@ export interface AiInsight {
   recommendations: AiRecommendation[];
   anomalies: AiAnomaly[];
   token_usage: number;
+  is_stale?: boolean;         // true when underlying data has been updated since insight generation
 }
 
 export interface AiRecommendation {

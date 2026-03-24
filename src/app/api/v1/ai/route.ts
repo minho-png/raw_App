@@ -5,14 +5,27 @@ export const dynamic = 'force-dynamic';
  * Auth 비활성화 모드, ANTHROPIC_API_KEY 있을 때만 실제 AI 호출
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import clientPromise from '@/lib/mongodb';
 import { RepositoryService } from '@/services/repositoryService';
 import { WorkspaceRepository, SYSTEM_WORKSPACE_ID } from '@/services/workspaceRepository';
 import { generateCampaignInsight } from '@/services/ai/insightService';
 
+const AiRequestSchema = z.object({
+  campaign_id: z.string().min(1),
+});
+
 export async function POST(req: NextRequest) {
-  const { campaign_id } = await req.json();
-  if (!campaign_id) return NextResponse.json({ error: 'campaign_id required' }, { status: 400 });
+  const body = await req.json();
+  const result = AiRequestSchema.safeParse(body);
+  if (!result.success) {
+    return NextResponse.json({
+      error: 'Validation failed',
+      code: 'VALIDATION_ERROR',
+      details: result.error.flatten(),
+    }, { status: 400 });
+  }
+  const { campaign_id } = result.data;
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY가 설정되지 않았습니다.' }, { status: 503 });
