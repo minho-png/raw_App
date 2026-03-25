@@ -652,7 +652,7 @@ export const ReportCenter: React.FC = () => {
   }
 
   return (
-    <div className="animate-in fade-in space-y-10 p-10 duration-1000 [&_.bg-white]:!bg-[#1e2433] [&_.bg-slate-50]:!bg-[#161b27] [&_.bg-slate-50\/60]:!bg-[#161b27] [&_.bg-slate-50\/80]:!bg-[#161b27] [&_.bg-slate-100]:!bg-[#252d3f] [&_.border-slate-100]:!border-white/5 [&_.border-slate-200]:!border-white/10 [&_.text-slate-300]:!text-slate-300 [&_.text-slate-400]:!text-slate-500 [&_.text-slate-500]:!text-slate-400 [&_.text-slate-600]:!text-slate-300 [&_.text-slate-700]:!text-slate-200 [&_.text-slate-800]:!text-slate-100 [&_.text-slate-900]:!text-slate-100">
+    <div className="animate-in fade-in space-y-10 p-10 duration-1000">
       <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
@@ -672,13 +672,13 @@ export const ReportCenter: React.FC = () => {
             variant="outline"
             onClick={handleFetchDbData}
             disabled={isLoadingDb}
-            className="rounded-2xl border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all border-2"
+            className="rounded-2xl border border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300"
           >
             {isLoadingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4 text-blue-500" />}
             DB 데이터 동기화
           </Button>
           {/* 날짜 범위 필터 — 마케터 민수 요청: 정산 기간 필터링 */}
-          <div className="flex items-center gap-2 bg-white border-2 border-slate-200 rounded-2xl px-4 h-12 shadow-sm">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-4 h-12 shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">기간</span>
             <input
               type="date"
@@ -704,7 +704,7 @@ export const ReportCenter: React.FC = () => {
           <Button 
             variant="outline" 
             onClick={() => setIsBudgetModalOpen(true)}
-            className="rounded-2xl border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all border-2"
+            className="rounded-2xl border border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300"
           >
             <Settings2 className="mr-2 h-4 w-4 text-blue-600" /> 예산 및 KPI 관리
           </Button>
@@ -712,7 +712,7 @@ export const ReportCenter: React.FC = () => {
             variant="outline"
             onClick={() => handleCsvExport(false)}
             disabled={filteredData.length === 0}
-            className="rounded-2xl border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all border-2"
+            className="rounded-2xl border border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300"
           >
             <Download className="mr-2 h-4 w-4 text-green-600" /> CSV(표시형)
           </Button>
@@ -720,13 +720,13 @@ export const ReportCenter: React.FC = () => {
             variant="outline"
             onClick={() => handleCsvExport(true)}
             disabled={filteredData.length === 0}
-            className="rounded-2xl border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all border-2"
+            className="rounded-2xl border border-slate-200 bg-white h-12 px-6 font-bold shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300"
           >
             <Download className="mr-2 h-4 w-4 text-emerald-600" /> CSV(숫자형)
           </Button>
           <Button
             onClick={handleGenerateReport}
-            className="rounded-2xl bg-slate-900 hover:bg-black text-white h-12 px-8 font-black shadow-xl transition-all hover:scale-[1.05] active:scale-95 border-b-4 border-slate-700"
+            className="rounded-2xl bg-blue-600 hover:bg-blue-700 text-white h-12 px-8 font-black shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.05] active:scale-95"
           >
             <BarChart4 className="mr-2 h-5 w-5" /> 리포트 내보내기
           </Button>

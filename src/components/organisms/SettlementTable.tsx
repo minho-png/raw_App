@@ -310,20 +310,20 @@ export const SettlementTable: React.FC = () => {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-6 p-8 text-slate-100">
+    <div className="mx-auto w-full max-w-[1400px] space-y-6 p-8 text-slate-800">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="flex items-center gap-3 text-2xl font-black text-slate-100">
+          <h1 className="flex items-center gap-3 text-2xl font-black text-slate-800">
             <Receipt className="text-indigo-500" size={24} />
             DMP 월별 정산 테이블
           </h1>
-          <p className="mt-1 text-sm text-slate-400">캠페인 마스터 선택과 무관하게 DB 전체 데이터를 월별로 조회합니다.</p>
+          <p className="mt-1 text-sm text-slate-500">캠페인 마스터 선택과 무관하게 DB 전체 데이터를 월별로 조회합니다.</p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
           <Select value={year} onValueChange={setYear}>
-            <SelectTrigger className="w-28 rounded-xl border-white/10 bg-[#1e2433] text-slate-100">
+            <SelectTrigger className="w-28 rounded-xl border-slate-200 bg-white text-slate-800">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -332,7 +332,7 @@ export const SettlementTable: React.FC = () => {
           </Select>
 
           <Select value={month} onValueChange={setMonth}>
-            <SelectTrigger className="w-24 rounded-xl border-white/10 bg-[#1e2433] text-slate-100">
+            <SelectTrigger className="w-24 rounded-xl border-slate-200 bg-white text-slate-800">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -347,7 +347,7 @@ export const SettlementTable: React.FC = () => {
             size="icon"
             onClick={() => fetchData(year, month)}
             disabled={isLoading}
-            className="rounded-xl border-white/10 bg-[#1e2433] hover:bg-[#252d3f]"
+            className="rounded-xl border-slate-200 bg-white hover:bg-slate-50"
           >
             <RefreshCcw size={15} className={cn(isLoading && "animate-spin")} />
           </Button>
@@ -365,7 +365,7 @@ export const SettlementTable: React.FC = () => {
             onClick={handleConfirmSettlement}
             disabled={isSaving || !campaignRows.length}
             variant="outline"
-            className="rounded-xl border-emerald-500/40 bg-emerald-500/10 px-5 text-emerald-300 hover:bg-emerald-500/20"
+            className="rounded-xl border-emerald-500/60 bg-emerald-50 px-5 text-emerald-700 hover:bg-emerald-100"
           >
             <Save size={14} className={cn("mr-2", isSaving && "animate-pulse")} />
             {isSaving ? '저장 중...' : '이 달 정산 확정'}
@@ -385,7 +385,7 @@ export const SettlementTable: React.FC = () => {
             { label: '총 수수료', value: totalFee, color: 'text-purple-600' },
             { label: '총 DMP 수수료', value: totalDmpFee, color: 'text-orange-600' },
           ].map(card => (
-            <Card key={card.label} className="rounded-2xl border border-white/10 bg-[#1e2433] shadow-sm">
+            <Card key={card.label} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
               <CardContent className="p-5">
                 <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{card.label}</p>
                 <p className={cn("text-xl font-black", card.color)}>&#8361;{card.value.toLocaleString()}</p>
@@ -397,7 +397,7 @@ export const SettlementTable: React.FC = () => {
       )}
 
       {/* Filters */}
-      <Card className="rounded-2xl border border-white/10 bg-[#1e2433] shadow-sm">
+      <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <CardContent className="p-4 flex flex-col sm:flex-row gap-3 items-start sm:items-center">
           <div className="relative flex-1 min-w-0">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -405,7 +405,7 @@ export const SettlementTable: React.FC = () => {
               placeholder="검색어 또는 SQL 스타일 (예: campaign:롯데 dmp:SKP)"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="rounded-xl border-white/10 bg-[#161b27] pl-8 text-sm text-slate-100 placeholder:text-slate-500"
+              className="rounded-xl border-slate-200 bg-slate-50 pl-8 text-sm text-slate-800 placeholder:text-slate-400"
             />
             {searchQuery && (
               <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -417,7 +417,7 @@ export const SettlementTable: React.FC = () => {
       </Card>
 
       {/* Table */}
-      <Card className="overflow-hidden rounded-2xl border border-white/10 bg-[#1e2433] shadow-sm">
+      <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <AnimatePresence mode="wait">
           {isLoading ? (
             <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -429,20 +429,20 @@ export const SettlementTable: React.FC = () => {
             <motion.div key="table" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader className="bg-[#161b27]">
-                    <TableRow className="border-b border-white/10 hover:bg-transparent">
-                      <TableHead className="sticky left-0 z-10 min-w-[220px] bg-[#161b27] px-6 font-black text-slate-100">
+                  <TableHeader className="bg-slate-50">
+                    <TableRow className="border-b border-slate-200 hover:bg-transparent">
+                      <TableHead className="sticky left-0 z-10 min-w-[220px] bg-slate-50 px-6 font-black text-slate-700">
                         캠페인
                       </TableHead>
                       {dmpColumns.map((dmp) => (
-                        <TableHead key={dmp} className="min-w-[280px] text-right font-black text-slate-100">
+                        <TableHead key={dmp} className="min-w-[280px] text-right font-black text-slate-700">
                           {dmp}
                           <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
                             NET / 노출 / 클릭 / CTR / DMP 수수료 ({formatFeeRate(dmp)})
                           </span>
                         </TableHead>
                       ))}
-                      <TableHead className="min-w-[280px] text-right font-black text-slate-100">
+                      <TableHead className="min-w-[280px] text-right font-black text-slate-700">
                         캠페인 합계
                         <span className="mt-0.5 block text-[10px] font-medium text-slate-500">NET / 노출 / 클릭 / CTR / 수수료 / DMP 수수료</span>
                       </TableHead>
@@ -450,8 +450,8 @@ export const SettlementTable: React.FC = () => {
                   </TableHeader>
                   <TableBody>
                     {campaignRows.map((row) => (
-                      <TableRow key={row.campaign_id} className="group border-b border-white/5 transition-colors hover:bg-[#252d3f]">
-                        <TableCell className="sticky left-0 z-10 max-w-[220px] bg-[#1e2433] px-6 font-semibold text-slate-200 transition-colors group-hover:bg-[#252d3f] group-hover:text-indigo-300">
+                      <TableRow key={row.campaign_id} className="group border-b border-slate-100 transition-colors hover:bg-slate-50/70">
+                        <TableCell className="sticky left-0 z-10 max-w-[220px] bg-white px-6 font-semibold text-slate-600 transition-colors group-hover:bg-slate-50 group-hover:text-indigo-600">
                           <span className="truncate block">{row.campaign_name}</span>
                         </TableCell>
                         {dmpColumns.map(type => {
@@ -460,30 +460,30 @@ export const SettlementTable: React.FC = () => {
                           return (
                             <TableCell key={type} className="text-right">
                               <div className="text-xs leading-relaxed">
-                                <div className="font-bold text-indigo-300">NET: &#8361;{cell.net.toLocaleString()}</div>
+                                <div className="font-bold text-indigo-600">NET: &#8361;{cell.net.toLocaleString()}</div>
                                 <div className="font-medium text-slate-400">노출: {cell.impressions.toLocaleString('ko-KR')}</div>
                                 <div className="font-medium text-slate-400">클릭: {cell.clicks.toLocaleString('ko-KR')}</div>
-                                <div className="font-medium text-teal-300">CTR: {ctr}%</div>
-                                <div className="font-medium text-orange-300">DMP: &#8361;{cell.dmpFee.toLocaleString()}</div>
+                                <div className="font-medium text-teal-600">CTR: {ctr}%</div>
+                                <div className="font-medium text-orange-600">DMP: &#8361;{cell.dmpFee.toLocaleString()}</div>
                               </div>
                             </TableCell>
                           );
                         })}
-                        <TableCell className="bg-[#161b27] text-right">
+                        <TableCell className="bg-slate-50 text-right">
                           <div className="text-xs leading-relaxed">
-                            <div className="font-black text-indigo-300">NET: &#8361;{row.totalNet.toLocaleString()}</div>
+                            <div className="font-black text-indigo-600">NET: &#8361;{row.totalNet.toLocaleString()}</div>
                             <div className="font-semibold text-slate-400">노출: {row.totalImpressions.toLocaleString('ko-KR')}</div>
                             <div className="font-semibold text-slate-400">클릭: {row.totalClicks.toLocaleString('ko-KR')}</div>
-                            <div className="font-semibold text-teal-300">CTR: {calcCtr(row.totalClicks, row.totalImpressions)}%</div>
-                            <div className="font-bold text-purple-300">수수료: &#8361;{row.totalFee.toLocaleString()}</div>
-                            <div className="font-bold text-orange-300">DMP: &#8361;{row.totalDmpFee.toLocaleString()}</div>
+                            <div className="font-semibold text-teal-600">CTR: {calcCtr(row.totalClicks, row.totalImpressions)}%</div>
+                            <div className="font-bold text-purple-600">수수료: &#8361;{row.totalFee.toLocaleString()}</div>
+                            <div className="font-bold text-orange-600">DMP: &#8361;{row.totalDmpFee.toLocaleString()}</div>
                           </div>
                         </TableCell>
                       </TableRow>
                     ))}
                     {/* Totals row */}
-                    <TableRow className="border-t-2 border-white/15 bg-[#161b27] font-black">
-                      <TableCell className="sticky left-0 z-10 bg-[#161b27] px-6 font-black text-slate-300">
+                    <TableRow className="border-t-2 border-slate-200 bg-slate-50 font-black">
+                      <TableCell className="sticky left-0 z-10 bg-slate-50 px-6 font-black text-slate-700">
                         합계 ({campaignRows.length}개 캠페인)
                       </TableCell>
                       {dmpColumns.map(type => {
@@ -492,23 +492,23 @@ export const SettlementTable: React.FC = () => {
                         return (
                           <TableCell key={type} className="text-right">
                             <div className="text-xs leading-relaxed">
-                              <div className="font-black text-indigo-300">NET: &#8361;{cell.net.toLocaleString()}</div>
+                              <div className="font-black text-indigo-600">NET: &#8361;{cell.net.toLocaleString()}</div>
                               <div className="font-black text-slate-400">노출: {cell.impressions.toLocaleString('ko-KR')}</div>
                               <div className="font-black text-slate-400">클릭: {cell.clicks.toLocaleString('ko-KR')}</div>
-                              <div className="font-black text-teal-300">CTR: {ctr}%</div>
-                              <div className="font-black text-orange-300">DMP: &#8361;{cell.dmpFee.toLocaleString()}</div>
+                              <div className="font-black text-teal-600">CTR: {ctr}%</div>
+                              <div className="font-black text-orange-600">DMP: &#8361;{cell.dmpFee.toLocaleString()}</div>
                             </div>
                           </TableCell>
                         );
                       })}
-                      <TableCell className="bg-[#252d3f] text-right">
+                      <TableCell className="bg-slate-100 text-right">
                         <div className="text-xs leading-relaxed">
-                          <div className="font-black text-indigo-200">NET: &#8361;{totalNet.toLocaleString()}</div>
-                          <div className="font-black text-slate-300">노출: {totalImpressions.toLocaleString('ko-KR')}</div>
-                          <div className="font-black text-slate-300">클릭: {totalClicks.toLocaleString('ko-KR')}</div>
-                          <div className="font-black text-teal-200">CTR: {calcCtr(totalClicks, totalImpressions)}%</div>
-                          <div className="font-black text-purple-200">수수료: &#8361;{totalFee.toLocaleString()}</div>
-                          <div className="font-black text-orange-200">DMP: &#8361;{totalDmpFee.toLocaleString()}</div>
+                          <div className="font-black text-indigo-700">NET: &#8361;{totalNet.toLocaleString()}</div>
+                          <div className="font-black text-slate-600">노출: {totalImpressions.toLocaleString('ko-KR')}</div>
+                          <div className="font-black text-slate-600">클릭: {totalClicks.toLocaleString('ko-KR')}</div>
+                          <div className="font-black text-teal-700">CTR: {calcCtr(totalClicks, totalImpressions)}%</div>
+                          <div className="font-black text-purple-700">수수료: &#8361;{totalFee.toLocaleString()}</div>
+                          <div className="font-black text-orange-700">DMP: &#8361;{totalDmpFee.toLocaleString()}</div>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -519,7 +519,7 @@ export const SettlementTable: React.FC = () => {
           ) : (
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="p-28 flex flex-col items-center justify-center text-center space-y-4">
-              <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-300">
+              <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-600">
                 <TrendingDown size={32} />
               </div>
               <div>

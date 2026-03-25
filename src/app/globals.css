@@ -6,13 +6,21 @@
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 248, 250, 252;
   --background-end-rgb: 255, 255, 255;
-  
+
   /* Premium Brand Colors (HSL) */
   --brand-primary: 221 83% 53%;
   --brand-secondary: 262 83% 58%;
   --brand-accent: 199 89% 48%;
   --brand-dark: 222 47% 11%;
-  
+
+  /* Design Tokens — Light Mode */
+  --color-bg-page:        #F8FAFC;
+  --color-bg-sidebar:     #F1F5F9;
+  --color-bg-card:        #FFFFFF;
+  --color-border:         #E2E8F0;
+  --color-text-primary:   #1E293B;
+  --color-text-secondary: #64748B;
+  --color-accent:         #2563EB;
 }
 
 @layer utilities {
@@ -22,7 +30,7 @@
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
+  color: var(--color-text-primary);
   background: #f8fafc;
   min-height: 100vh;
 }

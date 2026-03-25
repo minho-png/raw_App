@@ -32,8 +32,8 @@ export const CampaignListItem: React.FC<CampaignListItemProps> = ({
       className={cn(
         "group relative flex cursor-pointer items-center justify-between overflow-hidden rounded-xl border p-3.5 transition-all",
         isSelected
-          ? "border-indigo-500/40 bg-indigo-500/15 shadow-[0_0_18px_rgba(99,102,241,0.18)]"
-          : "border-transparent hover:border-slate-700/70 hover:bg-slate-800/40"
+          ? "border-indigo-300 bg-indigo-50 shadow-sm"
+          : "border-transparent hover:border-slate-200 hover:bg-white"
       )}
       onClick={() => onSelect(campaign.campaign_id)}
     >
@@ -47,13 +47,13 @@ export const CampaignListItem: React.FC<CampaignListItemProps> = ({
       <div className="flex items-center gap-3 overflow-hidden">
         <div className={cn(
           "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-          isSelected ? "bg-indigo-500 text-white" : "bg-slate-800 text-slate-400 group-hover:bg-slate-700"
+          isSelected ? "bg-indigo-500 text-white" : "bg-slate-200 text-slate-500 group-hover:bg-slate-300"
         )}>
           <Database size={14} />
         </div>
         <span className={cn(
           "truncate text-sm font-bold tracking-tight transition-colors",
-          isSelected ? "text-indigo-100" : "text-slate-400 group-hover:text-slate-200"
+          isSelected ? "text-indigo-700" : "text-slate-600 group-hover:text-slate-800"
         )}>
           {campaign.campaign_name}
         </span>
@@ -65,7 +65,7 @@ export const CampaignListItem: React.FC<CampaignListItemProps> = ({
             e.stopPropagation();
             onEditClick(campaign);
           }}
-          className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"
+          className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
         >
           <Settings size={14} />
         </button>
@@ -74,7 +74,7 @@ export const CampaignListItem: React.FC<CampaignListItemProps> = ({
             e.stopPropagation();
             onDeleteClick(campaign.campaign_id);
           }}
-          className="p-1.5 hover:bg-red-500/20 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
+          className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
         >
           <Trash2 size={14} />
         </button>

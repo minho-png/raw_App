@@ -84,13 +84,13 @@ export const Sidebar = () => {
   };
 
   return (
-    <aside className="w-72 h-screen bg-[#0f172a] border-r border-slate-800/50 text-white flex flex-col p-6 shadow-2xl z-20">
+    <aside className="w-72 h-screen bg-slate-100 border-r border-slate-200 text-slate-800 flex flex-col p-6 shadow-sm z-20">
       <div className="flex items-center gap-3 mb-10 px-2 group cursor-pointer">
         <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform duration-300">
           <BarChart3 size={20} className="text-white" />
         </div>
         <div className="flex flex-col">
-          <span className="font-outfit font-black text-xl tracking-tight leading-none bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">RAW MASTER</span>
+          <span className="font-outfit font-black text-xl tracking-tight leading-none bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-500">RAW MASTER</span>
           <span className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mt-1">인텔리전스 프로</span>
         </div>
       </div>
@@ -102,20 +102,20 @@ export const Sidebar = () => {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={handleAddCampaign}
-            className="w-7 h-7 flex items-center justify-center bg-slate-800 hover:bg-blue-600 rounded-lg transition-colors text-slate-400 hover:text-white shadow-inner"
+            className="w-7 h-7 flex items-center justify-center bg-slate-200 hover:bg-blue-600 rounded-lg transition-colors text-slate-500 hover:text-white shadow-inner"
           >
             <Plus size={16} />
           </motion.button>
         </div>
 
         <div className="mb-3 px-2">
-          <div className="flex items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2">
             <Search size={13} className="text-slate-500" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="캠페인 검색"
-              className="w-full bg-transparent text-xs font-semibold text-slate-200 outline-none placeholder:text-slate-500"
+              className="w-full bg-transparent text-xs font-semibold text-slate-800 outline-none placeholder:text-slate-500"
             />
           </div>
         </div>
@@ -134,8 +134,8 @@ export const Sidebar = () => {
               className={cn(
                 "whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold transition-colors",
                 mediaFilter === chip.key
-                  ? "border-indigo-500 bg-indigo-500/20 text-indigo-300"
-                  : "border-slate-700 text-slate-500 hover:border-slate-600 hover:text-slate-300"
+                  ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                  : "border-slate-300 text-slate-500 hover:border-slate-400 hover:text-slate-700"
               )}
             >
               {chip.label}
@@ -159,22 +159,22 @@ export const Sidebar = () => {
             />
           ))}
           {filteredCampaigns.length === 0 && (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-6 text-center">
+            <div className="rounded-xl border border-slate-200 bg-white/60 px-3 py-6 text-center">
               <p className="text-xs font-semibold text-slate-500">조건에 맞는 캠페인이 없습니다.</p>
             </div>
           )}
         </nav>
       </div>
 
-      <div className="pt-4 mt-4 border-t border-slate-800/30">
+      <div className="pt-4 mt-4 border-t border-slate-200">
         <div className="mb-3 grid grid-cols-2 gap-2">
           <button
             onClick={() => setActiveMainView('campaigns')}
             className={cn(
               "flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all",
               activeMainView === 'campaigns'
-                ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
-                : "border-slate-700/60 text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
+                ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                : "border-slate-200 text-slate-500 hover:bg-white hover:text-slate-700"
             )}
           >
             <LayoutGrid size={13} />
@@ -185,8 +185,8 @@ export const Sidebar = () => {
             className={cn(
               "flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all",
               activeMainView === 'settlement'
-                ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
-                : "border-slate-700/60 text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
+                ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                : "border-slate-200 text-slate-500 hover:bg-white hover:text-slate-700"
             )}
           >
             <Receipt size={13} />
@@ -199,13 +199,13 @@ export const Sidebar = () => {
           className={cn(
             "w-full flex items-center gap-3 p-3.5 rounded-xl transition-all text-left",
             activeMainView === 'settlement'
-              ? "bg-indigo-600/15 border border-indigo-500/30 text-indigo-300"
-              : "hover:bg-slate-800/40 border border-transparent text-slate-400 hover:text-slate-200"
+              ? "bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+              : "hover:bg-white border border-transparent text-slate-500 hover:text-slate-700"
           )}
         >
           <div className={cn(
             "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
-            activeMainView === 'settlement' ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400"
+            activeMainView === 'settlement' ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-500"
           )}>
             <Receipt size={14} />
           </div>
@@ -216,18 +216,18 @@ export const Sidebar = () => {
         </button>
       </div>
 
-      <div className="pt-6 mt-6 border-t border-slate-800/50">
-        <div className="p-4 bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-2xl border border-slate-700/30 relative overflow-hidden group">
+      <div className="pt-6 mt-6 border-t border-slate-200">
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/5 rounded-full blur-xl group-hover:bg-blue-500/10 transition-colors" />
           <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">요약 현황</p>
           <div className="mb-3 grid grid-cols-2 gap-2">
-            <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-2 py-1.5">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
               <p className="text-[10px] text-slate-500">활성 캠페인</p>
-              <p className="text-xs font-extrabold text-slate-200">{campaigns.length}</p>
+              <p className="text-xs font-extrabold text-slate-700">{campaigns.length}</p>
             </div>
-            <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-2 py-1.5">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
               <p className="text-[10px] text-slate-500">필터 결과</p>
-              <p className="text-xs font-extrabold text-slate-200">{filteredCampaigns.length}</p>
+              <p className="text-xs font-extrabold text-slate-700">{filteredCampaigns.length}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -235,7 +235,7 @@ export const Sidebar = () => {
               <div className="w-2.5 h-2.5 bg-green-500 rounded-full" />
               <div className="absolute inset-0 w-2.5 h-2.5 bg-green-500 rounded-full animate-ping opacity-75" />
             </div>
-            <span className="text-xs font-bold text-slate-300">실시간 데이터 동기화 중</span>
+            <span className="text-xs font-bold text-slate-600">실시간 데이터 동기화 중</span>
           </div>
         </div>
       </div>
@@ -313,7 +313,7 @@ export const Sidebar = () => {
               취소
             </Button>
             <Button
-              className="flex-1 rounded-xl h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold"
+              className="flex-1 rounded-xl h-11 bg-blue-600 hover:bg-blue-700 text-white font-bold"
               onClick={async () => {
                 if (editingCampaign) {
                   const updated = { ...editingCampaign, campaign_name: tempName, updated_at: new Date() };
