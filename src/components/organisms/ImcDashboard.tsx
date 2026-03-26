@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useCampaignStore } from '@/store/useCampaignStore';
-import { Layers, TrendingUp, MousePointer, DollarSign, Edit2, Check, X } from 'lucide-react';
+import { Layers, TrendingUp, MousePointer, DollarSign, Edit2, Check, X, FileBarChart, Loader2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { updateImcCampaignAction } from '@/server/actions/imcCampaign';
 
@@ -27,6 +27,8 @@ export const ImcDashboard: React.FC = () => {
   // IMC 이름 인라인 편집 상태
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
+  // 보고서 생성 상태
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   if (!selectedImc) return null;
 
@@ -57,6 +59,88 @@ export const ImcDashboard: React.FC = () => {
     setIsEditingName(false);
   };
 
+  const handleGenerateReport = async () => {
+    if (subCampaigns.length === 0) return;
+    setIsGeneratingReport(true);
+    try {
+      const res = await fetch(`/api/v1/performance?imc_campaign_id=${selectedImc.imc_campaign_id}`);
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error ?? '데이터 조회 실패');
+
+      const { groups, summary } = json;
+
+      // 간단한 HTML 보고서 생성
+      const date = new Date().toISOString().slice(0, 10);
+      const fmt = (n: number) => Math.round(n).toLocaleString();
+      const pct = (n: number) => n.toFixed(2) + '%';
+
+      const campaignRows = groups.map((g: any) => {
+        const r = g.records ?? [];
+        const imps = r.reduce((s: number, x: any) => s + (x.impressions ?? 0), 0);
+        const clicks = r.reduce((s: number, x: any) => s + (x.clicks ?? 0), 0);
+        const cost = r.reduce((s: number, x: any) => s + (x.execution_amount ?? 0), 0);
+        const ctr = imps > 0 ? (clicks / imps) * 100 : 0;
+        const cpc = clicks > 0 ? cost / clicks : 0;
+        return `<tr style="border-bottom:1px solid #e2e8f0">
+          <td style="padding:10px 16px;font-weight:600;color:#1e293b">${g.campaignName ?? g.campaignId}</td>
+          <td style="padding:10px 16px;text-align:right">${fmt(imps)}</td>
+          <td style="padding:10px 16px;text-align:right">${fmt(clicks)}</td>
+          <td style="padding:10px 16px;text-align:right">${pct(ctr)}</td>
+          <td style="padding:10px 16px;text-align:right">₩${fmt(cpc)}</td>
+          <td style="padding:10px 16px;text-align:right">₩${fmt(cost)}</td>
+        </tr>`;
+      }).join('');
+
+      const html = `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>${selectedImc.name} 성과 리포트</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:40px;background:#f8fafc;color:#334155}
+.card{background:white;border-radius:16px;border:1px solid #e2e8f0;padding:32px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+h1{font-size:28px;font-weight:900;color:#0f172a;margin:0 0 4px}
+.subtitle{font-size:14px;color:#64748b;margin-bottom:32px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.kpi{background:white;border:1px solid #e2e8f0;border-radius:12px;padding:20px;text-align:center}
+.kpi-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:6px}
+.kpi-value{font-size:24px;font-weight:900;color:#0f172a}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f1f5f9;padding:10px 16px;text-align:right;font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+th:first-child{text-align:left}
+</style></head><body>
+<h1>${selectedImc.name}</h1>
+<div class="subtitle">마스터 캠페인 통합 성과 리포트 · ${date} · 총 ${subCampaigns.length}개 캠페인</div>
+<div class="kpis">
+  <div class="kpi"><div class="kpi-label">총 노출</div><div class="kpi-value">${fmt(summary.total_impressions)}</div></div>
+  <div class="kpi"><div class="kpi-label">총 클릭</div><div class="kpi-value">${fmt(summary.total_clicks)}</div></div>
+  <div class="kpi"><div class="kpi-label">평균 CTR</div><div class="kpi-value">${pct(summary.avg_ctr ?? 0)}</div></div>
+  <div class="kpi"><div class="kpi-label">총 집행금액</div><div class="kpi-value">₩${fmt(summary.total_cost)}</div></div>
+</div>
+<div class="card">
+  <h3 style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#475569;margin:0 0 16px">캠페인별 성과</h3>
+  <table>
+    <thead><tr>
+      <th style="text-align:left">캠페인</th>
+      <th>노출</th><th>클릭</th><th>CTR</th><th>CPC</th><th>집행금액</th>
+    </tr></thead>
+    <tbody>${campaignRows}</tbody>
+  </table>
+</div>
+</body></html>`;
+
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedImc.name}_마스터리포트_${date}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('[ImcDashboard] report generation error', e);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
   return (
     <div className="p-8 space-y-8">
       {/* IMC 헤더 */}
@@ -65,6 +149,7 @@ export const ImcDashboard: React.FC = () => {
           <Layers size={24} />
         </div>
         <div className="flex-1 min-w-0">
+
           {isEditingName ? (
             <div className="flex items-center gap-2">
               <input
@@ -96,9 +181,18 @@ export const ImcDashboard: React.FC = () => {
             </div>
           )}
           <p className="text-slate-500 text-sm font-medium mt-0.5">
-            IMC 마스터 캠페인 · {subCampaigns.length}개 캠페인
+            마스터 캠페인 · {subCampaigns.length}개 캠페인
           </p>
         </div>
+        <button
+          onClick={handleGenerateReport}
+          disabled={isGeneratingReport || subCampaigns.length === 0}
+          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow-sm transition-colors shrink-0"
+        >
+          {isGeneratingReport
+            ? <><Loader2 size={15} className="animate-spin" /> 생성 중...</>
+            : <><FileBarChart size={15} /> 보고서 생성</>}
+        </button>
       </div>
 
       {/* KPI 카드 4개 */}

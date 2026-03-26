@@ -740,6 +740,37 @@ export const ReportCenter: React.FC = () => {
         </div>
       </header>
 
+      {/* ── 캠페인 설정 요약 카드 (버튼 없이 즉시 표시) ── */}
+      {selectedCampaign && selectedCampaign.sub_campaigns && selectedCampaign.sub_campaigns.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Layers size={14} className="text-indigo-500" />
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">캠페인 설정</span>
+              <span className="text-xs text-slate-400">— {selectedCampaign.sub_campaigns.length}개 서브캠페인</span>
+            </div>
+            <button
+              onClick={() => setIsBudgetModalOpen(true)}
+              className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+            >
+              <Settings2 size={12} /> 설정 편집
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-0 divide-x divide-slate-100">
+            {selectedCampaign.sub_campaigns.filter(s => s.enabled !== false).map(sub => (
+              <div key={sub.id} className="px-5 py-4">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{sub.media}</p>
+                <p className="text-sm font-bold text-slate-800 truncate mt-0.5">{sub.mapping_value || sub.excel_name || '—'}</p>
+                <div className="flex items-center gap-3 mt-2">
+                  <span className="text-xs text-slate-500">예산 <span className="font-bold text-slate-700">₩{(sub.budget || 0).toLocaleString()}</span></span>
+                  <span className="text-xs text-slate-400">수수료 <span className="font-bold text-slate-600">{sub.fee_rate ?? 0}%</span></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {selectedCampaign && (
         <BudgetSettingsModal
           isOpen={isBudgetModalOpen}

@@ -36,6 +36,7 @@ export class RepositoryService {
       // IMC 마스터 캠페인 인덱스
       db.collection('imc_campaigns').createIndex({ workspace_id: 1 }, { background: true }),
       db.collection('imc_campaigns').createIndex({ imc_campaign_id: 1 }, { unique: true, background: true }),
+      db.collection('imc_campaigns').createIndex({ workspace_id: 1, account_id: 1 }, { background: true }),
     ]);
   }
 
@@ -353,6 +354,31 @@ export class RepositoryService {
   }
 
   /**
+   * getPerformanceDataByImc: IMC 마스터 캠페인 하위 모든 캠페인의 성과 데이터 조회.
+   * campaign_configs에서 imc_campaign_id 기준으로 campaign_id 목록을 추출 후
+   * processed_reports를 $in 쿼리로 일괄 조회한다.
+   */
+  public async getPerformanceDataByImc(imcCampaignId: string): Promise<{ campaignId: string; records: PerformanceRecord[] }[]> {
+    const campaigns = await this.campaignCollection
+      .find({ imc_campaign_id: imcCampaignId })
+      .project({ campaign_id: 1, campaign_name: 1 })
+      .toArray();
+    if (campaigns.length === 0) return [];
+
+    const campaignIds = campaigns.map(c => c.campaign_id);
+    const allRecords = await this.reportCollection
+      .find({ campaign_id: { $in: campaignIds } })
+      .sort({ campaign_id: 1, date: -1 })
+      .toArray();
+
+    return campaigns.map(c => ({
+      campaignId: c.campaign_id,
+      campaignName: c.campaign_name,
+      records: allRecords.filter(r => r.campaign_id === c.campaign_id) as PerformanceRecord[],
+    }));
+  }
+
+  /**
    * updatePerformanceData: Updates a single performance record.
    */
   public async updatePerformanceData(id: string, updates: Partial<PerformanceRecord>) {
@@ -571,9 +597,11 @@ export class RepositoryService {
     return this.client.db(this.dbName).collection('imc_campaigns');
   }
 
-  public async getImcCampaigns(workspaceId: string): Promise<ImcCampaign[]> {
+  public async getImcCampaigns(workspaceId: string, accountId?: string): Promise<ImcCampaign[]> {
+    const filter: Record<string, any> = { workspace_id: workspaceId };
+    if (accountId) filter.account_id = accountId;
     return (await this.imcCollection
-      .find({ workspace_id: workspaceId })
+      .find(filter)
       .sort({ created_at: -1 })
       .toArray()) as unknown as ImcCampaign[];
   }
@@ -589,7 +617,7 @@ export class RepositoryService {
 
   public async updateImcCampaign(
     imcId: string,
-    patch: Partial<Pick<ImcCampaign, 'name' | 'description' | 'total_budget'>>
+    patch: Partial<Pick<ImcCampaign, 'name' | 'description' | 'total_budget' | 'account_id' | 'agency_id'>>
   ): Promise<void> {
     await this.imcCollection.updateOne(
       { imc_campaign_id: imcId },

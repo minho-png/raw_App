@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CampaignConfig, ImcCampaign } from '../types';
+import { CampaignConfig, ImcCampaign, Agency, AdAccount } from '../types';
 
 interface CampaignState {
   campaigns: CampaignConfig[];
@@ -23,6 +23,11 @@ interface CampaignState {
   setImcCampaigns: (campaigns: ImcCampaign[]) => void;
   selectedImcCampaignId: string | null;
   selectImcCampaign: (id: string | null) => void;
+  // 계층 구조 — 대행사 & 광고계정
+  agencies: Agency[];
+  setAgencies: (agencies: Agency[]) => void;
+  adAccounts: AdAccount[];
+  setAdAccounts: (accounts: AdAccount[]) => void;
 }
 
 export const useCampaignStore = create<CampaignState>((set, get) => ({
@@ -34,6 +39,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   activeMainView: 'campaigns',
   imcCampaigns: [],
   selectedImcCampaignId: null,
+  agencies: [],
+  adAccounts: [],
   addCampaign: (campaign) => set((state) => ({ 
     campaigns: [...state.campaigns, campaign] 
   })),
@@ -67,6 +74,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   setActiveMainView: (view) => set({ activeMainView: view }),
   setImcCampaigns: (campaigns) => set({ imcCampaigns: campaigns }),
   selectImcCampaign: (id) => set({ selectedImcCampaignId: id, selectedCampaignId: null }),
+  setAgencies: (agencies) => set({ agencies }),
+  setAdAccounts: (adAccounts) => set({ adAccounts }),
   refreshCampaigns: async (fetchFn) => {
     // If we're manually syncing (e.g. adding/deleting), skip background refreshes
     if (get().isSyncing) return;

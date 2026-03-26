@@ -153,10 +153,12 @@ export interface AllCampaignsSettlementResult {
   total_fee: number;
 }
 
-// ── IMC 마스터 캠페인 ────────────────────────────────────────────────────────
+// ── IMC 마스터 캠페인 (= 마스터 캠페인) ──────────────────────────────────────
 export interface ImcCampaign {
   imc_campaign_id: string;
   workspace_id: string;
+  account_id?: string;   // FK to ad_accounts — 소속 광고계정
+  agency_id?: string;    // 빠른 필터링용 비정규화 FK
   name: string;
   description?: string;
   total_budget?: number;

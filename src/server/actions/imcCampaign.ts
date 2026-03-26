@@ -21,7 +21,9 @@ export async function getImcCampaignsAction(): Promise<{ success: boolean; campa
 export async function createImcCampaignAction(
   name: string,
   description?: string,
-  total_budget?: number
+  total_budget?: number,
+  account_id?: string,
+  agency_id?: string
 ): Promise<{ success: boolean; campaign?: ImcCampaign; error?: string }> {
   try {
     const client = await clientPromise;
@@ -32,6 +34,8 @@ export async function createImcCampaignAction(
       name: name.trim(),
       description,
       total_budget,
+      account_id,
+      agency_id,
     });
     return { success: true, campaign };
   } catch (e: any) {
@@ -42,7 +46,7 @@ export async function createImcCampaignAction(
 
 export async function updateImcCampaignAction(
   imcId: string,
-  patch: Partial<Pick<ImcCampaign, 'name' | 'description' | 'total_budget'>>
+  patch: Partial<Pick<ImcCampaign, 'name' | 'description' | 'total_budget' | 'account_id' | 'agency_id'>>
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const client = await clientPromise;

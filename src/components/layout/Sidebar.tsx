@@ -5,14 +5,14 @@ import { useCampaignStore } from '@/store/useCampaignStore';
 import {
   Plus, AlertTriangle, Search, Layers, ChevronDown, ChevronRight, X,
   LayoutDashboard, ReceiptText, Building2, CreditCard, BarChart2, Sliders,
-  Settings, Zap,
+  Settings, Zap, FolderOpen,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { getCampaignsAction, saveCampaignAction, deleteCampaignAction } from '@/server/actions/campaign';
 import { getImcCampaignsAction, createImcCampaignAction } from '@/server/actions/imcCampaign';
-import { CampaignConfig } from '@/types';
+import { CampaignConfig, Agency, AdAccount } from '@/types';
 import { genId } from '@/lib/idGenerator';
 import { CampaignListItem } from '@/components/molecules/CampaignListItem';
 import { AnimatedModal } from '@/components/atoms/AnimatedModal';
@@ -72,6 +72,10 @@ export const Sidebar = ({ activePage, setActivePage }: SidebarProps) => {
     setImcCampaigns,
     selectedImcCampaignId,
     selectImcCampaign,
+    agencies,
+    setAgencies,
+    adAccounts,
+    setAdAccounts,
   } = useCampaignStore();
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -82,12 +86,21 @@ export const Sidebar = ({ activePage, setActivePage }: SidebarProps) => {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const deletingCampaign = campaigns.find(c => c.campaign_id === deleteConfirmId);
 
-  // IMC state
+  // IMC/마스터 캠페인 state
   const [collapsedImc, setCollapsedImc] = useState<Set<string>>(new Set());
+  const [collapsedAgency, setCollapsedAgency] = useState<Set<string>>(new Set());
+  const [collapsedAccount, setCollapsedAccount] = useState<Set<string>>(new Set());
   const [isCreatingImc, setIsCreatingImc] = useState(false);
   const [newImcName, setNewImcName] = useState('');
+  const [newImcAgencyId, setNewImcAgencyId] = useState('');
+  const [newImcAccountId, setNewImcAccountId] = useState('');
   const [isCreatingImcLoading, setIsCreatingImcLoading] = useState(false);
   const [campaignSectionOpen, setCampaignSectionOpen] = useState(true);
+
+  // 선택된 agency에 따라 필터링된 adAccounts
+  const filteredAccountsForCreate = newImcAgencyId
+    ? adAccounts.filter(a => a.agency_id === newImcAgencyId)
+    : adAccounts;
 
   const filteredCampaigns = campaigns.filter((campaign) => {
     const nameMatch = campaign.campaign_name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -97,19 +110,34 @@ export const Sidebar = ({ activePage, setActivePage }: SidebarProps) => {
   });
 
   useEffect(() => {
-    const sync = () => refreshCampaigns(getCampaignsAction);
-    sync();
-    const interval = setInterval(sync, 30000);
-    return () => clearInterval(interval);
-  }, [refreshCampaigns]);
-
-  useEffect(() => {
     const syncImc = async () => {
       const { campaigns: imc } = await getImcCampaignsAction();
       setImcCampaigns(imc);
     };
-    syncImc();
-  }, [setImcCampaigns]);
+    const sync = () => {
+      refreshCampaigns(getCampaignsAction);
+      syncImc();
+    };
+    sync();
+    const interval = setInterval(sync, 30000);
+    return () => clearInterval(interval);
+  }, [refreshCampaigns, setImcCampaigns]);
+
+  useEffect(() => {
+    const loadHierarchy = async () => {
+      try {
+        const [agRes, accRes] = await Promise.all([
+          fetch('/api/v1/agencies').then(r => r.json()),
+          fetch('/api/v1/ad-accounts').then(r => r.json()),
+        ]);
+        if (agRes.data) setAgencies(agRes.data as Agency[]);
+        if (accRes.data) setAdAccounts(accRes.data as AdAccount[]);
+      } catch {
+        // silent — 계층 정보 없이도 캠페인 목록은 동작
+      }
+    };
+    loadHierarchy();
+  }, [setAgencies, setAdAccounts]);
 
   const handleAddCampaign = async () => {
     setIsSyncing(true);
@@ -153,10 +181,18 @@ export const Sidebar = ({ activePage, setActivePage }: SidebarProps) => {
     if (!newImcName.trim()) return;
     setIsCreatingImcLoading(true);
     try {
-      const result = await createImcCampaignAction(newImcName.trim());
+      const result = await createImcCampaignAction(
+        newImcName.trim(),
+        undefined,
+        undefined,
+        newImcAccountId || undefined,
+        newImcAgencyId || undefined
+      );
       if (result.success && result.campaign) {
         setImcCampaigns([...imcCampaigns, result.campaign]);
         setNewImcName('');
+        setNewImcAgencyId('');
+        setNewImcAccountId('');
         setIsCreatingImc(false);
       }
     } finally {
@@ -164,11 +200,10 @@ export const Sidebar = ({ activePage, setActivePage }: SidebarProps) => {
     }
   };
 
-  const toggleImcCollapse = (imcId: string) => {
-    setCollapsedImc(prev => {
+  const toggleSet = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) => {
+    setter(prev => {
       const next = new Set(prev);
-      if (next.has(imcId)) next.delete(imcId);
-      else next.add(imcId);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
@@ -177,11 +212,39 @@ export const Sidebar = ({ activePage, setActivePage }: SidebarProps) => {
     selectImcCampaign(selectedImcCampaignId === imcId ? null : imcId);
   };
 
-  const imcGrouped = imcCampaigns.map(imc => ({
-    imc,
-    campaigns: filteredCampaigns.filter(c => c.imc_campaign_id === imc.imc_campaign_id),
-  }));
-  const independentCampaigns = filteredCampaigns.filter(c => !c.imc_campaign_id);
+  // ── 4단계 계층 그루핑 ─────────────────────────────────────────────────────
+  // imc_campaign_id → campaigns
+  const campaignsByImc = new Map<string, CampaignConfig[]>();
+  filteredCampaigns.forEach(c => {
+    if (c.imc_campaign_id) {
+      const list = campaignsByImc.get(c.imc_campaign_id) ?? [];
+      list.push(c);
+      campaignsByImc.set(c.imc_campaign_id, list);
+    }
+  });
+
+  // account_id → imc campaigns (for this account)
+  const imcByAccount = new Map<string, typeof imcCampaigns>();
+  imcCampaigns.forEach(imc => {
+    if (imc.account_id) {
+      const list = imcByAccount.get(imc.account_id) ?? [];
+      list.push(imc);
+      imcByAccount.set(imc.account_id, list);
+    }
+  });
+
+  // agency_id → accounts
+  const accountsByAgency = new Map<string, AdAccount[]>();
+  adAccounts.forEach(acc => {
+    const list = accountsByAgency.get(acc.agency_id) ?? [];
+    list.push(acc);
+    accountsByAgency.set(acc.agency_id, list);
+  });
+
+  // 완전히 독립된 캠페인: account_id도 없고 imc도 없음
+  const rootIndependentCampaigns = filteredCampaigns.filter(c => !c.imc_campaign_id && !c.account_id);
+  // IMC에 속하지만 IMC에 account_id가 없는 레거시 IMC 그룹
+  const legacyImcGroups = imcCampaigns.filter(imc => !imc.account_id);
 
   return (
     <aside className="w-72 h-screen bg-[#0f172a] text-slate-300 flex flex-col shrink-0 z-20">
@@ -284,7 +347,7 @@ export const Sidebar = ({ activePage, setActivePage }: SidebarProps) => {
                 transition={{ duration: 0.2 }}
                 className="overflow-hidden"
               >
-                {/* IMC create inline form */}
+                {/* 마스터 캠페인 생성 폼 */}
                 <AnimatePresence>
                   {isCreatingImc && (
                     <motion.div
@@ -293,32 +356,53 @@ export const Sidebar = ({ activePage, setActivePage }: SidebarProps) => {
                       exit={{ opacity: 0, height: 0 }}
                       className="mx-3 mb-2 overflow-hidden"
                     >
-                      <div className="flex items-center gap-2 bg-slate-800 rounded-lg border border-slate-700 px-3 py-2">
-                        <Layers size={12} className="text-indigo-400 shrink-0" />
-                        <input
-                          autoFocus
-                          value={newImcName}
-                          onChange={(e) => setNewImcName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleCreateImc();
-                            if (e.key === 'Escape') { setIsCreatingImc(false); setNewImcName(''); }
-                          }}
-                          placeholder="IMC 그룹명 입력 후 Enter"
-                          className="flex-1 bg-transparent text-xs font-semibold text-slate-200 outline-none placeholder:text-slate-500"
-                        />
-                        <button
-                          onClick={() => { setIsCreatingImc(false); setNewImcName(''); }}
-                          className="text-slate-500 hover:text-slate-300"
-                        >
-                          <X size={11} />
-                        </button>
+                      <div className="bg-slate-800 rounded-lg border border-slate-700 p-2.5 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Layers size={12} className="text-indigo-400 shrink-0" />
+                          <input
+                            autoFocus
+                            value={newImcName}
+                            onChange={(e) => setNewImcName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') { setIsCreatingImc(false); setNewImcName(''); setNewImcAgencyId(''); setNewImcAccountId(''); }
+                            }}
+                            placeholder="마스터 캠페인명"
+                            className="flex-1 bg-transparent text-xs font-semibold text-slate-200 outline-none placeholder:text-slate-500"
+                          />
+                          <button onClick={() => { setIsCreatingImc(false); setNewImcName(''); setNewImcAgencyId(''); setNewImcAccountId(''); }} className="text-slate-500 hover:text-slate-300">
+                            <X size={11} />
+                          </button>
+                        </div>
+                        {agencies.length > 0 && (
+                          <select
+                            value={newImcAgencyId}
+                            onChange={(e) => { setNewImcAgencyId(e.target.value); setNewImcAccountId(''); }}
+                            className="w-full bg-slate-700 text-xs text-slate-200 rounded px-2 py-1 outline-none border border-slate-600"
+                          >
+                            <option value="">대행사 선택 (선택사항)</option>
+                            {agencies.map(a => <option key={a.agency_id} value={a.agency_id}>{a.name}</option>)}
+                          </select>
+                        )}
+                        {adAccounts.length > 0 && (
+                          <select
+                            value={newImcAccountId}
+                            onChange={(e) => setNewImcAccountId(e.target.value)}
+                            className="w-full bg-slate-700 text-xs text-slate-200 rounded px-2 py-1 outline-none border border-slate-600"
+                          >
+                            <option value="">광고계정 선택 (선택사항)</option>
+                            {filteredAccountsForCreate.map(a => <option key={a.account_id} value={a.account_id}>{a.name}</option>)}
+                          </select>
+                        )}
+                        {adAccounts.length === 0 && (
+                          <p className="text-[10px] text-slate-500">광고계정을 먼저 등록하면 계층 구조로 관리됩니다.</p>
+                        )}
                       </div>
                       <button
                         disabled={!newImcName.trim() || isCreatingImcLoading}
                         onClick={handleCreateImc}
                         className="w-full mt-1 h-7 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors"
                       >
-                        {isCreatingImcLoading ? '생성 중...' : 'IMC 그룹 생성'}
+                        {isCreatingImcLoading ? '생성 중...' : '마스터 캠페인 생성'}
                       </button>
                     </motion.div>
                   )}
@@ -363,91 +447,150 @@ export const Sidebar = ({ activePage, setActivePage }: SidebarProps) => {
 
                 {/* Campaign list */}
                 <nav className="px-2 space-y-1">
-                  {/* IMC groups */}
-                  {imcGrouped.map(({ imc, campaigns: groupCampaigns }) => (
-                    <div key={imc.imc_campaign_id} className="rounded-lg overflow-hidden border border-slate-700/50">
-                      <button
-                        onClick={() => handleSelectImc(imc.imc_campaign_id)}
-                        className={cn(
-                          'w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors',
-                          selectedImcCampaignId === imc.imc_campaign_id
-                            ? 'bg-indigo-600/80 text-white'
-                            : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-slate-200'
-                        )}
-                      >
-                        <span
-                          onClick={(e) => { e.stopPropagation(); toggleImcCollapse(imc.imc_campaign_id); }}
-                          className="shrink-0 text-slate-400 hover:text-slate-200 cursor-pointer"
+                  {/* ── 4단계 계층 트리 ── */}
+                  {/* 1. 대행사별 섹션 */}
+                  {agencies.map(agency => {
+                    const agAccounts = accountsByAgency.get(agency.agency_id) ?? [];
+                    const agCollapsed = collapsedAgency.has(agency.agency_id);
+                    return (
+                      <div key={agency.agency_id} className="mb-1">
+                        <button
+                          onClick={() => toggleSet(setCollapsedAgency, agency.agency_id)}
+                          className="w-full flex items-center gap-1.5 px-2 py-1 text-left hover:bg-slate-800/40 rounded transition-colors"
                         >
-                          {collapsedImc.has(imc.imc_campaign_id)
-                            ? <ChevronRight size={11} />
-                            : <ChevronDown size={11} />}
-                        </span>
-                        <Layers size={11} className={cn('shrink-0', selectedImcCampaignId === imc.imc_campaign_id ? 'text-indigo-200' : 'text-indigo-400')} />
-                        <span className="flex-1 text-[10px] font-bold uppercase tracking-widest truncate">
-                          {imc.name}
-                        </span>
-                        <span className={cn(
-                          'text-[10px] font-bold shrink-0',
-                          selectedImcCampaignId === imc.imc_campaign_id ? 'text-indigo-200' : 'text-slate-500'
-                        )}>
-                          {groupCampaigns.length}개
-                        </span>
-                      </button>
+                          {agCollapsed ? <ChevronRight size={10} className="text-slate-600 shrink-0" /> : <ChevronDown size={10} className="text-slate-600 shrink-0" />}
+                          <Building2 size={10} className="text-slate-500 shrink-0" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">{agency.name}</span>
+                        </button>
+                        <AnimatePresence>
+                          {!agCollapsed && (
+                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="overflow-hidden">
+                              {agAccounts.map(account => {
+                                const accCollapsed = collapsedAccount.has(account.account_id);
+                                const accImcs = imcByAccount.get(account.account_id) ?? [];
+                                // campaigns directly under account (no imc)
+                                const directCamps = filteredCampaigns.filter(c => c.account_id === account.account_id && !c.imc_campaign_id);
+                                return (
+                                  <div key={account.account_id} className="ml-3 mb-0.5">
+                                    <button
+                                      onClick={() => toggleSet(setCollapsedAccount, account.account_id)}
+                                      className="w-full flex items-center gap-1.5 px-2 py-1 text-left hover:bg-slate-800/40 rounded transition-colors"
+                                    >
+                                      {accCollapsed ? <ChevronRight size={10} className="text-slate-600 shrink-0" /> : <ChevronDown size={10} className="text-slate-600 shrink-0" />}
+                                      <CreditCard size={10} className="text-slate-600 shrink-0" />
+                                      <span className="text-[10px] font-semibold text-slate-600 truncate">{account.name}</span>
+                                    </button>
+                                    <AnimatePresence>
+                                      {!accCollapsed && (
+                                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.12 }} className="overflow-hidden">
+                                          <div className="ml-3 space-y-0.5">
+                                            {/* 마스터 캠페인 그룹 */}
+                                            {accImcs.map(imc => {
+                                              const groupCampaigns = campaignsByImc.get(imc.imc_campaign_id) ?? [];
+                                              const isImcSelected = selectedImcCampaignId === imc.imc_campaign_id;
+                                              const isImcCollapsed = collapsedImc.has(imc.imc_campaign_id);
+                                              return (
+                                                <div key={imc.imc_campaign_id} className="rounded-lg overflow-hidden border border-slate-700/40">
+                                                  <button
+                                                    onClick={() => handleSelectImc(imc.imc_campaign_id)}
+                                                    className={cn('w-full flex items-center gap-1.5 px-2 py-1.5 text-left transition-colors', isImcSelected ? 'bg-indigo-600/70 text-white' : 'bg-slate-800/40 hover:bg-slate-800 text-slate-400 hover:text-slate-200')}
+                                                  >
+                                                    <span onClick={(e) => { e.stopPropagation(); toggleSet(setCollapsedImc, imc.imc_campaign_id); }} className="shrink-0 text-slate-400 hover:text-slate-200 cursor-pointer">
+                                                      {isImcCollapsed ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
+                                                    </span>
+                                                    <Layers size={10} className={cn('shrink-0', isImcSelected ? 'text-indigo-200' : 'text-indigo-400')} />
+                                                    <span className="flex-1 text-[10px] font-bold truncate">{imc.name}</span>
+                                                    <span className={cn('text-[10px] shrink-0', isImcSelected ? 'text-indigo-200' : 'text-slate-500')}>{groupCampaigns.length}개</span>
+                                                  </button>
+                                                  <AnimatePresence>
+                                                    {!isImcCollapsed && groupCampaigns.length > 0 && (
+                                                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.12 }} className="overflow-hidden bg-slate-900/40">
+                                                        <div className="space-y-0.5 p-1">
+                                                          {groupCampaigns.map(camp => (
+                                                            <CampaignListItem key={camp.campaign_id} campaign={camp} isSelected={selectedCampaignId === camp.campaign_id} onSelect={selectCampaign} onEditClick={(c) => { setEditingCampaign(c); setTempName(c.campaign_name); setIsEditModalOpen(true); }} onDeleteClick={handleDeleteCampaign} />
+                                                          ))}
+                                                        </div>
+                                                      </motion.div>
+                                                    )}
+                                                  </AnimatePresence>
+                                                </div>
+                                              );
+                                            })}
+                                            {/* 계정 직속 캠페인 (마스터 없음) */}
+                                            {directCamps.map(camp => (
+                                              <CampaignListItem key={camp.campaign_id} campaign={camp} isSelected={selectedCampaignId === camp.campaign_id} onSelect={selectCampaign} onEditClick={(c) => { setEditingCampaign(c); setTempName(c.campaign_name); setIsEditModalOpen(true); }} onDeleteClick={handleDeleteCampaign} />
+                                            ))}
+                                          </div>
+                                        </motion.div>
+                                      )}
+                                    </AnimatePresence>
+                                  </div>
+                                );
+                              })}
+                              {agAccounts.length === 0 && (
+                                <p className="ml-5 text-[10px] text-slate-600 py-1">광고계정 없음</p>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  })}
 
-                      <AnimatePresence>
-                        {!collapsedImc.has(imc.imc_campaign_id) && groupCampaigns.length > 0 && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.15 }}
-                            className="overflow-hidden bg-slate-900/50"
-                          >
-                            <div className="space-y-0.5 p-1">
-                              {groupCampaigns.map((camp) => (
-                                <CampaignListItem
-                                  key={camp.campaign_id}
-                                  campaign={camp}
-                                  isSelected={selectedCampaignId === camp.campaign_id}
-                                  onSelect={selectCampaign}
-                                  onEditClick={(c) => {
-                                    setEditingCampaign(c);
-                                    setTempName(c.campaign_name);
-                                    setIsEditModalOpen(true);
-                                  }}
-                                  onDeleteClick={handleDeleteCampaign}
-                                />
-                              ))}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  ))}
-
-                  {/* Independent campaigns */}
-                  {independentCampaigns.length > 0 && (
-                    <div className="space-y-0.5">
-                      {imcCampaigns.length > 0 && (
+                  {/* 2. 레거시 IMC 그룹 (account_id 없는 마스터 캠페인) */}
+                  {legacyImcGroups.length > 0 && (
+                    <div className="mb-1">
+                      {agencies.length > 0 && (
                         <div className="px-2 py-1 flex items-center gap-2">
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">독립 캠페인</span>
-                          <div className="flex-1 h-px bg-slate-700/50" />
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">미분류 마스터</span>
+                          <div className="flex-1 h-px bg-slate-700/40" />
                         </div>
                       )}
-                      {independentCampaigns.map((camp) => (
-                        <CampaignListItem
-                          key={camp.campaign_id}
-                          campaign={camp}
-                          isSelected={selectedCampaignId === camp.campaign_id}
-                          onSelect={selectCampaign}
-                          onEditClick={(c) => {
-                            setEditingCampaign(c);
-                            setTempName(c.campaign_name);
-                            setIsEditModalOpen(true);
-                          }}
-                          onDeleteClick={handleDeleteCampaign}
-                        />
+                      {legacyImcGroups.map(imc => {
+                        const groupCampaigns = campaignsByImc.get(imc.imc_campaign_id) ?? [];
+                        const isImcSelected = selectedImcCampaignId === imc.imc_campaign_id;
+                        const isImcCollapsed = collapsedImc.has(imc.imc_campaign_id);
+                        return (
+                          <div key={imc.imc_campaign_id} className="rounded-lg overflow-hidden border border-slate-700/50 mb-0.5">
+                            <button
+                              onClick={() => handleSelectImc(imc.imc_campaign_id)}
+                              className={cn('w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors', isImcSelected ? 'bg-indigo-600/80 text-white' : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-slate-200')}
+                            >
+                              <span onClick={(e) => { e.stopPropagation(); toggleSet(setCollapsedImc, imc.imc_campaign_id); }} className="shrink-0 text-slate-400 hover:text-slate-200 cursor-pointer">
+                                {isImcCollapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+                              </span>
+                              <Layers size={11} className={cn('shrink-0', isImcSelected ? 'text-indigo-200' : 'text-indigo-400')} />
+                              <span className="flex-1 text-[10px] font-bold uppercase tracking-widest truncate">{imc.name}</span>
+                              <span className={cn('text-[10px] font-bold shrink-0', isImcSelected ? 'text-indigo-200' : 'text-slate-500')}>{groupCampaigns.length}개</span>
+                            </button>
+                            <AnimatePresence>
+                              {!isImcCollapsed && groupCampaigns.length > 0 && (
+                                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="overflow-hidden bg-slate-900/50">
+                                  <div className="space-y-0.5 p-1">
+                                    {groupCampaigns.map(camp => (
+                                      <CampaignListItem key={camp.campaign_id} campaign={camp} isSelected={selectedCampaignId === camp.campaign_id} onSelect={selectCampaign} onEditClick={(c) => { setEditingCampaign(c); setTempName(c.campaign_name); setIsEditModalOpen(true); }} onDeleteClick={handleDeleteCampaign} />
+                                    ))}
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* 3. 완전 독립 캠페인 (agency도 없고 imc도 없음) */}
+                  {rootIndependentCampaigns.length > 0 && (
+                    <div className="space-y-0.5">
+                      {(agencies.length > 0 || legacyImcGroups.length > 0) && (
+                        <div className="px-2 py-1 flex items-center gap-2">
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">독립 캠페인</span>
+                          <div className="flex-1 h-px bg-slate-700/40" />
+                        </div>
+                      )}
+                      {rootIndependentCampaigns.map(camp => (
+                        <CampaignListItem key={camp.campaign_id} campaign={camp} isSelected={selectedCampaignId === camp.campaign_id} onSelect={selectCampaign} onEditClick={(c) => { setEditingCampaign(c); setTempName(c.campaign_name); setIsEditModalOpen(true); }} onDeleteClick={handleDeleteCampaign} />
                       ))}
                     </div>
                   )}

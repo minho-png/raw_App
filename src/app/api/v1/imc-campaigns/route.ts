@@ -18,7 +18,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, description, total_budget } = body;
+    const { name, description, total_budget, account_id, agency_id } = body;
     if (!name?.trim()) {
       return NextResponse.json({ success: false, error: 'name required' }, { status: 400 });
     }
@@ -31,6 +31,8 @@ export async function POST(req: NextRequest) {
       name: name.trim(),
       description,
       total_budget,
+      account_id,
+      agency_id,
     });
     return NextResponse.json({ success: true, campaign }, { status: 201 });
   } catch (e: any) {
