@@ -20,6 +20,9 @@ export interface CampaignConfig {
   campaign_id: string;
   campaign_name: string;
   workspace_id?: string;  // v2.0 멀티테넌시 격리 키 — 없는 레코드는 SYSTEM_WORKSPACE_ID로 취급
+  account_id?: string;    // v2.0 계층 구조: FK to ad_accounts collection
+  agency_id?: string;     // v2.0 계층 구조: 빠른 필터링을 위한 비정규화
+  imc_campaign_id?: string; // IMC 마스터 캠페인 연결 FK
   created_at?: Date;
   updated_at?: Date;
   sub_campaigns: SubCampaignConfig[];
@@ -27,6 +30,41 @@ export interface CampaignConfig {
   target_cpc?: number;
   target_ctr?: number;
   dashboard_layout?: string[];
+}
+
+// ── DMP 규칙 엔진 ──────────────────────────────────────────────────────────
+export interface DmpRule {
+  rule_id: string;
+  workspace_id: string;
+  account_id?: string;                                   // 계정 종속 규칙 (없으면 워크스페이스 전체 적용)
+  match_field: 'ad_group_name';                          // 현재는 ad_group_name만 지원
+  match_type: 'contains' | 'startsWith' | 'equals';
+  keyword: string;
+  map_to: string;                                        // 'SKP', 'KB', 'LOTTE' 등 정규 DMP 코드
+  priority: number;                                      // 낮을수록 우선순위 높음 (0 = 최우선)
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ── 3단계 계층 구조 ────────────────────────────────────────────────────────
+export interface Agency {
+  agency_id: string;
+  workspace_id: string;
+  name: string;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface AdAccount {
+  account_id: string;
+  workspace_id: string;
+  agency_id: string;     // FK to agencies
+  name: string;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface PerformanceRecord {
@@ -49,6 +87,12 @@ export interface PerformanceRecord {
   is_edited?: boolean;        // 사용자가 수정한 데이터인지 여부
   is_raw?: boolean;           // Added: raw data vs report data
   placement?: string;         // 게재지면(필수): 누락 시 CalculationService에서 기본값 주입
+  creative_name?: string;     // 광고 소재 이름
+  age?: string;               // 연령 (예: "35세~39세")
+  gender?: string;            // 성별 (예: "남자", "여자")
+  device?: string;            // 기기 (예: "모바일", "PC")
+  os?: string;                // OS (예: "Android", "iOS") — 기기 및 OS 복합 컬럼 분리 결과
+  media_group?: string;       // 매체 그룹 (예: "네이버+")
   group_id?: string;          // Link grouped reports back to source groups
   [key: string]: any; // Catch-all for other CSV columns
 }
@@ -107,6 +151,17 @@ export interface AllCampaignsSettlementResult {
   total_execution: number;
   total_net: number;
   total_fee: number;
+}
+
+// ── IMC 마스터 캠페인 ────────────────────────────────────────────────────────
+export interface ImcCampaign {
+  imc_campaign_id: string;
+  workspace_id: string;
+  name: string;
+  description?: string;
+  total_budget?: number;
+  created_at: Date;
+  updated_at: Date;
 }
 
 /**

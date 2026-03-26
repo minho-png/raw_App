@@ -38,9 +38,11 @@ import { useCampaignStore } from '@/store/useCampaignStore';
 import { cn } from '@/lib/utils';
 import { getPerformanceDataAction, updatePerformanceDataAction, savePerformanceData } from '@/server/actions/settlement';
 import { saveCampaignAction } from '@/server/actions/campaign';
+import { getDmpRulesAction } from '@/server/actions/dmpRules';
 import { CalculationService } from "@/services/calculationService";
 import { BudgetSettingsModal } from "./BudgetSettingsModal";
 import { ReportService } from "@/services/reportService";
+import { ReportBuilderModal, type ReportBuilderConfig } from "./ReportBuilderModal";
 import { UploadSection } from "./UploadSection";
 import { TableSection } from "./TableSection";
 import { DashboardSection } from "./DashboardSection";
@@ -102,6 +104,7 @@ export const ReportCenter: React.FC = () => {
   const [editingCell, setEditingCell] = useState<{ id: string, value: number } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+  const [isReportBuilderOpen, setIsReportBuilderOpen] = useState(false);
 
   // Persist in-progress work per campaign (back/forward, tab switch)
   useEffect(() => {
@@ -410,6 +413,8 @@ export const ReportCenter: React.FC = () => {
         });
       })();
 
+      const { rules: dmpRules } = await getDmpRulesAction();
+
       const { raw, report } = CalculationService.processWithDanfo(
         filteredRaw,
         selectedCampaignId,
@@ -417,7 +422,8 @@ export const ReportCenter: React.FC = () => {
         10, // Default fee rate if not configured
         groupByColumns,
         undefined,
-        configs
+        configs,
+        dmpRules
       );
       
       if (report.length === 0) {
@@ -512,30 +518,30 @@ export const ReportCenter: React.FC = () => {
     }
   };
 
-  const handleGenerateReport = () => {
+  const handleGenerateFromConfig = useCallback((config: ReportBuilderConfig) => {
     if (!selectedCampaign || filteredData.length === 0) return;
-    
     try {
       const html = ReportService.generateHtmlReport(
         selectedCampaign,
         filteredData,
         budgetStatus,
-        selectedCampaign.dashboard_layout
+        config
       );
       const blob = new Blob([html], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${selectedCampaign.campaign_name}_성과보고서_${new Date().toISOString().split('T')[0]}.html`;
+      a.download = `${config.client_name || selectedCampaign.campaign_name}_성과보고서_${new Date().toISOString().split('T')[0]}.html`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      setIsReportBuilderOpen(false);
     } catch (error) {
       console.error('Report generation failed:', error);
       toast.error('리포트 생성 실패', '잠시 후 다시 시도해 주세요.');
     }
-  };
+  }, [selectedCampaign, filteredData, budgetStatus]);
 
   // CSV 내보내기 — 브랜딩 마케터 + IMC 마케터 요청
   const handleCsvExport = (numericOnly = false) => {
@@ -725,8 +731,9 @@ export const ReportCenter: React.FC = () => {
             <Download className="mr-2 h-4 w-4 text-emerald-600" /> CSV(숫자형)
           </Button>
           <Button
-            onClick={handleGenerateReport}
-            className="rounded-2xl bg-blue-600 hover:bg-blue-700 text-white h-12 px-8 font-black shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.05] active:scale-95"
+            onClick={() => setIsReportBuilderOpen(true)}
+            disabled={filteredData.length === 0}
+            className="rounded-2xl bg-blue-600 hover:bg-blue-700 text-white h-12 px-8 font-black shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.05] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <BarChart4 className="mr-2 h-5 w-5" /> 리포트 내보내기
           </Button>
@@ -734,7 +741,7 @@ export const ReportCenter: React.FC = () => {
       </header>
 
       {selectedCampaign && (
-        <BudgetSettingsModal 
+        <BudgetSettingsModal
           isOpen={isBudgetModalOpen}
           onClose={() => setIsBudgetModalOpen(false)}
           campaign={selectedCampaign}
@@ -749,6 +756,13 @@ export const ReportCenter: React.FC = () => {
           }}
         />
       )}
+
+      <ReportBuilderModal
+        isOpen={isReportBuilderOpen}
+        onClose={() => setIsReportBuilderOpen(false)}
+        campaignName={selectedCampaign?.campaign_name ?? ''}
+        onGenerate={handleGenerateFromConfig}
+      />
 
       <BudgetPacingCards status={budgetStatus} campaign={selectedCampaign} />
 

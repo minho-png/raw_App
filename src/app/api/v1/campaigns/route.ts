@@ -30,6 +30,8 @@ const CampaignConfigSchema = z.object({
   sub_campaigns: z.array(SubCampaignSchema).default([]),
   insights: z.string().max(5000).optional(),
   dashboard_layout: z.array(z.string()).optional(),
+  account_id: z.string().optional(),  // v2.0 3단계 계층 구조
+  agency_id: z.string().optional(),   // v2.0 3단계 계층 구조
 }).strict();
 
 export async function GET() {

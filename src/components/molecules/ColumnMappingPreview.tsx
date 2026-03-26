@@ -16,8 +16,16 @@ const STANDARD_ALIASES: Record<string, { label: string; aliases: string[] }> = {
   impressions:          { label: '노출수',      aliases: ['노출', '노출수', 'impressions', 'imps'] },
   clicks:               { label: '클릭수',      aliases: ['클릭', '클릭수', 'clicks'] },
   supply_value:         { label: '집행금액',    aliases: ['집행금액', '총비용', '공급가액', '집행금액(VAT별도)', '집행 금액(VAT 별도)', 'spend', 'cost'] },
-  placement:            { label: '게재지면',    aliases: ['게재지면', '게재위치', '노출지면', 'placement'] },
-  creative_name:        { label: '소재명',      aliases: ['소재', '소재이름', '소재명', 'creative'] },
+  placement:            { label: '게재지면',    aliases: ['게재지면', '게재위치', '노출지면', 'placement', '게재위치'] },
+  creative_name:        { label: '소재명',      aliases: ['소재', '소재이름', '소재명', 'creative', '광고소재이름'] },
+  // 차원 컬럼 — 단순형
+  device:               { label: '기기',        aliases: ['기기', '기기유형', 'device'] },
+  age:                  { label: '연령',        aliases: ['연령', '연령대', 'age'] },
+  gender:               { label: '성별',        aliases: ['성별', 'gender'] },
+  media_group:          { label: '매체 그룹',   aliases: ['매체그룹', '매체 그룹', 'mediagroup'] },
+  // 차원 컬럼 — 복합형 (자동 분리됨)
+  device_os:            { label: '기기 및 OS',  aliases: ['기기및os', '기기 및 os'] },
+  age_gender:           { label: '연령 및 성별', aliases: ['연령및성별', '연령 및 성별'] },
 };
 
 // CalculationService.normalizeHeader()와 동일한 로직 유지

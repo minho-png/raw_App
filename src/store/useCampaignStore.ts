@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CampaignConfig } from '../types';
+import { CampaignConfig, ImcCampaign } from '../types';
 
 interface CampaignState {
   campaigns: CampaignConfig[];
@@ -18,6 +18,11 @@ interface CampaignState {
   refreshCampaigns: (fetchFn: () => Promise<{ success: boolean, campaigns?: CampaignConfig[] }>) => Promise<void>;
   activeMainView: 'campaigns' | 'settlement';
   setActiveMainView: (view: 'campaigns' | 'settlement') => void;
+  // IMC 마스터 캠페인
+  imcCampaigns: ImcCampaign[];
+  setImcCampaigns: (campaigns: ImcCampaign[]) => void;
+  selectedImcCampaignId: string | null;
+  selectImcCampaign: (id: string | null) => void;
 }
 
 export const useCampaignStore = create<CampaignState>((set, get) => ({
@@ -27,6 +32,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   isSyncing: false,
   activeTab: 'upload',
   activeMainView: 'campaigns',
+  imcCampaigns: [],
+  selectedImcCampaignId: null,
   addCampaign: (campaign) => set((state) => ({ 
     campaigns: [...state.campaigns, campaign] 
   })),
@@ -58,6 +65,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   setIsLoading: (isLoading) => set({ isLoading }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setActiveMainView: (view) => set({ activeMainView: view }),
+  setImcCampaigns: (campaigns) => set({ imcCampaigns: campaigns }),
+  selectImcCampaign: (id) => set({ selectedImcCampaignId: id, selectedCampaignId: null }),
   refreshCampaigns: async (fetchFn) => {
     // If we're manually syncing (e.g. adding/deleting), skip background refreshes
     if (get().isSyncing) return;

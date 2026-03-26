@@ -1,18 +1,32 @@
 import * as dfd from 'danfojs';
 import Papa from 'papaparse';
-import { PerformanceRecord, MediaProvider } from '../types';
+import { PerformanceRecord, MediaProvider, DmpRule } from '../types';
 
 export class CalculationService {
   private static STANDARD_ALIASES: Record<string, string[]> = {
-    date_raw: ['날짜', '기간', 'Date', '일자', '집행일', 'Day'],
-    ad_group_name: ['광고 그룹', '광고 그룹 이름', '광고그룹명', 'Ad Group', '그룹'],
-    excel_campaign_name: ['캠페인', '캠페인명', '캠페인 이름', 'Campaign', 'Campaign Name'],
-    impressions: ['노출', '노출수', 'Impressions', 'Imps'],
-    clicks: ['클릭', '클릭수', 'Clicks'],
-    supply_value: ['집행 금액(VAT 별도)', '총 비용', '공급가액', '집행금액', 'Spend', 'Cost'],
-    placement: ['게재지면', '게재위치', '노출지면', 'Placement'],
-    creative_name: ['소재', '소재 이름', '소재명', 'Creative'],
+    date_raw:             ['날짜', '기간', 'Date', '일자', '집행일', 'Day'],
+    ad_group_name:        ['광고 그룹', '광고 그룹 이름', '광고그룹명', 'Ad Group', '그룹'],
+    excel_campaign_name:  ['캠페인', '캠페인명', '캠페인 이름', 'Campaign', 'Campaign Name'],
+    impressions:          ['노출', '노출수', 'Impressions', 'Imps'],
+    clicks:               ['클릭', '클릭수', 'Clicks'],
+    supply_value:         ['집행 금액(VAT 별도)', '총 비용', '공급가액', '집행금액', 'Spend', 'Cost'],
+    placement:            ['게재지면', '게재위치', '노출지면', 'Placement', '게재 위치'],
+    creative_name:        ['소재', '소재 이름', '소재명', 'Creative', '광고 소재 이름', '광고소재이름'],
+    // 차원 컬럼 — 복합형 먼저 (contains match 우선순위 보장)
+    device_os:            ['기기 및 OS', '기기및OS', 'Device and OS'],
+    age_gender:           ['연령 및 성별', '연령및성별', 'Age and Gender'],
+    // 차원 컬럼 — 단순형 (복합형 이후 처리)
+    device:               ['기기', 'Device', '기기 유형'],
+    age:                  ['연령', 'Age', '연령대'],
+    gender:               ['성별', 'Gender'],
+    media_group:          ['매체 그룹', '매체그룹', 'Media Group'],
   };
+
+  /** 집계 키(groupBy)로 사용할 수 있는 차원 컬럼 집합 */
+  private static readonly DIMENSION_COLS = new Set([
+    'ad_group_name', 'creative_name', 'placement',
+    'device', 'os', 'age', 'gender', 'media_group',
+  ]);
 
   private static normalizeHeader(value: any) {
     return String(value ?? '')
@@ -70,6 +84,10 @@ export class CalculationService {
     if (!s) {
       return new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
     }
+
+    // 범위 형식 감지: "2026.02.10. ~ 2026.03.01." → 시작일만 추출
+    const rangeMatch = s.match(/^(\d{4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2})[\s\.]*~/);
+    if (rangeMatch) return this.parseDateNormalized(rangeMatch[1]);
 
     // Strip trailing dot: 네이버 표준 YYYY.MM.DD. 형식 지원
     const cleaned = s.replace(/\.$/, '');
@@ -167,99 +185,120 @@ export class CalculationService {
       cpc_goal?: number,
       ctr_goal?: number,
       dmp_column?: string
-    }>
+    }>,
+    dmpRules?: DmpRule[]
   ): { raw: PerformanceRecord[], report: PerformanceRecord[] } {
-    const df = new dfd.DataFrame(rawData);
 
-    // 1. Column normalization & cleaning
-    const renameObj: Record<string, string> = {};
-    const currentCols = df.columns;
-
+    // ══════════════════════════════════════════════════════════════════════
+    // STEP 1: Plain JS rename + complex column split (Danfo.js 완전 우회)
+    //   df.rename() + Korean 컬럼명 조합은 내부 DType 처리 불안정.
+    //   rawData 자체를 JS Map으로 먼저 변환해 guaranteed-string 키 확보.
+    // ══════════════════════════════════════════════════════════════════════
+    const sampleKeys = Object.keys(rawData[0] ?? {});
+    let renameMap: Record<string, string> = {};
     if (columnMapping) {
-      if (columnMapping.date && currentCols.includes(columnMapping.date)) renameObj[columnMapping.date] = 'date_raw';
-      if (columnMapping.excel_campaign && currentCols.includes(columnMapping.excel_campaign)) renameObj[columnMapping.excel_campaign] = 'excel_campaign_name';
-      if (columnMapping.ad_group && currentCols.includes(columnMapping.ad_group)) renameObj[columnMapping.ad_group] = 'ad_group_name';
-      if (columnMapping.impressions && currentCols.includes(columnMapping.impressions)) renameObj[columnMapping.impressions] = 'impressions';
-      if (columnMapping.clicks && currentCols.includes(columnMapping.clicks)) renameObj[columnMapping.clicks] = 'clicks';
-      if (columnMapping.supply_value && currentCols.includes(columnMapping.supply_value)) renameObj[columnMapping.supply_value] = 'supply_value';
+      if (columnMapping.date)           renameMap[columnMapping.date]           = 'date_raw';
+      if (columnMapping.excel_campaign) renameMap[columnMapping.excel_campaign] = 'excel_campaign_name';
+      if (columnMapping.ad_group)       renameMap[columnMapping.ad_group]       = 'ad_group_name';
+      if (columnMapping.impressions)    renameMap[columnMapping.impressions]    = 'impressions';
+      if (columnMapping.clicks)         renameMap[columnMapping.clicks]         = 'clicks';
+      if (columnMapping.supply_value)   renameMap[columnMapping.supply_value]   = 'supply_value';
     } else {
-      Object.assign(renameObj, this.buildFuzzyRenameMap(currentCols));
-    }
-    df.rename(renameObj, { inplace: true });
-
-    // 1.0 Ensure required standard columns exist (prevent Danfo groupby/sum crashes)
-    const rowCount = df.shape[0];
-    if (!df.columns.includes('date_raw')) {
-      df.addColumn('date_raw', new Array(rowCount).fill(new Date()), { inplace: true });
-    }
-    if (!df.columns.includes('ad_group_name')) {
-      df.addColumn('ad_group_name', new Array(rowCount).fill('Unknown'), { inplace: true });
-    }
-    if (!df.columns.includes('excel_campaign_name')) {
-      df.addColumn('excel_campaign_name', new Array(rowCount).fill(''), { inplace: true });
-    }
-    if (!df.columns.includes('impressions')) {
-      df.addColumn('impressions', new Array(rowCount).fill(0), { inplace: true });
-    }
-    if (!df.columns.includes('clicks')) {
-      df.addColumn('clicks', new Array(rowCount).fill(0), { inplace: true });
-    }
-    if (!df.columns.includes('supply_value')) {
-      df.addColumn('supply_value', new Array(rowCount).fill(0), { inplace: true });
+      renameMap = this.buildFuzzyRenameMap(sampleKeys);
     }
 
-    // 1.1 placement is required: inject default if missing
-    if (!df.columns.includes('placement')) {
-      df.addColumn('placement', new Array(df.shape[0]).fill('Unknown'), { inplace: true });
-    }
+    // Plain JS 변환: rename + 복합 컬럼 분리 (기기 및 OS, 연령 및 성별)
+    const rows: Record<string, any>[] = rawData.map(orig => {
+      const r: Record<string, any> = {};
+      for (const [k, v] of Object.entries(orig)) {
+        r[renameMap[k] ?? k] = v;
+      }
+      // 복합 컬럼 A: device_os ("모바일 > Android") → device + os
+      if ('device_os' in r && !('device' in r)) {
+        const parts = String(r['device_os'] ?? '').split('>');
+        r['device'] = parts[0].trim() || 'Unknown';
+        r['os']     = parts[1]?.trim() || 'Unknown';
+      }
+      // 복합 컬럼 B: age_gender ("35세~39세 여자") → age + gender
+      if ('age_gender' in r && !('age' in r)) {
+        const s = String(r['age_gender'] ?? '');
+        const i = s.lastIndexOf(' ');
+        r['age']    = i > 0 ? s.slice(0, i).trim() : s;
+        r['gender'] = i > 0 ? s.slice(i + 1).trim() : 'Unknown';
+      }
+      return r;
+    });
 
-    // 1.2 placement must be included in grouping
-    if (!groupByColumns.includes('placement')) {
-      groupByColumns = [...groupByColumns, 'placement'];
-    }
-
-    // 1.3 Guard: only group by columns that actually exist in DF
-    groupByColumns = groupByColumns.filter((c) => df.columns.includes(c));
-
-    // 2. DMP Detection
-    // 알려진 DMP 키워드: SKP, KB, LOTTE, TG360, BC, SH, WIFI(실내위치)
-    // 실제 네이버 GFA 데이터에서 확인된 패턴 (result.csv, 2026-03 기준):
-    //   "1)SKP"   → SKP 탐지 OK (숫자)접두어 패턴)
-    //   "1)SKP_N" → SKP 탐지 OK (includes('SKP') 매칭)
-    //   "2)TG360" → TG360 탐지 OK
-    // 네이밍 규칙: "숫자)DMP명_접미사" 형태이며, 접두어(숫자))와 접미사(_N, _B, _M 등)는
-    // 네이버 GFA 내부 소재 분류 코드로 추정됨. DMP명 매칭에는 영향 없음 (includes 방식으로 처리).
-    // 신규 DMP 파트너 패턴(e.g., "숫자)KB_B", "숫자)LOTTE_M")이 추가될 경우
-    // 아래 배열에 키워드만 추가하면 자동 탐지됨.
-    // 매칭 실패 시 DIRECT로 폴백하되 광고 그룹명이 존재하는 경우 warn 로깅 — 신규 DMP 파트너 탐지용
-    const detectDMP = (name: any): string => {
-      if (typeof name !== 'string' || !name.trim()) return 'DIRECT';
-      const upperName = name.toUpperCase();
-      if (upperName.includes('WIFI') || upperName.includes('실내위치')) return 'WIFI';
-      const found = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH'].find(k => upperName.includes(k));
-      if (found) return found;
-      // B-02: 광고 그룹명이 있지만 알려진 DMP 패턴과 불일치 — 미분류 케이스 추적
-      console.warn(`[DMP] 미분류 ad_group_name: "${name}" → DIRECT 처리`);
-      return 'DIRECT';
+    // ══════════════════════════════════════════════════════════════════════
+    // STEP 2: DMP Detection — 100% plain JS, Danfo 타입 변환 완전 차단
+    // ══════════════════════════════════════════════════════════════════════
+    const buildDmpDetector = (rules?: DmpRule[]): (name: any) => string => {
+      if (!rules || rules.length === 0) {
+        return (name: any): string => {
+          if (typeof name !== 'string' || !name.trim()) return 'DIRECT';
+          const u = name.toUpperCase();
+          if (u.includes('WIFI') || u.includes('실내위치')) return 'WIFI';
+          const found = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH'].find(k => u.includes(k));
+          if (found) return found;
+          if (name.trim()) console.warn(`[DMP] 미분류 ad_group_name: "${name}" → DIRECT`);
+          return 'DIRECT';
+        };
+      }
+      return (name: any): string => {
+        if (typeof name !== 'string' || !name.trim()) return 'DIRECT';
+        const u = name.toUpperCase();
+        for (const rule of rules) {
+          const k = rule.keyword.toUpperCase();
+          const matched =
+            rule.match_type === 'contains'   ? u.includes(k) :
+            rule.match_type === 'startsWith' ? u.startsWith(k) :
+            u === k;
+          if (matched) return rule.map_to;
+        }
+        if (name.trim()) console.warn(`[DMP] 미분류 ad_group_name: "${name}" → DIRECT`);
+        return 'DIRECT';
+      };
     };
+    const detectDMP = buildDmpDetector(dmpRules);
 
-    if (df.columns.includes('ad_group_name')) {
-      df.addColumn('dmp_type', df['ad_group_name'].map(detectDMP), { inplace: true });
-    } else {
-      df.addColumn('dmp_type', new Array(df.shape[0]).fill('DIRECT'), { inplace: true });
-    }
+    // 각 행의 dmp_type을 plain JS에서 직접 결정 (guaranteed string ad_group_name)
+    const dmpTypes: string[] = rows.map(r => detectDMP(String(r['ad_group_name'] ?? '')));
 
-    // 3. Calculation & Raw Records
+    // ══════════════════════════════════════════════════════════════════════
+    // STEP 3: Danfo.js DataFrame은 집계용으로만 사용
+    //   rows(이미 rename 완료) + dmp_type을 주입한 뒤 DataFrame 생성
+    // ══════════════════════════════════════════════════════════════════════
+    const rowsWithDmp = rows.map((r, i) => ({ ...r, dmp_type: dmpTypes[i] }));
+    const df = new dfd.DataFrame(rowsWithDmp);
+
+    // 필수 컬럼 기본값 주입 (DF에 없는 경우만)
+    const rowCount = df.shape[0];
+    if (!df.columns.includes('date_raw'))            df.addColumn('date_raw',           new Array(rowCount).fill(new Date()), { inplace: true });
+    if (!df.columns.includes('ad_group_name'))       df.addColumn('ad_group_name',      new Array(rowCount).fill('Unknown'),  { inplace: true });
+    if (!df.columns.includes('excel_campaign_name')) df.addColumn('excel_campaign_name',new Array(rowCount).fill(''),         { inplace: true });
+    if (!df.columns.includes('impressions'))         df.addColumn('impressions',         new Array(rowCount).fill(0),          { inplace: true });
+    if (!df.columns.includes('clicks'))              df.addColumn('clicks',              new Array(rowCount).fill(0),          { inplace: true });
+    if (!df.columns.includes('supply_value'))        df.addColumn('supply_value',        new Array(rowCount).fill(0),          { inplace: true });
+    if (!df.columns.includes('placement'))           df.addColumn('placement',           new Array(rowCount).fill('Unknown'),  { inplace: true });
+
+    // groupByColumns 구성: placement + 차원 자동 감지 + dmp_type 강제 포함
+    if (!groupByColumns.includes('placement')) groupByColumns = [...groupByColumns, 'placement'];
+    const _autoDims = df.columns.filter((c: string) => CalculationService.DIMENSION_COLS.has(c));
+    groupByColumns = Array.from(new Set([...groupByColumns, ..._autoDims]));
+    groupByColumns = groupByColumns.filter(c => df.columns.includes(c));
+    if (!groupByColumns.includes('dmp_type')) groupByColumns = [...groupByColumns, 'dmp_type'];
+
+    // ══════════════════════════════════════════════════════════════════════
+    // STEP 4: Calculation & Raw Records (rows 배열 직접 사용 — ensureRecords 불필요)
+    // ══════════════════════════════════════════════════════════════════════
     const executionAmounts: number[] = [];
     const netAmounts: number[] = [];
     const rawRecords: PerformanceRecord[] = [];
 
-    const json = this.ensureRecords(df);
-    json.forEach((row, idx) => {
+    rows.forEach((row, idx) => {
+      // rows는 이미 rename 완료된 plain JS 객체 — 키가 guaranteed string
       const excelCampName = row.excel_campaign_name;
-      // Preference: mapping_value matching excel_campaign_name
-      // Fallback: older excel_name field if mapping_value is missing
-      const config = campaignConfigs && excelCampName 
+      const config = campaignConfigs && excelCampName
         ? (Object.values(campaignConfigs).find(c => (c as any).mapping_value === excelCampName || (c as any).excel_name === excelCampName))
         : null;
       
@@ -278,8 +317,9 @@ export class CalculationService {
 
       const parsedDate = this.parseDateNormalized(row.date_raw);
 
-      // 2.1 Custom DMP Detection based on config mapping
-      let customDmp = row.dmp_type;
+      // dmpTypes[idx]는 STEP 2에서 plain JS로 확정된 DMP값 — row.dmp_type 참조 불필요
+      const dmpType = dmpTypes[idx];
+      let customDmp = dmpType;
       if (config?.dmp_column && row[config.dmp_column]) {
         customDmp = String(row[config.dmp_column]);
       }
@@ -289,49 +329,70 @@ export class CalculationService {
         excel_campaign_name: excelCampName,
         media: rowMedia,
         date: parsedDate,
-        ad_group_name: row.ad_group_name || 'Unknown',
-        impressions: row.impressions || 0,
-        clicks: row.clicks || 0,
+        ad_group_name: String(row.ad_group_name ?? 'Unknown') || 'Unknown',
+        impressions: Number(row.impressions) || 0,
+        clicks: Number(row.clicks) || 0,
         execution_amount: executionAmt,
         net_amount: baseValue,
-        dmp_type: row.dmp_type,
-        dmp: customDmp, // Added: separate DMP column
-        has_dmp: row.dmp_type !== 'DIRECT' && row.dmp_type !== 'N/A',
-        cost: executionAmt, // Updated: DB "비용" 컬럼 (수수료 적용된 금액)
-        supply_value: supplyVal, // 원본 공급가액
+        dmp_type: dmpType,
+        dmp: customDmp,
+        has_dmp: dmpType !== 'DIRECT' && dmpType !== 'N/A',
+        cost: executionAmt,
+        supply_value: supplyVal,
         is_raw: true,
-        placement: row.placement || 'Unknown',
+        placement: String(row.placement ?? 'Unknown') || 'Unknown',
         creative_name: row.creative_name,
         age: row.age,
         gender: row.gender,
-        device: row.device
+        device: row.device,
+        os: row.os,
+        media_group: row.media_group,
       });
     });
 
-    df.addColumn('execution_amount', executionAmounts, { inplace: true });
-    df.addColumn('net_amount', netAmounts, { inplace: true });
-    df.addColumn('cost', executionAmounts, { inplace: true }); // "비용" 컬럼 추가
+    // ══════════════════════════════════════════════════════════════════════
+    // STEP 5: Aggregation — rowsWithDmp 직접 사용 (ensureRecords 완전 제거)
+    //   Danfo.js toJSON 변환을 거치지 않으므로 Korean 값 손실 없음
+    // ══════════════════════════════════════════════════════════════════════
+    const sumCols = ['impressions', 'clicks', 'supply_value', 'execution_amount', 'net_amount', 'cost'];
+    // rowsWithDmp에 execution/net/cost를 추가한 fullRows 빌드
+    const fullRows: Record<string, any>[] = rowsWithDmp.map((r, i) => ({
+      ...r,
+      execution_amount: executionAmounts[i],
+      net_amount: netAmounts[i],
+      cost: executionAmounts[i],
+    }));
+    const allCols = Object.keys(fullRows[0] ?? {});
+    const availableSumCols = sumCols.filter(col => allCols.includes(col));
 
-    // 4. Aggregation (Report Data)
+    // 집계용 DF 컬럼 업데이트 (리포트 저장 등에서 df 참조할 경우를 대비)
+    if (df.columns.includes('execution_amount') === false) {
+      df.addColumn('execution_amount', executionAmounts, { inplace: true });
+      df.addColumn('net_amount',       netAmounts,       { inplace: true });
+      df.addColumn('cost',             executionAmounts, { inplace: true });
+    }
+
     let reportRecords: PerformanceRecord[] = [];
     if (groupByColumns.length > 0) {
-      const sumCols = ['impressions', 'clicks', 'supply_value', 'execution_amount', 'net_amount', 'cost'];
-      const availableSumCols = sumCols.filter(col => df.columns.includes(col));
       if (availableSumCols.length === 0) {
         reportRecords = rawRecords.map(r => ({ ...r, is_raw: false }));
         return { raw: rawRecords, report: reportRecords };
       }
 
-      // Danfo.js groupby().sum() crashes in Vercel/serverless bundles (undefined.length in
-      // getRowAndColValues). Replace with a plain-JS Map aggregation that is runtime-agnostic.
-      const jsonForGroup = this.ensureRecords(df);
       const groups = new Map<string, any>();
-      jsonForGroup.forEach(row => {
+      fullRows.forEach(row => {
         const key = groupByColumns.map(col => String(row[col] ?? '')).join('\x00');
         if (!groups.has(key)) {
           const seed: any = {};
           groupByColumns.forEach(col => { seed[col] = row[col]; });
           availableSumCols.forEach(col => { seed[col] = 0; });
+          seed['excel_campaign_name'] = row['excel_campaign_name'];
+          seed['creative_name'] = row['creative_name'];
+          seed['age'] = row['age'];
+          seed['gender'] = row['gender'];
+          seed['device'] = row['device'];
+          seed['os'] = row['os'];
+          seed['media_group'] = row['media_group'];
           groups.set(key, seed);
         }
         const g = groups.get(key)!;
@@ -368,7 +429,9 @@ export class CalculationService {
           creative_name: row.creative_name,
           age: row.age,
           gender: row.gender,
-          device: row.device
+          device: row.device,
+          os: row.os,
+          media_group: row.media_group,
         });
       });
     } else {

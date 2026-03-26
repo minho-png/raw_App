@@ -7,9 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CampaignConfig, SubCampaignConfig, MediaProvider } from "@/types";
 import { cn } from "@/lib/utils";
 import { genId } from "@/lib/idGenerator";
+import { useCampaignStore } from "@/store/useCampaignStore";
+import { assignImcCampaignAction } from "@/server/actions/imcCampaign";
 
 interface BudgetSettingsModalProps {
   isOpen: boolean;
@@ -19,20 +22,24 @@ interface BudgetSettingsModalProps {
   totalSpent?: number; // Added: actual spend to calculate pacing
 }
 
-export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  campaign, 
+export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
+  isOpen,
+  onClose,
+  campaign,
   onUpdate,
   totalSpent = 0
 }) => {
   const [subCampaigns, setSubCampaigns] = useState<SubCampaignConfig[]>([]);
+  // IMC 연결 상태 — 모달 열릴 때 campaign.imc_campaign_id로 초기화
+  const [selectedImcId, setSelectedImcId] = useState<string | null>(campaign.imc_campaign_id || null);
+  const { imcCampaigns, updateCampaign } = useCampaignStore();
 
   useEffect(() => {
     if (isOpen) {
       setSubCampaigns(campaign.sub_campaigns || []);
+      setSelectedImcId(campaign.imc_campaign_id || null);
     }
-  }, [isOpen, campaign.sub_campaigns]);
+  }, [isOpen, campaign.sub_campaigns, campaign.imc_campaign_id]);
 
   const medias: MediaProvider[] = useMemo(
     () => ['네이버GFA', '카카오Moment', '메타Ads', '구글Ads'],
@@ -138,6 +145,42 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
                 </header>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6 pb-4">
+                  {/* IMC 마스터 캠페인 연결 선택기 */}
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2 block">
+                      IMC 마스터 캠페인 연결
+                    </label>
+                    <Select
+                      value={selectedImcId || 'none'}
+                      onValueChange={async (val) => {
+                        const imcId = val === 'none' ? null : val;
+                        setSelectedImcId(imcId);
+                        const result = await assignImcCampaignAction(campaign.campaign_id, imcId);
+                        if (result.success) {
+                          // 스토어 내 캠페인도 즉시 업데이트
+                          updateCampaign({ ...campaign, imc_campaign_id: imcId ?? undefined });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="bg-white h-11 rounded-xl border-slate-200 text-sm font-semibold text-slate-700">
+                        <SelectValue placeholder="IMC 그룹 없음 (독립 캠페인)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">IMC 그룹 없음 (독립 캠페인)</SelectItem>
+                        {imcCampaigns.map(imc => (
+                          <SelectItem key={imc.imc_campaign_id} value={imc.imc_campaign_id}>
+                            {imc.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedImcId && (
+                      <p className="text-[11px] text-indigo-600 font-semibold mt-1.5">
+                        이 캠페인은 <span className="font-black">{imcCampaigns.find(i => i.imc_campaign_id === selectedImcId)?.name}</span> 그룹에 속합니다.
+                      </p>
+                    )}
+                  </div>
+
                   <div className="rounded-2xl bg-slate-50 border border-slate-200 p-6">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>

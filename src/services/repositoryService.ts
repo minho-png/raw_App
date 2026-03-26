@@ -1,6 +1,7 @@
 import { Collection, Db, MongoClient, ClientSession, Filter, ObjectId } from 'mongodb';
-import { PerformanceRecord, MonthlySettlementResult, DmpSettlementSnapshot } from '@/types';
+import { PerformanceRecord, MonthlySettlementResult, DmpSettlementSnapshot, DmpRule, AdAccount, Agency, ImcCampaign } from '@/types';
 import { SYSTEM_WORKSPACE_ID } from '@/services/workspaceRepository';
+import { genId } from '@/lib/idGenerator';
 
 export class RepositoryService {
   private dbName = 'gfa_master_pro';
@@ -24,6 +25,17 @@ export class RepositoryService {
       db.collection('processed_reports').createIndex({ workspace_id: 1, date: 1 }, { background: true }),
       // B-06: dmp_settlements 월별 정산 조회 및 upsert 키 — workspace_id + year + month
       db.collection('dmp_settlements').createIndex({ workspace_id: 1, year: 1, month: 1 }, { background: true }),
+      // DMP 규칙 엔진 인덱스
+      db.collection('dmp_rules').createIndex({ workspace_id: 1, is_active: 1, priority: 1 }, { background: true }),
+      db.collection('dmp_rules').createIndex({ workspace_id: 1, account_id: 1, is_active: 1 }, { background: true }),
+      // 3단계 계층 구조 인덱스
+      db.collection('ad_accounts').createIndex({ workspace_id: 1, agency_id: 1 }, { background: true }),
+      db.collection('ad_accounts').createIndex({ account_id: 1 }, { unique: true, background: true }),
+      db.collection('agencies').createIndex({ workspace_id: 1 }, { background: true }),
+      db.collection('agencies').createIndex({ agency_id: 1 }, { unique: true, background: true }),
+      // IMC 마스터 캠페인 인덱스
+      db.collection('imc_campaigns').createIndex({ workspace_id: 1 }, { background: true }),
+      db.collection('imc_campaigns').createIndex({ imc_campaign_id: 1 }, { unique: true, background: true }),
     ]);
   }
 
@@ -400,5 +412,223 @@ export class RepositoryService {
       matchedCount: result.matchedCount,
       modifiedCount: result.modifiedCount,
     };
+  }
+
+  // ── DMP 규칙 엔진 ──────────────────────────────────────────────────────────
+
+  private get dmpRulesCollection(): Collection<DmpRule> {
+    return this.client.db(this.dbName).collection('dmp_rules');
+  }
+
+  /**
+   * getDmpRules: 워크스페이스의 활성 DMP 규칙을 priority ASC으로 반환.
+   * 빈 경우 기본 하드코딩 규칙 8개를 시드한 후 재조회.
+   */
+  public async getDmpRules(workspaceId: string, accountId?: string): Promise<DmpRule[]> {
+    const filter: any = { workspace_id: workspaceId, is_active: true };
+
+    const rules = await this.dmpRulesCollection
+      .find(filter)
+      .sort({ priority: 1 })
+      .toArray();
+
+    if (rules.length === 0) {
+      await this.seedDefaultDmpRules(workspaceId);
+      return await this.dmpRulesCollection
+        .find(filter)
+        .sort({ priority: 1 })
+        .toArray();
+    }
+
+    // accountId가 지정된 경우: 워크스페이스 전역 규칙 + 계정 전용 규칙 합산 후 priority 재정렬
+    if (accountId) {
+      const accountFilter = { workspace_id: workspaceId, account_id: accountId, is_active: true };
+      const accountRules = await this.dmpRulesCollection
+        .find(accountFilter)
+        .sort({ priority: 1 })
+        .toArray();
+      const globalRules = rules.filter(r => !r.account_id);
+      return [...globalRules, ...accountRules].sort((a, b) => a.priority - b.priority);
+    }
+
+    return rules.filter(r => !r.account_id);
+  }
+
+  /**
+   * seedDefaultDmpRules: 기존 하드코딩 DMP 탐지 로직을 DB 규칙으로 초기화.
+   * bulkWrite + upsert 방식으로 멱등성 보장 (중복 실행 안전).
+   */
+  public async seedDefaultDmpRules(workspaceId: string): Promise<void> {
+    const now = new Date();
+    const defaults: Array<Pick<DmpRule, 'keyword' | 'match_type' | 'map_to' | 'priority'>> = [
+      { priority: 0, keyword: 'WIFI',     match_type: 'contains', map_to: 'WIFI'  },
+      { priority: 1, keyword: '실내위치', match_type: 'contains', map_to: 'WIFI'  },
+      { priority: 2, keyword: 'SKP',      match_type: 'contains', map_to: 'SKP'   },
+      { priority: 3, keyword: 'KB',       match_type: 'contains', map_to: 'KB'    },
+      { priority: 4, keyword: 'LOTTE',    match_type: 'contains', map_to: 'LOTTE' },
+      { priority: 5, keyword: 'TG360',    match_type: 'contains', map_to: 'TG360' },
+      { priority: 6, keyword: 'BC',       match_type: 'contains', map_to: 'BC'    },
+      { priority: 7, keyword: 'SH',       match_type: 'contains', map_to: 'SH'    },
+    ];
+
+    const ops = defaults.map(d => ({
+      updateOne: {
+        filter: { workspace_id: workspaceId, keyword: d.keyword, match_type: d.match_type, map_to: d.map_to },
+        update: {
+          $set: { ...d, workspace_id: workspaceId, match_field: 'ad_group_name' as const, is_active: true, updated_at: now },
+          $setOnInsert: { rule_id: genId(16), created_at: now },
+        },
+        upsert: true,
+      },
+    }));
+
+    await this.dmpRulesCollection.bulkWrite(ops);
+  }
+
+  /**
+   * upsertDmpRule: DMP 규칙 생성 또는 업데이트.
+   */
+  public async upsertDmpRule(rule: Partial<DmpRule> & { workspace_id: string }): Promise<void> {
+    const now = new Date();
+    const ruleId = rule.rule_id ?? genId(16);
+    await this.dmpRulesCollection.updateOne(
+      { rule_id: ruleId },
+      {
+        $set: { ...rule, rule_id: ruleId, updated_at: now },
+        $setOnInsert: { created_at: now },
+      },
+      { upsert: true }
+    );
+  }
+
+  /**
+   * deleteDmpRule: 소프트 삭제 (is_active: false).
+   */
+  public async deleteDmpRule(ruleId: string): Promise<void> {
+    await this.dmpRulesCollection.updateOne(
+      { rule_id: ruleId },
+      { $set: { is_active: false, updated_at: new Date() } }
+    );
+  }
+
+  // ── 3단계 계층 구조 (Agency > Ad Account) ─────────────────────────────────
+
+  private get agenciesCollection(): Collection<Agency> {
+    return this.client.db(this.dbName).collection('agencies');
+  }
+
+  private get adAccountsCollection(): Collection<AdAccount> {
+    return this.client.db(this.dbName).collection('ad_accounts');
+  }
+
+  public async getAgencies(workspaceId: string): Promise<Agency[]> {
+    return await this.agenciesCollection
+      .find({ workspace_id: workspaceId, is_active: true })
+      .sort({ name: 1 })
+      .toArray();
+  }
+
+  public async upsertAgency(agency: Partial<Agency> & { workspace_id: string; name: string }): Promise<string> {
+    const now = new Date();
+    const agencyId = agency.agency_id ?? genId(16);
+    await this.agenciesCollection.updateOne(
+      { agency_id: agencyId },
+      {
+        $set: { ...agency, agency_id: agencyId, updated_at: now },
+        $setOnInsert: { is_active: true, created_at: now },
+      },
+      { upsert: true }
+    );
+    return agencyId;
+  }
+
+  public async getAdAccounts(workspaceId: string, agencyId?: string): Promise<AdAccount[]> {
+    const filter: any = { workspace_id: workspaceId, is_active: true };
+    if (agencyId) filter.agency_id = agencyId;
+    return await this.adAccountsCollection
+      .find(filter)
+      .sort({ name: 1 })
+      .toArray();
+  }
+
+  public async upsertAdAccount(account: Partial<AdAccount> & { workspace_id: string; name: string; agency_id: string }): Promise<string> {
+    const now = new Date();
+    const accountId = account.account_id ?? genId(16);
+    await this.adAccountsCollection.updateOne(
+      { account_id: accountId },
+      {
+        $set: { ...account, account_id: accountId, updated_at: now },
+        $setOnInsert: { is_active: true, created_at: now },
+      },
+      { upsert: true }
+    );
+    return accountId;
+  }
+
+  // ── IMC 마스터 캠페인 CRUD ──────────────────────────────────────────────────
+
+  private get imcCollection(): Collection<any> {
+    return this.client.db(this.dbName).collection('imc_campaigns');
+  }
+
+  public async getImcCampaigns(workspaceId: string): Promise<ImcCampaign[]> {
+    return (await this.imcCollection
+      .find({ workspace_id: workspaceId })
+      .sort({ created_at: -1 })
+      .toArray()) as unknown as ImcCampaign[];
+  }
+
+  public async createImcCampaign(
+    data: Omit<ImcCampaign, 'created_at' | 'updated_at'>
+  ): Promise<ImcCampaign> {
+    const now = new Date();
+    const doc = { ...data, created_at: now, updated_at: now };
+    await this.imcCollection.insertOne(doc);
+    return doc as ImcCampaign;
+  }
+
+  public async updateImcCampaign(
+    imcId: string,
+    patch: Partial<Pick<ImcCampaign, 'name' | 'description' | 'total_budget'>>
+  ): Promise<void> {
+    await this.imcCollection.updateOne(
+      { imc_campaign_id: imcId },
+      { $set: { ...patch, updated_at: new Date() } }
+    );
+  }
+
+  /**
+   * deleteImcCampaign: IMC 캠페인 삭제 후 소속 campaign_configs의 imc_campaign_id 필드 해제.
+   * 두 컬렉션 변경을 트랜잭션 없이 순차 실행 — standalone 환경 호환.
+   * campaign_configs 해제 실패 시 고아 FK가 남을 수 있으므로 로그 필수.
+   */
+  public async deleteImcCampaign(imcId: string): Promise<void> {
+    await this.imcCollection.deleteOne({ imc_campaign_id: imcId });
+    // 소속 캠페인의 imc_campaign_id 해제
+    await this.campaignCollection.updateMany(
+      { imc_campaign_id: imcId },
+      { $unset: { imc_campaign_id: '' }, $set: { updated_at: new Date() } }
+    );
+  }
+
+  /**
+   * assignImcCampaign: campaign_config에 IMC 마스터 캠페인 연결/해제.
+   * imcCampaignId가 null이면 imc_campaign_id 필드를 $unset으로 제거.
+   */
+  public async assignImcCampaign(
+    campaignId: string,
+    imcCampaignId: string | null
+  ): Promise<void> {
+    if (imcCampaignId) {
+      await this.campaignCollection.updateOne(
+        { campaign_id: campaignId },
+        { $set: { imc_campaign_id: imcCampaignId, updated_at: new Date() } }
+      );
+    } else {
+      await this.campaignCollection.updateOne(
+        { campaign_id: campaignId },
+        { $unset: { imc_campaign_id: '' }, $set: { updated_at: new Date() } }
+      );
+    }
   }
 }

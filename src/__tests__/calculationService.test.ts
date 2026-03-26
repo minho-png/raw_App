@@ -7,9 +7,15 @@ import { describe, it, expect } from 'vitest';
 // ─── Helper: DMP 탐지 로직 (CalculationService.processWithDanfo 내부 detectDMP 미러) ───
 function detectDMP(name: any): string {
   if (typeof name !== 'string' || !name.trim()) return 'DIRECT';
+
   const upperName = name.toUpperCase();
+
+  // 1) WIFI/실내위치 우선 탐지
   if (upperName.includes('WIFI') || upperName.includes('실내위치')) return 'WIFI';
-  const found = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH'].find(k => upperName.includes(k));
+
+  // 2) 위치 중립 키워드 탐지
+  const dmpKeys = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH'];
+  const found = dmpKeys.find(k => upperName.includes(k));
   return found ?? 'DIRECT';
 }
 
@@ -92,6 +98,7 @@ describe('CalculationService', () => {
     expect(detectDMP('WIFI_캠페인')).toBe('WIFI');
     expect(detectDMP('wifi_test')).toBe('WIFI');
     expect(detectDMP('실내위치_타겟팅')).toBe('WIFI');
+    expect(detectDMP('브랜드_wifi_타겟')).toBe('WIFI');
   });
 
   // 5. DMP 없음 → DIRECT
@@ -202,5 +209,142 @@ describe('CalculationService', () => {
     it('소수점 반올림: net 333,333 × 10% → 33,333', () => {
       expect(calcDmpFee('SKP', 333_333)).toBe(33_333);
     });
+  });
+});
+
+// ─── buildDmpDetector: DB 규칙 기반 DMP 탐지 엔진 단위 테스트 ──────────────────
+// CalculationService.processWithDanfo 내 buildDmpDetector 팩토리 미러
+type MatchType = 'contains' | 'startsWith' | 'equals';
+interface DmpRuleStub { keyword: string; match_type: MatchType; map_to: string; priority: number; is_active: boolean; }
+
+function buildDmpDetector(rules?: DmpRuleStub[]): (name: any) => string {
+  if (!rules || rules.length === 0) {
+    return (name: any): string => {
+      if (typeof name !== 'string' || !name.trim()) return 'DIRECT';
+      const upperName = name.toUpperCase();
+      if (upperName.includes('WIFI') || upperName.includes('실내위치')) return 'WIFI';
+      const dmpKeys = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH'];
+      const found = dmpKeys.find(k => upperName.includes(k));
+      return found ?? 'DIRECT';
+    };
+  }
+  return (name: any): string => {
+    if (typeof name !== 'string' || !name.trim()) return 'DIRECT';
+    const upperName = name.toUpperCase();
+    for (const rule of rules) {
+      const k = rule.keyword.toUpperCase();
+      const matched =
+        rule.match_type === 'contains'   ? upperName.includes(k) :
+        rule.match_type === 'startsWith' ? upperName.startsWith(k) :
+        upperName === k;
+      if (matched) return rule.map_to;
+    }
+    return 'DIRECT';
+  };
+}
+
+describe('buildDmpDetector (DB 규칙 엔진)', () => {
+  it('rules 없음 → 기존 하드코딩 폴백 동작', () => {
+    const detect = buildDmpDetector(undefined);
+    expect(detect('1)SKP_N')).toBe('SKP');
+    expect(detect('WIFI_타겟')).toBe('WIFI');
+    expect(detect('일반캠페인')).toBe('DIRECT');
+  });
+
+  it('빈 rules 배열 → 기존 하드코딩 폴백 동작', () => {
+    const detect = buildDmpDetector([]);
+    expect(detect('KB_데이터')).toBe('KB');
+    expect(detect('LOTTE_쇼핑')).toBe('LOTTE');
+  });
+
+  it('DB 규칙: contains 매칭', () => {
+    const rules: DmpRuleStub[] = [
+      { keyword: 'TEST_PARTNER', match_type: 'contains', map_to: 'CUSTOM_DMP', priority: 0, is_active: true },
+    ];
+    const detect = buildDmpDetector(rules);
+    expect(detect('1)TEST_PARTNER_N')).toBe('CUSTOM_DMP');
+    expect(detect('abc_TEST_PARTNER_xyz')).toBe('CUSTOM_DMP');
+    expect(detect('OTHER_GROUP')).toBe('DIRECT');
+  });
+
+  it('DB 규칙: startsWith 매칭', () => {
+    const rules: DmpRuleStub[] = [
+      { keyword: 'NAVER_', match_type: 'startsWith', map_to: 'NAVER_DMP', priority: 0, is_active: true },
+    ];
+    const detect = buildDmpDetector(rules);
+    expect(detect('NAVER_BRAND')).toBe('NAVER_DMP');
+    expect(detect('abc_NAVER_BRAND')).toBe('DIRECT'); // startsWith 불일치
+  });
+
+  it('DB 규칙: equals 매칭', () => {
+    const rules: DmpRuleStub[] = [
+      { keyword: 'EXACT_DMP', match_type: 'equals', map_to: 'EXACT', priority: 0, is_active: true },
+    ];
+    const detect = buildDmpDetector(rules);
+    expect(detect('EXACT_DMP')).toBe('EXACT');
+    expect(detect('EXACT_DMP_EXTRA')).toBe('DIRECT');
+  });
+
+  it('DB 규칙: priority — 낮은 값이 먼저 매칭', () => {
+    const rules: DmpRuleStub[] = [
+      { keyword: 'WIFI', match_type: 'contains', map_to: 'WIFI_HIGH', priority: 0, is_active: true },
+      { keyword: 'WIFI', match_type: 'contains', map_to: 'WIFI_LOW',  priority: 10, is_active: true },
+    ];
+    const detect = buildDmpDetector(rules);
+    expect(detect('WIFI_캠페인')).toBe('WIFI_HIGH');
+  });
+
+  it('DB 규칙: 대소문자 무관 매칭', () => {
+    const rules: DmpRuleStub[] = [
+      { keyword: 'lpoint', match_type: 'contains', map_to: 'LOTTE', priority: 0, is_active: true },
+    ];
+    const detect = buildDmpDetector(rules);
+    expect(detect('L_POINT_캠페인')).toBe('DIRECT'); // 'LPOINT' vs 'L_POINT' — contains 불일치
+    expect(detect('LPOINT_브랜드')).toBe('LOTTE');   // 대소문자 무관 매칭
+  });
+
+  it('DB 규칙: null/undefined → DIRECT', () => {
+    const rules: DmpRuleStub[] = [
+      { keyword: 'SKP', match_type: 'contains', map_to: 'SKP', priority: 0, is_active: true },
+    ];
+    const detect = buildDmpDetector(rules);
+    expect(detect(null)).toBe('DIRECT');
+    expect(detect(undefined)).toBe('DIRECT');
+    expect(detect('')).toBe('DIRECT');
+  });
+});
+
+// ── 날짜 범위 파싱 테스트 ────────────────────────────────────────────────────
+describe('parseDateNormalized — 날짜 범위 형식', () => {
+  // parseDateNormalized는 private이므로 간접 테스트
+  const parseDate = (raw: any): Date => {
+    // CalculationService.processWithDanfo 내부 로직 미러
+    const s = String(raw ?? '').trim();
+    const rangeMatch = s.match(/^(\d{4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2})[\s\.]*~/);
+    if (rangeMatch) {
+      const part = rangeMatch[1].replace(/[\.\/]/g, '-').replace(/\.$/, '');
+      const m = part.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    }
+    const cleaned = s.replace(/\.$/, '');
+    const normalized = cleaned.replace(/[\.\/]/g, '-');
+    const parts = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (parts) return new Date(Date.UTC(+parts[1], +parts[2] - 1, +parts[3]));
+    return new Date(NaN);
+  };
+
+  it('단일 날짜 YYYY.MM.DD. 파싱', () => {
+    const d = parseDate('2026.02.10.');
+    expect(d.toISOString().startsWith('2026-02-10')).toBe(true);
+  });
+
+  it('날짜 범위에서 시작일 추출', () => {
+    const d = parseDate('2026.02.10. ~ 2026.03.01.');
+    expect(d.toISOString().startsWith('2026-02-10')).toBe(true);
+  });
+
+  it('범위 없는 형식은 그대로 파싱', () => {
+    const d = parseDate('2026-03-01');
+    expect(d.toISOString().startsWith('2026-03-01')).toBe(true);
   });
 });

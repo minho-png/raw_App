@@ -27,14 +27,32 @@ export async function GET(req: NextRequest, { params }: { params: { shareId: str
 
     wsRepo.incrementSharedReportViewCount(params.shareId).catch(() => {});
 
-    const safeRecords = shared.config.show_budget
-      ? records
-      : records.map(({ execution_amount, net_amount, cost, supply_value, ...r }: any) => r);
+    // HF-1: 공유 보고서에서 원가/수수료 관련 민감 필드 제거
+    // - records: supply_value, fee_rate 항상 비노출
+    // - show_budget=false 인 경우 execution/net/cost까지 추가 비노출
+    const sanitizeRecord = (record: any) => {
+      const { supply_value, fee_rate, ...rest } = record;
+      if (shared.config.show_budget) return rest;
+      const { execution_amount, net_amount, cost, ...nonBudget } = rest;
+      return nonBudget;
+    };
+
+    const safeRecords = records.map(sanitizeRecord);
+
+    const safeCampaign = (() => {
+      if (!campaign) return null;
+      const base = shared.config.show_budget
+        ? { ...campaign }
+        : { campaign_name: (campaign as any).campaign_name, campaign_id: (campaign as any).campaign_id };
+
+      if (Array.isArray((base as any).sub_campaigns)) {
+        (base as any).sub_campaigns = (base as any).sub_campaigns.map(({ fee_rate, ...sub }: any) => sub);
+      }
+      return base;
+    })();
 
     return NextResponse.json({
-      campaign: shared.config.show_budget
-        ? campaign
-        : { campaign_name: (campaign as any)?.campaign_name, campaign_id: (campaign as any)?.campaign_id },
+      campaign: safeCampaign,
       records: safeRecords,
       config: shared.config,
       generated_at: shared.created_at,
