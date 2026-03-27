@@ -45,8 +45,8 @@ export default function SpendChart({ dailyData, mediaData }: SpendChartProps) {
               tickLine={false}
             />
             <Tooltip
-              formatter={(value: number) => [
-                `${value.toLocaleString()}원`,
+              formatter={(value: unknown) => [
+                `${Number(value).toLocaleString()}원`,
                 "소진금액",
               ]}
             />
@@ -86,8 +86,8 @@ export default function SpendChart({ dailyData, mediaData }: SpendChartProps) {
               width={60}
             />
             <Tooltip
-              formatter={(value: number) => [
-                `${value.toLocaleString()}원`,
+              formatter={(value: unknown) => [
+                `${Number(value).toLocaleString()}원`,
                 "소진금액",
               ]}
             />
