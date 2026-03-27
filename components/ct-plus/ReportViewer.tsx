@@ -232,7 +232,7 @@ export default function ReportViewer({ mediaList, sections }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                   <XAxis dataKey="week" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={fmtK} width={52} />
-                  <Tooltip formatter={(v: number, name: string) => [`${fmt(v)}원`, name.replace('_소진', '')]} />
+                  <Tooltip formatter={(v: unknown, name: unknown) => [`${fmt(v as number)}원`, (name as string).replace('_소진', '')]} />
                   <Legend formatter={v => v.replace('_소진', '')} iconType="square" iconSize={10} wrapperStyle={{ fontSize: 11 }} />
                   {data.map(m => (
                     <Bar key={m.media} dataKey={`${MEDIA_CONFIG[m.media].label}_소진`} name={`${MEDIA_CONFIG[m.media].label}_소진`} fill={MEDIA_CONFIG[m.media].color} radius={[3, 3, 0, 0]} />
@@ -282,7 +282,7 @@ export default function ReportViewer({ mediaList, sections }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="week" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} domain={ctrDomain} width={48} />
-                  <Tooltip formatter={(v: number, name: string) => [`${v.toFixed(2)}%`, name.replace('_CTR', '')]} />
+                  <Tooltip formatter={(v: unknown, name: unknown) => [`${(v as number).toFixed(2)}%`, (name as string).replace('_CTR', '')]} />
                   <Legend formatter={v => `${v.replace('_CTR', '')} CTR`} iconType="line" iconSize={16} wrapperStyle={{ fontSize: 11 }} />
                   {data.map(m => (
                     <Line key={m.media} type="monotone" dataKey={`${MEDIA_CONFIG[m.media].label}_CTR`} name={`${MEDIA_CONFIG[m.media].label}_CTR`} stroke={MEDIA_CONFIG[m.media].color} strokeWidth={2.5} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6 }} />
@@ -340,10 +340,10 @@ export default function ReportViewer({ mediaList, sections }: Props) {
                   <p className="mb-2 text-xs text-gray-400">{sub}</p>
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
-                      <Pie data={mediaCompData} dataKey={key} nameKey="name" cx="50%" cy="50%" outerRadius={75} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine>
+                      <Pie data={mediaCompData} dataKey={key} nameKey="name" cx="50%" cy="50%" outerRadius={75} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine>
                         {mediaCompData.map(e => <Cell key={e.name} fill={e.color} />)}
                       </Pie>
-                      <Tooltip formatter={(v: number) => [`${v}%`, '']} />
+                      <Tooltip formatter={(v: unknown) => [`${v}%`, '']} />
                       <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
                     </PieChart>
                   </ResponsiveContainer>
@@ -371,7 +371,7 @@ export default function ReportViewer({ mediaList, sections }: Props) {
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                       <XAxis dataKey="age" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} domain={domain} width={48} />
-                      <Tooltip formatter={(v: number) => [`${v.toFixed(2)}%`, '']} />
+                      <Tooltip formatter={(v: unknown) => [`${(v as number).toFixed(2)}%`, '']} />
                       <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
                       <Bar dataKey="male_ctr" name="남성 CTR" fill="#3B82F6" radius={[3, 3, 0, 0]} />
                       <Bar dataKey="female_ctr" name="여성 CTR" fill="#F43F5E" radius={[3, 3, 0, 0]} />
@@ -425,7 +425,7 @@ export default function ReportViewer({ mediaList, sections }: Props) {
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, parseFloat((maxCtr * 1.35).toFixed(2))]} />
                       <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={130} />
-                      <Tooltip formatter={(v: number) => [`${v.toFixed(2)}%`, 'CTR']} />
+                      <Tooltip formatter={(v: unknown) => [`${(v as number).toFixed(2)}%`, 'CTR']} />
                       <Bar dataKey="ctr" name="CTR" fill={cfg.color} radius={[0, 3, 3, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
