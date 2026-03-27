@@ -1,41 +1,107 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import MediaUploadCard from "@/components/ct-plus/MediaUploadCard"
-import ReportViewer from "@/components/ct-plus/ReportViewer"
-import { parseExcelFile } from "@/lib/excelParser"
-import { REPORT_SECTIONS, MEDIA_CONFIG } from "@/lib/reportTypes"
-import type { MediaType, MediaData, ReportSection } from "@/lib/reportTypes"
+import DailyDataTable from "@/components/ct-plus/DailyDataTable"
+import { hasCampaignMedia } from "@/lib/rawDataParser"
+import type { RawRow } from "@/lib/rawDataParser"
+import { MEDIA_CONFIG } from "@/lib/reportTypes"
+import type { MediaType } from "@/lib/reportTypes"
+import type { Campaign, Advertiser, Agency } from "@/lib/campaignTypes"
 
 const MEDIA_TYPES: MediaType[] = ['google', 'naver', 'kakao', 'meta']
+const CAMPAIGN_KEY  = 'ct-plus-campaigns-v7'
+const ADVERTISER_KEY = 'ct-plus-advertisers-v1'
+const AGENCY_KEY    = 'ct-plus-agencies-v1'
+const REPORTS_KEY   = 'ct-plus-daily-reports-v1'
+
+function fmt(n: number) { return n.toLocaleString('ko-KR') }
+
+interface SavedReport {
+  id: string
+  savedAt: string          // ISO datetime
+  label: string            // 자동 생성 이름
+  campaignName: string | null
+  mediaTypes: MediaType[]
+  rowsByMedia: Partial<Record<MediaType, RawRow[]>>
+  campaign: Campaign | null
+}
+
+function makeLabel(
+  rowsByMedia: Partial<Record<MediaType, RawRow[]>>,
+  mediaTypes: MediaType[],
+  campaignName: string | null,
+): string {
+  const allDates = mediaTypes.flatMap(m => (rowsByMedia[m] ?? []).map(r => r.date)).sort()
+  const dateRange = allDates.length
+    ? allDates[0] === allDates[allDates.length - 1]
+      ? allDates[0]
+      : `${allDates[0]} ~ ${allDates[allDates.length - 1]}`
+    : ''
+  const mediaStr = mediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')
+  return [dateRange, campaignName, mediaStr].filter(Boolean).join(' · ')
+}
 
 export default function CtPlusDailyPage() {
   const [files, setFiles] = useState<Partial<Record<MediaType, File>>>({})
-  const [mediaDataList, setMediaDataList] = useState<MediaData[]>([])
-  const [selectedSections, setSelectedSections] = useState<ReportSection[]>(
-    REPORT_SECTIONS.map((s) => s.id)
-  )
-  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [step, setStep]   = useState<1 | 2 | 3>(1)
   const [loading, setLoading] = useState(false)
 
-  function toggleSection(id: ReportSection) {
-    setSelectedSections((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-    )
+  // 캠페인 데이터
+  const [campaigns, setCampaigns]         = useState<Campaign[]>([])
+  const [advertisers, setAdvertisers]     = useState<Advertiser[]>([])
+  const [agencies, setAgencies]           = useState<Agency[]>([])
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
+
+  // 결과 데이터
+  const [rowsByMedia, setRowsByMedia] = useState<Partial<Record<MediaType, RawRow[]>>>({})
+  const [activeTab, setActiveTab]     = useState<MediaType | null>(null)
+
+  // 이전 리포트
+  const [savedReports, setSavedReports]   = useState<SavedReport[]>([])
+  const [showHistory, setShowHistory]     = useState(false)
+  const [savedToast, setSavedToast]       = useState(false)
+
+  useEffect(() => {
+    try {
+      const c = localStorage.getItem(CAMPAIGN_KEY)
+      if (c) setCampaigns(JSON.parse(c))
+      const adv = localStorage.getItem(ADVERTISER_KEY)
+      if (adv) setAdvertisers(JSON.parse(adv))
+      const ag = localStorage.getItem(AGENCY_KEY)
+      if (ag) setAgencies(JSON.parse(ag))
+      const rpts = localStorage.getItem(REPORTS_KEY)
+      if (rpts) setSavedReports(JSON.parse(rpts))
+    } catch {}
+  }, [])
+
+  const uploadedMediaTypes = MEDIA_TYPES.filter(m => files[m])
+  const selectedCampaign   = campaigns.find(c => c.id === selectedCampaignId) ?? null
+
+  function getAdvertiserName(c: Campaign) {
+    return advertisers.find(a => a.id === c.advertiserId)?.name ?? '—'
+  }
+  function getAgencyName(c: Campaign) {
+    return agencies.find(a => a.id === c.agencyId)?.name ?? '—'
   }
 
-  async function handleGenerate() {
+  async function handleProcess() {
     setLoading(true)
     try {
-      const results: MediaData[] = []
-      for (const media of MEDIA_TYPES) {
-        const file = files[media]
-        if (file) {
-          const data = await parseExcelFile(file, media)
-          results.push(data)
-        }
+      const result: Partial<Record<MediaType, RawRow[]>> = {}
+      for (const media of uploadedMediaTypes) {
+        const file = files[media]!
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('media', media)
+        formData.append('campaign', JSON.stringify(selectedCampaign))
+        const res = await fetch('/api/parse-raw', { method: 'POST', body: formData })
+        if (!res.ok) throw new Error(await res.text())
+        result[media] = await res.json()
       }
-      setMediaDataList(results)
+      setRowsByMedia(result)
+      const firstMedia = uploadedMediaTypes[0]
+      setActiveTab(firstMedia ?? null)
       setStep(3)
     } catch (e) {
       alert('파일 파싱 중 오류가 발생했습니다. 파일 형식을 확인해주세요.')
@@ -45,7 +111,47 @@ export default function CtPlusDailyPage() {
     }
   }
 
-  const uploadedCount = Object.keys(files).length
+  // ── 리포트 저장 ──────────────────────────────────────────────
+  function handleSaveReport() {
+    const mediaTypes = Object.keys(rowsByMedia) as MediaType[]
+    const report: SavedReport = {
+      id: Date.now().toString(),
+      savedAt: new Date().toISOString(),
+      label: makeLabel(rowsByMedia, mediaTypes, selectedCampaign?.campaignName ?? null),
+      campaignName: selectedCampaign?.campaignName ?? null,
+      mediaTypes,
+      rowsByMedia,
+      campaign: selectedCampaign,
+    }
+    const next = [report, ...savedReports]
+    setSavedReports(next)
+    try { localStorage.setItem(REPORTS_KEY, JSON.stringify(next)) } catch {}
+    setSavedToast(true)
+    setTimeout(() => setSavedToast(false), 2000)
+  }
+
+  // ── 리포트 불러오기 ──────────────────────────────────────────
+  function handleLoadReport(r: SavedReport) {
+    setRowsByMedia(r.rowsByMedia)
+    setActiveTab(r.mediaTypes[0] ?? null)
+    setSelectedCampaignId(r.campaign?.id ?? null)
+    setFiles({})
+    setShowHistory(false)
+    setStep(3)
+  }
+
+  // ── 리포트 삭제 ──────────────────────────────────────────────
+  function handleDeleteReport(id: string) {
+    const next = savedReports.filter(r => r.id !== id)
+    setSavedReports(next)
+    try { localStorage.setItem(REPORTS_KEY, JSON.stringify(next)) } catch {}
+  }
+
+  // ── 현재 탭 데이터 ────────────────────────────────────────────
+  const activeRows = activeTab ? (rowsByMedia[activeTab] ?? []) : []
+  const activeMediaTypes = step === 3
+    ? (Object.keys(rowsByMedia) as MediaType[])
+    : uploadedMediaTypes
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -56,58 +162,126 @@ export default function CtPlusDailyPage() {
             <h1 className="text-base font-semibold text-gray-900">데일리 리포트</h1>
             <p className="text-xs text-gray-400 mt-0.5">캠페인 리포트 · CT+ · 데일리</p>
           </div>
-          {/* 스텝 인디케이터 */}
-          <div className="flex items-center gap-1.5">
-            {([1, 2, 3] as const).map((s) => (
-              <div key={s} className="flex items-center gap-1.5">
-                <div
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
-                    step === s
-                      ? 'bg-blue-600 text-white'
-                      : step > s
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-100 text-gray-400'
-                  }`}
-                >
-                  {step > s ? '✓' : s}
-                </div>
-                <span className={`text-xs hidden sm:inline ${step === s ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
-                  {s === 1 ? '파일 업로드' : s === 2 ? '항목 선택' : '리포트 확인'}
+          <div className="flex items-center gap-3">
+            {/* 이전 리포트 버튼 */}
+            <button
+              onClick={() => setShowHistory(v => !v)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                showHistory
+                  ? 'border-blue-300 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              이전 리포트
+              {savedReports.length > 0 && (
+                <span className="ml-0.5 rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] text-white leading-none">
+                  {savedReports.length}
                 </span>
-                {s < 3 && <span className="text-gray-200 text-xs">›</span>}
-              </div>
-            ))}
+              )}
+            </button>
+
+            {/* 스텝 인디케이터 */}
+            <div className="flex items-center gap-1.5">
+              {([1, 2, 3] as const).map(s => (
+                <div key={s} className="flex items-center gap-1.5">
+                  <div className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === s ? 'bg-blue-600 text-white' : step > s ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                    {step > s ? '✓' : s}
+                  </div>
+                  <span className={`hidden text-xs sm:inline ${step === s ? 'font-medium text-gray-700' : 'text-gray-400'}`}>
+                    {s === 1 ? '파일 업로드' : s === 2 ? '캠페인 선택' : '데이터 확인'}
+                  </span>
+                  {s < 3 && <span className="text-xs text-gray-200">›</span>}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </header>
 
       <main className="p-6 space-y-6">
 
-        {/* STEP 1: 파일 업로드 */}
+        {/* ── 이전 리포트 패널 ─────────────────────────────── */}
+        {showHistory && (
+          <div className="rounded-xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-100 px-5 py-3.5 flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-700">저장된 리포트</p>
+              <span className="text-[11px] text-gray-400">{savedReports.length}개</span>
+            </div>
+            {savedReports.length === 0 ? (
+              <div className="px-5 py-8 text-center">
+                <p className="text-sm text-gray-400">저장된 리포트가 없습니다.</p>
+                <p className="mt-1 text-xs text-gray-300">데이터 추출 후 리포트를 저장할 수 있습니다.</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-50">
+                {savedReports.map(r => {
+                  const d = new Date(r.savedAt)
+                  const dateStr = `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+                  const totalRows = r.mediaTypes.reduce((s, m) => s + (r.rowsByMedia[m]?.length ?? 0), 0)
+                  return (
+                    <li key={r.id} className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-gray-50/50 transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-800 truncate">{r.label}</p>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
+                          <span>{dateStr} 저장</span>
+                          <span>·</span>
+                          <span>{fmt(totalRows)}행</span>
+                          <span>·</span>
+                          <span>{r.mediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleLoadReport(r)}
+                          className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                        >
+                          불러오기
+                        </button>
+                        <button
+                          onClick={() => handleDeleteReport(r.id)}
+                          className="rounded-lg px-2 py-1.5 text-xs text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          title="삭제"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP 1: 파일 업로드 ──────────────────────────── */}
         {step === 1 && (
-          <div>
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-gray-800">RAW 파일 업로드</h2>
-              <p className="text-xs text-gray-400 mt-0.5">매체별 RAW 데이터 파일을 업로드해주세요. 1개 이상 업로드하면 리포트 생성이 가능합니다.</p>
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800 mb-0.5">RAW 파일 업로드</h2>
+              <p className="text-xs text-gray-400 mb-4">매체별 RAW 데이터 파일(.xlsx/.xls/.csv)을 업로드해주세요.</p>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                {MEDIA_TYPES.map(media => (
+                  <MediaUploadCard
+                    key={media}
+                    media={media}
+                    fileName={files[media]?.name}
+                    onFileSelect={file => setFiles(prev => ({ ...prev, [media]: file }))}
+                    onRemove={() => setFiles(prev => { const n = { ...prev }; delete n[media]; return n })}
+                  />
+                ))}
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              {MEDIA_TYPES.map((media) => (
-                <MediaUploadCard
-                  key={media}
-                  media={media}
-                  fileName={files[media]?.name}
-                  onFileSelect={(file) => setFiles((prev) => ({ ...prev, [media]: file }))}
-                  onRemove={() => setFiles((prev) => { const next = { ...prev }; delete next[media]; return next })}
-                />
-              ))}
-            </div>
-
-            {uploadedCount > 0 && (
-              <div className="mt-4 flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+            {uploadedMediaTypes.length > 0 && (
+              <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
                 <p className="text-sm text-blue-700">
-                  <strong>{uploadedCount}개</strong> 매체 파일 업로드 완료
-                  {' '}({MEDIA_TYPES.filter((m) => files[m]).map((m) => MEDIA_CONFIG[m].label).join(', ')})
+                  <strong>{uploadedMediaTypes.length}개</strong> 매체 업로드 완료
+                  {' '}({uploadedMediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')})
                 </p>
                 <button
                   onClick={() => setStep(2)}
@@ -120,89 +294,209 @@ export default function CtPlusDailyPage() {
           </div>
         )}
 
-        {/* STEP 2: 항목 선택 */}
+        {/* ── STEP 2: 캠페인 선택 ──────────────────────────── */}
         {step === 2 && (
           <div>
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-gray-800">리포트 항목 선택</h2>
-                <p className="text-xs text-gray-400 mt-0.5">리포트에 포함할 섹션을 선택해주세요.</p>
+                <h2 className="text-sm font-semibold text-gray-800">캠페인 선택</h2>
+                <p className="text-xs text-gray-400 mt-0.5">마크업 비중을 적용할 캠페인을 선택해주세요.</p>
               </div>
               <button onClick={() => setStep(1)} className="text-xs text-gray-400 hover:text-gray-600">← 파일 다시 선택</button>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {REPORT_SECTIONS.map((section) => {
-                const selected = selectedSections.includes(section.id)
+            {campaigns.length === 0 ? (
+              <div className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center">
+                <p className="text-sm text-gray-500">등록된 캠페인이 없습니다.</p>
+                <p className="mt-1 text-xs text-gray-400">캠페인 집행 현황에서 캠페인을 먼저 등록해주세요.</p>
+                <button
+                  onClick={() => {
+                    setSelectedCampaignId(null)
+                    handleProcess()
+                  }}
+                  disabled={loading}
+                  className="mt-4 rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  마크업 없이 계속 →
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  {campaigns.map(c => {
+                    const selected = selectedCampaignId === c.id
+                    const mediaLabels = c.mediaBudgets.map(mb => mb.media)
+                    const uploadedLabels = uploadedMediaTypes.map(m => MEDIA_CONFIG[m].label)
+                    const unmatchedMedia = uploadedLabels.filter(l => !mediaLabels.includes(l))
+
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setSelectedCampaignId(c.id)}
+                        className={`w-full rounded-xl border px-5 py-4 text-left transition-all ${
+                          selected
+                            ? 'border-blue-300 bg-blue-50 ring-1 ring-blue-300'
+                            : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className={`text-sm font-semibold ${selected ? 'text-blue-800' : 'text-gray-800'}`}>
+                                {c.campaignName}
+                              </p>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                c.status === '집행 중'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-gray-100 text-gray-500'
+                              }`}>
+                                {c.status}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-xs text-gray-400">
+                              {getAdvertiserName(c)} · {getAgencyName(c)} · {c.startDate} ~ {c.endDate}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {c.mediaBudgets.map(mb => (
+                                <span
+                                  key={mb.media}
+                                  className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                                    uploadedLabels.includes(mb.media)
+                                      ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-gray-100 text-gray-400'
+                                  }`}
+                                >
+                                  {mb.media}
+                                  {uploadedLabels.includes(mb.media) && (
+                                    <span className="ml-1">
+                                      DMP {mb.dmp.agencyFeeRate}% / 일반 {mb.nonDmp.agencyFeeRate}%
+                                    </span>
+                                  )}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 transition-colors ${
+                            selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300'
+                          }`} />
+                        </div>
+
+                        {selected && unmatchedMedia.length > 0 && (
+                          <div className="mt-3 rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2">
+                            <p className="text-xs text-yellow-700">
+                              <strong>주의:</strong> {unmatchedMedia.join(', ')} 매체가 캠페인에 없습니다. 해당 매체는 마크업 0% (집행금액 = NET)로 처리됩니다.
+                            </p>
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <div className="mt-5 flex items-center justify-between">
+                  <p className="text-xs text-gray-400">
+                    {selectedCampaignId ? '캠페인 선택됨' : '캠페인을 선택하거나 마크업 없이 진행할 수 있습니다.'}
+                  </p>
+                  <div className="flex gap-2">
+                    {!selectedCampaignId && (
+                      <button
+                        onClick={() => handleProcess()}
+                        disabled={loading}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        마크업 없이 진행
+                      </button>
+                    )}
+                    {selectedCampaignId && (
+                      <button
+                        onClick={handleProcess}
+                        disabled={loading}
+                        className="rounded-lg bg-blue-600 px-5 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {loading ? '처리 중...' : '데이터 추출 →'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP 3: 데이터 테이블 ────────────────────────── */}
+        {step === 3 && (
+          <div>
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-800">추출된 데이터</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {selectedCampaign
+                    ? `${selectedCampaign.campaignName} · 마크업 적용`
+                    : '마크업 미적용'}
+                  {' · '}
+                  {activeMediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* 리포트 저장 버튼 */}
+                <div className="relative">
+                  <button
+                    onClick={handleSaveReport}
+                    className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    리포트 저장
+                  </button>
+                  {savedToast && (
+                    <div className="absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-lg bg-gray-800 px-3 py-1.5 text-[11px] text-white shadow-lg z-10">
+                      저장되었습니다 ✓
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => setStep(2)}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+                >
+                  ← 캠페인 재선택
+                </button>
+              </div>
+            </div>
+
+            {/* 매체 탭 */}
+            <div className="mb-4 flex gap-2 border-b border-gray-200">
+              {activeMediaTypes.map(media => {
+                const rows = rowsByMedia[media] ?? []
+                const cfg = MEDIA_CONFIG[media]
+                const hasCampaign = hasCampaignMedia(media, selectedCampaign)
                 return (
-                  <label
-                    key={section.id}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-all ${
-                      selected ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                  <button
+                    key={media}
+                    onClick={() => setActiveTab(media)}
+                    className={`relative flex items-center gap-1.5 rounded-t-lg border-b-2 px-4 py-2.5 text-xs font-medium transition-colors ${
+                      activeTab === media
+                        ? 'border-blue-600 text-blue-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() => toggleSection(section.id)}
-                      className="mt-0.5 h-4 w-4 rounded text-blue-600"
-                    />
-                    <div>
-                      <p className={`text-sm font-medium ${selected ? 'text-blue-800' : 'text-gray-700'}`}>
-                        {section.label}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">{section.description}</p>
-                    </div>
-                  </label>
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: cfg.color }} />
+                    {cfg.label}
+                    <span className="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
+                      {fmt(rows.length)}
+                    </span>
+                    {selectedCampaign && !hasCampaign && (
+                      <span className="ml-0.5 text-yellow-500" title="캠페인에 해당 매체 없음 — 마크업 0%">⚠</span>
+                    )}
+                  </button>
                 )
               })}
             </div>
 
-            <div className="mt-5 flex items-center justify-between">
-              <p className="text-xs text-gray-400">{selectedSections.length}개 항목 선택됨</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSelectedSections(REPORT_SECTIONS.map((s) => s.id))}
-                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-                >
-                  전체 선택
-                </button>
-                <button
-                  onClick={handleGenerate}
-                  disabled={selectedSections.length === 0 || loading}
-                  className="rounded-lg bg-blue-600 px-5 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {loading ? '생성 중...' : '리포트 생성 →'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 3: 리포트 뷰 */}
-        {step === 3 && (
-          <div>
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-800">생성된 리포트</h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {mediaDataList.map((m) => MEDIA_CONFIG[m.media].label).join(' · ')} · {selectedSections.length}개 섹션
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setStep(2)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
-                  ← 항목 수정
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700"
-                >
-                  인쇄 / PDF
-                </button>
-              </div>
-            </div>
-
-            <ReportViewer mediaList={mediaDataList} sections={selectedSections} />
+            {/* 테이블 */}
+            {activeTab && (
+              <DailyDataTable rows={activeRows} media={activeTab} />
+            )}
           </div>
         )}
       </main>

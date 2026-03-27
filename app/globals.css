@@ -24,3 +24,25 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@media print {
+  @page { margin: 15mm 12mm; size: A4; }
+
+  /* 모든 overflow 해제 → 잘림 방지 */
+  html, body { height: auto !important; overflow: visible !important; }
+  * { overflow: visible !important; }
+
+  /* 사이드바·헤더 버튼 숨김 */
+  aside { display: none !important; }
+  .print\:hidden { display: none !important; }
+
+  /* 배경·여백 정리 */
+  body { background: white !important; }
+  main { padding: 8px !important; }
+
+  /* 섹션별 페이지 분리 방지 */
+  section { break-inside: avoid; page-break-inside: avoid; }
+
+  /* 차트 컨테이너 고정 크기 유지 */
+  .recharts-responsive-container { page-break-inside: avoid; }
+}

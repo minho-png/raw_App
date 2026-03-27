@@ -1,9 +1,8 @@
-import * as XLSX from 'xlsx'
+import { read as xlsxRead, utils as xlsxUtils } from 'xlsx'
 import type { MediaData, MediaType, MediaSummary, WeeklyRow, DemographicRow, CreativeRow } from './reportTypes'
 
-// 컬럼명 정규화 (한/영 혼용 대응)
 function normalizeKey(key: string): string {
-  return key.toLowerCase().replace(/\s/g, '').replace(/_/g, '')
+  return key.toLowerCase().replace(/[\s_\-()（）]/g, '')
 }
 
 function findValue(row: Record<string, unknown>, ...candidates: string[]): number {
@@ -26,29 +25,53 @@ function findStringValue(row: Record<string, unknown>, ...candidates: string[]):
   )
   for (const c of candidates) {
     const val = normalized[normalizeKey(c)]
-    if (val !== undefined && val !== null && val !== '') return String(val)
+    if (val !== undefined && val !== null && val !== '') return String(val).trim()
   }
   return ''
 }
 
+// 합계/소계 행 감지 — 이런 행은 집계 시 제외
+function isSummaryRow(row: Record<string, unknown>): boolean {
+  const vals = Object.values(row).map(v => String(v ?? '').trim().toLowerCase())
+  const keys = Object.keys(row).map(k => k.toLowerCase())
+  const summaryKeywords = ['합계', '총계', '소계', '전체합계', 'total', 'subtotal', 'grand total', '총합']
+  return (
+    vals.some(v => summaryKeywords.some(kw => v === kw || v.startsWith(kw))) ||
+    keys.some(k => summaryKeywords.some(kw => k.includes(kw)))
+  )
+}
+
+// 실질적 데이터가 없는 빈 행 감지
+function isEmptyRow(row: Record<string, unknown>): boolean {
+  return Object.values(row).every(v => v === '' || v === null || v === undefined)
+}
+
 export async function parseExcelFile(file: File, media: MediaType): Promise<MediaData> {
   const buffer = await file.arrayBuffer()
-  const workbook = XLSX.read(buffer, { type: 'array' })
+  const workbook = xlsxRead(buffer, { type: 'array' })
 
-  // 첫 번째 시트 사용
   const sheetName = workbook.SheetNames[0]
   const sheet = workbook.Sheets[sheetName]
-  const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+  const allRows: Record<string, unknown>[] = xlsxUtils.sheet_to_json(sheet, { defval: '' })
 
-  // 요약 집계
+  // 합계행·빈행 제외한 순수 데이터 행만 사용
+  const rows = allRows.filter(row => !isSummaryRow(row) && !isEmptyRow(row))
+
+  // ── 요약 집계 ──────────────────────────────────────────────
   let totalImpressions = 0
   let totalClicks = 0
   let totalCost = 0
 
   for (const row of rows) {
-    totalImpressions += findValue(row, '노출수', '노출', 'impressions', 'impr', '도달수')
-    totalClicks += findValue(row, '클릭수', '클릭', 'clicks', 'click')
-    totalCost += findValue(row, '비용', '소진금액', '금액', 'cost', 'spend', '지출')
+    totalImpressions += findValue(row,
+      '노출수', '노출', 'impressions', 'impr', 'impression', '도달수', '노출량'
+    )
+    totalClicks += findValue(row,
+      '클릭수', '클릭', 'clicks', 'click', '클릭량'
+    )
+    totalCost += findValue(row,
+      '비용', '소진금액', '금액', '집행금액', '소진', 'cost', 'spend', '지출', '청구금액'
+    )
   }
 
   const totalCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
@@ -62,17 +85,28 @@ export async function parseExcelFile(file: File, media: MediaType): Promise<Medi
     cpc: Math.round(totalCpc),
   }
 
-  // 주차별 데이터 (날짜 컬럼 있는 경우)
+  // ── 주차별 데이터 ───────────────────────────────────────────
   const weeklyMap = new Map<string, { imp: number; clk: number; cost: number }>()
   for (const row of rows) {
-    const dateStr = findStringValue(row, '날짜', '일자', 'date', '기간', '주차', 'week')
+    const dateStr = findStringValue(row,
+      '날짜', '일자', 'date', '기간', '주차', 'week', '일', '기준일'
+    )
     if (!dateStr) continue
-    const week = dateStr.slice(0, 7) // YYYY-MM 단위로 그룹핑 (없으면 행 자체)
-    const existing = weeklyMap.get(week) ?? { imp: 0, clk: 0, cost: 0 }
-    existing.imp += findValue(row, '노출수', '노출', 'impressions', 'impr')
-    existing.clk += findValue(row, '클릭수', '클릭', 'clicks')
-    existing.cost += findValue(row, '비용', '소진금액', '금액', 'cost', 'spend')
-    weeklyMap.set(week, existing)
+
+    // YYYY-MM-DD → YYYY-WW 주차 단위로 그룹핑
+    let weekKey = dateStr.slice(0, 10) // 기본: 날짜 문자열
+    const dateObj = new Date(dateStr)
+    if (!isNaN(dateObj.getTime())) {
+      const jan1 = new Date(dateObj.getFullYear(), 0, 1)
+      const weekNum = Math.ceil(((dateObj.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7)
+      weekKey = `${dateObj.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
+    }
+
+    const existing = weeklyMap.get(weekKey) ?? { imp: 0, clk: 0, cost: 0 }
+    existing.imp += findValue(row, '노출수', '노출', 'impressions', 'impr', '노출량')
+    existing.clk += findValue(row, '클릭수', '클릭', 'clicks', 'click')
+    existing.cost += findValue(row, '비용', '소진금액', '금액', '집행금액', 'cost', 'spend', '지출')
+    weeklyMap.set(weekKey, existing)
   }
 
   const weekly: WeeklyRow[] = Array.from(weeklyMap.entries())
@@ -86,21 +120,19 @@ export async function parseExcelFile(file: File, media: MediaType): Promise<Medi
       cpc: d.clk > 0 ? Math.round(d.cost / d.clk) : 0,
     }))
 
-  // 연령/성별 데이터
+  // ── 연령/성별 데이터 ─────────────────────────────────────────
   const demoMap = new Map<string, { mClk: number; fClk: number; mImp: number; fImp: number }>()
   for (const row of rows) {
-    const age = findStringValue(row, '연령', '연령대', 'age', '나이대')
-    const gender = findStringValue(row, '성별', 'gender', '성')
+    const age = findStringValue(row, '연령', '연령대', 'age', '나이대', '연령그룹')
+    const gender = findStringValue(row, '성별', 'gender', '성', 'sex')
     if (!age) continue
     const existing = demoMap.get(age) ?? { mClk: 0, fClk: 0, mImp: 0, fImp: 0 }
-    const clk = findValue(row, '클릭수', '클릭', 'clicks')
-    const imp = findValue(row, '노출수', '노출', 'impressions')
-    if (gender.includes('남') || gender.toLowerCase().includes('male') || gender === 'M') {
-      existing.mClk += clk
-      existing.mImp += imp
-    } else if (gender.includes('여') || gender.toLowerCase().includes('female') || gender === 'F') {
-      existing.fClk += clk
-      existing.fImp += imp
+    const clk = findValue(row, '클릭수', '클릭', 'clicks', 'click')
+    const imp = findValue(row, '노출수', '노출', 'impressions', 'impr', '노출량')
+    if (gender.includes('남') || gender.toLowerCase().includes('male') || gender.toUpperCase() === 'M') {
+      existing.mClk += clk; existing.mImp += imp
+    } else if (gender.includes('여') || gender.toLowerCase().includes('female') || gender.toUpperCase() === 'F') {
+      existing.fClk += clk; existing.fImp += imp
     }
     demoMap.set(age, existing)
   }
@@ -113,15 +145,18 @@ export async function parseExcelFile(file: File, media: MediaType): Promise<Medi
     female_clicks: d.fClk,
   }))
 
-  // 소재별 데이터
+  // ── 소재별 데이터 ────────────────────────────────────────────
   const creativeMap = new Map<string, { imp: number; clk: number; cost: number }>()
   for (const row of rows) {
-    const name = findStringValue(row, '소재명', '소재', '광고명', 'creative', 'ad name', 'ad_name', '캠페인')
+    const name = findStringValue(row,
+      '소재명', '소재', '광고명', '소재ID', 'creative', 'ad name', 'ad_name',
+      '캠페인명', '광고그룹명', '광고소재'
+    )
     if (!name) continue
     const existing = creativeMap.get(name) ?? { imp: 0, clk: 0, cost: 0 }
-    existing.imp += findValue(row, '노출수', '노출', 'impressions')
-    existing.clk += findValue(row, '클릭수', '클릭', 'clicks')
-    existing.cost += findValue(row, '비용', '소진금액', '금액', 'cost', 'spend')
+    existing.imp += findValue(row, '노출수', '노출', 'impressions', 'impr', '노출량')
+    existing.clk += findValue(row, '클릭수', '클릭', 'clicks', 'click')
+    existing.cost += findValue(row, '비용', '소진금액', '금액', 'cost', 'spend', '지출')
     creativeMap.set(name, existing)
   }
 
@@ -136,12 +171,5 @@ export async function parseExcelFile(file: File, media: MediaType): Promise<Medi
     .sort((a, b) => b.clicks - a.clicks)
     .slice(0, 10)
 
-  return {
-    media,
-    fileName: file.name,
-    summary,
-    weekly,
-    demographic,
-    creatives,
-  }
+  return { media, fileName: file.name, summary, weekly, demographic, creatives }
 }
