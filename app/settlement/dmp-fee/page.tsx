@@ -3,11 +3,46 @@
 import { useState, useEffect, useCallback } from "react"
 import type { Campaign, Agency, Advertiser } from "@/lib/campaignTypes"
 import { DMP_TARGETS, DMP_FEE_RATES } from "@/lib/campaignTypes"
+import type { RawRow, DmpType } from "@/lib/rawDataParser"
+import { calcDmpSettlement, DMP_FEE_RATES_PERCENT } from "@/lib/calculationService"
+import type { MediaType } from "@/lib/reportTypes"
 
 const STORAGE_KEY    = "ct-plus-campaigns-v7"
 const AGENCY_KEY     = "ct-plus-agencies-v1"
 const ADVERTISER_KEY = "ct-plus-advertisers-v1"
 const AMOUNTS_KEY    = "dmp-fee-amounts-v1"
+const REPORTS_KEY    = "ct-plus-daily-reports-v1"
+const SNAPSHOTS_KEY  = "dmp-settlement-snapshots-v1"
+
+// 데일리 리포트 타입 (daily/page.tsx와 동일)
+interface SavedReport {
+  id: string
+  savedAt: string
+  label: string
+  campaignName: string | null
+  mediaTypes: MediaType[]
+  rowsByMedia: Partial<Record<MediaType, RawRow[]>>
+  campaign: Campaign | null
+}
+
+// 스냅샷 타입
+interface SettlementSnapshot {
+  id: string
+  month: string
+  snapshotAt: string
+  rows: Array<{
+    advertiserName: string
+    agencyName: string
+    campaignName: string
+    dmp: string
+    spend: number
+    feeRate: number
+    fee: number
+  }>
+  totalSpend: number
+  totalFee: number
+  note?: string
+}
 
 function overlapsMonth(campaign: Campaign, month: string): boolean {
   const [y, m] = month.split("-").map(Number)
@@ -40,6 +75,9 @@ const DMP_COLORS: Record<string, { card: string; badge: string; ring: string; ba
   WIFI:       { card: "border-teal-400 bg-teal-50 ring-teal-200",       badge: "bg-teal-100 text-teal-700 border-teal-200",        ring: "ring-teal-400",   bar: "bg-teal-500"   },
   KB:         { card: "border-yellow-400 bg-yellow-50 ring-yellow-200", badge: "bg-yellow-100 text-yellow-700 border-yellow-200",  ring: "ring-yellow-400", bar: "bg-yellow-500" },
   HyperLocal: { card: "border-purple-400 bg-purple-50 ring-purple-200", badge: "bg-purple-100 text-purple-700 border-purple-200",  ring: "ring-purple-400", bar: "bg-purple-500" },
+  BC:         { card: "border-gray-400 bg-gray-50 ring-gray-200",       badge: "bg-gray-100 text-gray-700 border-gray-200",        ring: "ring-gray-400",   bar: "bg-gray-500"   },
+  SH:         { card: "border-slate-400 bg-slate-50 ring-slate-200",    badge: "bg-slate-100 text-slate-700 border-slate-200",     ring: "ring-slate-400",  bar: "bg-slate-500"  },
+  DIRECT:     { card: "border-gray-300 bg-gray-50 ring-gray-100",       badge: "bg-gray-50 text-gray-500 border-gray-200",         ring: "ring-gray-300",   bar: "bg-gray-400"   },
 }
 
 function getDmpColor(dmp: string) {
@@ -55,17 +93,26 @@ export default function DmpFeePage() {
   const [amounts, setAmounts]         = useState<AmountMap>({})
   const [copied, setCopied]           = useState(false)
   const [selectedDmp, setSelectedDmp] = useState<string | null>(null)
+  const [snapshots, setSnapshots]     = useState<SettlementSnapshot[]>([])
+  const [showSnapshots, setShowSnapshots] = useState(false)
+  const [importResult, setImportResult] = useState<string | null>(null)
+  const [showImportPanel, setShowImportPanel] = useState(false)
+  const [savedReports, setSavedReports] = useState<SavedReport[]>([])
 
   useEffect(() => {
     try {
-      const c  = localStorage.getItem(STORAGE_KEY)
-      const ag = localStorage.getItem(AGENCY_KEY)
+      const c   = localStorage.getItem(STORAGE_KEY)
+      const ag  = localStorage.getItem(AGENCY_KEY)
       const adv = localStorage.getItem(ADVERTISER_KEY)
-      const am = localStorage.getItem(AMOUNTS_KEY)
-      if (c)   setCampaigns(JSON.parse(c))
-      if (ag)  setAgencies(JSON.parse(ag))
-      if (adv) setAdvertisers(JSON.parse(adv))
-      if (am)  setAmounts(JSON.parse(am))
+      const am  = localStorage.getItem(AMOUNTS_KEY)
+      const sn  = localStorage.getItem(SNAPSHOTS_KEY)
+      const rpts = localStorage.getItem(REPORTS_KEY)
+      if (c)    setCampaigns(JSON.parse(c))
+      if (ag)   setAgencies(JSON.parse(ag))
+      if (adv)  setAdvertisers(JSON.parse(adv))
+      if (am)   setAmounts(JSON.parse(am))
+      if (sn)   setSnapshots(JSON.parse(sn))
+      if (rpts) setSavedReports(JSON.parse(rpts))
     } catch {}
   }, [])
 
@@ -92,7 +139,116 @@ export default function DmpFeePage() {
     return agencies.find(a => a.id === adv?.agencyId)?.name ?? "-"
   }
 
-  // DMP별 집계 (전체 기준)
+  // ── 데일리 리포트에서 DMP 집행 금액 자동 가져오기 ────────────
+  function importFromDailyReports() {
+    // 해당 월의 저장된 리포트에서 rawRows 추출
+    const [y, m] = month.split("-").map(Number)
+    const mStart = new Date(y, m - 1, 1)
+    const mEnd   = new Date(y, m, 0)
+
+    const monthReports = savedReports.filter(r => {
+      // 리포트 날짜 범위가 정산월과 겹치는지 확인
+      const allDates = Object.values(r.rowsByMedia).flatMap(rows => rows?.map(row => row.date) ?? [])
+      return allDates.some(d => {
+        const dt = new Date(d)
+        return dt >= mStart && dt <= mEnd
+      })
+    })
+
+    if (monthReports.length === 0) {
+      setImportResult("해당 월의 저장된 데일리 리포트가 없습니다.")
+      return
+    }
+
+    // 모든 RawRow 수집
+    const allRows: RawRow[] = []
+    for (const report of monthReports) {
+      for (const rows of Object.values(report.rowsByMedia)) {
+        if (!rows) continue
+        for (const row of rows) {
+          const dt = new Date(row.date)
+          if (dt >= mStart && dt <= mEnd) allRows.push(row)
+        }
+      }
+    }
+
+    // 캠페인명으로 매칭하여 DMP별 집행 금액 집계
+    const newAmounts = { ...amounts }
+    let importCount = 0
+
+    for (const campaign of filtered) {
+      const campaignRows = allRows.filter(row =>
+        row.media === campaign.mediaBudgets.find(mb =>
+          ['네이버 GFA', '카카오모먼트', 'Google', 'META'].includes(mb.media)
+        )?.media ?? ''
+      )
+
+      const dmps = getCampaignDmps(campaign)
+      for (const dmp of dmps) {
+        // dmpType으로 매칭 (신규 필드) 또는 dmpName 키워드 매칭 (기존)
+        const dmpRows = campaignRows.filter(row => {
+          if (row.dmpType) return row.dmpType === dmp
+          return row.dmpName.toUpperCase().includes(dmp.toUpperCase())
+        })
+        if (dmpRows.length > 0) {
+          const totalExec = dmpRows.reduce((s, r) => s + (r.executionAmount || r.grossCost), 0)
+          newAmounts[`${campaign.id}|${dmp}`] = totalExec
+          importCount++
+        }
+      }
+    }
+
+    saveAmounts(newAmounts)
+    setImportResult(
+      importCount > 0
+        ? `✓ ${importCount}개 항목의 집행 금액을 데일리 리포트에서 가져왔습니다.`
+        : "데일리 리포트 데이터와 매칭되는 캠페인/DMP가 없습니다."
+    )
+    setTimeout(() => setImportResult(null), 4000)
+  }
+
+  // ── 정산 금액 자동 계산 (전체 rawRow 기반, 캠페인 매칭 없이) ──
+  function calcFromAllRows() {
+    const [y, m] = month.split("-").map(Number)
+    const mStart = new Date(y, m - 1, 1)
+    const mEnd   = new Date(y, m, 0)
+
+    const allRows: RawRow[] = []
+    for (const report of savedReports) {
+      for (const rows of Object.values(report.rowsByMedia)) {
+        if (!rows) continue
+        for (const row of rows) {
+          const dt = new Date(row.date)
+          if (dt >= mStart && dt <= mEnd) allRows.push(row)
+        }
+      }
+    }
+
+    if (allRows.length === 0) {
+      setImportResult("해당 월의 저장된 데이터가 없습니다.")
+      return
+    }
+
+    // DMP별 집계
+    const settlement = calcDmpSettlement(
+      allRows.map(r => ({
+        dmpType: (r.dmpType as DmpType) || 'DIRECT',
+        executionAmount: r.executionAmount || r.grossCost,
+        netAmount: r.netAmount || r.netCost,
+      }))
+    )
+
+    setImportResult(
+      `✓ ${allRows.length}개 행 분석 완료: ` +
+      settlement.rows.filter(r => r.dmpType !== 'DIRECT').map(r =>
+        `${r.dmpType} ${r.totalExecution.toLocaleString()}원`
+      ).join(', ')
+    )
+    setTimeout(() => setImportResult(null), 6000)
+    setShowImportPanel(false)
+  }
+
+  // ── DMP별 집계 (전체 기준) ────────────────────────────────
   const dmpSummary: Record<string, { spend: number; fee: number }> = {}
   for (const dmp of DMP_TARGETS) dmpSummary[dmp] = { spend: 0, fee: 0 }
   for (const c of filtered) {
@@ -104,7 +260,7 @@ export default function DmpFeePage() {
     }
   }
 
-  // 결과 행 (전체)
+  // ── 결과 행 ────────────────────────────────────────────────
   type ResultRow = { advertiserName: string; agencyName: string; campaignName: string; dmp: string; spend: number; feeRate: number; fee: number }
   const allResultRows: ResultRow[] = []
   for (const c of filtered) {
@@ -134,6 +290,44 @@ export default function DmpFeePage() {
     })
   }
 
+  // ── 정산 확정 (스냅샷 저장) ──────────────────────────────────
+  function confirmSettlement() {
+    if (allResultRows.length === 0) return
+    if (!confirm(`${month} 정산을 확정하시겠습니까?\n이 작업은 현재 집행 금액을 스냅샷으로 저장합니다.`)) return
+
+    const snapshot: SettlementSnapshot = {
+      id: Date.now().toString(),
+      month,
+      snapshotAt: new Date().toISOString(),
+      rows: allResultRows,
+      totalSpend: allResultRows.reduce((s, r) => s + r.spend, 0),
+      totalFee: allResultRows.reduce((s, r) => s + r.fee, 0),
+    }
+    const next = [snapshot, ...snapshots]
+    setSnapshots(next)
+    try { localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(next)) } catch {}
+    setImportResult(`✓ ${month} 정산이 확정되었습니다.`)
+    setTimeout(() => setImportResult(null), 3000)
+  }
+
+  // ── 스냅샷 CSV 다운로드 ──────────────────────────────────────
+  function downloadSnapshot(snap: SettlementSnapshot) {
+    const header = "광고주\t대행사\t캠페인\tDMP\t집행금액\t수수료율(%)\t정산금액\n"
+    const rows = snap.rows.map(r =>
+      `${r.advertiserName}\t${r.agencyName}\t${r.campaignName}\t${r.dmp}\t${r.spend}\t${r.feeRate}\t${r.fee}`
+    ).join("\n")
+    const total = `합계\t\t\t\t${snap.totalSpend}\t\t${snap.totalFee}`
+    const content = header + rows + "\n" + total
+
+    const blob = new Blob(["\ufeff" + content], { type: "text/tab-separated-values;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `DMP정산_${snap.month}.tsv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   function shiftMonth(dir: -1 | 1) {
     const [y, m] = month.split("-").map(Number)
     setMonth(toMonthStr(new Date(y, m - 1 + dir, 1)))
@@ -143,18 +337,127 @@ export default function DmpFeePage() {
     setSelectedDmp(prev => prev === dmp ? null : dmp)
   }
 
+  // 해당 월 스냅샷 존재 여부
+  const hasSnapshot = snapshots.some(s => s.month === month)
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 헤더 */}
       <header className="border-b border-gray-200 bg-white px-6 py-4">
-        <h1 className="text-base font-semibold text-gray-900">DMP 수수료</h1>
-        <p className="text-xs text-gray-400 mt-0.5">정산 리포트 · DMP 수수료</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-base font-semibold text-gray-900">DMP 수수료</h1>
+            <p className="text-xs text-gray-400 mt-0.5">정산 리포트 · DMP 수수료</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowImportPanel(v => !v)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                showImportPanel
+                  ? 'border-blue-300 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              데이터 가져오기
+            </button>
+            <button
+              onClick={() => setShowSnapshots(v => !v)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                showSnapshots
+                  ? 'border-green-300 bg-green-50 text-green-700'
+                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              확정 내역
+              {snapshots.length > 0 && (
+                <span className="rounded-full bg-green-600 px-1.5 py-0.5 text-[10px] text-white leading-none">{snapshots.length}</span>
+              )}
+            </button>
+          </div>
+        </div>
       </header>
 
       <main className="p-6 space-y-6">
 
+        {/* 알림 배너 */}
+        {importResult && (
+          <div className={`rounded-lg px-4 py-3 text-sm font-medium flex items-center gap-2 ${
+            importResult.startsWith('✓')
+              ? 'bg-green-50 border border-green-200 text-green-700'
+              : 'bg-yellow-50 border border-yellow-200 text-yellow-700'
+          }`}>
+            {importResult}
+          </div>
+        )}
+
+        {/* 데이터 가져오기 패널 */}
+        {showImportPanel && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+            <p className="text-sm font-semibold text-blue-800">데일리 리포트에서 DMP 집행 금액 자동 가져오기</p>
+            <p className="text-xs text-blue-600">
+              저장된 데일리 리포트 데이터를 분석하여 {month} 월의 DMP별 집행 금액을 자동으로 입력합니다.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={importFromDailyReports}
+                className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+              >
+                캠페인 매칭으로 가져오기
+              </button>
+              <button
+                onClick={calcFromAllRows}
+                className="rounded-lg border border-blue-300 bg-white px-4 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+              >
+                전체 데이터 DMP 분석
+              </button>
+              <span className="text-xs text-blue-500">저장된 리포트 {savedReports.length}개</span>
+            </div>
+          </div>
+        )}
+
+        {/* 확정 내역 패널 */}
+        {showSnapshots && (
+          <div className="rounded-xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-100 px-5 py-3.5 flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-800">정산 확정 내역</p>
+              <span className="text-xs text-gray-400">{snapshots.length}개</span>
+            </div>
+            {snapshots.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-gray-400">확정된 정산 내역이 없습니다.</div>
+            ) : (
+              <ul className="divide-y divide-gray-50">
+                {snapshots.map(snap => {
+                  const d = new Date(snap.snapshotAt)
+                  return (
+                    <li key={snap.id} className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-gray-50">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{snap.month} 정산 확정</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {d.getFullYear()}.{String(d.getMonth()+1).padStart(2,'0')}.{String(d.getDate()).padStart(2,'0')} · 집행 {fmt(snap.totalSpend)}원 · 수수료 {fmt(snap.totalFee)}원
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => downloadSnapshot(snap)}
+                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+                      >
+                        ↓ TSV
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        )}
+
         {/* 정산 월 선택 */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button onClick={() => shiftMonth(-1)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">‹</button>
           <input
             type="month"
@@ -164,9 +467,14 @@ export default function DmpFeePage() {
           />
           <button onClick={() => shiftMonth(1)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
           <span className="text-sm text-gray-400">정산 대상 캠페인 {filtered.length}개</span>
+          {hasSnapshot && (
+            <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 border border-green-200">
+              ✓ 확정 완료
+            </span>
+          )}
         </div>
 
-        {/* DMP별 요약 카드 (클릭 가능) */}
+        {/* DMP별 요약 카드 */}
         <div>
           <div className="mb-2 flex items-center gap-2">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">DMP 선택</span>
@@ -198,7 +506,6 @@ export default function DmpFeePage() {
                       : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-md"
                   }`}
                 >
-                  {/* 선택 표시 */}
                   {isOn && (
                     <span className="absolute top-2 right-2 flex h-4 w-4 items-center justify-center rounded-full bg-white/80 text-[10px] font-bold text-gray-700">✓</span>
                   )}
@@ -264,7 +571,6 @@ export default function DmpFeePage() {
                           <tr
                             key={`${c.id}|${dmp}`}
                             className={`transition-colors border-l-4 ${isOn ? `border-l-current` : "border-l-transparent hover:bg-gray-50/50"}`}
-                            style={isOn ? { borderLeftColor: "" } : {}}
                           >
                             {di === 0 && (
                               <td rowSpan={visibleDmps.length} className="px-4 py-2 align-top">
@@ -337,6 +643,13 @@ export default function DmpFeePage() {
                     }`}
                   >
                     {copied ? "✓ 복사됨" : "📋 엑셀 복사"}
+                  </button>
+                  <button
+                    onClick={confirmSettlement}
+                    disabled={allResultRows.every(r => r.spend === 0)}
+                    className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    ✓ 정산 확정
                   </button>
                 </div>
               </div>

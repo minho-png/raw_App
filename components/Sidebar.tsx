@@ -41,6 +41,7 @@ const navItems: NavItem[] = [
         label: "CT+",
         items: [
           { label: "데일리 리포트", href: "/campaign/ct-plus/daily" },
+          { label: "통합 리포트", href: "/campaign/ct-plus/report" },
           { label: "종료 리포트", href: "/campaign/ct-plus/final" },
           { label: "캠페인 집행 현황", href: "/campaign/ct-plus/status" },
         ],

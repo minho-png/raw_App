@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/RAW_APP/**)",
+      "Bash(npm install:*)"
+    ]
+  }
+}

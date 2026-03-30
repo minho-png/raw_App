@@ -2,272 +2,606 @@
 
 import { useState, useRef, useEffect } from "react"
 
-// ── 카카오 비즈보드 기본 위치값 ───────────────────────────────────
-const DEFAULT = {
-  xRatio: 0.030,    // 좌측 여백
-  yRatio: 0.160,    // 상단 위치 (%)
-  wRatio: 0.940,    // 너비 (%)
-  hRatio: 0.115,    // 높이 (%)
-  radiusPct: 0.022, // 모서리 둥글기 (너비 대비 %)
+// ── Types ─────────────────────────────────────────────────────
+interface CoverRect { xR: number; yR: number; wR: number; hR: number; fill: string }
+
+type Layer = { id: string; label: string; visible: boolean } & (
+  | { type: "image";  img: HTMLImageElement; xR: number; yR: number; wR: number; hR: number; radiusPct: number }
+  | { type: "text";   text: string; xR: number; yR: number; sizeR: number; color: string; weight: string; align: CanvasTextAlign; cover?: CoverRect }
+  | { type: "button"; text: string; xR: number; yR: number; wR: number; hR: number; rR: number; bg: string; fg: string; sizeR: number; cover?: CoverRect }
+  | { type: "logo";   img: HTMLImageElement | null; cxR: number; cyR: number; rR: number; coverFill: string }
+)
+
+interface PresetTextDef {
+  label: string; default: string; cover: CoverRect
+  draw:
+    | { type: "text";   xR: number; yR: number; sizeR: number; fill: string; weight?: string; align?: CanvasTextAlign }
+    | { type: "button"; xR: number; yR: number; wR: number; hR: number; rR: number; bg: string; fg: string; sizeR: number }
+}
+interface PresetLogoDef { label: string; coverFill: string; cxR: number; cyR: number; rR: number }
+interface Preset {
+  id: string; label: string; src: string
+  imagePos: { xR: number; yR: number; wR: number; hR: number; radiusPct: number }
+  textDefs?: PresetTextDef[]
+  logoDef?: PresetLogoDef
 }
 
-const KAKAO_BG = "rgb(235, 235, 235)"
+// ── Presets ───────────────────────────────────────────────────
+const PRESETS: Preset[] = [
+  {
+    id: "bizboard", label: "카카오 비즈보드 (채팅탭)",
+    src: "/%EC%B9%B4%EC%B9%B4%EC%98%A4%20%EB%B9%84%EC%A6%88%EB%B3%B4%EB%93%9C.png",
+    imagePos: { xR: 0.030, yR: 0.155, wR: 0.925, hR: 0.100, radiusPct: 0.032 },
+  },
+  {
+    id: "native-1200x600", label: "카카오 네이티브 1200×600 (더보기탭)",
+    src: "/%EC%B9%B4%EC%B9%B4%EC%98%A4%20%EB%84%A4%EC%9D%B4%ED%8B%B0%EB%B8%8C%201200X600.png",
+    imagePos: { xR: 0.040, yR: 0.540, wR: 0.925, hR: 0.210, radiusPct: 0.016 },
+    textDefs: [
+      {
+        label: "광고 제목", default: "광고 제목",
+        cover: { xR: 0.020, yR: 0.922, wR: 0.640, hR: 0.062, fill: "#FFFFFF" },
+        draw: { type: "text", xR: 0.040, yR: 0.954, sizeR: 0.046, fill: "#111111", weight: "500" },
+      },
+      {
+        label: "버튼", default: "바로가기",
+        cover: { xR: 0.662, yR: 0.922, wR: 0.316, hR: 0.062, fill: "#FFFFFF" },
+        draw: { type: "button", xR: 0.664, yR: 0.924, wR: 0.312, hR: 0.058, rR: 0.008, bg: "#191919", fg: "#FFFFFF", sizeR: 0.034 },
+      },
+    ],
+  },
+  {
+    id: "native-1000x800", label: "카카오 네이티브 1000×800 (피드탭)",
+    src: "/%EC%B9%B4%EC%B9%B4%EC%98%A4%20%EB%84%A4%EC%9D%B4%ED%8B%B0%EB%B8%8C1000x800.jpg",
+    imagePos: { xR: 0.150, yR: 0.200, wR: 0.810, hR: 0.455, radiusPct: 0.030 },
+    textDefs: [
+      {
+        label: "브랜드명", default: "브랜드",
+        cover: { xR: 0.120, yR: 0.228, wR: 0.230, hR: 0.042, fill: "#FFFFFF" },
+        draw: { type: "text", xR: 0.125, yR: 0.250, sizeR: 0.046, fill: "#111111", weight: "700" },
+      },
+      {
+        label: "광고 문구", default: "광고 문구를 입력하세요",
+        cover: { xR: 0.020, yR: 0.653, wR: 0.960, hR: 0.052, fill: "#FFFFFF" },
+        draw: { type: "text", xR: 0.040, yR: 0.679, sizeR: 0.037, fill: "#444444" },
+      },
+      {
+        label: "버튼", default: "바로가기",
+        cover: { xR: 0.020, yR: 0.712, wR: 0.960, hR: 0.068, fill: "#FFFFFF" },
+        draw: { type: "button", xR: 0.020, yR: 0.712, wR: 0.960, hR: 0.068, rR: 0.012, bg: "#6600CC", fg: "#FFFFFF", sizeR: 0.040 },
+      },
+    ],
+    logoDef: { label: "브랜드 로고", coverFill: "#DDDDDD", cxR: 0.066, cyR: 0.249, rR: 0.038 },
+  },
+  {
+    id: "native-view", label: "카카오 네이티브 (카카오뷰)",
+    src: "/%EC%B9%B4%EC%B9%B4%EC%98%A4%EB%84%A4%EC%9D%B4%ED%8B%B0%EB%B8%8C12x6.jpg",
+    imagePos: { xR: 0.000, yR: 0.085, wR: 1.000, hR: 0.445, radiusPct: 0.000 },
+  },
+]
 
-// ── 유틸 ─────────────────────────────────────────────────────────
-function loadImage(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file)
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = url
+const KAKAO_BG = "rgb(235,235,235)"
+const FONT = `-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif`
+
+// ── Utils ─────────────────────────────────────────────────────
+let _uid = 0
+const uid = () => `l${++_uid}`
+
+function loadFile(file: File): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const img = new Image(); img.onload = () => res(img); img.onerror = rej
+    img.src = URL.createObjectURL(file)
   })
 }
-
-interface Pos { xRatio: number; yRatio: number; wRatio: number; hRatio: number; radiusPct: number }
-
-function calcRect(iw: number, ih: number, pos: Pos) {
-  return {
-    x: Math.round(iw * pos.xRatio),
-    y: Math.round(ih * pos.yRatio),
-    w: Math.round(iw * pos.wRatio),
-    h: Math.round(ih * pos.hRatio),
-    r: Math.round(iw * pos.radiusPct),
-  }
+function loadUrl(src: string): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const img = new Image(); img.crossOrigin = "anonymous"
+    img.onload = () => res(img); img.onerror = rej; img.src = src
+  })
 }
-
-// 둥근 사각형 경로
-function roundRectPath(
-  ctx: CanvasRenderingContext2D,
-  x: number, y: number, w: number, h: number, r: number,
-) {
+function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath()
-  ctx.moveTo(x + r, y)
-  ctx.lineTo(x + w - r, y)
-  ctx.arcTo(x + w, y,     x + w, y + r,     r)
-  ctx.lineTo(x + w, y + h - r)
-  ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
-  ctx.lineTo(x + r, y + h)
-  ctx.arcTo(x,     y + h, x,     y + h - r, r)
-  ctx.lineTo(x,     y + r)
-  ctx.arcTo(x,     y,     x + r, y,         r)
-  ctx.closePath()
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r)
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r)
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r)
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath()
 }
+const cl = (v: number) => Math.max(0, Math.min(1, v))
 
-// ── 파일 입력 ────────────────────────────────────────────────────
-function FileInput({ label, hint, onChange }: {
-  label: string; hint?: string; onChange: (f: File) => void
-}) {
+// ── Sub-components ────────────────────────────────────────────
+function FileBtn({ label, hint, onChange }: { label: string; hint?: string; onChange: (f: File) => void }) {
   const ref = useRef<HTMLInputElement>(null)
   return (
     <div onClick={() => ref.current?.click()}
-      className="cursor-pointer rounded-xl border-2 border-dashed border-gray-200 px-4 py-5 text-center hover:border-gray-300 hover:bg-gray-50 transition-colors">
+      className="cursor-pointer rounded-lg border-2 border-dashed border-gray-200 px-3 py-3 text-center hover:border-gray-300 hover:bg-gray-50 transition-colors">
       <input ref={ref} type="file" accept="image/*" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) { onChange(f); e.target.value = "" } }} />
-      <p className="text-sm font-medium text-gray-600">{label}</p>
-      {hint && <p className="mt-1 text-[11px] text-gray-400">{hint}</p>}
+      <p className="text-xs font-medium text-gray-600">{label}</p>
+      {hint && <p className="mt-0.5 text-[10px] text-gray-400">{hint}</p>}
     </div>
   )
 }
 
-// ── 미세조정 행 ──────────────────────────────────────────────────
-function AdjustRow({ label, value, onUp, onDown }: {
-  label: string; value: number; step?: number; onUp: () => void; onDown: () => void
+function AdjRow({ label, value, onUp, onDown, onChange }: {
+  label: string; value: number; onUp: () => void; onDown: () => void
+  onChange?: (v: number) => void
 }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState("")
+  function commit() {
+    const n = parseFloat(draft)
+    if (!isNaN(n) && onChange) onChange(Math.max(0, Math.min(1, n / 100)))
+    setEditing(false)
+  }
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-[11px] text-gray-500 w-20 shrink-0">{label}</span>
+    <div className="flex items-center justify-between gap-1">
+      <span className="text-[10px] text-gray-500 w-16 shrink-0">{label}</span>
       <div className="flex items-center gap-1">
-        <button onClick={onDown} className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-xs text-gray-500 hover:bg-gray-50">▼</button>
-        <span className="w-12 text-center text-[11px] font-mono text-gray-700">{(value * 100).toFixed(1)}%</span>
-        <button onClick={onUp} className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-xs text-gray-500 hover:bg-gray-50">▲</button>
+        <button onClick={onDown} className="flex h-5 w-5 items-center justify-center rounded border border-gray-200 text-[10px] text-gray-500 hover:bg-gray-50">▼</button>
+        {editing ? (
+          <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+            onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false) }}
+            className="w-12 rounded border border-blue-300 px-1 py-0.5 text-center text-[10px] font-mono focus:outline-none" />
+        ) : (
+          <span onClick={() => { setDraft((value*100).toFixed(1)); setEditing(true) }}
+            title="클릭하여 직접 입력"
+            className="w-12 text-center text-[10px] font-mono text-gray-700 cursor-text hover:bg-blue-50 rounded px-1 py-0.5">
+            {(value*100).toFixed(1)}%
+          </span>
+        )}
+        <button onClick={onUp} className="flex h-5 w-5 items-center justify-center rounded border border-gray-200 text-[10px] text-gray-500 hover:bg-gray-50">▲</button>
       </div>
     </div>
   )
 }
 
-// ── 스텝 카드 ────────────────────────────────────────────────────
-function StepCard({ n, done, active, title, disabled, children }: {
-  n: number; done: boolean; active: boolean; title: string
-  disabled?: boolean; children: React.ReactNode
-}) {
-  return (
-    <div className={`rounded-xl border p-3.5 space-y-2.5 transition-opacity ${
-      disabled ? "opacity-40 pointer-events-none border-gray-100" : "border-gray-200"
-    }`}>
-      <div className="flex items-center gap-2">
-        <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-          done ? "bg-green-500 text-white" : active ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-400"
-        }`}>{done ? "✓" : n}</div>
-        <p className="text-xs font-semibold text-gray-700">{title}</p>
-      </div>
-      {children}
-    </div>
-  )
-}
-
-// ── 메인 ─────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────
 export default function MockupPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const layersRef = useRef<Layer[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dragRef = useRef<{ id: string; sx: number; sy: number; ox: number; oy: number } | null>(null)
 
-  const [bgImg,    setBgImg]    = useState<HTMLImageElement | null>(null)
-  const [creative, setCreative] = useState<HTMLImageElement | null>(null)
-  const [pos, setPos]           = useState<Pos>({ ...DEFAULT })
-  const [showAdj, setShowAdj]   = useState(false)
+  const [bgImg,          setBgImg]          = useState<HTMLImageElement | null>(null)
+  const [layers,         setLayers]         = useState<Layer[]>([])
+  const [selectedId,     setSelectedId]     = useState<string | null>(null)
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null)
+  const [isLoading,      setIsLoading]      = useState(false)
+  const [newText,        setNewText]        = useState("")
+  const [showAddText,    setShowAddText]    = useState(false)
+  const [downloadName,   setDownloadName]   = useState("kakao_mockup")
 
-  const [downloadName, setDownloadName] = useState("bizboard_mockup")
+  useEffect(() => { layersRef.current = layers }, [layers])
 
-  // ── 캔버스 렌더 ────────────────────────────────────────────────
+  // ── Canvas render ─────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !bgImg) return
-    canvas.width  = bgImg.naturalWidth
-    canvas.height = bgImg.naturalHeight
+    const iw = bgImg.naturalWidth, ih = bgImg.naturalHeight
+    canvas.width = iw; canvas.height = ih
     const ctx = canvas.getContext("2d")!
-
     ctx.drawImage(bgImg, 0, 0)
 
-    const { x, y, w, h, r } = calcRect(bgImg.naturalWidth, bgImg.naturalHeight, pos)
+    for (const layer of layers) {
+      if (!layer.visible) continue
 
-    // 광고 영역 → 카카오 배경색 (둥근 모서리)
-    ctx.save()
-    roundRectPath(ctx, x, y, w, h, r)
-    ctx.fillStyle = KAKAO_BG
-    ctx.fill()
-    ctx.restore()
+      if (layer.type === "image") {
+        const { xR, yR, wR, hR, radiusPct } = layer
+        const x = xR*iw, y = yR*ih, w = wR*iw, h = hR*ih, rad = radiusPct*iw
+        ctx.save(); rr(ctx,x,y,w,h,rad); ctx.fillStyle=KAKAO_BG; ctx.fill(); ctx.clip()
+        ctx.drawImage(layer.img, x, y, w, h); ctx.restore()
+        if (layer.id === selectedId) {
+          ctx.save(); ctx.strokeStyle="#3B82F6"; ctx.lineWidth=Math.max(2,iw*0.004)
+          ctx.setLineDash([iw*0.012,iw*0.006]); rr(ctx,x-2,y-2,w+4,h+4,rad+2); ctx.stroke(); ctx.restore()
+        }
+      }
 
-    // 소재 합성 (둥근 모서리로 클리핑)
-    if (creative) {
-      ctx.save()
-      roundRectPath(ctx, x, y, w, h, r)
-      ctx.clip()
-      ctx.drawImage(creative, x, y, w, h)
-      ctx.restore()
+      else if (layer.type === "text") {
+        if (layer.cover) { ctx.fillStyle=layer.cover.fill; ctx.fillRect(layer.cover.xR*iw,layer.cover.yR*ih,layer.cover.wR*iw,layer.cover.hR*ih) }
+        ctx.font=`${layer.weight} ${Math.round(layer.sizeR*iw)}px ${FONT}`
+        ctx.fillStyle=layer.color; ctx.textAlign=layer.align; ctx.textBaseline="middle"
+        ctx.fillText(layer.text, layer.xR*iw, layer.yR*ih)
+      }
+
+      else if (layer.type === "button") {
+        if (layer.cover) { ctx.fillStyle=layer.cover.fill; ctx.fillRect(layer.cover.xR*iw,layer.cover.yR*ih,layer.cover.wR*iw,layer.cover.hR*ih) }
+        const bx=layer.xR*iw, by=layer.yR*ih, bw=layer.wR*iw, bh=layer.hR*ih
+        rr(ctx,bx,by,bw,bh,layer.rR*iw); ctx.fillStyle=layer.bg; ctx.fill()
+        ctx.font=`600 ${Math.round(layer.sizeR*iw)}px ${FONT}`
+        ctx.fillStyle=layer.fg; ctx.textAlign="center"; ctx.textBaseline="middle"
+        ctx.fillText(layer.text, bx+bw/2, by+bh/2)
+      }
+
+      else if (layer.type === "logo") {
+        const cx=layer.cxR*iw, cy=layer.cyR*ih, lr=layer.rR*iw
+        ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,lr,0,2*Math.PI)
+        if (layer.img) { ctx.clip(); ctx.drawImage(layer.img,cx-lr,cy-lr,lr*2,lr*2) }
+        else { ctx.fillStyle=layer.coverFill; ctx.fill() }
+        ctx.restore()
+      }
     }
-  }, [bgImg, creative, pos])
+  }, [bgImg, layers, selectedId])
 
-  const adj = (key: keyof Pos, delta: number) =>
-    setPos(p => ({ ...p, [key]: Math.max(0, Math.min(1, +(p[key] + delta).toFixed(4))) }))
-
-  async function handleBg(file: File) {
-    const img = await loadImage(file)
-    setBgImg(img)
-    setCreative(null)
+  // ── Canvas interaction ────────────────────────────────────
+  function toRatio(e: React.MouseEvent<HTMLCanvasElement>) {
+    const c = canvasRef.current!; const rect = c.getBoundingClientRect()
+    return { xR: (e.clientX-rect.left)/rect.width, yR: (e.clientY-rect.top)/rect.height }
   }
 
-  async function handleCreative(file: File) {
-    setCreative(await loadImage(file))
+  function hitTest(l: Layer, xR: number, yR: number): boolean {
+    const asp = bgImg ? bgImg.naturalHeight/bgImg.naturalWidth : 1
+    if (l.type==="image")  return xR>=l.xR && xR<=l.xR+l.wR && yR>=l.yR && yR<=l.yR+l.hR
+    if (l.type==="text")   { const tw=Math.min(0.8,l.text.length*l.sizeR*0.55); return xR>=l.xR && xR<=l.xR+tw && yR>=l.yR-l.sizeR && yR<=l.yR+l.sizeR }
+    if (l.type==="button") return xR>=l.xR && xR<=l.xR+l.wR && yR>=l.yR && yR<=l.yR+l.hR
+    if (l.type==="logo")   { const dx=xR-l.cxR, dy=(yR-l.cyR)/asp; return Math.sqrt(dx*dx+dy*dy)<=l.rR*1.4 }
+    return false
   }
 
-  function handleDownload() {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const a = document.createElement("a")
-    a.download = `${downloadName || "mockup"}.png`
-    a.href = canvas.toDataURL("image/png")
-    a.click()
+  function onDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    const { xR, yR } = toRatio(e)
+    const hit = [...layersRef.current].reverse().find(l => l.visible && hitTest(l, xR, yR))
+    if (hit) {
+      setSelectedId(hit.id)
+      const ox = hit.type==="logo" ? hit.cxR : hit.xR
+      const oy = hit.type==="logo" ? hit.cyR : hit.yR
+      dragRef.current = { id: hit.id, sx: xR, sy: yR, ox, oy }
+    } else { setSelectedId(null) }
   }
 
-  const step = !bgImg ? 1 : !creative ? 2 : 3
+  function onMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!dragRef.current) return
+    const { xR, yR } = toRatio(e)
+    const { id, sx, sy, ox, oy } = dragRef.current
+    const dx = xR-sx, dy = yR-sy
+    setLayers(prev => prev.map(l => {
+      if (l.id!==id) return l
+      if (l.type==="logo") return { ...l, cxR: cl(ox+dx), cyR: cl(oy+dy) }
+      return { ...l, xR: cl(ox+dx), yR: cl(oy+dy) }
+    }))
+  }
+
+  function onUp() { dragRef.current = null }
+
+  // ── Layer helpers ─────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const upd = (id: string, patch: any) =>
+    setLayers(prev => prev.map(l => l.id!==id ? l : { ...l, ...patch } as Layer))
+
+  const del = (id: string) => {
+    setLayers(prev => prev.filter(l => l.id!==id))
+    if (selectedId===id) setSelectedId(null)
+  }
+
+  const reorder = (id: string, dir: 1|-1) =>
+    setLayers(prev => {
+      const i = prev.findIndex(l => l.id===id); const j = i+dir
+      if (j<0||j>=prev.length) return prev
+      const next=[...prev]; [next[i],next[j]]=[next[j],next[i]]; return next
+    })
+
+  // ── Add layers ────────────────────────────────────────────
+  async function addImage(file: File) {
+    const img = await loadFile(file)
+    const ip = PRESETS.find(p=>p.id===selectedPreset)?.imagePos
+    const layer: Layer = {
+      id: uid(), type: "image", label: file.name.replace(/\.[^.]+$/,"").slice(0,14), visible: true,
+      img, xR: ip?.xR??0.02, yR: ip?.yR??0.20, wR: ip?.wR??0.96, hR: ip?.hR??0.30,
+      radiusPct: ip?.radiusPct??0.010,
+    }
+    setLayers(prev => [layer, ...prev])  // insert below text layers
+    setSelectedId(layer.id)
+  }
+
+  function addText() {
+    if (!newText.trim()) return
+    const layer: Layer = {
+      id: uid(), type: "text", label: newText.slice(0,12), visible: true,
+      text: newText, xR: 0.05, yR: 0.50, sizeR: 0.050,
+      color: "#000000", weight: "500", align: "left",
+    }
+    setLayers(prev => [...prev, layer])
+    setSelectedId(layer.id); setNewText(""); setShowAddText(false)
+  }
+
+  // ── Preset load ───────────────────────────────────────────
+  async function loadPreset(pid: string) {
+    if (pid==="") {
+      setSelectedPreset(null); setBgImg(null); setLayers([]); setSelectedId(null); return
+    }
+    const preset = PRESETS.find(p=>p.id===pid); if (!preset) return
+    setIsLoading(true); setSelectedPreset(pid); setSelectedId(null)
+    try {
+      setBgImg(await loadUrl(preset.src))
+      const next: Layer[] = []
+      for (const td of preset.textDefs??[]) {
+        const d = td.draw
+        if (d.type==="text") {
+          next.push({ id:uid(), type:"text", label:td.label, visible:true, text:td.default,
+            xR:d.xR, yR:d.yR, sizeR:d.sizeR, color:d.fill, weight:d.weight??"normal",
+            align:d.align??"left", cover:td.cover })
+        } else {
+          next.push({ id:uid(), type:"button", label:td.label, visible:true, text:td.default,
+            xR:d.xR, yR:d.yR, wR:d.wR, hR:d.hR, rR:d.rR, bg:d.bg, fg:d.fg, sizeR:d.sizeR, cover:td.cover })
+        }
+      }
+      if (preset.logoDef) {
+        const ld = preset.logoDef
+        next.push({ id:uid(), type:"logo", label:ld.label, visible:true,
+          img:null, cxR:ld.cxR, cyR:ld.cyR, rR:ld.rR, coverFill:ld.coverFill })
+      }
+      setLayers(next)
+    } catch { setBgImg(null); setSelectedPreset(null); setLayers([])
+    } finally { setIsLoading(false) }
+  }
+
+  async function uploadBg(file: File) {
+    setBgImg(await loadFile(file)); setLayers([]); setSelectedId(null)
+  }
+
+  // ── Render ────────────────────────────────────────────────
+  const selLayer = layers.find(l=>l.id===selectedId)
+  const activePreset = PRESETS.find(p=>p.id===selectedPreset)
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <h1 className="text-base font-semibold text-gray-900">목업 게재 이미지 생성</h1>
-        <p className="text-xs text-gray-400 mt-0.5">카카오톡 비즈보드 · 스크린샷 업로드 후 소재를 합성합니다</p>
+        <p className="text-xs text-gray-400 mt-0.5">레이어를 추가하고 캔버스에서 드래그로 위치를 조정하세요</p>
       </header>
 
       <main className="flex h-[calc(100vh-73px)]">
 
-        {/* ── 왼쪽 패널 ─────────────────────────────────── */}
-        <div className="w-64 shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-4">
+        {/* ── Left panel ────────────────────────────── */}
+        <div className="w-64 shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-5">
 
-          {/* STEP 1 */}
-          <StepCard n={1} done={step > 1} active={step === 1} title="배경 스크린샷 업로드">
-            <p className="text-[11px] text-gray-400">카카오톡 채팅 화면 캡처를 업로드하세요.</p>
+          {/* 배경 */}
+          <section className="space-y-2">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">배경</p>
             {bgImg ? (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2">
-                  <p className="text-[11px] font-semibold text-green-700">✓ 배경 적용됨</p>
-                  <p className="text-[10px] text-green-600 mt-0.5 font-mono">
-                    {bgImg.naturalWidth} × {bgImg.naturalHeight} px
-                  </p>
+                  <p className="text-[11px] font-semibold text-green-700">✓ {activePreset?.label ?? "직접 업로드"}</p>
+                  <p className="text-[10px] text-green-600 font-mono mt-0.5">{bgImg.naturalWidth} × {bgImg.naturalHeight} px</p>
                 </div>
-                <button onClick={() => { setBgImg(null); setCreative(null) }}
+                <button onClick={() => { setBgImg(null); setLayers([]); setSelectedId(null); setSelectedPreset(null) }}
                   className="w-full rounded-lg border border-gray-200 py-1.5 text-xs text-gray-500 hover:bg-gray-50">
-                  다시 업로드
+                  다시 선택
                 </button>
               </div>
             ) : (
-              <FileInput label="스크린샷 업로드" hint="PNG, JPG" onChange={handleBg} />
+              <div className="space-y-2">
+                <select value={selectedPreset??""} onChange={e=>loadPreset(e.target.value)} disabled={isLoading}
+                  className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 bg-white focus:border-blue-300 focus:outline-none disabled:opacity-50">
+                  <option value="">직접 업로드</option>
+                  {PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+                {isLoading && <p className="text-center text-[11px] text-blue-500">불러오는 중...</p>}
+                {!selectedPreset && !isLoading && <FileBtn label="스크린샷 업로드" hint="PNG, JPG" onChange={uploadBg} />}
+              </div>
             )}
-          </StepCard>
+          </section>
 
-          {/* 위치 미세 조정 */}
+          {/* 레이어 */}
           {bgImg && (
-            <div className="rounded-xl border border-gray-200">
-              <button
-                onClick={() => setShowAdj(v => !v)}
-                className="flex w-full items-center justify-between px-4 py-3 text-xs font-semibold text-gray-600 hover:bg-gray-50 rounded-xl"
-              >
-                <span>광고 영역 위치 조정</span>
-                <span className="text-gray-400">{showAdj ? "▲" : "▼"}</span>
-              </button>
-              {showAdj && (
-                <div className="border-t border-gray-100 px-4 pb-4 pt-3 space-y-2.5">
-                  <AdjustRow label="상하 위치"  value={pos.yRatio}    step={0.005} onUp={() => adj("yRatio", -0.005)} onDown={() => adj("yRatio", 0.005)} />
-                  <AdjustRow label="높이"       value={pos.hRatio}    step={0.005} onUp={() => adj("hRatio", 0.005)}  onDown={() => adj("hRatio", -0.005)} />
-                  <AdjustRow label="좌우 여백"  value={pos.xRatio}    step={0.005} onUp={() => adj("xRatio", -0.005)} onDown={() => adj("xRatio", 0.005)} />
-                  <AdjustRow label="너비"       value={pos.wRatio}    step={0.005} onUp={() => adj("wRatio", 0.005)}  onDown={() => adj("wRatio", -0.005)} />
-                  <AdjustRow label="모서리"     value={pos.radiusPct} step={0.002} onUp={() => adj("radiusPct", 0.002)} onDown={() => adj("radiusPct", -0.002)} />
-                  <button
-                    onClick={() => setPos({ ...DEFAULT })}
-                    className="w-full rounded-lg border border-gray-200 py-1.5 text-[11px] text-gray-400 hover:bg-gray-50 mt-1"
-                  >
-                    기본값으로 초기화
-                  </button>
+            <section className="space-y-2">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">레이어</p>
+
+              {/* Layer list – rendered top-first */}
+              <div className="space-y-0.5">
+                {[...layers].reverse().map(layer => {
+                  const realIdx = layers.findIndex(l=>l.id===layer.id)
+                  const isTop    = realIdx===layers.length-1
+                  const isBottom = realIdx===0
+                  const isSel    = layer.id===selectedId
+                  const icon = layer.type==="image" ? "🖼" : layer.type==="logo" ? "⬤" : layer.type==="button" ? "◻" : "T"
+                  return (
+                    <div key={layer.id} onClick={()=>setSelectedId(isSel?null:layer.id)}
+                      className={`flex items-center gap-1 px-2 py-1.5 rounded-lg cursor-pointer transition-colors text-[11px] ${
+                        isSel ? "bg-blue-50 border border-blue-200" : "border border-transparent hover:bg-gray-50"
+                      }`}>
+                      <button onClick={e=>{e.stopPropagation(); upd(layer.id,{visible:!layer.visible})}}
+                        className={`w-4 shrink-0 text-center ${layer.visible?"text-gray-500":"text-gray-300"}`}>
+                        {layer.visible ? "●" : "○"}
+                      </button>
+                      <span className="flex-1 truncate text-gray-700">{icon} {layer.label}</span>
+                      <button onClick={e=>{e.stopPropagation(); reorder(layer.id,1)}} disabled={isTop}
+                        className="h-5 w-4 text-[10px] text-gray-400 hover:text-gray-700 disabled:opacity-20">▲</button>
+                      <button onClick={e=>{e.stopPropagation(); reorder(layer.id,-1)}} disabled={isBottom}
+                        className="h-5 w-4 text-[10px] text-gray-400 hover:text-gray-700 disabled:opacity-20">▼</button>
+                      <button onClick={e=>{e.stopPropagation(); del(layer.id)}}
+                        className="h-5 w-4 text-[10px] text-red-400 hover:text-red-600">×</button>
+                    </div>
+                  )
+                })}
+                {layers.length===0 && <p className="text-center text-[11px] text-gray-400 py-2">레이어 없음</p>}
+              </div>
+
+              {/* Add buttons */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <FileBtn label="+ 이미지" onChange={addImage} />
+                <button onClick={()=>setShowAddText(v=>!v)}
+                  className={`rounded-lg border-2 border-dashed py-3 text-xs transition-colors ${
+                    showAddText ? "border-blue-300 bg-blue-50 text-blue-600" : "border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50"
+                  }`}>
+                  + 텍스트
+                </button>
+              </div>
+              {showAddText && (
+                <div className="flex gap-1.5">
+                  <input autoFocus value={newText} onChange={e=>setNewText(e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter")addText(); if(e.key==="Escape")setShowAddText(false)}}
+                    placeholder="텍스트 입력 후 Enter"
+                    className="flex-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-blue-300 focus:outline-none" />
+                  <button onClick={addText}
+                    className="rounded-lg bg-blue-600 px-2.5 text-xs font-semibold text-white hover:bg-blue-700">추가</button>
                 </div>
               )}
-            </div>
+            </section>
           )}
 
-          {/* STEP 2 */}
-          <StepCard n={2} done={step > 2} active={step === 2} title="소재 이미지 업로드" disabled={step < 2}>
-            <p className="text-[11px] text-gray-400">소재를 업로드하면 비즈보드 영역에 자동 합성됩니다.</p>
-            {creative ? (
-              <div className="space-y-2">
-                <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2">
-                  <p className="text-[11px] font-semibold text-green-700">✓ 소재 합성됨</p>
-                </div>
-                <button onClick={() => setCreative(null)}
-                  className="w-full rounded-lg border border-gray-200 py-1.5 text-xs text-gray-500 hover:bg-gray-50">
-                  소재 교체
-                </button>
-              </div>
-            ) : (
-              <FileInput label="소재 이미지 업로드" hint="PNG, JPG" onChange={handleCreative} />
-            )}
-          </StepCard>
+          {/* 선택 레이어 속성 */}
+          {selLayer && (
+            <section className="space-y-2 rounded-xl border border-blue-100 bg-blue-50/40 p-3">
+              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">{selLayer.label}</p>
 
-          {/* STEP 3 */}
-          <StepCard n={3} done={false} active={step === 3} title="다운로드" disabled={step < 3}>
-            <input
-              type="text" value={downloadName}
-              onChange={e => setDownloadName(e.target.value)}
+              {selLayer.type==="image" && (
+                <div className="space-y-1.5">
+                  <AdjRow label="상하 위치" value={selLayer.yR}
+                    onUp={()=>upd(selLayer.id,{yR:cl(selLayer.yR-0.005)})} onDown={()=>upd(selLayer.id,{yR:cl(selLayer.yR+0.005)})}
+                    onChange={v=>upd(selLayer.id,{yR:v})} />
+                  <AdjRow label="높이" value={selLayer.hR}
+                    onUp={()=>upd(selLayer.id,{hR:cl(selLayer.hR+0.005)})} onDown={()=>upd(selLayer.id,{hR:cl(selLayer.hR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{hR:v})} />
+                  <AdjRow label="좌우 여백" value={selLayer.xR}
+                    onUp={()=>upd(selLayer.id,{xR:cl(selLayer.xR-0.005)})} onDown={()=>upd(selLayer.id,{xR:cl(selLayer.xR+0.005)})}
+                    onChange={v=>upd(selLayer.id,{xR:v})} />
+                  <AdjRow label="너비" value={selLayer.wR}
+                    onUp={()=>upd(selLayer.id,{wR:cl(selLayer.wR+0.005)})} onDown={()=>upd(selLayer.id,{wR:cl(selLayer.wR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{wR:v})} />
+                  <AdjRow label="모서리" value={selLayer.radiusPct}
+                    onUp={()=>upd(selLayer.id,{radiusPct:cl(selLayer.radiusPct+0.002)})} onDown={()=>upd(selLayer.id,{radiusPct:cl(selLayer.radiusPct-0.002)})}
+                    onChange={v=>upd(selLayer.id,{radiusPct:v})} />
+                  <FileBtn label="이미지 교체" hint="PNG, JPG"
+                    onChange={async f=>{const img=await loadFile(f); upd(selLayer.id,{img})}} />
+                </div>
+              )}
+
+              {selLayer.type==="text" && (
+                <div className="space-y-2">
+                  <textarea value={selLayer.text}
+                    onChange={e=>upd(selLayer.id,{text:e.target.value,label:e.target.value.slice(0,12)||"텍스트"})}
+                    rows={2}
+                    className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-blue-300 focus:outline-none resize-none" />
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] text-gray-500">색상</label>
+                    <input type="color" value={selLayer.color} onChange={e=>upd(selLayer.id,{color:e.target.value})}
+                      className="h-6 w-8 rounded cursor-pointer border border-gray-200" />
+                  </div>
+                  <AdjRow label="글자 크기" value={selLayer.sizeR}
+                    onUp={()=>upd(selLayer.id,{sizeR:cl(selLayer.sizeR+0.002)})}
+                    onDown={()=>upd(selLayer.id,{sizeR:cl(selLayer.sizeR-0.002)})}
+                    onChange={v=>upd(selLayer.id,{sizeR:v})} />
+                  <AdjRow label="X 위치" value={selLayer.xR}
+                    onUp={()=>upd(selLayer.id,{xR:cl(selLayer.xR+0.005)})}
+                    onDown={()=>upd(selLayer.id,{xR:cl(selLayer.xR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{xR:v})} />
+                  <AdjRow label="Y 위치" value={selLayer.yR}
+                    onUp={()=>upd(selLayer.id,{yR:cl(selLayer.yR+0.005)})}
+                    onDown={()=>upd(selLayer.id,{yR:cl(selLayer.yR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{yR:v})} />
+                  <select value={selLayer.weight} onChange={e=>upd(selLayer.id,{weight:e.target.value})}
+                    className="w-full rounded-lg border border-gray-200 px-2 py-1 text-xs bg-white focus:outline-none">
+                    <option value="400">보통</option>
+                    <option value="500">중간</option>
+                    <option value="700">굵게</option>
+                  </select>
+                  <select value={selLayer.align} onChange={e=>upd(selLayer.id,{align:e.target.value as CanvasTextAlign})}
+                    className="w-full rounded-lg border border-gray-200 px-2 py-1 text-xs bg-white focus:outline-none">
+                    <option value="left">왼쪽 정렬</option>
+                    <option value="center">가운데 정렬</option>
+                    <option value="right">오른쪽 정렬</option>
+                  </select>
+                </div>
+              )}
+
+              {selLayer.type==="button" && (
+                <div className="space-y-2">
+                  <input value={selLayer.text}
+                    onChange={e=>upd(selLayer.id,{text:e.target.value})}
+                    placeholder="버튼 텍스트"
+                    className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-blue-300 focus:outline-none" />
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] text-gray-500 w-16 shrink-0">배경색</label>
+                    <input type="color" value={selLayer.bg} onChange={e=>upd(selLayer.id,{bg:e.target.value})}
+                      className="h-6 w-8 rounded cursor-pointer border border-gray-200" />
+                    <input value={selLayer.bg} onChange={e=>upd(selLayer.id,{bg:e.target.value})}
+                      className="flex-1 rounded border border-gray-200 px-2 py-0.5 text-[10px] font-mono focus:outline-none focus:border-blue-300" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] text-gray-500 w-16 shrink-0">글자색</label>
+                    <input type="color" value={selLayer.fg} onChange={e=>upd(selLayer.id,{fg:e.target.value})}
+                      className="h-6 w-8 rounded cursor-pointer border border-gray-200" />
+                    <input value={selLayer.fg} onChange={e=>upd(selLayer.id,{fg:e.target.value})}
+                      className="flex-1 rounded border border-gray-200 px-2 py-0.5 text-[10px] font-mono focus:outline-none focus:border-blue-300" />
+                  </div>
+                  <AdjRow label="글자 크기" value={selLayer.sizeR}
+                    onUp={()=>upd(selLayer.id,{sizeR:cl(selLayer.sizeR+0.002)})}
+                    onDown={()=>upd(selLayer.id,{sizeR:cl(selLayer.sizeR-0.002)})}
+                    onChange={v=>upd(selLayer.id,{sizeR:v})} />
+                  <AdjRow label="X 위치" value={selLayer.xR}
+                    onUp={()=>upd(selLayer.id,{xR:cl(selLayer.xR+0.005)})}
+                    onDown={()=>upd(selLayer.id,{xR:cl(selLayer.xR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{xR:v})} />
+                  <AdjRow label="Y 위치" value={selLayer.yR}
+                    onUp={()=>upd(selLayer.id,{yR:cl(selLayer.yR+0.005)})}
+                    onDown={()=>upd(selLayer.id,{yR:cl(selLayer.yR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{yR:v})} />
+                  <AdjRow label="너비" value={selLayer.wR}
+                    onUp={()=>upd(selLayer.id,{wR:cl(selLayer.wR+0.005)})}
+                    onDown={()=>upd(selLayer.id,{wR:cl(selLayer.wR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{wR:v})} />
+                  <AdjRow label="높이" value={selLayer.hR}
+                    onUp={()=>upd(selLayer.id,{hR:cl(selLayer.hR+0.005)})}
+                    onDown={()=>upd(selLayer.id,{hR:cl(selLayer.hR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{hR:v})} />
+                  <AdjRow label="모서리" value={selLayer.rR}
+                    onUp={()=>upd(selLayer.id,{rR:cl(selLayer.rR+0.002)})}
+                    onDown={()=>upd(selLayer.id,{rR:cl(selLayer.rR-0.002)})}
+                    onChange={v=>upd(selLayer.id,{rR:v})} />
+                </div>
+              )}
+
+              {selLayer.type==="logo" && (
+                <div className="space-y-2">
+                  {selLayer.img ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] text-green-600 font-semibold">✓ 로고 적용됨</p>
+                      <button onClick={()=>upd(selLayer.id,{img:null})}
+                        className="w-full rounded-lg border border-gray-200 py-1 text-[11px] text-gray-500 hover:bg-gray-50">제거</button>
+                    </div>
+                  ) : (
+                    <FileBtn label="로고 이미지 업로드" hint="PNG, JPG (정사각형 권장)"
+                      onChange={async f=>{const img=await loadFile(f); upd(selLayer.id,{img})}} />
+                  )}
+                  <AdjRow label="X 위치" value={selLayer.cxR}
+                    onUp={()=>upd(selLayer.id,{cxR:cl(selLayer.cxR+0.005)})}
+                    onDown={()=>upd(selLayer.id,{cxR:cl(selLayer.cxR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{cxR:v})} />
+                  <AdjRow label="Y 위치" value={selLayer.cyR}
+                    onUp={()=>upd(selLayer.id,{cyR:cl(selLayer.cyR+0.005)})}
+                    onDown={()=>upd(selLayer.id,{cyR:cl(selLayer.cyR-0.005)})}
+                    onChange={v=>upd(selLayer.id,{cyR:v})} />
+                  <AdjRow label="반지름" value={selLayer.rR}
+                    onUp={()=>upd(selLayer.id,{rR:cl(selLayer.rR+0.002)})}
+                    onDown={()=>upd(selLayer.id,{rR:cl(selLayer.rR-0.002)})}
+                    onChange={v=>upd(selLayer.id,{rR:v})} />
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* 다운로드 */}
+          <section className="space-y-2 pt-2 border-t border-gray-100">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">다운로드</p>
+            <input type="text" value={downloadName} onChange={e=>setDownloadName(e.target.value)}
               placeholder="파일명"
-              className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-300 focus:outline-none"
-            />
-            <button onClick={handleDownload} disabled={step !== 3}
+              className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-300 focus:outline-none" />
+            <button disabled={!bgImg}
+              onClick={()=>{
+                const c=canvasRef.current; if(!c) return
+                const a=document.createElement("a"); a.download=`${downloadName||"mockup"}.png`
+                a.href=c.toDataURL("image/png"); a.click()
+              }}
               className="w-full rounded-lg bg-blue-600 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40 flex items-center justify-center gap-1.5">
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
               PNG 다운로드
             </button>
-          </StepCard>
+          </section>
         </div>
 
-        {/* ── 오른쪽 캔버스 ─────────────────────────────── */}
+        {/* ── Canvas ──────────────────────────────── */}
         <div className="flex-1 overflow-auto bg-gray-100 flex items-start justify-center p-6">
           {!bgImg ? (
             <div className="flex h-full w-full items-center justify-center">
@@ -276,15 +610,15 @@ export default function MockupPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3 3h18M3 21h18" />
                 </svg>
                 <p className="text-sm font-medium text-gray-400">
-                  카카오톡 채팅 스크린샷을 업로드하면<br />비즈보드 영역이 자동으로 채워집니다
+                  배경을 선택하거나 업로드하면<br />레이어를 추가할 수 있습니다
                 </p>
               </div>
             </div>
           ) : (
             <div className="shadow-2xl rounded-lg overflow-hidden">
-              <canvas
-                ref={canvasRef}
-                style={{ display: "block", maxWidth: "420px", width: "100%", height: "auto" }}
+              <canvas ref={canvasRef}
+                style={{ display: "block", maxWidth: "420px", width: "100%", height: "auto", cursor: "crosshair" }}
+                onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
               />
             </div>
           )}

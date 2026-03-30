@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone:*)",
+      "Bash(find C:/kim/.claude -name *.md)",
+      "Read(//c/Users/smh16/.claude/**)",
+      "Read(//c/Users/smh16/**)",
+      "Bash(cp C:/RAW_APP/src/services/reportService.ts /tmp/reportService_raw.ts)",
+      "Read(//tmp/**)"
+    ]
+  }
+}

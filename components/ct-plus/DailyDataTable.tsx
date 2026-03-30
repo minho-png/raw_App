@@ -14,32 +14,50 @@ function fmt(n: number) { return n.toLocaleString('ko-KR') }
 /** Google/META만 조회 컬럼 표시 */
 const MEDIA_WITH_VIEWS: MediaType[] = ['google', 'meta']
 
+const DMP_BADGE_COLORS: Record<string, string> = {
+  SKP:        'bg-blue-100 text-blue-700 border-blue-200',
+  KB:         'bg-yellow-100 text-yellow-700 border-yellow-200',
+  LOTTE:      'bg-red-100 text-red-700 border-red-200',
+  TG360:      'bg-orange-100 text-orange-700 border-orange-200',
+  BC:         'bg-gray-100 text-gray-600 border-gray-200',
+  SH:         'bg-slate-100 text-slate-600 border-slate-200',
+  WIFI:       'bg-teal-100 text-teal-700 border-teal-200',
+  HyperLocal: 'bg-purple-100 text-purple-700 border-purple-200',
+  DIRECT:     'bg-gray-50 text-gray-400 border-gray-100',
+}
+
 export default function DailyDataTable({ rows, media }: Props) {
   const [copied, setCopied] = useState(false)
   const showViews = MEDIA_WITH_VIEWS.includes(media)
 
-  const headers = ['날짜', '요일', '매체', '소재명', 'DMP명', '노출', '클릭',
+  const headers = [
+    '날짜', '요일', '매체', '소재명', '광고그룹', 'DMP',
+    '노출', '클릭',
     ...(showViews ? ['조회'] : []),
-    '집행 금액', '집행 금액(NET)']
+    '집행 금액', '집행 금액(NET)', '순 금액', '공급가',
+  ]
 
-  // ── 합계 ────────────────────────────────────────────────
+  // ── 합계 ──────────────────────────────────────────────────
   const totals = rows.reduce((acc, r) => ({
-    impressions: acc.impressions + r.impressions,
-    clicks: acc.clicks + r.clicks,
-    views: acc.views + (r.views ?? 0),
-    grossCost: acc.grossCost + r.grossCost,
-    netCost: acc.netCost + r.netCost,
-  }), { impressions: 0, clicks: 0, views: 0, grossCost: 0, netCost: 0 })
+    impressions:     acc.impressions + r.impressions,
+    clicks:          acc.clicks + r.clicks,
+    views:           acc.views + (r.views ?? 0),
+    grossCost:       acc.grossCost + r.grossCost,
+    netCost:         acc.netCost + r.netCost,
+    executionAmount: acc.executionAmount + (r.executionAmount ?? r.grossCost),
+    netAmount:       acc.netAmount + (r.netAmount ?? r.netCost),
+    supplyValue:     acc.supplyValue + (r.supplyValue ?? r.netCost),
+  }), { impressions: 0, clicks: 0, views: 0, grossCost: 0, netCost: 0, executionAmount: 0, netAmount: 0, supplyValue: 0 })
 
-  // ── TSV 복사 ─────────────────────────────────────────────
+  // ── TSV 복사 ──────────────────────────────────────────────
   function copyAsText() {
     const dataRows = rows.map(r => {
       const cells: (string | number)[] = [
-        r.date, r.dayOfWeek, r.media, r.creativeName, r.dmpName,
+        r.date, r.dayOfWeek, r.media, r.creativeName, r.dmpName, r.dmpType ?? '',
         r.impressions, r.clicks,
       ]
       if (showViews) cells.push(r.views ?? 0)
-      cells.push(r.grossCost, r.netCost)
+      cells.push(r.grossCost, r.netCost, r.executionAmount ?? r.grossCost, r.netAmount ?? r.netCost, r.supplyValue ?? r.netCost)
       return cells.join('\t')
     })
     const text = [headers.join('\t'), ...dataRows].join('\n')
@@ -61,13 +79,37 @@ export default function DailyDataTable({ rows, media }: Props) {
   const tdCls = "border-b border-gray-100 px-3 py-2 text-xs text-gray-700"
   const tdR = `${tdCls} text-right tabular-nums`
 
+  // DMP 요약
+  const dmpSummary = rows.reduce((acc, r) => {
+    const key = r.dmpType ?? 'DIRECT'
+    acc[key] = (acc[key] ?? 0) + (r.executionAmount ?? r.grossCost)
+    return acc
+  }, {} as Record<string, number>)
+
   return (
     <div className="space-y-3">
       {/* 상단 바 */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-500">
-          <span className="font-medium text-gray-700">{fmt(rows.length)}</span>개 행
-        </p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="text-xs text-gray-500">
+            <span className="font-medium text-gray-700">{fmt(rows.length)}</span>개 행
+          </p>
+          {/* DMP 요약 배지 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {Object.entries(dmpSummary)
+              .filter(([, v]) => v > 0)
+              .sort(([, a], [, b]) => b - a)
+              .map(([dmp, total]) => (
+                <span
+                  key={dmp}
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${DMP_BADGE_COLORS[dmp] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}
+                  title={`집행 ${fmt(total)}원`}
+                >
+                  {dmp} {fmt(total)}원
+                </span>
+              ))}
+          </div>
+        </div>
         <button
           onClick={copyAsText}
           className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-colors ${
@@ -97,10 +139,17 @@ export default function DailyDataTable({ rows, media }: Props) {
                 <td className={`${tdCls} text-gray-400`}>{row.dayOfWeek}</td>
                 <td className={`${tdCls} font-medium`}>{row.media}</td>
                 <td className={tdCls} title={row.creativeName}>
-                  <span className="inline-block max-w-[180px] truncate">{row.creativeName || '—'}</span>
+                  <span className="inline-block max-w-[160px] truncate">{row.creativeName || '—'}</span>
                 </td>
                 <td className={tdCls} title={row.dmpName}>
-                  <span className="inline-block max-w-[140px] truncate">{row.dmpName || '—'}</span>
+                  <span className="inline-block max-w-[120px] truncate">{row.dmpName || '—'}</span>
+                </td>
+                <td className={tdCls}>
+                  {row.dmpType ? (
+                    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${DMP_BADGE_COLORS[row.dmpType] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                      {row.dmpType}
+                    </span>
+                  ) : '—'}
                 </td>
                 <td className={tdR}>{fmt(row.impressions)}</td>
                 <td className={tdR}>{fmt(row.clicks)}</td>
@@ -109,20 +158,26 @@ export default function DailyDataTable({ rows, media }: Props) {
                 )}
                 <td className={tdR}>{fmt(row.grossCost)}</td>
                 <td className={tdR}>{fmt(row.netCost)}</td>
+                <td className={`${tdR} text-blue-700`}>{fmt(row.executionAmount ?? row.grossCost)}</td>
+                <td className={tdR}>{fmt(row.netAmount ?? row.netCost)}</td>
+                <td className={`${tdR} text-gray-400`}>{fmt(row.supplyValue ?? row.netCost)}</td>
               </tr>
             ))}
           </tbody>
           {/* 합계 행 */}
           <tfoot>
             <tr className="bg-gray-100 font-semibold">
-              <td colSpan={5} className="border-t border-gray-200 px-3 py-2.5 text-xs text-gray-600">합계</td>
-              <td className={`border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums`}>{fmt(totals.impressions)}</td>
-              <td className={`border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums`}>{fmt(totals.clicks)}</td>
+              <td colSpan={6} className="border-t border-gray-200 px-3 py-2.5 text-xs text-gray-600">합계</td>
+              <td className="border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums">{fmt(totals.impressions)}</td>
+              <td className="border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums">{fmt(totals.clicks)}</td>
               {showViews && (
-                <td className={`border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums`}>{fmt(totals.views)}</td>
+                <td className="border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums">{fmt(totals.views)}</td>
               )}
-              <td className={`border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums`}>{fmt(totals.grossCost)}</td>
-              <td className={`border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums`}>{fmt(totals.netCost)}</td>
+              <td className="border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums">{fmt(totals.grossCost)}</td>
+              <td className="border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums">{fmt(totals.netCost)}</td>
+              <td className="border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums text-blue-700">{fmt(totals.executionAmount)}</td>
+              <td className="border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums">{fmt(totals.netAmount)}</td>
+              <td className="border-t border-gray-200 px-3 py-2.5 text-right text-xs tabular-nums text-gray-400">{fmt(totals.supplyValue)}</td>
             </tr>
           </tfoot>
         </table>
