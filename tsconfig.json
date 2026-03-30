@@ -30,5 +30,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "components/atoms",
+    "components/molecules",
+    "components/organisms",
+    "pixel-agents"
+  ]
 }

@@ -383,7 +383,7 @@ export default function CtPlusReportPage() {
                           <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
                           <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                           <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v/10000).toFixed(0)}만`} />
-                          <Tooltip formatter={(v: number) => [`${fmt(v)}원`, '집행금액']} />
+                          <Tooltip formatter={(v: unknown) => [`${fmt(Number(v))}원`, '집행금액']} />
                           <Line type="monotone" dataKey="cost" stroke="#3B82F6" strokeWidth={2} dot={false} />
                         </LineChart>
                       </ResponsiveContainer>
@@ -414,7 +414,7 @@ export default function CtPlusReportPage() {
                           <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
                           <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                           <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v/10000).toFixed(0)}만`} />
-                          <Tooltip formatter={(v: number, name: string) => [fmt(v), name === 'impressions' ? '노출' : '클릭']} />
+                          <Tooltip formatter={(v: unknown, name: unknown) => [fmt(Number(v)), name === 'impressions' ? '노출' : '클릭']} />
                           <Legend wrapperStyle={{ fontSize: 11 }} formatter={v => v === 'impressions' ? '노출' : '클릭'} />
                           <Bar dataKey="impressions" fill="#BFDBFE" radius={[2,2,0,0]} />
                           <Bar dataKey="clicks" fill="#3B82F6" radius={[2,2,0,0]} />
@@ -454,14 +454,14 @@ export default function CtPlusReportPage() {
                               cy="50%"
                               outerRadius={90}
                               innerRadius={50}
-                              label={({ dmpType, percent }) => `${dmpType} ${(percent * 100).toFixed(1)}%`}
+                              label={({ name, percent }: { name?: string; percent?: number }) => `${name ?? ''} ${((percent ?? 0) * 100).toFixed(1)}%`}
                               labelLine={false}
                             >
                               {dmpSettlement.rows.filter(r => r.totalExecution > 0).map(r => (
                                 <Cell key={r.dmpType} fill={DMP_COLORS[r.dmpType] ?? '#9CA3AF'} />
                               ))}
                             </Pie>
-                            <Tooltip formatter={(v: number) => `${fmt(v)}원`} />
+                            <Tooltip formatter={(v: unknown) => `${fmt(Number(v))}원`} />
                           </PieChart>
                         </ResponsiveContainer>
                       )}
@@ -553,14 +553,14 @@ export default function CtPlusReportPage() {
                             cx="50%"
                             cy="50%"
                             outerRadius={90}
-                            label={({ media, percent }) => `${media} ${(percent*100).toFixed(0)}%`}
+                            label={({ name, percent }: { name?: string; percent?: number }) => `${name ?? ''} ${((percent ?? 0)*100).toFixed(0)}%`}
                             labelLine={false}
                           >
                             {mediaData.filter(m => m.cost > 0).map(m => (
                               <Cell key={m.media} fill={MEDIA_CHART_COLORS[m.media] ?? '#9CA3AF'} />
                             ))}
                           </Pie>
-                          <Tooltip formatter={(v: number) => `${fmt(v)}원`} />
+                          <Tooltip formatter={(v: unknown) => `${fmt(Number(v))}원`} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -572,7 +572,7 @@ export default function CtPlusReportPage() {
                           <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} />
                           <YAxis type="category" dataKey="media" tick={{ fontSize: 10 }} width={60} />
-                          <Tooltip formatter={(v: number) => `${v.toFixed(2)}%`} />
+                          <Tooltip formatter={(v: unknown) => `${Number(v).toFixed(2)}%`} />
                           <Bar dataKey="ctr" fill="#3B82F6" radius={[0,2,2,0]}>
                             {mediaData.map(m => (
                               <Cell key={m.media} fill={MEDIA_CHART_COLORS[m.media] ?? '#9CA3AF'} />
@@ -635,7 +635,7 @@ export default function CtPlusReportPage() {
                           width={160}
                           tickFormatter={v => v.length > 20 ? v.slice(0, 20) + '…' : v}
                         />
-                        <Tooltip formatter={(v: number) => `${fmt(v)}원`} />
+                        <Tooltip formatter={(v: unknown) => `${fmt(Number(v))}원`} />
                         <Bar dataKey="cost" fill="#3B82F6" radius={[0,2,2,0]} />
                       </BarChart>
                     </ResponsiveContainer>

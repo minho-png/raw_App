@@ -171,6 +171,13 @@ export default function MockupPage() {
   const [showAddText,    setShowAddText]    = useState(false)
   const [downloadName,   setDownloadName]   = useState("kakao_mockup")
 
+  // AI 이미지 생성 상태
+  const [aiPrompt,        setAiPrompt]        = useState("")
+  const [aiRefFile,       setAiRefFile]       = useState<File | null>(null)
+  const [aiGenerating,    setAiGenerating]    = useState(false)
+  const [aiError,         setAiError]         = useState<string | null>(null)
+  const aiRefInputRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => { layersRef.current = layers }, [layers])
 
   // ── Canvas render ─────────────────────────────────────────
@@ -292,6 +299,44 @@ export default function MockupPage() {
     setSelectedId(layer.id)
   }
 
+  async function generateAiImage() {
+    if (!aiPrompt.trim()) return
+    setAiGenerating(true)
+    setAiError(null)
+    try {
+      const form = new FormData()
+      form.append('prompt', aiPrompt)
+      if (aiRefFile) form.append('referenceImage', aiRefFile)
+      const res = await fetch('/api/generate-mockup-image', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error ?? '생성 실패')
+
+      // base64 → HTMLImageElement
+      const img = new Image()
+      img.src = `data:${data.mimeType};base64,${data.imageData}`
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve()
+        img.onerror = () => reject(new Error('이미지 로드 실패'))
+      })
+
+      const ip = PRESETS.find(p => p.id === selectedPreset)?.imagePos
+      const layer: Layer = {
+        id: uid(), type: "image", label: "AI 생성 이미지", visible: true,
+        img, xR: ip?.xR ?? 0.02, yR: ip?.yR ?? 0.20,
+        wR: ip?.wR ?? 0.96, hR: ip?.hR ?? 0.30,
+        radiusPct: ip?.radiusPct ?? 0.010,
+      }
+      setLayers(prev => [layer, ...prev])
+      setSelectedId(layer.id)
+      setAiPrompt("")
+      setAiRefFile(null)
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : '생성 중 오류가 발생했습니다.')
+    } finally {
+      setAiGenerating(false)
+    }
+  }
+
   function addText() {
     if (!newText.trim()) return
     const layer: Layer = {
@@ -380,6 +425,84 @@ export default function MockupPage() {
               </div>
             )}
           </section>
+
+          {/* ── AI 이미지 생성 ─────────────────────── */}
+          {bgImg && (
+            <section className="space-y-2 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+              <div className="flex items-center gap-1.5">
+                <svg className="h-3 w-3 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                </svg>
+                <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest">AI 이미지 생성</p>
+              </div>
+
+              {/* 프롬프트 입력 */}
+              <textarea
+                value={aiPrompt}
+                onChange={e => setAiPrompt(e.target.value)}
+                placeholder="생성할 광고 이미지를 설명하세요&#10;예: 여름 화장품 광고, 파란 배경에 세럼 제품"
+                rows={3}
+                className="w-full rounded-lg border border-violet-200 bg-white px-2.5 py-2 text-xs text-gray-700 focus:border-violet-400 focus:outline-none resize-none placeholder:text-gray-300"
+              />
+
+              {/* 참고 이미지 업로드 */}
+              <div>
+                <input
+                  ref={aiRefInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) { setAiRefFile(f); e.target.value = "" }
+                  }}
+                />
+                {aiRefFile ? (
+                  <div className="flex items-center justify-between rounded-lg border border-violet-200 bg-white px-2.5 py-2">
+                    <span className="text-[10px] text-violet-700 truncate max-w-[120px]">{aiRefFile.name}</span>
+                    <button onClick={() => setAiRefFile(null)} className="text-[10px] text-gray-400 hover:text-red-500 ml-1">×</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => aiRefInputRef.current?.click()}
+                    className="w-full rounded-lg border border-dashed border-violet-200 bg-white px-2.5 py-2 text-[10px] text-gray-400 hover:border-violet-300 hover:bg-violet-50 transition-colors text-left"
+                  >
+                    + 참고 이미지 업로드 (선택)
+                  </button>
+                )}
+              </div>
+
+              {/* 에러 표시 */}
+              {aiError && (
+                <p className="rounded-lg bg-red-50 px-2.5 py-2 text-[10px] text-red-600 border border-red-200">{aiError}</p>
+              )}
+
+              {/* 생성 버튼 */}
+              <button
+                onClick={generateAiImage}
+                disabled={aiGenerating || !aiPrompt.trim()}
+                className="w-full rounded-lg bg-violet-600 py-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5"
+              >
+                {aiGenerating ? (
+                  <>
+                    <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    생성 중...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                    </svg>
+                    Gemini로 생성
+                  </>
+                )}
+              </button>
+              <p className="text-[9px] text-violet-400 text-center">GEMINI_API_KEY 환경변수 필요</p>
+            </section>
+          )}
 
           {/* 레이어 */}
           {bgImg && (

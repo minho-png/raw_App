@@ -290,23 +290,24 @@ export class CalculationService {
     if (groupByColumns.length > 0 && availableSumCols.length > 0) {
       const groups = new Map<string, Record<string, any>>();
       rowsWithDmp.forEach(row => {
-        const key = groupByColumns.map(col => String(row[col] ?? '')).join('\x00');
+        const rowAny = row as Record<string, unknown>
+        const key = groupByColumns.map(col => String(rowAny[col] ?? '')).join('\x00');
         if (!groups.has(key)) {
           const seed: Record<string, any> = {};
-          groupByColumns.forEach(col => { seed[col] = row[col]; });
+          groupByColumns.forEach(col => { seed[col] = rowAny[col]; });
           availableSumCols.forEach(col => { seed[col] = 0; });
-          seed['date_raw'] = row['date_raw'];
-          seed['excel_campaign_name'] = row['excel_campaign_name'];
-          seed['creative_name'] = row['creative_name'];
-          seed['age'] = row['age'];
-          seed['gender'] = row['gender'];
-          seed['device'] = row['device'];
-          seed['os'] = row['os'];
-          seed['media_group'] = row['media_group'];
+          seed['date_raw'] = rowAny['date_raw'];
+          seed['excel_campaign_name'] = rowAny['excel_campaign_name'];
+          seed['creative_name'] = rowAny['creative_name'];
+          seed['age'] = rowAny['age'];
+          seed['gender'] = rowAny['gender'];
+          seed['device'] = rowAny['device'];
+          seed['os'] = rowAny['os'];
+          seed['media_group'] = rowAny['media_group'];
           groups.set(key, seed);
         }
         const g = groups.get(key)!;
-        availableSumCols.forEach(col => { g[col] = (g[col] || 0) + (Number(row[col]) || 0); });
+        availableSumCols.forEach(col => { g[col] = (g[col] || 0) + (Number(rowAny[col]) || 0); });
       });
 
       groups.forEach(row => {

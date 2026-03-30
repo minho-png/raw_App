@@ -173,3 +173,147 @@ export async function parseExcelFile(file: File, media: MediaType): Promise<Medi
 
   return { media, fileName: file.name, summary, weekly, demographic, creatives }
 }
+
+// ── CT/CTV용 파서 (동영상 완료 재생 기반) ─────────────────────────────────
+// RAW_APP calculationService의 STANDARD_ALIASES 패턴을 따라
+// 한국 주요 광고 플랫폼(Google, Kakao, Meta) 동영상 RAW 파일 컬럼을 퍼지 매핑합니다.
+
+import type { CtvMediaData, CtvMediaSummary, CtvWeeklyRow, CtvCreativeRow, CtvRawRow } from './reportTypes'
+
+/** 완료 재생수 컬럼 후보 — Google/Kakao/Meta/generic */
+const COMPLETED_VIEWS_CANDIDATES = [
+  // Google
+  '완료된 조회수', 'TrueView조회수', 'TrueView 조회수', '동영상 재생 완료',
+  '동영상 완료', '완료 조회수', '100% 재생', '100%재생', '100% 재생수',
+  // Kakao
+  '동영상 완료 재생', '완료 재생', '완료재생수', '동영상완료재생',
+  // Meta
+  '동영상 완료 조회', '동영상완료조회', 'ThruPlay', 'thruplay', '동영상 100% 재생',
+  // Generic
+  '완료조회수', '완료시청수', '완료재생수', 'completed views', 'completedviews',
+  'view completions', 'video completions', 'VCR', 'vcr',
+]
+
+export async function parseCtvExcelFile(file: File, media: MediaType): Promise<CtvMediaData> {
+  const buffer = await file.arrayBuffer()
+  const workbook = xlsxRead(buffer, { type: 'array' })
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  const allRows: Record<string, unknown>[] = xlsxUtils.sheet_to_json(sheet, { defval: '' })
+  const rows = allRows.filter(row => !isSummaryRow(row) && !isEmptyRow(row))
+
+  let totalImpressions = 0, totalCompletedViews = 0, totalCost = 0
+
+  for (const row of rows) {
+    totalImpressions    += findValue(row, '노출수', '노출', 'impressions', 'impr', '도달수')
+    totalCompletedViews += findValue(row, ...COMPLETED_VIEWS_CANDIDATES)
+    totalCost           += findValue(row,
+      '비용', '소진금액', '금액', '집행금액', '소진', 'cost', 'spend', '지출', '청구금액',
+      '집행 금액(VAT 별도)', '총 비용', '공급가액'
+    )
+  }
+
+  const summary: CtvMediaSummary = {
+    impressions:    Math.round(totalImpressions),
+    completedViews: Math.round(totalCompletedViews),
+    vtr:            totalImpressions > 0 ? Math.round((totalCompletedViews / totalImpressions) * 10000) / 100 : 0,
+    cost:           Math.round(totalCost),
+    cpv:            totalCompletedViews > 0 ? Math.round(totalCost / totalCompletedViews) : 0,
+  }
+
+  // ── 주차별 집계 ──────────────────────────────────────────────
+  const weeklyMap = new Map<string, { imp: number; cv: number; cost: number }>()
+  for (const row of rows) {
+    const dateStr = findStringValue(row, '날짜', '일자', 'date', '기간', '일', '기준일')
+    if (!dateStr) continue
+    let weekKey = dateStr.slice(0, 10)
+    const dateObj = new Date(dateStr)
+    if (!isNaN(dateObj.getTime())) {
+      const jan1 = new Date(dateObj.getFullYear(), 0, 1)
+      const weekNum = Math.ceil(((dateObj.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7)
+      weekKey = `${dateObj.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
+    }
+    const existing = weeklyMap.get(weekKey) ?? { imp: 0, cv: 0, cost: 0 }
+    existing.imp  += findValue(row, '노출수', '노출', 'impressions', 'impr')
+    existing.cv   += findValue(row, ...COMPLETED_VIEWS_CANDIDATES)
+    existing.cost += findValue(row, '비용', '소진금액', '금액', '집행금액', 'cost', 'spend', '지출')
+    weeklyMap.set(weekKey, existing)
+  }
+
+  const weekly: CtvWeeklyRow[] = Array.from(weeklyMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([week, d]) => ({
+      week,
+      impressions:    Math.round(d.imp),
+      completedViews: Math.round(d.cv),
+      vtr:            d.imp > 0 ? Math.round((d.cv / d.imp) * 10000) / 100 : 0,
+      cost:           Math.round(d.cost),
+    }))
+
+  // ── 소재별 집계 ──────────────────────────────────────────────
+  const creativeMap = new Map<string, { imp: number; cv: number; cost: number }>()
+  for (const row of rows) {
+    const name = findStringValue(row,
+      '소재명', '소재', '광고명', 'creative', 'ad name', '광고소재', '광고 소재 이름',
+      '캠페인명', '광고그룹명'
+    )
+    if (!name) continue
+    const existing = creativeMap.get(name) ?? { imp: 0, cv: 0, cost: 0 }
+    existing.imp  += findValue(row, '노출수', '노출', 'impressions', 'impr')
+    existing.cv   += findValue(row, ...COMPLETED_VIEWS_CANDIDATES)
+    existing.cost += findValue(row, '비용', '소진금액', '금액', '집행금액', 'cost', 'spend', '지출')
+    creativeMap.set(name, existing)
+  }
+
+  const creatives: CtvCreativeRow[] = Array.from(creativeMap.entries())
+    .map(([name, d]) => ({
+      name,
+      impressions:    Math.round(d.imp),
+      completedViews: Math.round(d.cv),
+      vtr:            d.imp > 0 ? Math.round((d.cv / d.imp) * 10000) / 100 : 0,
+      cost:           Math.round(d.cost),
+    }))
+    .sort((a, b) => b.completedViews - a.completedViews)
+    .slice(0, 10)
+
+  return { media, fileName: file.name, summary, weekly, creatives }
+}
+
+// ── CT/CTV 데일리용 RAW 행 파서 ───────────────────────────────────────────────
+const DOW_MAP: Record<number, string> = { 0:'일', 1:'월', 2:'화', 3:'수', 4:'목', 5:'금', 6:'토' }
+
+export async function parseCtvRawRows(file: File, mediaLabel: string): Promise<CtvRawRow[]> {
+  const buffer = await file.arrayBuffer()
+  const workbook = xlsxRead(buffer, { type: 'array' })
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  const allRows: Record<string, unknown>[] = xlsxUtils.sheet_to_json(sheet, { defval: '' })
+  const rows = allRows.filter(row => !isSummaryRow(row) && !isEmptyRow(row))
+
+  return rows.map(row => {
+    const dateStr = findStringValue(row, '날짜', '일자', 'date', '기간', '일', '기준일')
+    const dateObj = new Date(dateStr)
+    const dow = !isNaN(dateObj.getTime()) ? DOW_MAP[dateObj.getDay()] ?? '' : ''
+
+    const imp = findValue(row, '노출수', '노출', 'impressions', 'impr', '도달수')
+    const cv  = findValue(row, ...COMPLETED_VIEWS_CANDIDATES)
+    const cost = findValue(row,
+      '비용', '소진금액', '금액', '집행금액', '소진', 'cost', 'spend', '지출', '청구금액',
+      '집행 금액(VAT 별도)', '총 비용', '공급가액'
+    )
+    const creative = findStringValue(row,
+      '소재명', '소재', '광고명', 'creative', 'ad name', '광고소재', '광고 소재 이름',
+      '캠페인명', '광고그룹명'
+    )
+
+    return {
+      date: dateStr.slice(0, 10),
+      dayOfWeek: dow,
+      media: mediaLabel,
+      creativeName: creative,
+      impressions: Math.round(imp),
+      completedViews: Math.round(cv),
+      vtr: imp > 0 ? Math.round((cv / imp) * 10000) / 100 : 0,
+      cost: Math.round(cost),
+      cpv: cv > 0 ? Math.round(cost / cv) : 0,
+    }
+  }).filter(r => r.date || r.impressions > 0)
+}
