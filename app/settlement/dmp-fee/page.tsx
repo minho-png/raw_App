@@ -177,11 +177,10 @@ export default function DmpFeePage() {
     let importCount = 0
 
     for (const campaign of filtered) {
-      const campaignRows = allRows.filter(row =>
-        row.media === campaign.mediaBudgets.find(mb =>
-          ['네이버 GFA', '카카오모먼트', 'Google', 'META'].includes(mb.media)
-        )?.media ?? ''
-      )
+      const matchedMedia = campaign.mediaBudgets.find(mb =>
+        ['네이버 GFA', '카카오모먼트', 'Google', 'META'].includes(mb.media)
+      )?.media
+      const campaignRows = allRows.filter(row => row.media === (matchedMedia ?? ''))
 
       const dmps = getCampaignDmps(campaign)
       for (const dmp of dmps) {
