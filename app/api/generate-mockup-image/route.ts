@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '프롬프트 또는 이미지가 필요합니다.' }, { status: 400 })
   }
 
-  const IMAGEN_URL = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-ultra-generate-exp-05-20:predict?key=${apiKey}`
+  const IMAGEN_URL = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-ultra-generate-001:predict?key=${apiKey}`
 
   // ── Case A: 지면 이미지 + 광고 소재 → 게재 목업 합성 ────────────────────────
   if (mediaImageData && referenceImageData) {

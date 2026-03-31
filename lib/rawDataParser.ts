@@ -9,6 +9,8 @@ export interface RawRow {
   date: string        // YYYY-MM-DD
   dayOfWeek: string   // 월화수목금토일
   media: string       // 매체 표시명
+  campaignName: string   // CSV 캠페인명 (원본)
+  accountName: string    // CSV 계정명 (원본)
   creativeName: string
   dmpName: string     // 광고그룹명 원본
   dmpType: DmpType    // 자동 감지된 DMP 타입

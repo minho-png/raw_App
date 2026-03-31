@@ -70,6 +70,7 @@ function CtPlusDailyContent() {
   const [rowsByMedia, setRowsByMedia] = useState<Partial<Record<MediaType, RawRow[]>>>({})
   const [activeTab, setActiveTab]     = useState<MediaType | null>(null)
   const [csvCampaignMatches, setCsvCampaignMatches] = useState<Map<string, CampaignLookupResult | null>>(new Map())
+  const [csvCampaignOverrides, setCsvCampaignOverrides] = useState<Map<string, string>>(new Map()) // csvName → campaignId
 
   // 이전 리포트
   const [savedReports, setSavedReports]   = useState<SavedReport[]>([])
@@ -104,6 +105,22 @@ function CtPlusDailyContent() {
   }
   function getAgencyName(c: Campaign) {
     return agencies.find(a => a.id === c.agencyId)?.name ?? '—'
+  }
+
+  function getEffectiveCampaignForCsvName(csvName: string): Campaign | null {
+    const overrideId = csvCampaignOverrides.get(csvName)
+    if (overrideId) return campaigns.find(c => c.id === overrideId) ?? null
+    const match = csvCampaignMatches.get(csvName)
+    return match?.campaign ?? null
+  }
+
+  function handleCsvCampaignOverride(csvName: string, campaignId: string) {
+    setCsvCampaignOverrides(prev => {
+      const next = new Map(prev)
+      if (campaignId) next.set(csvName, campaignId)
+      else next.delete(csvName)
+      return next
+    })
   }
 
   async function handleProcess() {
@@ -475,34 +492,57 @@ function CtPlusDailyContent() {
               </div>
             </div>
 
-            {/* CSV 캠페인 역방향 매칭 결과 */}
-            {csvCampaignMatches.size > 0 && (
-              <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
-                <p className="text-xs font-semibold text-blue-700 mb-2">CSV 캠페인 매칭 결과</p>
-                <div className="space-y-1.5">
-                  {[...csvCampaignMatches.entries()].map(([csvName, match]) => (
-                    <div key={csvName} className="flex items-center gap-2 text-[11px]">
-                      <span className="font-mono text-gray-600 truncate max-w-[160px]" title={csvName}>{csvName}</span>
-                      <span className="text-gray-400">→</span>
-                      {match ? (
-                        <span className="text-blue-700">
-                          <span className="font-medium">{match.campaign.campaignName}</span>
-                          {match.agency && <span className="text-gray-500 ml-1.5">대행사: {match.agency.name}</span>}
-                          {match.advertiser && <span className="text-gray-500 ml-1.5">광고주: {match.advertiser.name}</span>}
-                          <span className={`ml-1.5 text-[9px] px-1 py-0.5 rounded ${
+          {/* CSV 캠페인 역방향 매칭 결과 */}
+          {csvCampaignMatches.size > 0 && (
+            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+              <p className="text-xs font-semibold text-blue-700 mb-3">캠페인 매칭</p>
+              <div className="space-y-3">
+                {[...csvCampaignMatches.entries()].map(([csvName, match]) => {
+                  const overrideId = csvCampaignOverrides.get(csvName) ?? ''
+                  const effectiveCampaign = getEffectiveCampaignForCsvName(csvName)
+                  const effectiveAgency = effectiveCampaign ? agencies.find(a => a.id === effectiveCampaign.agencyId) : null
+                  const effectiveAdvertiser = effectiveCampaign ? advertisers.find(a => a.id === effectiveCampaign.advertiserId) : null
+                  return (
+                    <div key={csvName} className="rounded-lg border border-blue-100 bg-white p-2.5 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-500 shrink-0">CSV</span>
+                        <span className="font-mono text-[11px] text-gray-700 truncate" title={csvName}>{csvName}</span>
+                        {match && !overrideId && (
+                          <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded shrink-0 ${
                             match.matchType === 'exact' ? 'bg-green-100 text-green-700' :
                             match.matchType === 'contains' ? 'bg-yellow-100 text-yellow-700' :
                             'bg-gray-100 text-gray-500'
                           }`}>{match.matchType === 'exact' ? '완전일치' : match.matchType === 'contains' ? '포함일치' : '부분일치'}</span>
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 italic">등록된 캠페인 없음</span>
+                        )}
+                        {overrideId && (
+                          <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded shrink-0 bg-purple-100 text-purple-700">수동선택</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-gray-400 shrink-0">캠페인</span>
+                        <select
+                          value={overrideId || match?.campaign?.id || ''}
+                          onChange={e => handleCsvCampaignOverride(csvName, e.target.value)}
+                          className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-700 focus:border-blue-300 focus:outline-none"
+                        >
+                          <option value="">-- 미매칭 --</option>
+                          {campaigns.map(c => (
+                            <option key={c.id} value={c.id}>{c.campaignName}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {effectiveCampaign && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-1">
+                          {effectiveAgency && <span className="text-[10px] text-gray-500">대행사: <span className="text-gray-700">{effectiveAgency.name}</span></span>}
+                          {effectiveAdvertiser && <span className="text-[10px] text-gray-500">광고주: <span className="text-gray-700">{effectiveAdvertiser.name}</span></span>}
+                        </div>
                       )}
                     </div>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
-            )}
+            </div>
+          )}
 
             {/* 매체 탭 */}
             <div className="mb-4 flex gap-2 border-b border-gray-200">

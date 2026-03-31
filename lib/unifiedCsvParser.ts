@@ -78,6 +78,9 @@ export function parseUnifiedCsv(
 
   // 헤더 파싱 (따옴표 제거)
   const headers = parseCsvLine(lines[0]).map(h => h.trim())
+  const colIndex: Record<string, number> = {}
+  headers.forEach((h, i) => { colIndex[h] = i })
+
   const idx = {
     date:        headers.indexOf('일자'),
     media:       headers.indexOf('매체'),
@@ -109,6 +112,8 @@ export function parseUnifiedCsv(
     const clkStr     = idx.clicks >= 0      ? cols[idx.clicks]      ?? '' : ''
     const viewStr    = idx.views >= 0       ? cols[idx.views]       ?? '' : ''
     const costStr    = idx.cost >= 0        ? cols[idx.cost]        ?? '' : ''
+    const campaignName = String(cols[colIndex['캠페인명']] ?? '').trim()
+    const accountName  = String(cols[colIndex['계정명']]  ?? '').trim()
 
     const mediaType = CSV_MEDIA_CODE_MAP[mediaCode]
     if (!mediaType) {
@@ -154,6 +159,8 @@ export function parseUnifiedCsv(
       date:            dateStr,
       dayOfWeek:       getDayOfWeek(dateStr),
       media:           MEDIA_TYPE_TO_LABEL[mediaType],
+      campaignName,
+      accountName,
       creativeName:    creative,
       dmpName:         adGroup,
       dmpType,

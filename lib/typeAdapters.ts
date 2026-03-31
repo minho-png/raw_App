@@ -38,6 +38,8 @@ export function performanceRecordToRawRow(record: PerformanceRecord): RawRow {
     date: dateStr,
     dayOfWeek,
     media: record.media,
+    campaignName: '',
+    accountName: '',
     creativeName: record.creative_name ?? '',
     dmpName: record.ad_group_name,
     dmpType: (record.dmp_type as RawRow['dmpType']) || 'DIRECT',

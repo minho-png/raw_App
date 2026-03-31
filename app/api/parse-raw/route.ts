@@ -290,6 +290,8 @@ export async function POST(request: NextRequest) {
         date: dateStr,
         dayOfWeek,
         media: mediaLabel,
+        campaignName: '',
+        accountName: '',
         creativeName,
         dmpName: adGroupName,
         dmpType,

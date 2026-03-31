@@ -43,7 +43,7 @@ export default function CtPlusReportPage() {
   const [selectedReportIds, setSelectedReportIds] = useState<Set<string>>(new Set())
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [activeSection, setActiveSection] = useState<'summary' | 'daily' | 'dmp' | 'media' | 'creative'>('summary')
+  const [activeSection, setActiveSection] = useState<'summary' | 'daily' | 'dmp' | 'media' | 'creative' | 'video' | 'campaign'>('summary')
   const [printing, setPrinting] = useState(false)
 
   useEffect(() => {
@@ -170,6 +170,75 @@ export default function CtPlusReportPage() {
       .slice(0, 10)
   }, [allRows])
 
+  // ── 영상 성과 (views > 0인 행만) ────────────────────────────────
+  const videoData = useMemo(() => {
+    const map = new Map<string, { views: number; impressions: number; cost: number }>()
+    for (const row of allRows) {
+      if (!row.views) continue
+      const cur = map.get(row.date) ?? { views: 0, impressions: 0, cost: 0 }
+      cur.views       += row.views
+      cur.impressions += row.impressions
+      cur.cost        += row.executionAmount || row.grossCost
+      map.set(row.date, cur)
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, v]) => ({
+        date: date.slice(5),
+        views: v.views,
+        impressions: v.impressions,
+        cost: v.cost,
+        vtr: v.impressions > 0 ? (v.views / v.impressions) * 100 : 0,
+        cpv: v.views > 0 ? Math.round(v.cost / v.views) : 0,
+      }))
+  }, [allRows])
+
+  // ── CSV 캠페인별 집계 ────────────────────────────────────────────
+  const campaignData = useMemo(() => {
+    const map = new Map<string, { impressions: number; clicks: number; cost: number }>()
+    for (const row of allRows) {
+      const key = row.campaignName || '(미분류)'
+      const cur = map.get(key) ?? { impressions: 0, clicks: 0, cost: 0 }
+      cur.impressions += row.impressions
+      cur.clicks      += row.clicks
+      cur.cost        += row.executionAmount || row.grossCost
+      map.set(key, cur)
+    }
+    return Array.from(map.entries())
+      .map(([name, v]) => ({
+        name,
+        impressions: v.impressions,
+        clicks: v.clicks,
+        cost: v.cost,
+        ctr: calcCtr(v.clicks, v.impressions),
+        cpc: calcCpc(v.cost, v.clicks),
+      }))
+      .sort((a, b) => b.cost - a.cost)
+  }, [allRows])
+
+  // ── CSV 계정별 집계 ──────────────────────────────────────────────
+  const accountData = useMemo(() => {
+    const map = new Map<string, { impressions: number; clicks: number; cost: number }>()
+    for (const row of allRows) {
+      const key = row.accountName || '(미분류)'
+      const cur = map.get(key) ?? { impressions: 0, clicks: 0, cost: 0 }
+      cur.impressions += row.impressions
+      cur.clicks      += row.clicks
+      cur.cost        += row.executionAmount || row.grossCost
+      map.set(key, cur)
+    }
+    return Array.from(map.entries())
+      .map(([name, v]) => ({
+        name,
+        impressions: v.impressions,
+        clicks: v.clicks,
+        cost: v.cost,
+        ctr: calcCtr(v.clicks, v.impressions),
+        cpc: calcCpc(v.cost, v.clicks),
+      }))
+      .sort((a, b) => b.cost - a.cost)
+  }, [allRows])
+
   function handlePrint() {
     setPrinting(true)
     setTimeout(() => {
@@ -188,11 +257,14 @@ export default function CtPlusReportPage() {
     const html = generateDailyHtmlReport({
       dateRange,
       campaignName,
-      summary,
+      summary: { ...summary, views: videoData.reduce((s, r) => s + r.views, 0) },
       dailyData: dailyData.map(d => ({ ...d, date: d.date })),
       dmpSettlement,
       mediaData,
       creativeData,
+      videoData: videoData.length > 0 ? videoData : undefined,
+      campaignBreakdown: campaignData.length > 0 ? campaignData : undefined,
+      accountBreakdown: accountData.length > 0 ? accountData : undefined,
     })
     const name = `CT+_통합리포트_${new Date().toISOString().slice(0, 10)}.html`
     downloadHtml(html, name)
@@ -329,6 +401,16 @@ export default function CtPlusReportPage() {
                     {s.label}
                   </button>
                 ))}
+                <button onClick={() => setActiveSection('video')}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors ${activeSection === 'video' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+                  영상 성과
+                  {videoData.length > 0 && <span className="ml-1 text-[10px] text-green-600">({videoData.reduce((s,r)=>s+r.views,0).toLocaleString()}회)</span>}
+                </button>
+                <button onClick={() => setActiveSection('campaign')}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors ${activeSection === 'campaign' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+                  캠페인별
+                  {campaignData.length > 0 && <span className="ml-1 text-[10px] text-gray-400">({campaignData.length})</span>}
+                </button>
               </nav>
             </div>
           </div>
@@ -682,6 +764,116 @@ export default function CtPlusReportPage() {
                   </div>
                 </section>
               )}
+
+          {/* ── 영상 성과 ─────────────────────────────────────── */}
+          {activeSection === 'video' && (
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800 mb-4">영상 성과</h2>
+              {videoData.length === 0 ? (
+                <p className="text-sm text-gray-400">영상 재생 데이터가 없습니다. (총재생 컬럼이 0인 경우)</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead><tr className="border-b border-gray-200">
+                      <th className="py-2 px-3 text-left text-gray-500 font-medium">날짜</th>
+                      <th className="py-2 px-3 text-right text-gray-500 font-medium">재생수</th>
+                      <th className="py-2 px-3 text-right text-gray-500 font-medium">노출</th>
+                      <th className="py-2 px-3 text-right text-gray-500 font-medium">VTR</th>
+                      <th className="py-2 px-3 text-right text-gray-500 font-medium">집행금액</th>
+                      <th className="py-2 px-3 text-right text-gray-500 font-medium">CPV</th>
+                    </tr></thead>
+                    <tbody>
+                      {videoData.map(r => (
+                        <tr key={r.date} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-2 px-3 font-mono">{r.date}</td>
+                          <td className="py-2 px-3 text-right">{fmt(r.views)}</td>
+                          <td className="py-2 px-3 text-right">{fmt(r.impressions)}</td>
+                          <td className="py-2 px-3 text-right">{fmtPct(r.vtr)}</td>
+                          <td className="py-2 px-3 text-right">{fmt(r.cost)}원</td>
+                          <td className="py-2 px-3 text-right">{fmt(r.cpv)}원</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot><tr className="border-t border-gray-300 font-semibold bg-gray-50">
+                      <td className="py-2 px-3">합계</td>
+                      <td className="py-2 px-3 text-right">{fmt(videoData.reduce((s,r)=>s+r.views,0))}</td>
+                      <td className="py-2 px-3 text-right">{fmt(videoData.reduce((s,r)=>s+r.impressions,0))}</td>
+                      <td className="py-2 px-3 text-right">—</td>
+                      <td className="py-2 px-3 text-right">{fmt(videoData.reduce((s,r)=>s+r.cost,0))}원</td>
+                      <td className="py-2 px-3 text-right">—</td>
+                    </tr></tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── 캠페인별 / 계정별 ───────────────────────────────── */}
+          {activeSection === 'campaign' && (
+            <div className="space-y-8">
+              {campaignData.length > 0 && (
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-800 mb-4">캠페인별 성과</h2>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead><tr className="border-b border-gray-200">
+                        <th className="py-2 px-3 text-left text-gray-500 font-medium">캠페인명 (CSV)</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">노출</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">클릭</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">CTR</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">CPC</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">집행금액</th>
+                      </tr></thead>
+                      <tbody>
+                        {campaignData.map(r => (
+                          <tr key={r.name} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-2 px-3 max-w-[200px] truncate" title={r.name}>{r.name}</td>
+                            <td className="py-2 px-3 text-right">{fmt(r.impressions)}</td>
+                            <td className="py-2 px-3 text-right">{fmt(r.clicks)}</td>
+                            <td className="py-2 px-3 text-right">{fmtPct(r.ctr)}</td>
+                            <td className="py-2 px-3 text-right">{fmt(r.cpc)}원</td>
+                            <td className="py-2 px-3 text-right">{fmt(r.cost)}원</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {accountData.length > 0 && (
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-800 mb-4">계정별 성과</h2>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead><tr className="border-b border-gray-200">
+                        <th className="py-2 px-3 text-left text-gray-500 font-medium">계정명 (CSV)</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">노출</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">클릭</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">CTR</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">CPC</th>
+                        <th className="py-2 px-3 text-right text-gray-500 font-medium">집행금액</th>
+                      </tr></thead>
+                      <tbody>
+                        {accountData.map(r => (
+                          <tr key={r.name} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-2 px-3">{r.name}</td>
+                            <td className="py-2 px-3 text-right">{fmt(r.impressions)}</td>
+                            <td className="py-2 px-3 text-right">{fmt(r.clicks)}</td>
+                            <td className="py-2 px-3 text-right">{fmtPct(r.ctr)}</td>
+                            <td className="py-2 px-3 text-right">{fmt(r.cpc)}원</td>
+                            <td className="py-2 px-3 text-right">{fmt(r.cost)}원</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {campaignData.length === 0 && accountData.length === 0 && (
+                <p className="text-sm text-gray-400">캠페인명/계정명 데이터가 없습니다. 최신 CSV로 다시 파싱하면 표시됩니다.</p>
+              )}
+            </div>
+          )}
             </>
           )}
         </main>
