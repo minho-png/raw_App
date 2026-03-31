@@ -6,7 +6,23 @@
       "Read(//c/Users/smh16/.claude/**)",
       "Read(//c/Users/smh16/**)",
       "Bash(cp C:/RAW_APP/src/services/reportService.ts /tmp/reportService_raw.ts)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|WIP\\\\|미완\\\\|작업중\" /c/kim/app --include=*.tsx --include=*.ts -l)",
+      "Bash(npx tsc:*)",
+      "Bash(cat /c/RAW_APP/src/types/*.ts)",
+      "Bash(npm run:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''version'''',''''?''''\\)\\)\")",
+      "Bash(grep -E \"^ai$|google|gemini\")",
+      "Bash(ls /c/kim/.env*)",
+      "Bash(node -e \"const {GoogleGenerativeAI}=require\\(''''@google/generative-ai''''\\); console.log\\(''''ok''''\\); console.log\\(Object.keys\\(require\\(''''@google/generative-ai''''\\)\\)\\)\")",
+      "Bash(grep -r \"from.*components/atoms/SectionCard\\\\|from.*components/molecules/BudgetPacing\\\\|from.*components/molecules/DataTable\\\\|from.*components/molecules/FileUploader\\\\|from.*components/organisms\" /c/kim/app --include=*.tsx)",
+      "Bash(grep -r \"atoms/\\\\|molecules/\\\\|organisms/\" /c/kim/app --include=*.tsx)",
+      "Bash(grep -r from.*services/ /c/kim/app --include=*.ts --include=*.tsx)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(find /c/kim -maxdepth 3 -type f \\\\\\(-name .env* -o -name *.config.* \\\\\\))",
+      "Bash(xargs grep:*)"
     ]
   }
 }

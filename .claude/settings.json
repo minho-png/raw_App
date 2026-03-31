@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Read(//c/RAW_APP/**)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|WIP\\\\|미완\\\\|작업중\" app --include=*.tsx --include=*.ts -l)"
+    ],
+    "additionalDirectories": [
+      "C:\\kim\\.git"
     ]
   }
 }
