@@ -10,8 +10,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const repo = new RepositoryService(client);
     await repo.upsertCampaignConfig({ ...body, campaign_id: id });
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: (error instanceof Error ? error.message : String(error)) }, { status: 500 });
   }
 }
 
@@ -22,7 +22,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const repo = new RepositoryService(client);
     await repo.deleteCampaign(id);
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: (error instanceof Error ? error.message : String(error)) }, { status: 500 });
   }
 }

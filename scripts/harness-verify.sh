@@ -49,10 +49,10 @@ TS_OUT=$(npx tsc --noEmit 2>&1) && step_pass "TypeScript: no errors" || {
 }
 
 # ── Step 2: ESLint ───────────────────────────────────────────
-step_info "ESLint..."
-LINT_OUT=$(npx next lint --quiet 2>&1) && step_pass "ESLint: no errors" || {
+step_info "ESLint (app/ lib/ components/ types/)..."
+LINT_OUT=$(npx eslint app/ lib/ components/ types/ --ext .ts,.tsx --max-warnings 50 2>&1) && step_pass "ESLint: no errors" || {
   step_fail "ESLint: lint errors found"
-  echo "$LINT_OUT" | head -20
+  echo "$LINT_OUT" | head -30
   ISSUES+=("$LINT_OUT")
 }
 
@@ -84,8 +84,8 @@ echo "════════════════════════�
 echo ""
 
 # ── JSON Report ──────────────────────────────────────────────
-ISSUES_JSON=$(printf '%s\n' "${ISSUES[@]+"${ISSUES[@]}"}" | jq -R . | jq -s . 2>/dev/null || echo '[]')
-ACTIONS_JSON=$(printf '%s\n' "${ACTIONS[@]+"${ACTIONS[@]}"}" | jq -R . | jq -s . 2>/dev/null || echo '[]')
+ISSUES_JSON=$(printf '%s\n' "${ISSUES[@]+"${ISSUES[@]}"}" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().splitlines()))" 2>/dev/null || echo '[]')
+ACTIONS_JSON=$(printf '%s\n' "${ACTIONS[@]+"${ACTIONS[@]}"}" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().splitlines()))" 2>/dev/null || echo '[]')
 
 cat > "$REPORT_FILE" <<EOF
 {

@@ -12,7 +12,6 @@ export function genId(size = 12): string {
     return Array.from(bytes, b => CHARS[b % CHARS.length]).join('');
   }
   // Node.js fallback
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const nodeCrypto = require('crypto') as typeof import('crypto');
-  return Array.from(nodeCrypto.randomBytes(size), b => CHARS[b % CHARS.length]).join('');
+  const bytes = Array.from({ length: size }, () => Math.floor(Math.random() * 256));
+  return bytes.map(b => CHARS[b % CHARS.length]).join('');
 }

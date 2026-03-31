@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
 
     const rows = await repo.getAllCampaignsMonthlySettlementData(year, month);
     return NextResponse.json({ success: true, rows });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: (error instanceof Error ? error.message : String(error)) }, { status: 500 });
   }
 }
 
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const repo = new RepositoryService(client);
     const result = await repo.saveMonthlySettlement(SYSTEM_WORKSPACE_ID, body);
     return NextResponse.json({ success: true, ...result });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: (error instanceof Error ? error.message : String(error)) }, { status: 500 });
   }
 }

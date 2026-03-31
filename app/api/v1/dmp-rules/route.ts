@@ -8,8 +8,8 @@ export async function GET() {
     const repo = new RepositoryService(client);
     const rules = await repo.getDmpRules(SYSTEM_WORKSPACE_ID);
     return NextResponse.json({ success: true, rules });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: (error instanceof Error ? error.message : String(error)) }, { status: 500 });
   }
 }
 
@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
     const repo = new RepositoryService(client);
     await repo.upsertDmpRule({ ...body, workspace_id: SYSTEM_WORKSPACE_ID });
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: (error instanceof Error ? error.message : String(error)) }, { status: 500 });
   }
 }
 
@@ -34,7 +34,7 @@ export async function DELETE(req: NextRequest) {
     const repo = new RepositoryService(client);
     await repo.deleteDmpRule(ruleId);
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: (error instanceof Error ? error.message : String(error)) }, { status: 500 });
   }
 }

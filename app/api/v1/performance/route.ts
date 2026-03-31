@@ -13,8 +13,8 @@ export async function GET(req: NextRequest) {
     const repo = new RepositoryService(client);
     const records = await repo.getPerformanceData(campaignId);
     return NextResponse.json({ success: true, records });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: (error instanceof Error ? error.message : String(error)) }, { status: 500 });
   }
 }
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     const result = await repo.upsertCampaignData([...raw, ...report]);
     return NextResponse.json({ success: true, ...result });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: (error instanceof Error ? error.message : String(error)) }, { status: 500 });
   }
 }
