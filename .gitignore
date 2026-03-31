@@ -3,6 +3,19 @@
 # AI Harness
 .harness-last-report.json
 
+# Claude Code local settings (permissions, local overrides)
+.claude/settings.local.json
+
+# Sample / working data files
+*.csv
+
+# Sample images in public (binary assets, managed outside git)
+public/*.png
+public/*.jpg
+public/*.jpeg
+public/*.gif
+public/*.webp
+
 # dependencies
 /node_modules
 /.pnp
