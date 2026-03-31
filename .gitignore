@@ -9,12 +9,7 @@
 # Sample / working data files
 *.csv
 
-# Sample images in public (binary assets, managed outside git)
-public/*.png
-public/*.jpg
-public/*.jpeg
-public/*.gif
-public/*.webp
+# Sample images — public/ 폴더 이미지는 목업 도구용으로 추적 유지
 
 # dependencies
 /node_modules
