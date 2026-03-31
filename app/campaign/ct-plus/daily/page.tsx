@@ -1,17 +1,17 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
-import MediaUploadCard from "@/components/ct-plus/MediaUploadCard"
+import UnifiedCsvUploadCard from "@/components/ct-plus/UnifiedCsvUploadCard"
 import DailyDataTable from "@/components/ct-plus/DailyDataTable"
 import { hasCampaignMedia } from "@/lib/rawDataParser"
 import type { RawRow } from "@/lib/rawDataParser"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 import type { Campaign, Advertiser, Agency } from "@/lib/campaignTypes"
+import type { ParseUnifiedCsvResult } from "@/lib/unifiedCsvParser"
 
-const MEDIA_TYPES: MediaType[] = ['google', 'naver', 'kakao', 'meta']
 const CAMPAIGN_KEY  = 'ct-plus-campaigns-v7'
 const ADVERTISER_KEY = 'ct-plus-advertisers-v1'
 const AGENCY_KEY    = 'ct-plus-agencies-v1'
@@ -45,8 +45,16 @@ function makeLabel(
 }
 
 export default function CtPlusDailyPage() {
+  return (
+    <Suspense>
+      <CtPlusDailyContent />
+    </Suspense>
+  )
+}
+
+function CtPlusDailyContent() {
   const searchParams = useSearchParams()
-  const [files, setFiles] = useState<Partial<Record<MediaType, File>>>({})
+  const [unifiedFile, setUnifiedFile] = useState<File | null>(null)
   const [step, setStep]   = useState<1 | 2 | 3>(1)
   const [loading, setLoading] = useState(false)
 
@@ -86,7 +94,6 @@ export default function CtPlusDailyPage() {
     } catch {}
   }, [searchParams])
 
-  const uploadedMediaTypes = MEDIA_TYPES.filter(m => files[m])
   const selectedCampaign   = campaigns.find(c => c.id === selectedCampaignId) ?? null
 
   function getAdvertiserName(c: Campaign) {
@@ -97,25 +104,24 @@ export default function CtPlusDailyPage() {
   }
 
   async function handleProcess() {
+    if (!unifiedFile) return
     setLoading(true)
     try {
-      const result: Partial<Record<MediaType, RawRow[]>> = {}
-      for (const media of uploadedMediaTypes) {
-        const file = files[media]!
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('media', media)
-        formData.append('campaign', JSON.stringify(selectedCampaign))
-        const res = await fetch('/api/parse-raw', { method: 'POST', body: formData })
-        if (!res.ok) throw new Error(await res.text())
-        result[media] = await res.json()
+      const formData = new FormData()
+      formData.append('file', unifiedFile)
+      formData.append('campaign', JSON.stringify(selectedCampaign))
+      const res = await fetch('/api/parse-unified-csv', { method: 'POST', body: formData })
+      if (!res.ok) throw new Error(await res.text())
+      const result: ParseUnifiedCsvResult = await res.json()
+      setRowsByMedia(result.rowsByMedia)
+      const mediaKeys = Object.keys(result.rowsByMedia) as MediaType[]
+      setActiveTab(mediaKeys[0] ?? null)
+      if (result.skippedMediaCodes.length > 0) {
+        console.warn('[parse-unified-csv] 알 수 없는 매체 코드:', result.skippedMediaCodes)
       }
-      setRowsByMedia(result)
-      const firstMedia = uploadedMediaTypes[0]
-      setActiveTab(firstMedia ?? null)
       setStep(3)
     } catch (e) {
-      alert('파일 파싱 중 오류가 발생했습니다. 파일 형식을 확인해주세요.')
+      alert('파일 파싱 중 오류가 발생했습니다. CSV 파일 형식을 확인해주세요.')
       console.error(e)
     } finally {
       setLoading(false)
@@ -146,7 +152,7 @@ export default function CtPlusDailyPage() {
     setRowsByMedia(r.rowsByMedia)
     setActiveTab(r.mediaTypes[0] ?? null)
     setSelectedCampaignId(r.campaign?.id ?? null)
-    setFiles({})
+    setUnifiedFile(null)
     setShowHistory(false)
     setStep(3)
   }
@@ -160,9 +166,7 @@ export default function CtPlusDailyPage() {
 
   // ── 현재 탭 데이터 ────────────────────────────────────────────
   const activeRows = activeTab ? (rowsByMedia[activeTab] ?? []) : []
-  const activeMediaTypes = step === 3
-    ? (Object.keys(rowsByMedia) as MediaType[])
-    : uploadedMediaTypes
+  const activeMediaTypes = Object.keys(rowsByMedia) as MediaType[]
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -273,26 +277,19 @@ export default function CtPlusDailyPage() {
         {step === 1 && (
           <div className="space-y-4">
             <div>
-              <h2 className="text-sm font-semibold text-gray-800 mb-0.5">RAW 파일 업로드</h2>
-              <p className="text-xs text-gray-400 mb-4">매체별 RAW 데이터 파일(.xlsx/.xls/.csv)을 업로드해주세요.</p>
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                {MEDIA_TYPES.map(media => (
-                  <MediaUploadCard
-                    key={media}
-                    media={media}
-                    fileName={files[media]?.name}
-                    onFileSelect={file => setFiles(prev => ({ ...prev, [media]: file }))}
-                    onRemove={() => setFiles(prev => { const n = { ...prev }; delete n[media]; return n })}
-                  />
-                ))}
-              </div>
+              <h2 className="text-sm font-semibold text-gray-800 mb-0.5">통합 CSV 파일 업로드</h2>
+              <p className="text-xs text-gray-400 mb-4">모든 매체 성과 데이터가 포함된 통합 CSV 파일을 업로드해주세요.</p>
+              <UnifiedCsvUploadCard
+                fileName={unifiedFile?.name}
+                onFileSelect={file => setUnifiedFile(file)}
+                onRemove={() => setUnifiedFile(null)}
+              />
             </div>
 
-            {uploadedMediaTypes.length > 0 && (
+            {unifiedFile && (
               <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
                 <p className="text-sm text-blue-700">
-                  <strong>{uploadedMediaTypes.length}개</strong> 매체 업로드 완료
-                  {' '}({uploadedMediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')})
+                  <strong>{unifiedFile.name}</strong> 업로드 완료
                 </p>
                 <button
                   onClick={() => setStep(2)}
@@ -336,10 +333,6 @@ export default function CtPlusDailyPage() {
                 <div className="space-y-2">
                   {campaigns.map(c => {
                     const selected = selectedCampaignId === c.id
-                    const mediaLabels = c.mediaBudgets.map(mb => mb.media)
-                    const uploadedLabels = uploadedMediaTypes.map(m => MEDIA_CONFIG[m].label)
-                    const unmatchedMedia = uploadedLabels.filter(l => !mediaLabels.includes(l))
-
                     return (
                       <button
                         key={c.id}
@@ -372,13 +365,11 @@ export default function CtPlusDailyPage() {
                                 <span
                                   key={mb.media}
                                   className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
-                                    uploadedLabels.includes(mb.media)
-                                      ? 'bg-blue-100 text-blue-700'
-                                      : 'bg-gray-100 text-gray-400'
+                                    selected ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
                                   }`}
                                 >
                                   {mb.media}
-                                  {uploadedLabels.includes(mb.media) && (
+                                  {selected && (
                                     <span className="ml-1">
                                       DMP {mb.dmp.agencyFeeRate}% / 일반 {mb.nonDmp.agencyFeeRate}%
                                     </span>
@@ -391,14 +382,6 @@ export default function CtPlusDailyPage() {
                             selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300'
                           }`} />
                         </div>
-
-                        {selected && unmatchedMedia.length > 0 && (
-                          <div className="mt-3 rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2">
-                            <p className="text-xs text-yellow-700">
-                              <strong>주의:</strong> {unmatchedMedia.join(', ')} 매체가 캠페인에 없습니다. 해당 매체는 마크업 0% (집행금액 = NET)로 처리됩니다.
-                            </p>
-                          </div>
-                        )}
                       </button>
                     )
                   })}
