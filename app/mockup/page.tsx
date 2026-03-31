@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import type { Campaign, Agency, Advertiser } from '@/lib/campaignTypes'
 
 // ── Types ─────────────────────────────────────────────────────
 interface CoverRect { xR: number; yR: number; wR: number; hR: number; fill: string }
@@ -178,7 +179,39 @@ export default function MockupPage() {
   const [aiError,         setAiError]         = useState<string | null>(null)
   const aiRefInputRef = useRef<HTMLInputElement>(null)
 
+  // 캠페인 연동
+  const [campaigns, setCampaigns]                     = useState<Campaign[]>([])
+  const [agencies, setAgencies]                       = useState<Agency[]>([])
+  const [advertisers, setAdvertisers]                 = useState<Advertiser[]>([])
+  const [selectedCampaignId, setSelectedCampaignId]   = useState<string | null>(null)
+
+  // 게재 목업 (소재 + 지면 합성)
+  const [compositFile, setCompositFile]               = useState<File | null>(null)
+  const [compositGenerating, setCompositGenerating]   = useState(false)
+  const [compositError, setCompositError]             = useState<string | null>(null)
+  const compositInputRef                              = useRef<HTMLInputElement>(null)
+
   useEffect(() => { layersRef.current = layers }, [layers])
+
+  // 캠페인 데이터 로드 (localStorage)
+  useEffect(() => {
+    try {
+      const c = localStorage.getItem('ct-plus-campaigns-v7')
+      if (c) setCampaigns(JSON.parse(c))
+      const ag = localStorage.getItem('ct-plus-agencies-v1')
+      if (ag) setAgencies(JSON.parse(ag))
+      const adv = localStorage.getItem('ct-plus-advertisers-v1')
+      if (adv) setAdvertisers(JSON.parse(adv))
+    } catch {}
+  }, [])
+
+  // 캠페인 선택 시 다운로드 파일명 자동 설정
+  useEffect(() => {
+    if (selectedCampaignId) {
+      const c = campaigns.find(x => x.id === selectedCampaignId)
+      if (c) setDownloadName(c.campaignName.replace(/[/\\?%*:|"<>]/g, '_'))
+    }
+  }, [selectedCampaignId, campaigns])
 
   // ── Canvas render ─────────────────────────────────────────
   useEffect(() => {
@@ -347,6 +380,55 @@ export default function MockupPage() {
     }
   }
 
+  async function generateCompositeMockup() {
+    if (!compositFile || !bgImg) return
+    setCompositGenerating(true)
+    setCompositError(null)
+    try {
+      const form = new FormData()
+      form.append('prompt', '')
+      form.append('referenceImage', compositFile)
+      // 현재 지면 이미지를 mediaImage로 전달
+      const tmp = document.createElement('canvas')
+      tmp.width = bgImg.naturalWidth; tmp.height = bgImg.naturalHeight
+      tmp.getContext('2d')!.drawImage(bgImg, 0, 0)
+      const dataUrl = tmp.toDataURL('image/png')
+      const blob = await fetch(dataUrl).then(r => r.blob())
+      form.append('mediaImage', new File([blob], 'media.png', { type: 'image/png' }))
+      // 캠페인 컨텍스트 전달
+      if (selectedCampaignId) {
+        form.append('campaignId', selectedCampaignId)
+        const c = campaigns.find(x => x.id === selectedCampaignId)
+        if (c) form.append('campaignName', c.campaignName)
+      }
+
+      const res = await fetch('/api/generate-mockup-image', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error ?? '생성 실패')
+
+      const img = new Image()
+      img.src = `data:${data.mimeType};base64,${data.imageData}`
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve(); img.onerror = () => reject(new Error('이미지 로드 실패'))
+      })
+
+      const ip = PRESETS.find(p => p.id === selectedPreset)?.imagePos
+      const layer: Layer = {
+        id: uid(), type: 'image', label: '게재 목업', visible: true,
+        img, xR: ip?.xR ?? 0.02, yR: ip?.yR ?? 0.20,
+        wR: ip?.wR ?? 0.96, hR: ip?.hR ?? 0.30,
+        radiusPct: ip?.radiusPct ?? 0.010,
+      }
+      setLayers(prev => [layer, ...prev])
+      setSelectedId(layer.id)
+      setCompositFile(null)
+    } catch (e) {
+      setCompositError(e instanceof Error ? e.message : '생성 중 오류가 발생했습니다.')
+    } finally {
+      setCompositGenerating(false)
+    }
+  }
+
   function addText() {
     if (!newText.trim()) return
     const layer: Layer = {
@@ -396,12 +478,34 @@ export default function MockupPage() {
   // ── Render ────────────────────────────────────────────────
   const selLayer = layers.find(l=>l.id===selectedId)
   const activePreset = PRESETS.find(p=>p.id===selectedPreset)
+  const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId) ?? null
+  const selectedAgency = selectedCampaign ? agencies.find(a => a.id === selectedCampaign.agencyId) ?? null : null
+  const selectedAdvertiser = selectedCampaign ? advertisers.find(a => a.id === selectedCampaign.advertiserId) ?? null : null
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white px-6 py-4">
-        <h1 className="text-base font-semibold text-gray-900">목업 게재 이미지 생성</h1>
-        <p className="text-xs text-gray-400 mt-0.5">레이어를 추가하고 캔버스에서 드래그로 위치를 조정하세요</p>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-base font-semibold text-gray-900">목업 게재 이미지 생성</h1>
+            <p className="text-xs text-gray-400 mt-0.5">레이어를 추가하고 캔버스에서 드래그로 위치를 조정하세요</p>
+          </div>
+          {campaigns.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 shrink-0">캠페인</span>
+              <select
+                value={selectedCampaignId ?? ''}
+                onChange={e => setSelectedCampaignId(e.target.value || null)}
+                className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-300 focus:outline-none min-w-[160px]"
+              >
+                <option value="">캠페인 선택</option>
+                {campaigns.map(c => (
+                  <option key={c.id} value={c.id}>{c.campaignName}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </header>
 
       <main className="flex h-[calc(100vh-73px)]">
@@ -435,6 +539,39 @@ export default function MockupPage() {
               </div>
             )}
           </section>
+
+          {/* ── 캠페인 정보 ──────────────────────── */}
+          {selectedCampaign && (
+            <section className="space-y-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">캠페인 정보</p>
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-[10px] text-gray-500">캠페인</span>
+                  <span className="text-[10px] font-medium text-gray-800 text-right max-w-[110px] truncate" title={selectedCampaign.campaignName}>{selectedCampaign.campaignName}</span>
+                </div>
+                {selectedAdvertiser && (
+                  <div className="flex justify-between">
+                    <span className="text-[10px] text-gray-500">광고주</span>
+                    <span className="text-[10px] text-gray-700">{selectedAdvertiser.name}</span>
+                  </div>
+                )}
+                {selectedAgency && (
+                  <div className="flex justify-between">
+                    <span className="text-[10px] text-gray-500">대행사</span>
+                    <span className="text-[10px] text-gray-700">{selectedAgency.name}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-[10px] text-gray-500">기간</span>
+                  <span className="text-[10px] text-gray-700">{selectedCampaign.startDate} ~ {selectedCampaign.endDate}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[10px] text-gray-500">상태</span>
+                  <span className={`text-[10px] font-medium ${selectedCampaign.status === '집행 중' ? 'text-green-600' : 'text-gray-400'}`}>{selectedCampaign.status}</span>
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* ── AI 이미지 생성 ─────────────────────── */}
           {bgImg && (
@@ -511,6 +648,45 @@ export default function MockupPage() {
                 )}
               </button>
               <p className="text-[9px] text-violet-400 text-center">GEMINI_API_KEY 환경변수 필요</p>
+            </section>
+          )}
+
+          {/* ── 게재 목업 합성 ──────────────────── */}
+          {bgImg && (
+            <section className="space-y-2 rounded-xl border border-orange-100 bg-orange-50/50 p-3">
+              <div className="flex items-center gap-1.5">
+                <svg className="h-3 w-3 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <p className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">게재 목업 합성</p>
+              </div>
+              <p className="text-[9px] text-gray-400">광고 소재를 업로드하면 현재 지면에 합성된 목업을 생성합니다</p>
+              {compositFile ? (
+                <div className="rounded-lg bg-orange-50 border border-orange-200 px-2 py-1.5 flex items-center justify-between">
+                  <span className="text-[10px] text-orange-700 truncate max-w-[110px]">{compositFile.name}</span>
+                  <button onClick={() => setCompositFile(null)} className="text-[10px] text-gray-400 hover:text-red-500 ml-1">✕</button>
+                </div>
+              ) : (
+                <>
+                  <input ref={compositInputRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) { setCompositFile(f); e.target.value = '' } }} />
+                  <div
+                    onClick={() => compositInputRef.current?.click()}
+                    className="cursor-pointer rounded-lg border-2 border-dashed border-orange-200 px-3 py-3 text-center hover:border-orange-300 hover:bg-orange-50 transition-colors"
+                  >
+                    <p className="text-xs font-medium text-orange-600">광고 소재 업로드</p>
+                    <p className="mt-0.5 text-[10px] text-gray-400">PNG, JPG</p>
+                  </div>
+                </>
+              )}
+              {compositError && <p className="text-[10px] text-red-500">{compositError}</p>}
+              <button
+                onClick={generateCompositeMockup}
+                disabled={!compositFile || compositGenerating}
+                className="w-full rounded-lg bg-orange-500 py-1.5 text-xs font-semibold text-white hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {compositGenerating ? '합성 중...' : '목업 생성'}
+              </button>
             </section>
           )}
 

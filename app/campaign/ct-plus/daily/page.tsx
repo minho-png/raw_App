@@ -11,6 +11,8 @@ import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 import type { Campaign, Advertiser, Agency } from "@/lib/campaignTypes"
 import type { ParseUnifiedCsvResult } from "@/lib/unifiedCsvParser"
+import { lookupCampaignByName } from '@/lib/csvCampaignLookup'
+import type { CampaignLookupResult } from '@/lib/csvCampaignLookup'
 
 const CAMPAIGN_KEY  = 'ct-plus-campaigns-v7'
 const ADVERTISER_KEY = 'ct-plus-advertisers-v1'
@@ -67,6 +69,7 @@ function CtPlusDailyContent() {
   // 결과 데이터
   const [rowsByMedia, setRowsByMedia] = useState<Partial<Record<MediaType, RawRow[]>>>({})
   const [activeTab, setActiveTab]     = useState<MediaType | null>(null)
+  const [csvCampaignMatches, setCsvCampaignMatches] = useState<Map<string, CampaignLookupResult | null>>(new Map())
 
   // 이전 리포트
   const [savedReports, setSavedReports]   = useState<SavedReport[]>([])
@@ -119,6 +122,17 @@ function CtPlusDailyContent() {
       if (result.skippedMediaCodes.length > 0) {
         console.warn('[parse-unified-csv] 알 수 없는 매체 코드:', result.skippedMediaCodes)
       }
+
+      // CSV 캠페인명 역방향 조회 (선택된 캠페인명 기준)
+      const matchMap = new Map<string, CampaignLookupResult | null>()
+      if (selectedCampaign?.campaignName) {
+        matchMap.set(
+          selectedCampaign.campaignName,
+          lookupCampaignByName(selectedCampaign.campaignName, campaigns, agencies, advertisers),
+        )
+      }
+      setCsvCampaignMatches(matchMap)
+
       setStep(3)
     } catch (e) {
       alert('파일 파싱 중 오류가 발생했습니다. CSV 파일 형식을 확인해주세요.')
@@ -460,6 +474,35 @@ function CtPlusDailyContent() {
                 </button>
               </div>
             </div>
+
+            {/* CSV 캠페인 역방향 매칭 결과 */}
+            {csvCampaignMatches.size > 0 && (
+              <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+                <p className="text-xs font-semibold text-blue-700 mb-2">CSV 캠페인 매칭 결과</p>
+                <div className="space-y-1.5">
+                  {[...csvCampaignMatches.entries()].map(([csvName, match]) => (
+                    <div key={csvName} className="flex items-center gap-2 text-[11px]">
+                      <span className="font-mono text-gray-600 truncate max-w-[160px]" title={csvName}>{csvName}</span>
+                      <span className="text-gray-400">→</span>
+                      {match ? (
+                        <span className="text-blue-700">
+                          <span className="font-medium">{match.campaign.campaignName}</span>
+                          {match.agency && <span className="text-gray-500 ml-1.5">대행사: {match.agency.name}</span>}
+                          {match.advertiser && <span className="text-gray-500 ml-1.5">광고주: {match.advertiser.name}</span>}
+                          <span className={`ml-1.5 text-[9px] px-1 py-0.5 rounded ${
+                            match.matchType === 'exact' ? 'bg-green-100 text-green-700' :
+                            match.matchType === 'contains' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-gray-100 text-gray-500'
+                          }`}>{match.matchType === 'exact' ? '완전일치' : match.matchType === 'contains' ? '포함일치' : '부분일치'}</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 italic">등록된 캠페인 없음</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 매체 탭 */}
             <div className="mb-4 flex gap-2 border-b border-gray-200">
