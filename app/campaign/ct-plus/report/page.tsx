@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import Link from "next/link"
+import { generateDailyHtmlReport, downloadHtml } from "@/lib/htmlReportGenerator"
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -176,6 +178,26 @@ export default function CtPlusReportPage() {
     }, 200)
   }
 
+  function handleHtmlDownload() {
+    const selected = savedReports.filter(r => selectedReportIds.has(r.id))
+    const campaignName = selected.length === 1 ? selected[0].campaignName : null
+    const allDates = dailyData.map(d => d.date)
+    const dateRange = allDates.length
+      ? `${allDates[0]} ~ ${allDates[allDates.length - 1]}`
+      : (dateFrom && dateTo ? `${dateFrom} ~ ${dateTo}` : "전체 기간")
+    const html = generateDailyHtmlReport({
+      dateRange,
+      campaignName,
+      summary,
+      dailyData: dailyData.map(d => ({ ...d, date: d.date })),
+      dmpSettlement,
+      mediaData,
+      creativeData,
+    })
+    const name = `CT+_통합리포트_${new Date().toISOString().slice(0, 10)}.html`
+    downloadHtml(html, name)
+  }
+
   const SECTIONS = [
     { id: 'summary'  as const, label: '전체 KPI' },
     { id: 'daily'    as const, label: '일별 추이' },
@@ -193,16 +215,28 @@ export default function CtPlusReportPage() {
             <h1 className="text-base font-semibold text-gray-900">통합 리포트</h1>
             <p className="text-xs text-gray-400 mt-0.5">캠페인 리포트 · CT+ · 통합 분석</p>
           </div>
-          <button
-            onClick={handlePrint}
-            disabled={printing}
-            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-            인쇄 / PDF
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleHtmlDownload}
+              disabled={allRows.length === 0}
+              className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-40"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              HTML 다운로드
+            </button>
+            <button
+              onClick={handlePrint}
+              disabled={printing}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              인쇄 / PDF
+            </button>
+          </div>
         </div>
       </header>
 
@@ -304,8 +338,14 @@ export default function CtPlusReportPage() {
         <main className="flex-1 p-6 space-y-6 print:p-0">
           {allRows.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white py-20 text-center">
-              <p className="text-sm text-gray-400">선택된 리포트에 데이터가 없습니다.</p>
-              <p className="mt-1 text-xs text-gray-300">데일리 리포트를 먼저 저장한 후 이 페이지를 이용하세요.</p>
+              <svg className="mx-auto mb-3 h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <p className="text-sm font-medium text-gray-500">아직 데이터가 없습니다</p>
+              <p className="mt-1 text-xs text-gray-400">데일리 리포트를 입력하면 통합 분석 결과를 확인할 수 있습니다</p>
+              <Link href="/campaign/ct-plus/daily" className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700">
+                데일리 데이터 입력하기
+              </Link>
             </div>
           ) : (
             <>

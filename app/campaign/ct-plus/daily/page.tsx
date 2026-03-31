@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
+import { useSearchParams } from "next/navigation"
+import Link from "next/link"
 import MediaUploadCard from "@/components/ct-plus/MediaUploadCard"
 import DailyDataTable from "@/components/ct-plus/DailyDataTable"
 import { hasCampaignMedia } from "@/lib/rawDataParser"
@@ -43,6 +45,7 @@ function makeLabel(
 }
 
 export default function CtPlusDailyPage() {
+  const searchParams = useSearchParams()
   const [files, setFiles] = useState<Partial<Record<MediaType, File>>>({})
   const [step, setStep]   = useState<1 | 2 | 3>(1)
   const [loading, setLoading] = useState(false)
@@ -65,7 +68,15 @@ export default function CtPlusDailyPage() {
   useEffect(() => {
     try {
       const c = localStorage.getItem(CAMPAIGN_KEY)
-      if (c) setCampaigns(JSON.parse(c))
+      if (c) {
+        const parsed: Campaign[] = JSON.parse(c)
+        setCampaigns(parsed)
+        // URL에 campaignId 파라미터가 있으면 해당 캠페인 자동 선택
+        const paramId = searchParams.get('campaignId')
+        if (paramId && parsed.some(x => x.id === paramId)) {
+          setSelectedCampaignId(paramId)
+        }
+      }
       const adv = localStorage.getItem(ADVERTISER_KEY)
       if (adv) setAdvertisers(JSON.parse(adv))
       const ag = localStorage.getItem(AGENCY_KEY)
@@ -73,7 +84,7 @@ export default function CtPlusDailyPage() {
       const rpts = localStorage.getItem(REPORTS_KEY)
       if (rpts) setSavedReports(JSON.parse(rpts))
     } catch {}
-  }, [])
+  }, [searchParams])
 
   const uploadedMediaTypes = MEDIA_TYPES.filter(m => files[m])
   const selectedCampaign   = campaigns.find(c => c.id === selectedCampaignId) ?? null
@@ -127,7 +138,7 @@ export default function CtPlusDailyPage() {
     setSavedReports(next)
     try { localStorage.setItem(REPORTS_KEY, JSON.stringify(next)) } catch {}
     setSavedToast(true)
-    setTimeout(() => setSavedToast(false), 2000)
+    setTimeout(() => setSavedToast(false), 4000)
   }
 
   // ── 리포트 불러오기 ──────────────────────────────────────────
@@ -450,8 +461,11 @@ export default function CtPlusDailyPage() {
                     리포트 저장
                   </button>
                   {savedToast && (
-                    <div className="absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-lg bg-gray-800 px-3 py-1.5 text-[11px] text-white shadow-lg z-10">
-                      저장되었습니다 ✓
+                    <div className="absolute right-0 top-full mt-1.5 rounded-lg bg-gray-800 px-3 py-2 text-[11px] text-white shadow-lg z-10 flex items-center gap-3">
+                      <span>저장되었습니다 ✓</span>
+                      <Link href="/campaign/ct-plus/report" className="rounded bg-white/20 px-2 py-0.5 text-white hover:bg-white/30 transition-colors">
+                        통합 리포트 보기 →
+                      </Link>
                     </div>
                   )}
                 </div>

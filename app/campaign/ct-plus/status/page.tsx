@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useMemo } from "react"
+import Link from "next/link"
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, TargetingBudget,
   AVAILABLE_MEDIA, MEDIA_MARKUP_RATE, MEDIA_COLORS,
@@ -39,45 +40,6 @@ function getDailySuggestion(c: Campaign): string {
   return `미소진 ${fmt(remaining)}원 · 남은 ${days}일 기준 일 예산 약 ${fmt(daily)}원으로 조정 필요`
 }
 
-// ── 샘플 데이터 ───────────────────────────────────────────
-const SAMPLE_AGENCIES: Agency[] = [
-  { id: "ag1", name: "모티브인텔리전스", contactName: "박민준", email: "mj@motive.co.kr", phone: "02-1234-5678" },
-  { id: "ag2", name: "애드플러스",       contactName: "최지연", email: "jy@adplus.co.kr", phone: "02-9876-5432" },
-]
-const SAMPLE_ADVERTISERS: Advertiser[] = [
-  { id: "adv1", name: "트립앤샵",   agencyId: "ag1" },
-  { id: "adv2", name: "에코라이프", agencyId: "ag2" },
-]
-const SAMPLE: Campaign[] = [
-  {
-    id: "c1", advertiserId: "adv1", campaignName: "2026 봄 시즌 브랜딩",
-    mediaBudgets: [
-      { media: "네이버 GFA",
-        dmp:    { budget: 4_000_000, spend: 2_000_000, agencyFeeRate: 10, targetings: ["SKP"] },
-        nonDmp: { budget: 1_000_000, spend: 350_000,   agencyFeeRate: 5,  targetings: ["리타겟팅"] } },
-      { media: "Google",
-        dmp:    { budget: 2_000_000, spend: 600_000,   agencyFeeRate: 5,  targetings: ["SKP", "KB"] },
-        nonDmp: { budget: 1_000_000, spend: 200_000,   agencyFeeRate: 5,  targetings: ["매체 타겟팅"] } },
-      { media: "META",
-        dmp:    { budget: 0,         spend: 0,         agencyFeeRate: 10, targetings: [] },
-        nonDmp: { budget: 2_000_000, spend: 400_000,   agencyFeeRate: 15, targetings: ["리타겟팅"] } },
-    ],
-    startDate: "2026-02-01", endDate: "2026-04-30",
-    settlementMonth: "2026-04", agencyId: "ag1", managerId: "op1",
-    status: "집행 중", createdAt: "2026-01-20T10:00:00Z",
-  },
-  {
-    id: "c2", advertiserId: "adv2", campaignName: "그린위크 프로모션",
-    mediaBudgets: [
-      { media: "카카오모먼트",
-        dmp:    { budget: 3_000_000, spend: 2_850_000, agencyFeeRate: 7, targetings: ["LOTTE", "TG360"] },
-        nonDmp: { budget: 1_000_000, spend: 920_000,   agencyFeeRate: 7, targetings: ["매체 타겟팅"] } },
-    ],
-    startDate: "2026-01-01", endDate: "2026-02-28",
-    settlementMonth: "2026-02", agencyId: "ag2", managerId: "op2",
-    status: "종료", createdAt: "2025-12-25T09:00:00Z",
-  },
-]
 
 function emptyTB(): TargetingBudget { return { budget: 0, spend: 0, agencyFeeRate: 10, targetings: [] } }
 function emptyMB(media: string): MediaBudget { return { media, dmp: emptyTB(), nonDmp: emptyTB() } }
@@ -112,13 +74,10 @@ export default function CampaignStatusPage() {
   const [memoTarget,   setMemoTarget]   = useState<Campaign | null>(null)
 
   useEffect(() => {
-    try { const r = localStorage.getItem(STORAGE_KEY);    setCampaigns(r   ? JSON.parse(r) : SAMPLE)             } catch { setCampaigns(SAMPLE) }
-    try { const r = localStorage.getItem(OPERATOR_KEY);   setOperators(r   ? JSON.parse(r) : [
-      { id: "op1", name: "김지훈", email: "jihun@example.com", phone: "010-1234-5678" },
-      { id: "op2", name: "이수진", email: "sujin@example.com", phone: "010-9876-5432" },
-    ]) } catch { }
-    try { const r = localStorage.getItem(AGENCY_KEY);     setAgencies(r    ? JSON.parse(r) : SAMPLE_AGENCIES)    } catch { }
-    try { const r = localStorage.getItem(ADVERTISER_KEY); setAdvertisers(r ? JSON.parse(r) : SAMPLE_ADVERTISERS) } catch { }
+    try { const r = localStorage.getItem(STORAGE_KEY);    if (r) setCampaigns(JSON.parse(r))    } catch { }
+    try { const r = localStorage.getItem(OPERATOR_KEY);   if (r) setOperators(JSON.parse(r))    } catch { }
+    try { const r = localStorage.getItem(AGENCY_KEY);     if (r) setAgencies(JSON.parse(r))     } catch { }
+    try { const r = localStorage.getItem(ADVERTISER_KEY); if (r) setAdvertisers(JSON.parse(r))  } catch { }
   }, [])
 
   function saveCampaigns(n: Campaign[])     { setCampaigns(n);   try { localStorage.setItem(STORAGE_KEY,    JSON.stringify(n)) } catch { } }
@@ -341,7 +300,24 @@ export default function CampaignStatusPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {filtered.length === 0 && (
+                  {filtered.length === 0 && campaigns.length === 0 && (
+                    <tr>
+                      <td colSpan={11} className="py-16 text-center">
+                        <div className="inline-flex flex-col items-center gap-3">
+                          <svg className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          <p className="text-sm font-medium text-gray-500">등록된 캠페인이 없습니다</p>
+                          <p className="text-xs text-gray-400">캠페인을 추가하면 집행 현황과 소진율을 한눈에 확인할 수 있습니다</p>
+                          <button onClick={() => { setEditTarget(null); setModalOpen(true) }}
+                            className="mt-1 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700">
+                            + 첫 번째 캠페인 추가
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {filtered.length === 0 && campaigns.length > 0 && (
                     <tr><td colSpan={11} className="py-12 text-center text-sm text-gray-400">조건에 맞는 캠페인이 없습니다.</td></tr>
                   )}
                   {filtered.map(c => {
@@ -462,6 +438,7 @@ export default function CampaignStatusPage() {
                                   </div>
                                 )}
                               </div>
+                              <Link href={`/campaign/ct-plus/daily?campaignId=${c.id}`} className="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">데이터 입력</Link>
                               <button onClick={() => { setEditTarget(c); setModalOpen(true) }} className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">수정</button>
                               <button onClick={() => handleDelete(c.id)} className="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-50">삭제</button>
                             </div>
