@@ -300,13 +300,23 @@ export default function MockupPage() {
   }
 
   async function generateAiImage() {
-    if (!aiPrompt.trim()) return
+    if (!aiPrompt.trim() && !aiRefFile) return
     setAiGenerating(true)
     setAiError(null)
     try {
       const form = new FormData()
       form.append('prompt', aiPrompt)
       if (aiRefFile) form.append('referenceImage', aiRefFile)
+
+      // 지면 이미지가 있으면 base64로 직렬화해 mediaImage로 전달
+      if (bgImg) {
+        const tmp = document.createElement('canvas')
+        tmp.width = bgImg.naturalWidth; tmp.height = bgImg.naturalHeight
+        tmp.getContext('2d')!.drawImage(bgImg, 0, 0)
+        const dataUrl = tmp.toDataURL('image/png')
+        const blob = await fetch(dataUrl).then(r => r.blob())
+        form.append('mediaImage', new File([blob], 'media.png', { type: 'image/png' }))
+      }
       const res = await fetch('/api/generate-mockup-image', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error ?? '생성 실패')

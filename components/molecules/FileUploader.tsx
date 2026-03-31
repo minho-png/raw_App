@@ -11,7 +11,7 @@ import { useToast } from '@/context/ToastContext';
 
 
 interface FileUploaderProps {
-  onAnalysisComplete: (data: any[]) => void;
+  onAnalysisComplete: (data: unknown[]) => void;
   overrides?: {
     media: MediaProvider;
     group_by_columns: string[];

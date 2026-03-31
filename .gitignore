@@ -1,5 +1,16 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# AI Harness
+.harness-last-report.json
+
+# Claude Code local settings (permissions, local overrides)
+.claude/settings.local.json
+
+# Sample / working data files
+*.csv
+
+# Sample images — public/ 폴더 이미지는 목업 도구용으로 추적 유지
+
 # dependencies
 /node_modules
 /.pnp

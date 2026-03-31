@@ -40,10 +40,11 @@ const navItems: NavItem[] = [
       {
         label: "CT+",
         items: [
-          { label: "데일리 리포트", href: "/campaign/ct-plus/daily" },
-          { label: "통합 리포트", href: "/campaign/ct-plus/report" },
-          { label: "종료 리포트", href: "/campaign/ct-plus/final" },
-          { label: "캠페인 집행 현황", href: "/campaign/ct-plus/status" },
+          { label: "캠페인 집행 현황",     href: "/campaign/ct-plus/status" },
+          { label: "데일리 리포트",         href: "/campaign/ct-plus/daily" },
+          { label: "통합 리포트",           href: "/campaign/ct-plus/report" },
+          { label: "종료 리포트",           href: "/campaign/ct-plus/final" },
+          { label: "소재 및 랜딩URL 확인", href: "/campaign/ct-plus/creative-check" },
         ],
       },
     ],
@@ -106,16 +107,6 @@ export default function Sidebar() {
           }`}
         >
           데이터 분석 대시보드
-        </Link>
-        <Link
-          href="/campaign/ct-plus/creative-check"
-          className={`flex items-center rounded-lg px-3 py-2 text-sm transition-colors ${
-            pathname === "/campaign/ct-plus/creative-check"
-              ? "bg-blue-50 font-medium text-blue-700"
-              : "text-gray-600 hover:bg-gray-50"
-          }`}
-        >
-          소재 및 랜딩URL 확인
         </Link>
         <Link
           href="/mockup"

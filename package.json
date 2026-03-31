@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "verify": "bash scripts/harness-verify.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
