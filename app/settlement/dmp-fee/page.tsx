@@ -6,24 +6,12 @@ import { DMP_TARGETS, DMP_FEE_RATES } from "@/lib/campaignTypes"
 import type { RawRow, DmpType } from "@/lib/rawDataParser"
 import { calcDmpSettlement, DMP_FEE_RATES_PERCENT } from "@/lib/calculationService"
 import type { MediaType } from "@/lib/reportTypes"
+import { useMasterData } from "@/lib/hooks/useMasterData"
+import { useReports } from "@/lib/hooks/useReports"
+import type { SavedReport } from "@/lib/hooks/useReports"
 
-const STORAGE_KEY    = "ct-plus-campaigns-v7"
-const AGENCY_KEY     = "ct-plus-agencies-v1"
-const ADVERTISER_KEY = "ct-plus-advertisers-v1"
 const AMOUNTS_KEY    = "dmp-fee-amounts-v1"
-const REPORTS_KEY    = "ct-plus-daily-reports-v1"
 const SNAPSHOTS_KEY  = "dmp-settlement-snapshots-v1"
-
-// 데일리 리포트 타입 (daily/page.tsx와 동일)
-interface SavedReport {
-  id: string
-  savedAt: string
-  label: string
-  campaignName: string | null
-  mediaTypes: MediaType[]
-  rowsByMedia: Partial<Record<MediaType, RawRow[]>>
-  campaign: Campaign | null
-}
 
 // 스냅샷 타입
 interface SettlementSnapshot {
@@ -86,10 +74,9 @@ function getDmpColor(dmp: string) {
 
 export default function DmpFeePage() {
   const today = new Date()
+  const { campaigns, agencies, advertisers } = useMasterData()
+  const { reports: savedReports } = useReports()
   const [month, setMonth]             = useState(toMonthStr(today))
-  const [campaigns, setCampaigns]     = useState<Campaign[]>([])
-  const [agencies, setAgencies]       = useState<Agency[]>([])
-  const [advertisers, setAdvertisers] = useState<Advertiser[]>([])
   const [amounts, setAmounts]         = useState<AmountMap>({})
   const [copied, setCopied]           = useState(false)
   const [selectedDmp, setSelectedDmp] = useState<string | null>(null)
@@ -97,22 +84,13 @@ export default function DmpFeePage() {
   const [showSnapshots, setShowSnapshots] = useState(false)
   const [importResult, setImportResult] = useState<string | null>(null)
   const [showImportPanel, setShowImportPanel] = useState(false)
-  const [savedReports, setSavedReports] = useState<SavedReport[]>([])
 
   useEffect(() => {
     try {
-      const c   = localStorage.getItem(STORAGE_KEY)
-      const ag  = localStorage.getItem(AGENCY_KEY)
-      const adv = localStorage.getItem(ADVERTISER_KEY)
       const am  = localStorage.getItem(AMOUNTS_KEY)
       const sn  = localStorage.getItem(SNAPSHOTS_KEY)
-      const rpts = localStorage.getItem(REPORTS_KEY)
-      if (c)    setCampaigns(JSON.parse(c))
-      if (ag)   setAgencies(JSON.parse(ag))
-      if (adv)  setAdvertisers(JSON.parse(adv))
       if (am)   setAmounts(JSON.parse(am))
       if (sn)   setSnapshots(JSON.parse(sn))
-      if (rpts) setSavedReports(JSON.parse(rpts))
     } catch {}
   }, [])
 

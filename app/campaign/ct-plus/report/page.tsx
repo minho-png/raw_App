@@ -12,19 +12,9 @@ import type { MediaType } from "@/lib/reportTypes"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { Campaign } from "@/lib/campaignTypes"
 import { calcDmpSettlement, calcCtr, calcCpc, DMP_FEE_RATES_PERCENT } from "@/lib/calculationService"
-
-const REPORTS_KEY   = "ct-plus-daily-reports-v1"
-const CAMPAIGN_KEY  = "ct-plus-campaigns-v7"
-
-interface SavedReport {
-  id: string
-  savedAt: string
-  label: string
-  campaignName: string | null
-  mediaTypes: MediaType[]
-  rowsByMedia: Partial<Record<MediaType, RawRow[]>>
-  campaign: Campaign | null
-}
+import { useMasterData } from "@/lib/hooks/useMasterData"
+import { useReports } from "@/lib/hooks/useReports"
+import type { SavedReport } from "@/lib/hooks/useReports"
 
 const DMP_COLORS: Record<string, string> = {
   SKP: '#3B82F6', KB: '#EAB308', LOTTE: '#EF4444', TG360: '#F97316',
@@ -38,27 +28,20 @@ function fmt(n: number) { return n.toLocaleString('ko-KR') }
 function fmtPct(n: number) { return n.toFixed(2) + '%' }
 
 export default function CtPlusReportPage() {
-  const [savedReports, setSavedReports] = useState<SavedReport[]>([])
-  const [campaigns, setCampaigns] = useState<Campaign[]>([])
+  const { campaigns } = useMasterData()
+  const { reports: savedReports } = useReports()
   const [selectedReportIds, setSelectedReportIds] = useState<Set<string>>(new Set())
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [activeSection, setActiveSection] = useState<'summary' | 'daily' | 'dmp' | 'media' | 'creative' | 'video' | 'campaign'>('summary')
   const [printing, setPrinting] = useState(false)
 
+  // savedReports가 로드되면 전체 선택으로 초기화
   useEffect(() => {
-    try {
-      const rpts = localStorage.getItem(REPORTS_KEY)
-      const camps = localStorage.getItem(CAMPAIGN_KEY)
-      if (rpts) {
-        const parsed: SavedReport[] = JSON.parse(rpts)
-        setSavedReports(parsed)
-        // 기본: 전체 선택
-        setSelectedReportIds(new Set(parsed.map(r => r.id)))
-      }
-      if (camps) setCampaigns(JSON.parse(camps))
-    } catch {}
-  }, [])
+    if (savedReports.length > 0 && selectedReportIds.size === 0) {
+      setSelectedReportIds(new Set(savedReports.map(r => r.id)))
+    }
+  }, [savedReports])
 
   // ── 선택된 리포트의 모든 RawRow 수집 ────────────────────────
   const allRows = useMemo<RawRow[]>(() => {

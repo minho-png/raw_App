@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useMemo } from "react"
 import Link from "next/link"
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, TargetingBudget,
@@ -9,11 +9,7 @@ import {
   getTotalMarkup, calcSettingCost, calcSpendRate,
   getMediaTotals, getCampaignTotals, getCampaignProgress, getDday,
 } from "@/lib/campaignTypes"
-
-const STORAGE_KEY     = "ct-plus-campaigns-v7"
-const OPERATOR_KEY    = "ct-plus-operators-v1"
-const AGENCY_KEY      = "ct-plus-agencies-v1"
-const ADVERTISER_KEY  = "ct-plus-advertisers-v1"
+import { useMasterData } from "@/lib/hooks/useMasterData"
 
 // ── 유틸 ─────────────────────────────────────────────────
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
@@ -50,10 +46,10 @@ interface ConfirmCfg { title: string; message: string; onConfirm: () => void }
 
 // ════════════════════════════════════════════════════════
 export default function CampaignStatusPage() {
-  const [campaigns,    setCampaigns]    = useState<Campaign[]>([])
-  const [operators,    setOperators]    = useState<Operator[]>([])
-  const [agencies,     setAgencies]     = useState<Agency[]>([])
-  const [advertisers,  setAdvertisers]  = useState<Advertiser[]>([])
+  const {
+    campaigns, operators, agencies, advertisers,
+    saveCampaigns, saveOperators, saveAgencies, saveAdvertisers,
+  } = useMasterData()
   const [mainTab,      setMainTab]      = useState<MainTab>("campaigns")
   const [filterStatus,   setFilterStatus]   = useState<FilterStatus>("전체")
   const [filterMonth,    setFilterMonth]    = useState("")
@@ -72,18 +68,6 @@ export default function CampaignStatusPage() {
   const [confirmCfg,   setConfirmCfg]   = useState<ConfirmCfg | null>(null)
   const [alertOpen,    setAlertOpen]    = useState(true)
   const [memoTarget,   setMemoTarget]   = useState<Campaign | null>(null)
-
-  useEffect(() => {
-    try { const r = localStorage.getItem(STORAGE_KEY);    if (r) setCampaigns(JSON.parse(r))    } catch { }
-    try { const r = localStorage.getItem(OPERATOR_KEY);   if (r) setOperators(JSON.parse(r))    } catch { }
-    try { const r = localStorage.getItem(AGENCY_KEY);     if (r) setAgencies(JSON.parse(r))     } catch { }
-    try { const r = localStorage.getItem(ADVERTISER_KEY); if (r) setAdvertisers(JSON.parse(r))  } catch { }
-  }, [])
-
-  function saveCampaigns(n: Campaign[])     { setCampaigns(n);   try { localStorage.setItem(STORAGE_KEY,    JSON.stringify(n)) } catch { } }
-  function saveOperators(n: Operator[])     { setOperators(n);   try { localStorage.setItem(OPERATOR_KEY,   JSON.stringify(n)) } catch { } }
-  function saveAgencies(n: Agency[])        { setAgencies(n);    try { localStorage.setItem(AGENCY_KEY,     JSON.stringify(n)) } catch { } }
-  function saveAdvertisers(n: Advertiser[]) { setAdvertisers(n); try { localStorage.setItem(ADVERTISER_KEY, JSON.stringify(n)) } catch { } }
 
   const filtered = useMemo(() => campaigns.filter(c => {
     if (filterStatus !== "전체" && c.status !== filterStatus) return false

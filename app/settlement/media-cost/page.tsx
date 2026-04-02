@@ -3,10 +3,8 @@
 import { useState, useEffect } from "react"
 import type { Campaign, Agency, Advertiser } from "@/lib/campaignTypes"
 import { MEDIA_MARKUP_RATE, getMediaTotals } from "@/lib/campaignTypes"
+import { useMasterData } from "@/lib/hooks/useMasterData"
 
-const CAMPAIGN_KEY   = "ct-plus-campaigns-v7"
-const AGENCY_KEY     = "ct-plus-agencies-v1"
-const ADVERTISER_KEY = "ct-plus-advertisers-v1"
 const SNAPSHOTS_KEY  = "media-cost-snapshots-v1"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
@@ -57,10 +55,8 @@ const AGENCY_PALETTE = [
 
 export default function MediaCostPage() {
   const today = new Date()
+  const { campaigns, advertisers, agencies } = useMasterData()
   const [month, setMonth] = useState(toMonthStr(today))
-  const [campaigns, setCampaigns]       = useState<Campaign[]>([])
-  const [advertisers, setAdvertisers]   = useState<Advertiser[]>([])
-  const [agencies, setAgencies]         = useState<Agency[]>([])
   const [snapshots, setSnapshots]       = useState<Snapshot[]>([])
   const [showHistory, setShowHistory]   = useState(false)
   const [confirmedToast, setConfirmedToast] = useState(false)
@@ -68,10 +64,7 @@ export default function MediaCostPage() {
 
   useEffect(() => {
     try {
-      const c  = localStorage.getItem(CAMPAIGN_KEY);   if (c)  setCampaigns(JSON.parse(c))
-      const ad = localStorage.getItem(ADVERTISER_KEY); if (ad) setAdvertisers(JSON.parse(ad))
-      const ag = localStorage.getItem(AGENCY_KEY);     if (ag) setAgencies(JSON.parse(ag))
-      const sn = localStorage.getItem(SNAPSHOTS_KEY);  if (sn) setSnapshots(JSON.parse(sn))
+      const sn = localStorage.getItem(SNAPSHOTS_KEY); if (sn) setSnapshots(JSON.parse(sn))
     } catch {}
   }, [])
 

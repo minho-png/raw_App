@@ -26,6 +26,7 @@ const navItems: NavItem[] = [
     items: [
       { label: "대행사별 대행수수료", href: "/settlement/agency-fee" },
       { label: "DMP 수수료", href: "/settlement/dmp-fee" },
+      { label: "매체 비용", href: "/settlement/media-cost" },
     ],
   },
   {
@@ -35,6 +36,7 @@ const navItems: NavItem[] = [
         label: "CT/CTV",
         items: [
           { label: "종료 리포트", href: "/campaign/ct-ctv/final" },
+          { label: "CTV 데일리 리포트", href: "/campaign/ct-ctv/daily" },
         ],
       },
       {

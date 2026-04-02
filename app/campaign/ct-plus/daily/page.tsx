@@ -13,23 +13,11 @@ import type { Campaign, Advertiser, Agency } from "@/lib/campaignTypes"
 import type { ParseUnifiedCsvResult } from "@/lib/unifiedCsvParser"
 import { lookupCampaignByName } from '@/lib/csvCampaignLookup'
 import type { CampaignLookupResult } from '@/lib/csvCampaignLookup'
-
-const CAMPAIGN_KEY  = 'ct-plus-campaigns-v7'
-const ADVERTISER_KEY = 'ct-plus-advertisers-v1'
-const AGENCY_KEY    = 'ct-plus-agencies-v1'
-const REPORTS_KEY   = 'ct-plus-daily-reports-v1'
+import { useMasterData } from "@/lib/hooks/useMasterData"
+import { useReports } from "@/lib/hooks/useReports"
+import type { SavedReport } from "@/lib/hooks/useReports"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
-
-interface SavedReport {
-  id: string
-  savedAt: string          // ISO datetime
-  label: string            // 자동 생성 이름
-  campaignName: string | null
-  mediaTypes: MediaType[]
-  rowsByMedia: Partial<Record<MediaType, RawRow[]>>
-  campaign: Campaign | null
-}
 
 function makeLabel(
   rowsByMedia: Partial<Record<MediaType, RawRow[]>>,
@@ -60,11 +48,19 @@ function CtPlusDailyContent() {
   const [step, setStep]   = useState<1 | 2 | 3>(1)
   const [loading, setLoading] = useState(false)
 
-  // 캠페인 데이터
-  const [campaigns, setCampaigns]         = useState<Campaign[]>([])
-  const [advertisers, setAdvertisers]     = useState<Advertiser[]>([])
-  const [agencies, setAgencies]           = useState<Agency[]>([])
+  // 마스터 데이터 (MongoDB 동기화)
+  const { campaigns, advertisers, agencies } = useMasterData()
+  const { reports: savedReports, saveReport, deleteReport } = useReports()
+
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
+
+  // URL 파라미터로 캠페인 자동 선택
+  useEffect(() => {
+    const paramId = searchParams.get('campaignId')
+    if (paramId && campaigns.some(x => x.id === paramId)) {
+      setSelectedCampaignId(paramId)
+    }
+  }, [searchParams, campaigns])
 
   // 결과 데이터
   const [rowsByMedia, setRowsByMedia] = useState<Partial<Record<MediaType, RawRow[]>>>({})
@@ -72,31 +68,8 @@ function CtPlusDailyContent() {
   const [csvCampaignMatches, setCsvCampaignMatches] = useState<Map<string, CampaignLookupResult | null>>(new Map())
   const [csvCampaignOverrides, setCsvCampaignOverrides] = useState<Map<string, string>>(new Map()) // csvName → campaignId
 
-  // 이전 리포트
-  const [savedReports, setSavedReports]   = useState<SavedReport[]>([])
   const [showHistory, setShowHistory]     = useState(false)
   const [savedToast, setSavedToast]       = useState(false)
-
-  useEffect(() => {
-    try {
-      const c = localStorage.getItem(CAMPAIGN_KEY)
-      if (c) {
-        const parsed: Campaign[] = JSON.parse(c)
-        setCampaigns(parsed)
-        // URL에 campaignId 파라미터가 있으면 해당 캠페인 자동 선택
-        const paramId = searchParams.get('campaignId')
-        if (paramId && parsed.some(x => x.id === paramId)) {
-          setSelectedCampaignId(paramId)
-        }
-      }
-      const adv = localStorage.getItem(ADVERTISER_KEY)
-      if (adv) setAdvertisers(JSON.parse(adv))
-      const ag = localStorage.getItem(AGENCY_KEY)
-      if (ag) setAgencies(JSON.parse(ag))
-      const rpts = localStorage.getItem(REPORTS_KEY)
-      if (rpts) setSavedReports(JSON.parse(rpts))
-    } catch {}
-  }, [searchParams])
 
   const selectedCampaign   = campaigns.find(c => c.id === selectedCampaignId) ?? null
 
@@ -160,7 +133,7 @@ function CtPlusDailyContent() {
   }
 
   // ── 리포트 저장 ──────────────────────────────────────────────
-  function handleSaveReport() {
+  async function handleSaveReport() {
     const mediaTypes = Object.keys(rowsByMedia) as MediaType[]
     const report: SavedReport = {
       id: Date.now().toString(),
@@ -171,9 +144,7 @@ function CtPlusDailyContent() {
       rowsByMedia,
       campaign: selectedCampaign,
     }
-    const next = [report, ...savedReports]
-    setSavedReports(next)
-    try { localStorage.setItem(REPORTS_KEY, JSON.stringify(next)) } catch {}
+    await saveReport(report)
     setSavedToast(true)
     setTimeout(() => setSavedToast(false), 4000)
   }
@@ -189,10 +160,8 @@ function CtPlusDailyContent() {
   }
 
   // ── 리포트 삭제 ──────────────────────────────────────────────
-  function handleDeleteReport(id: string) {
-    const next = savedReports.filter(r => r.id !== id)
-    setSavedReports(next)
-    try { localStorage.setItem(REPORTS_KEY, JSON.stringify(next)) } catch {}
+  async function handleDeleteReport(id: string) {
+    await deleteReport(id)
   }
 
   // ── 현재 탭 데이터 ────────────────────────────────────────────

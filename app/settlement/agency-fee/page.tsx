@@ -2,10 +2,8 @@
 
 import { useState, useEffect } from "react"
 import type { Campaign, Agency, Advertiser } from "@/lib/campaignTypes"
+import { useMasterData } from "@/lib/hooks/useMasterData"
 
-const STORAGE_KEY    = "ct-plus-campaigns-v7"
-const AGENCY_KEY     = "ct-plus-agencies-v1"
-const ADVERTISER_KEY = "ct-plus-advertisers-v1"
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
 
 interface ResultRow {
@@ -57,10 +55,8 @@ const AGENCY_PALETTE = [
 
 export default function AgencyFeePage() {
   const today = new Date()
+  const { campaigns, agencies, advertisers } = useMasterData()
   const [month, setMonth]             = useState(toMonthStr(today))
-  const [campaigns, setCampaigns]     = useState<Campaign[]>([])
-  const [agencies, setAgencies]       = useState<Agency[]>([])
-  const [advertisers, setAdvertisers] = useState<Advertiser[]>([])
   const [snapshots, setSnapshots]     = useState<SettlementSnapshot[]>([])
   const [showSnapshots, setShowSnapshots] = useState(false)
   const [selectedAgencyId, setSelectedAgencyId] = useState<string | null>(null)
@@ -69,13 +65,7 @@ export default function AgencyFeePage() {
 
   useEffect(() => {
     try {
-      const c  = localStorage.getItem(STORAGE_KEY)
-      const ag = localStorage.getItem(AGENCY_KEY)
-      const ad = localStorage.getItem(ADVERTISER_KEY)
       const sn = localStorage.getItem(SNAPSHOTS_KEY)
-      if (c)  setCampaigns(JSON.parse(c))
-      if (ag) setAgencies(JSON.parse(ag))
-      if (ad) setAdvertisers(JSON.parse(ad))
       if (sn) setSnapshots(JSON.parse(sn))
     } catch {}
   }, [])
