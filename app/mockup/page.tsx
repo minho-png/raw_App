@@ -340,6 +340,12 @@ export default function MockupPage() {
       const form = new FormData()
       form.append('prompt', aiPrompt)
       if (aiRefFile) form.append('referenceImage', aiRefFile)
+      if (selectedPreset) form.append('presetId', selectedPreset)
+      if (selectedCampaignId) {
+        form.append('campaignId', selectedCampaignId)
+        const c = campaigns.find(x => x.id === selectedCampaignId)
+        if (c) form.append('campaignName', c.campaignName)
+      }
 
       // 지면 이미지가 있으면 base64로 직렬화해 mediaImage로 전달
       if (bgImg) {
@@ -388,6 +394,7 @@ export default function MockupPage() {
       const form = new FormData()
       form.append('prompt', '')
       form.append('referenceImage', compositFile)
+      if (selectedPreset) form.append('presetId', selectedPreset)
       // 현재 지면 이미지를 mediaImage로 전달
       const tmp = document.createElement('canvas')
       tmp.width = bgImg.naturalWidth; tmp.height = bgImg.naturalHeight

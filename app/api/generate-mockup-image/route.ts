@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export const maxDuration = 60
 
+// 프리셋별 지면 설명 (text-only fallback에서 정확한 화면 묘사에 활용)
+const PRESET_SURFACE_DESC: Record<string, string> = {
+  'bizboard':         'Kakao Talk chat tab, top banner strip slot (비즈보드)',
+  'native-1200x600':  'Kakao "더보기" tab, native card 1200×600 slot',
+  'native-1000x800':  'Kakao feed tab, native card 1000×800 slot with logo and CTA button',
+  'native-view':      'Kakao View, full-width native card slot',
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
@@ -14,13 +22,15 @@ export async function POST(req: NextRequest) {
   let mediaImageData: string | null = null
   let mediaImageMime = 'image/png'
   let campaignName: string | null = null
+  let presetId: string | null = null
 
   try {
     const ct = req.headers.get('content-type') ?? ''
     if (ct.includes('multipart/form-data')) {
       const form = await req.formData()
-      prompt = String(form.get('prompt') ?? '')
+      prompt       = String(form.get('prompt') ?? '')
       campaignName = form.get('campaignName') ? String(form.get('campaignName')) : null
+      presetId     = form.get('presetId')     ? String(form.get('presetId'))     : null
       const refFile = form.get('referenceImage') as File | null
       if (refFile) {
         const buf = await refFile.arrayBuffer()
@@ -35,12 +45,13 @@ export async function POST(req: NextRequest) {
       }
     } else {
       const body = await req.json()
-      prompt = String(body.prompt ?? '')
-      campaignName = body.campaignName ?? null
+      prompt             = String(body.prompt ?? '')
+      campaignName       = body.campaignName ?? null
+      presetId           = body.presetId     ?? null
       referenceImageData = body.referenceImageData ?? null
       referenceImageMime = body.referenceImageMime ?? 'image/jpeg'
-      mediaImageData = body.mediaImageData ?? null
-      mediaImageMime = body.mediaImageMime ?? 'image/png'
+      mediaImageData     = body.mediaImageData ?? null
+      mediaImageMime     = body.mediaImageMime ?? 'image/png'
     }
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
@@ -52,20 +63,22 @@ export async function POST(req: NextRequest) {
 
   const IMAGEN_URL = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-ultra-generate-001:predict?key=${apiKey}`
 
-  // ── Case A: 지면 이미지 + 광고 소재 → 게재 목업 합성 ────────────────────────
+  // ── Case A: 지면 이미지 + 광고 소재 → 게재 목업 합성 ───────────────────────
   if (mediaImageData && referenceImageData) {
-    const campaignCtx = campaignName ? `캠페인: ${campaignName}. ` : ''
-    const userExtra = prompt.trim() ? `\n추가 요청: ${prompt.trim()}` : ''
-    const compositingPrompt = `${campaignCtx}당신은 광고 목업 제작 전문가입니다. 다음 광고 목업 이미지를 생성해주세요.
+    const campaignCtx  = campaignName ? `Campaign: ${campaignName}. ` : ''
+    const surfaceDesc  = presetId ? PRESET_SURFACE_DESC[presetId] ?? 'Korean digital media app screen' : 'Korean digital media app screen'
+    const userExtra    = prompt.trim() ? `\nAdditional requirement: ${prompt.trim()}` : ''
 
-배경이 되는 지면 이미지(카카오, 유튜브 등 실제 매체 앱 화면)에 광고 소재가 자연스럽게 삽입된 완성된 게재 목업 이미지를 만들어주세요.
+    // 이미지 참조 경로: 지면(RAW) + 소재(SUBJECT) 명시 합성
+    const compositingPrompt = `${campaignCtx}This is a completed ad placement mockup screenshot showing an advertisement composited into a live Korean mobile media surface.
 
-작업 내용:
-- 지면 이미지의 광고 영역(배너·카드·피드 등)에 광고 소재를 정확히 배치
-- 광고 소재의 색상·레이아웃·브랜드 요소를 최대한 원형 유지
-- 지면의 UI 요소(앱 상단바·텍스트·버튼·아이콘 등)는 원본 그대로 유지
-- 실제 집행된 광고처럼 보이는 고품질 합성 결과물 출력
-- 한국 디지털 광고 시장 게재 목업 형식${userExtra}`
+Scene (reference image 1 — ${surfaceDesc}):
+The app UI chrome is preserved exactly as shown — navigation bars, tabs, icons, background colors, and all surrounding interface elements remain pixel-identical to the original screenshot.
+
+Ad creative (reference image 2):
+The ad creative fills the advertising banner/card/feed slot naturally. Its brand colors, logo, typography, and layout are preserved without modification. The creative fits the slot's exact dimensions and corner-rounding with no visible seam, shadow artifact, or distortion.
+
+Output: A photorealistic composited screenshot at mobile screen resolution. The result looks indistinguishable from an actual ad delivery proof (게재 확인 목업) — not a generated illustration, but a real screen capture showing the ad running in the media app.${userExtra}`
 
     try {
       const res = await fetch(IMAGEN_URL, {
@@ -76,12 +89,14 @@ export async function POST(req: NextRequest) {
             prompt: compositingPrompt,
             referenceImages: [
               {
+                // 지면 화면: 씬의 배경 캔버스
                 referenceType: 'REFERENCE_TYPE_RAW',
                 referenceId: 1,
                 referenceImage: { bytesBase64Encoded: mediaImageData, mimeType: mediaImageMime },
               },
               {
-                referenceType: 'REFERENCE_TYPE_RAW',
+                // 광고 소재: 지면에 삽입할 대상(subject) — RAW가 아닌 SUBJECT로 아이덴티티 보존
+                referenceType: 'REFERENCE_TYPE_SUBJECT',
                 referenceId: 2,
                 referenceImage: { bytesBase64Encoded: referenceImageData, mimeType: referenceImageMime },
               },
@@ -100,12 +115,20 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // referenceImages 미지원 시 텍스트 프롬프트만으로 재시도
+      // referenceImages 미지원 시: 지면 화면을 텍스트로 묘사하는 별도 fallback 프롬프트
+      const fallbackPrompt = `${campaignCtx}Korean mobile ad placement mockup screenshot.
+
+Screen: ${surfaceDesc} — the app's full UI chrome (status bar, navigation, tabs, feed list, background) is visible exactly as it appears on a real smartphone.
+
+Ad slot: The banner or card advertising slot within the app screen contains a brand advertisement. The creative fills the slot cleanly with crisp colors, logo, and typography — no border, drop shadow, or compression artifact. The transition between the ad and the surrounding app UI is seamless, as if the ad is natively rendered by the app.
+
+Style: Photorealistic smartphone screen capture. High resolution, sharp text, accurate app color scheme. Ad delivery proof (게재 확인) quality.${userExtra}`
+
       const fallbackRes = await fetch(IMAGEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          instances: [{ prompt: compositingPrompt }],
+          instances: [{ prompt: fallbackPrompt }],
           parameters: { sampleCount: 1, aspectRatio: '9:16' },
         }),
       })
@@ -133,19 +156,24 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Case B: 광고 소재만 → 스타일 기반 소재 생성 ─────────────────────────────
+  // ── Case B: 광고 소재만 → 브랜드 아이덴티티 보존 소재 변형/개선 ───────────────
   if (referenceImageData) {
-    const campaignCtx = campaignName ? `캠페인: ${campaignName}. ` : ''
-    const finalPrompt = prompt.trim() ||
-      '업로드된 광고 소재 이미지의 디자인·색상·브랜드 요소를 충실히 반영하여, 동일한 스타일의 고품질 광고 소재 이미지를 생성하세요.'
-    const adPrompt = `${campaignCtx}당신은 전문 광고 크리에이티브 디자이너입니다.
-${finalPrompt}
+    const campaignCtx = campaignName ? `Campaign: ${campaignName}. ` : ''
+    const customReq   = prompt.trim()
+      ? `Additional requirement: ${prompt.trim()}`
+      : 'Maintain all brand colors, logo placement, and layout structure from the reference.'
 
-이미지 요구사항:
-- 참고 이미지의 핵심 디자인 요소(색상, 레이아웃, 브랜드 요소)를 충실히 반영
-- 광고 소재로 바로 사용할 수 있는 고품질 이미지
-- 배경이 깔끔하고 주제가 명확한 구성
-- 한국 디지털 광고 시장에 적합한 스타일`
+    // "생성"이 아닌 "변형/발전" 프레임: 브랜드 소재 원형 보존
+    const adPrompt = `${campaignCtx}Produce an improved version of the ad creative shown in the reference image, preserving brand identity.
+
+Compositing rules:
+- Carry over the exact brand color palette, logo, and core layout from the reference image
+- Do not invent new visual elements or alter brand marks
+- Improve visual polish: cleaner composition, sharper contrast, better hierarchy
+- Output format: Korean digital advertising creative, ready for direct media placement
+- Clean background, single clear subject, no decorative borders
+
+${customReq}`
 
     try {
       const res = await fetch(IMAGEN_URL, {
@@ -155,7 +183,8 @@ ${finalPrompt}
           instances: [{
             prompt: adPrompt,
             referenceImages: [{
-              referenceType: 'REFERENCE_TYPE_STYLE',
+              // SUBJECT(not STYLE): 브랜드 로고·레이아웃·색상 구조 보존이 목적
+              referenceType: 'REFERENCE_TYPE_SUBJECT',
               referenceId: 1,
               referenceImage: { bytesBase64Encoded: referenceImageData, mimeType: referenceImageMime },
             }],
@@ -205,17 +234,17 @@ ${finalPrompt}
     }
   }
 
-  // ── Case C: 텍스트 전용 → Imagen 4 Ultra 텍스트-투-이미지 ─────────────────────
-  const campaignCtx = campaignName ? `캠페인: ${campaignName}. ` : ''
-  const imagenPrompt = `${campaignCtx}당신은 전문 광고 크리에이티브 디자이너입니다.
-다음 요청에 맞는 광고 이미지를 생성하세요.
+  // ── Case C: 텍스트 전용 → Imagen 4 Ultra 텍스트-투-이미지 ────────────────────
+  const campaignCtx = campaignName ? `Campaign: ${campaignName}. ` : ''
+  const surfaceCtx  = presetId ? `Media surface: ${PRESET_SURFACE_DESC[presetId] ?? 'Korean digital media'}. ` : ''
+  const imagenPrompt = `${campaignCtx}${surfaceCtx}Korean digital advertising creative image.
 
-요청: ${prompt}
+${prompt}
 
-이미지 요구사항:
-- 광고 소재로 바로 사용할 수 있는 고품질 이미지
-- 배경이 깔끔하고 주제가 명확한 구성
-- 한국 디지털 광고 시장에 적합한 스타일`
+Requirements:
+- High-quality ad creative suitable for direct media placement in Korean digital advertising
+- Clean background, clear subject, strong visual hierarchy
+- Photorealistic or clean graphic style appropriate for the Korean mobile ad market`
 
   try {
     const res = await fetch(IMAGEN_URL, {
