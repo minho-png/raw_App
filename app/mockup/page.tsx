@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import type { Campaign, Agency, Advertiser } from '@/lib/campaignTypes'
+import { useMasterData } from "@/lib/hooks/useMasterData"
 
 // ── Types ─────────────────────────────────────────────────────
 interface CoverRect { xR: number; yR: number; wR: number; hR: number; fill: string }
@@ -180,9 +181,7 @@ export default function MockupPage() {
   const aiRefInputRef = useRef<HTMLInputElement>(null)
 
   // 캠페인 연동
-  const [campaigns, setCampaigns]                     = useState<Campaign[]>([])
-  const [agencies, setAgencies]                       = useState<Agency[]>([])
-  const [advertisers, setAdvertisers]                 = useState<Advertiser[]>([])
+  const { campaigns, agencies, advertisers } = useMasterData()
   const [selectedCampaignId, setSelectedCampaignId]   = useState<string | null>(null)
 
   // 게재 목업 (소재 + 지면 합성)
@@ -192,18 +191,6 @@ export default function MockupPage() {
   const compositInputRef                              = useRef<HTMLInputElement>(null)
 
   useEffect(() => { layersRef.current = layers }, [layers])
-
-  // 캠페인 데이터 로드 (localStorage)
-  useEffect(() => {
-    try {
-      const c = localStorage.getItem('ct-plus-campaigns-v7')
-      if (c) setCampaigns(JSON.parse(c))
-      const ag = localStorage.getItem('ct-plus-agencies-v1')
-      if (ag) setAgencies(JSON.parse(ag))
-      const adv = localStorage.getItem('ct-plus-advertisers-v1')
-      if (adv) setAdvertisers(JSON.parse(adv))
-    } catch {}
-  }, [])
 
   // 캠페인 선택 시 다운로드 파일명 자동 설정
   useEffect(() => {
