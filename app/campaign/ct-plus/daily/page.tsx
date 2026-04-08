@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, useMemo, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import UnifiedCsvUploadCard from "@/components/ct-plus/UnifiedCsvUploadCard"
@@ -70,6 +70,9 @@ function CtPlusDailyContent() {
 
   const [showHistory, setShowHistory]     = useState(false)
   const [savedToast, setSavedToast]       = useState(false)
+
+  // 캠페인 이름 필터 (CSV 원본 캠페인명 기준)
+  const [selectedCsvCampaigns, setSelectedCsvCampaigns] = useState<Set<string>>(new Set())
 
   const selectedCampaign   = campaigns.find(c => c.id === selectedCampaignId) ?? null
 
@@ -164,8 +167,27 @@ function CtPlusDailyContent() {
     await deleteReport(id)
   }
 
-  // ── 현재 탭 데이터 ────────────────────────────────────────────
-  const activeRows = activeTab ? (rowsByMedia[activeTab] ?? []) : []
+  // ── 현재 탭에서 고유 캠페인명 목록 ──────────────────────────
+  const activeCampaignNames = useMemo(() => {
+    if (!activeTab) return []
+    const rows = rowsByMedia[activeTab] ?? []
+    const names = new Set(rows.map(r => r.campaignName).filter(Boolean))
+    return Array.from(names).sort()
+  }, [activeTab, rowsByMedia])
+
+  // 매체 탭 변경 시 캠페인 필터 초기화
+  useEffect(() => {
+    setSelectedCsvCampaigns(new Set())
+  }, [activeTab])
+
+  // ── 현재 탭 데이터 (캠페인 필터 적용) ───────────────────────
+  const activeRows = useMemo(() => {
+    if (!activeTab) return []
+    const rows = rowsByMedia[activeTab] ?? []
+    if (selectedCsvCampaigns.size === 0) return rows
+    return rows.filter(r => selectedCsvCampaigns.has(r.campaignName))
+  }, [activeTab, rowsByMedia, selectedCsvCampaigns])
+
   const activeMediaTypes = Object.keys(rowsByMedia) as MediaType[]
 
   return (
@@ -514,7 +536,7 @@ function CtPlusDailyContent() {
           )}
 
             {/* 매체 탭 */}
-            <div className="mb-4 flex gap-2 border-b border-gray-200">
+            <div className="mb-0 flex gap-2 border-b border-gray-200">
               {activeMediaTypes.map(media => {
                 const rows = rowsByMedia[media] ?? []
                 const cfg = MEDIA_CONFIG[media]
@@ -541,6 +563,47 @@ function CtPlusDailyContent() {
                 )
               })}
             </div>
+
+            {/* 캠페인명 필터 */}
+            {activeCampaignNames.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-100 bg-gray-50 px-3 py-2.5">
+                <span className="text-[10px] font-semibold text-gray-400 mr-1">캠페인</span>
+                <button
+                  onClick={() => setSelectedCsvCampaigns(new Set())}
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                    selectedCsvCampaigns.size === 0
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600'
+                  }`}
+                >
+                  전체 ({activeTab ? (rowsByMedia[activeTab]?.length ?? 0) : 0})
+                </button>
+                {activeCampaignNames.map(name => {
+                  const selected = selectedCsvCampaigns.has(name)
+                  const count = (activeTab ? (rowsByMedia[activeTab] ?? []) : []).filter(r => r.campaignName === name).length
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => {
+                        setSelectedCsvCampaigns(prev => {
+                          const next = new Set(prev)
+                          if (next.has(name)) next.delete(name)
+                          else next.add(name)
+                          return next
+                        })
+                      }}
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                        selected
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
+                      }`}
+                    >
+                      {name} ({count})
+                    </button>
+                  )
+                })}
+              </div>
+            )}
 
             {/* 테이블 */}
             {activeTab && (

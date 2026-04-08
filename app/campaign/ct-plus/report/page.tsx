@@ -30,35 +30,81 @@ function fmtPct(n: number) { return n.toFixed(2) + '%' }
 export default function CtPlusReportPage() {
   const { campaigns } = useMasterData()
   const { reports: savedReports } = useReports()
-  const [selectedReportIds, setSelectedReportIds] = useState<Set<string>>(new Set())
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [selectedMediaTypes, setSelectedMediaTypes] = useState<Set<MediaType>>(new Set())
+  const [selectedCsvCampaigns, setSelectedCsvCampaigns] = useState<Set<string>>(new Set())
   const [activeSection, setActiveSection] = useState<'summary' | 'daily' | 'dmp' | 'media' | 'creative' | 'video' | 'campaign'>('summary')
   const [printing, setPrinting] = useState(false)
 
-  // savedReports가 로드되면 전체 선택으로 초기화
-  useEffect(() => {
-    if (savedReports.length > 0 && selectedReportIds.size === 0) {
-      setSelectedReportIds(new Set(savedReports.map(r => r.id)))
+  // ── 날짜+전체 리포트 기준 사용 가능한 매체 목록 ──────────────
+  const availableMediaTypes = useMemo<MediaType[]>(() => {
+    const set = new Set<MediaType>()
+    for (const report of savedReports) {
+      for (const [media, rows] of Object.entries(report.rowsByMedia)) {
+        if (!rows?.length) continue
+        const hasInRange = rows.some(r => {
+          if (dateFrom && r.date < dateFrom) return false
+          if (dateTo   && r.date > dateTo)   return false
+          return true
+        })
+        if (hasInRange) set.add(media as MediaType)
+      }
     }
-  }, [savedReports])
+    return Array.from(set)
+  }, [savedReports, dateFrom, dateTo])
 
-  // ── 선택된 리포트의 모든 RawRow 수집 ────────────────────────
+  // 매체 목록이 바뀌면 선택 초기화 (전체 선택)
+  useEffect(() => {
+    setSelectedMediaTypes(new Set(availableMediaTypes))
+    setSelectedCsvCampaigns(new Set())
+  }, [availableMediaTypes.join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 선택된 매체+날짜 기준 캠페인명 목록 (매체별 그룹) ────────
+  const availableCampaignsByMedia = useMemo(() => {
+    const map = new Map<MediaType, string[]>()
+    for (const report of savedReports) {
+      for (const [media, rows] of Object.entries(report.rowsByMedia)) {
+        if (!rows?.length) continue
+        if (!selectedMediaTypes.has(media as MediaType)) continue
+        const mt = media as MediaType
+        for (const row of rows) {
+          if (dateFrom && row.date < dateFrom) continue
+          if (dateTo   && row.date > dateTo)   continue
+          if (!row.campaignName) continue
+          if (!map.has(mt)) map.set(mt, [])
+          const arr = map.get(mt)!
+          if (!arr.includes(row.campaignName)) arr.push(row.campaignName)
+        }
+      }
+    }
+    // 각 매체 내 정렬
+    for (const [, arr] of map) arr.sort()
+    return map
+  }, [savedReports, selectedMediaTypes, dateFrom, dateTo])
+
+  // 매체 선택 변경 시 캠페인 필터 초기화
+  useEffect(() => {
+    setSelectedCsvCampaigns(new Set())
+  }, [selectedMediaTypes])
+
+  // ── 모든 RawRow 수집 (날짜+매체+캠페인 필터) ─────────────────
   const allRows = useMemo<RawRow[]>(() => {
     const rows: RawRow[] = []
     for (const report of savedReports) {
-      if (!selectedReportIds.has(report.id)) continue
-      for (const mediaRows of Object.values(report.rowsByMedia)) {
+      for (const [media, mediaRows] of Object.entries(report.rowsByMedia)) {
         if (!mediaRows) continue
+        if (selectedMediaTypes.size > 0 && !selectedMediaTypes.has(media as MediaType)) continue
         for (const row of mediaRows) {
           if (dateFrom && row.date < dateFrom) continue
           if (dateTo   && row.date > dateTo)   continue
+          if (selectedCsvCampaigns.size > 0 && !selectedCsvCampaigns.has(row.campaignName)) continue
           rows.push(row)
         }
       }
     }
     return rows
-  }, [savedReports, selectedReportIds, dateFrom, dateTo])
+  }, [savedReports, selectedMediaTypes, selectedCsvCampaigns, dateFrom, dateTo])
 
   // ── 전체 요약 KPI ─────────────────────────────────────────
   const summary = useMemo(() => {
@@ -231,8 +277,9 @@ export default function CtPlusReportPage() {
   }
 
   function handleHtmlDownload() {
-    const selected = savedReports.filter(r => selectedReportIds.has(r.id))
-    const campaignName = selected.length === 1 ? selected[0].campaignName : null
+    const campaignName = selectedCsvCampaigns.size === 1
+      ? Array.from(selectedCsvCampaigns)[0]
+      : null
     const allDates = dailyData.map(d => d.date)
     const dateRange = allDates.length
       ? `${allDates[0]} ~ ${allDates[allDates.length - 1]}`
@@ -297,12 +344,12 @@ export default function CtPlusReportPage() {
 
       <div className="flex print:block">
         {/* 사이드 필터 */}
-        <aside className="w-64 shrink-0 border-r border-gray-200 bg-white p-4 print:hidden min-h-screen">
+        <aside className="w-64 shrink-0 border-r border-gray-200 bg-white p-4 print:hidden min-h-screen overflow-y-auto">
           <div className="space-y-5">
 
-            {/* 날짜 필터 */}
+            {/* 1. 날짜 필터 */}
             <div>
-              <p className="mb-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">기간 필터</p>
+              <p className="mb-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">기간 선택</p>
               <div className="space-y-2">
                 <div>
                   <label className="text-[11px] text-gray-400">시작일</label>
@@ -333,41 +380,101 @@ export default function CtPlusReportPage() {
               </div>
             </div>
 
-            {/* 리포트 선택 */}
+            {/* 2. 매체 선택 */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">리포트 선택</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">매체 선택</p>
                 <div className="flex gap-1.5 text-[11px] text-blue-600">
-                  <button onClick={() => setSelectedReportIds(new Set(savedReports.map(r => r.id)))}>전체</button>
+                  <button onClick={() => setSelectedMediaTypes(new Set(availableMediaTypes))}>전체</button>
                   <span className="text-gray-300">|</span>
-                  <button onClick={() => setSelectedReportIds(new Set())}>해제</button>
+                  <button onClick={() => setSelectedMediaTypes(new Set())}>해제</button>
                 </div>
               </div>
-              <div className="space-y-1">
-                {savedReports.length === 0 ? (
-                  <p className="text-xs text-gray-400">저장된 리포트 없음</p>
-                ) : (
-                  savedReports.map(r => (
-                    <label key={r.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedReportIds.has(r.id)}
-                        onChange={e => {
-                          const next = new Set(selectedReportIds)
-                          if (e.target.checked) next.add(r.id)
-                          else next.delete(r.id)
-                          setSelectedReportIds(next)
-                        }}
-                        className="mt-0.5 h-3 w-3 rounded border-gray-300 text-blue-600"
-                      />
-                      <span className="text-[11px] text-gray-600 leading-tight">{r.label}</span>
-                    </label>
-                  ))
-                )}
-              </div>
+              {availableMediaTypes.length === 0 ? (
+                <p className="text-xs text-gray-400">데이터 없음</p>
+              ) : (
+                <div className="space-y-1">
+                  {availableMediaTypes.map(mt => {
+                    const cfg = MEDIA_CONFIG[mt]
+                    return (
+                      <label key={mt} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedMediaTypes.has(mt)}
+                          onChange={e => {
+                            const next = new Set(selectedMediaTypes)
+                            if (e.target.checked) next.add(mt)
+                            else next.delete(mt)
+                            setSelectedMediaTypes(next)
+                          }}
+                          className="h-3 w-3 rounded border-gray-300 text-blue-600"
+                        />
+                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: cfg.color }} />
+                        <span className="text-[11px] text-gray-700">{cfg.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* 섹션 네비 */}
+            {/* 3. 캠페인 선택 (매체별 그룹) */}
+            {availableCampaignsByMedia.size > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">캠페인 선택</p>
+                  <div className="flex gap-1.5 text-[11px] text-blue-600">
+                    <button onClick={() => {
+                      const all = new Set<string>()
+                      for (const arr of availableCampaignsByMedia.values()) arr.forEach(n => all.add(n))
+                      setSelectedCsvCampaigns(all)
+                    }}>전체</button>
+                    <span className="text-gray-300">|</span>
+                    <button onClick={() => setSelectedCsvCampaigns(new Set())}>해제</button>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {Array.from(availableCampaignsByMedia.entries()).map(([mt, names]) => {
+                    const cfg = MEDIA_CONFIG[mt]
+                    return (
+                      <div key={mt}>
+                        <div className="flex items-center gap-1.5 mb-1 px-2">
+                          <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: cfg.color }} />
+                          <span className="text-[10px] font-semibold text-gray-400">{cfg.label}</span>
+                        </div>
+                        <div className="space-y-0.5">
+                          {names.map(name => (
+                            <label key={name} className="flex items-start gap-2 rounded-lg px-2 py-1 hover:bg-gray-50 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedCsvCampaigns.size === 0 || selectedCsvCampaigns.has(name)}
+                                onChange={e => {
+                                  // 전체 선택(size=0) 상태에서 하나 해제하면 나머지 전부 선택 상태로 전환
+                                  setSelectedCsvCampaigns(prev => {
+                                    const allNames = new Set<string>()
+                                    for (const arr of availableCampaignsByMedia.values()) arr.forEach(n => allNames.add(n))
+                                    const base = prev.size === 0 ? allNames : new Set(prev)
+                                    if (e.target.checked) base.add(name)
+                                    else base.delete(name)
+                                    // 전부 선택 상태면 size=0(전체)로 단순화
+                                    if (base.size === allNames.size) return new Set()
+                                    return base
+                                  })
+                                }}
+                                className="mt-0.5 h-3 w-3 rounded border-gray-300 text-blue-600 shrink-0"
+                              />
+                              <span className="text-[11px] text-gray-600 leading-tight break-all">{name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 4. 섹션 네비 */}
             <div>
               <p className="mb-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">섹션</p>
               <nav className="space-y-0.5">

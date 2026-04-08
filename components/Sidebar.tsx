@@ -42,11 +42,9 @@ const navItems: NavItem[] = [
       {
         label: "CT+",
         items: [
-          { label: "캠페인 집행 현황",     href: "/campaign/ct-plus/status" },
-          { label: "데일리 리포트",         href: "/campaign/ct-plus/daily" },
-          { label: "통합 리포트",           href: "/campaign/ct-plus/report" },
-          { label: "종료 리포트",           href: "/campaign/ct-plus/final" },
-          { label: "소재 및 랜딩URL 확인", href: "/campaign/ct-plus/creative-check" },
+          { label: "데이터 입력",  href: "/campaign/ct-plus/daily" },
+          { label: "데이터 조회",  href: "/campaign/ct-plus/view" },
+          { label: "리포트 생성",  href: "/campaign/ct-plus/report" },
         ],
       },
     ],
