@@ -15,6 +15,8 @@ import { calcDmpSettlement, calcCtr, calcCpc, DMP_FEE_RATES_PERCENT } from "@/li
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useReports } from "@/lib/hooks/useReports"
 import type { SavedReport } from "@/lib/hooks/useReports"
+import { useCtGroups } from "@/lib/hooks/useCtGroups"
+import { buildCsvNameSet } from "@/lib/ctGroupTypes"
 
 const DMP_COLORS: Record<string, string> = {
   SKP: '#3B82F6', KB: '#EAB308', LOTTE: '#EF4444', TG360: '#F97316',
@@ -33,9 +35,11 @@ export default function CtPlusReportPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [selectedMediaTypes, setSelectedMediaTypes] = useState<Set<MediaType>>(new Set())
-  const [selectedCsvCampaigns, setSelectedCsvCampaigns] = useState<Set<string>>(new Set())
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set())
   const [activeSection, setActiveSection] = useState<'summary' | 'daily' | 'dmp' | 'media' | 'creative' | 'video' | 'campaign'>('summary')
   const [printing, setPrinting] = useState(false)
+
+  const { groups: ctGroups } = useCtGroups()
 
   // ── 날짜+전체 리포트 기준 사용 가능한 매체 목록 ──────────────
   const availableMediaTypes = useMemo<MediaType[]>(() => {
@@ -57,39 +61,15 @@ export default function CtPlusReportPage() {
   // 매체 목록이 바뀌면 선택 초기화 (전체 선택)
   useEffect(() => {
     setSelectedMediaTypes(new Set(availableMediaTypes))
-    setSelectedCsvCampaigns(new Set())
   }, [availableMediaTypes.join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 선택된 매체+날짜 기준 캠페인명 목록 (매체별 그룹) ────────
-  const availableCampaignsByMedia = useMemo(() => {
-    const map = new Map<MediaType, string[]>()
-    for (const report of savedReports) {
-      for (const [media, rows] of Object.entries(report.rowsByMedia)) {
-        if (!rows?.length) continue
-        if (!selectedMediaTypes.has(media as MediaType)) continue
-        const mt = media as MediaType
-        for (const row of rows) {
-          if (dateFrom && row.date < dateFrom) continue
-          if (dateTo   && row.date > dateTo)   continue
-          if (!row.campaignName) continue
-          if (!map.has(mt)) map.set(mt, [])
-          const arr = map.get(mt)!
-          if (!arr.includes(row.campaignName)) arr.push(row.campaignName)
-        }
-      }
-    }
-    // 각 매체 내 정렬
-    for (const [, arr] of map) arr.sort()
-    return map
-  }, [savedReports, selectedMediaTypes, dateFrom, dateTo])
-
-  // 매체 선택 변경 시 캠페인 필터 초기화
-  useEffect(() => {
-    setSelectedCsvCampaigns(new Set())
-  }, [selectedMediaTypes])
-
-  // ── 모든 RawRow 수집 (날짜+매체+캠페인 필터) ─────────────────
+  // ── 모든 RawRow 수집 (날짜+매체+CT+그룹 필터) ───────────────
   const allRows = useMemo<RawRow[]>(() => {
+    // 선택된 그룹의 csvNames Set (없으면 전체 허용)
+    const allowedNames = selectedGroupIds.size > 0
+      ? buildCsvNameSet(ctGroups, selectedGroupIds)
+      : null
+
     const rows: RawRow[] = []
     for (const report of savedReports) {
       for (const [media, mediaRows] of Object.entries(report.rowsByMedia)) {
@@ -98,13 +78,13 @@ export default function CtPlusReportPage() {
         for (const row of mediaRows) {
           if (dateFrom && row.date < dateFrom) continue
           if (dateTo   && row.date > dateTo)   continue
-          if (selectedCsvCampaigns.size > 0 && !selectedCsvCampaigns.has(row.campaignName)) continue
+          if (allowedNames && !allowedNames.has(row.campaignName)) continue
           rows.push(row)
         }
       }
     }
     return rows
-  }, [savedReports, selectedMediaTypes, selectedCsvCampaigns, dateFrom, dateTo])
+  }, [savedReports, selectedMediaTypes, selectedGroupIds, ctGroups, dateFrom, dateTo])
 
   // ── 전체 요약 KPI ─────────────────────────────────────────
   const summary = useMemo(() => {
@@ -277,8 +257,8 @@ export default function CtPlusReportPage() {
   }
 
   function handleHtmlDownload() {
-    const campaignName = selectedCsvCampaigns.size === 1
-      ? Array.from(selectedCsvCampaigns)[0]
+    const campaignName = selectedGroupIds.size === 1
+      ? (ctGroups.find(g => g.id === Array.from(selectedGroupIds)[0])?.name ?? null)
       : null
     const allDates = dailyData.map(d => d.date)
     const dateRange = allDates.length
@@ -380,7 +360,54 @@ export default function CtPlusReportPage() {
               </div>
             </div>
 
-            {/* 2. 매체 선택 */}
+            {/* 2. CT+ 그룹 선택 */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">CT+ 그룹</p>
+                <div className="flex gap-1.5 text-[11px] text-blue-600">
+                  <button onClick={() => setSelectedGroupIds(new Set(ctGroups.map(g => g.id)))}>전체</button>
+                  <span className="text-gray-300">|</span>
+                  <button onClick={() => setSelectedGroupIds(new Set())}>해제</button>
+                </div>
+              </div>
+              {ctGroups.length === 0 ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-gray-400">등록된 그룹 없음</p>
+                  <Link href="/campaign/ct-plus/manage" className="text-[11px] text-blue-600 hover:underline block">
+                    그룹 관리 →
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {ctGroups.map(g => (
+                    <label key={g.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedGroupIds.size === 0 || selectedGroupIds.has(g.id)}
+                        onChange={e => {
+                          setSelectedGroupIds(prev => {
+                            const allIds = new Set(ctGroups.map(x => x.id))
+                            const base = prev.size === 0 ? allIds : new Set(prev)
+                            if (e.target.checked) base.add(g.id)
+                            else base.delete(g.id)
+                            if (base.size === allIds.size) return new Set()
+                            return base
+                          })
+                        }}
+                        className="mt-0.5 h-3 w-3 rounded border-gray-300 text-blue-600 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <span className="text-[11px] text-gray-700 leading-tight font-medium">{g.name || '(이름 없음)'}</span>
+                        <span className="block text-[10px] text-gray-400">CSV {g.csvNames.length}개</span>
+                      </div>
+                    </label>
+                  ))}
+                  <p className="px-2 text-[10px] text-gray-400 mt-1">* 전체 해제 시 모든 데이터 포함</p>
+                </div>
+              )}
+            </div>
+
+            {/* 3. 매체 선택 */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">매체 선택</p>
@@ -417,62 +444,6 @@ export default function CtPlusReportPage() {
                 </div>
               )}
             </div>
-
-            {/* 3. 캠페인 선택 (매체별 그룹) */}
-            {availableCampaignsByMedia.size > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">캠페인 선택</p>
-                  <div className="flex gap-1.5 text-[11px] text-blue-600">
-                    <button onClick={() => {
-                      const all = new Set<string>()
-                      for (const arr of availableCampaignsByMedia.values()) arr.forEach(n => all.add(n))
-                      setSelectedCsvCampaigns(all)
-                    }}>전체</button>
-                    <span className="text-gray-300">|</span>
-                    <button onClick={() => setSelectedCsvCampaigns(new Set())}>해제</button>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {Array.from(availableCampaignsByMedia.entries()).map(([mt, names]) => {
-                    const cfg = MEDIA_CONFIG[mt]
-                    return (
-                      <div key={mt}>
-                        <div className="flex items-center gap-1.5 mb-1 px-2">
-                          <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: cfg.color }} />
-                          <span className="text-[10px] font-semibold text-gray-400">{cfg.label}</span>
-                        </div>
-                        <div className="space-y-0.5">
-                          {names.map(name => (
-                            <label key={name} className="flex items-start gap-2 rounded-lg px-2 py-1 hover:bg-gray-50 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={selectedCsvCampaigns.size === 0 || selectedCsvCampaigns.has(name)}
-                                onChange={e => {
-                                  // 전체 선택(size=0) 상태에서 하나 해제하면 나머지 전부 선택 상태로 전환
-                                  setSelectedCsvCampaigns(prev => {
-                                    const allNames = new Set<string>()
-                                    for (const arr of availableCampaignsByMedia.values()) arr.forEach(n => allNames.add(n))
-                                    const base = prev.size === 0 ? allNames : new Set(prev)
-                                    if (e.target.checked) base.add(name)
-                                    else base.delete(name)
-                                    // 전부 선택 상태면 size=0(전체)로 단순화
-                                    if (base.size === allNames.size) return new Set()
-                                    return base
-                                  })
-                                }}
-                                className="mt-0.5 h-3 w-3 rounded border-gray-300 text-blue-600 shrink-0"
-                              />
-                              <span className="text-[11px] text-gray-600 leading-tight break-all">{name}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
 
             {/* 4. 섹션 네비 */}
             <div>

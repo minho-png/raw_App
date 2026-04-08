@@ -1,19 +1,15 @@
 "use client"
 
 import { useState, useEffect, useMemo, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import UnifiedCsvUploadCard from "@/components/ct-plus/UnifiedCsvUploadCard"
 import DailyDataTable from "@/components/ct-plus/DailyDataTable"
-import { hasCampaignMedia } from "@/lib/rawDataParser"
 import type { RawRow } from "@/lib/rawDataParser"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
-import type { Campaign, Advertiser, Agency } from "@/lib/campaignTypes"
 import type { ParseUnifiedCsvResult } from "@/lib/unifiedCsvParser"
-import { lookupCampaignByName } from '@/lib/csvCampaignLookup'
-import type { CampaignLookupResult } from '@/lib/csvCampaignLookup'
-import { useMasterData } from "@/lib/hooks/useMasterData"
+import { useCtGroups } from "@/lib/hooks/useCtGroups"
+import type { CtPlusGroup } from "@/lib/ctGroupTypes"
 import { useReports } from "@/lib/hooks/useReports"
 import type { SavedReport } from "@/lib/hooks/useReports"
 
@@ -22,7 +18,7 @@ function fmt(n: number) { return n.toLocaleString('ko-KR') }
 function makeLabel(
   rowsByMedia: Partial<Record<MediaType, RawRow[]>>,
   mediaTypes: MediaType[],
-  campaignName: string | null,
+  groupName: string | null,
 ): string {
   const allDates = mediaTypes.flatMap(m => (rowsByMedia[m] ?? []).map(r => r.date)).sort()
   const dateRange = allDates.length
@@ -31,7 +27,7 @@ function makeLabel(
       : `${allDates[0]} ~ ${allDates[allDates.length - 1]}`
     : ''
   const mediaStr = mediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')
-  return [dateRange, campaignName, mediaStr].filter(Boolean).join(' · ')
+  return [dateRange, groupName, mediaStr].filter(Boolean).join(' · ')
 }
 
 export default function CtPlusDailyPage() {
@@ -43,61 +39,25 @@ export default function CtPlusDailyPage() {
 }
 
 function CtPlusDailyContent() {
-  const searchParams = useSearchParams()
   const [unifiedFile, setUnifiedFile] = useState<File | null>(null)
-  const [step, setStep]   = useState<1 | 2 | 3>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
   const [loading, setLoading] = useState(false)
 
-  // 마스터 데이터 (MongoDB 동기화)
-  const { campaigns, advertisers, agencies } = useMasterData()
+  const { groups: ctGroups } = useCtGroups()
   const { reports: savedReports, saveReport, deleteReport } = useReports()
 
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
-
-  // URL 파라미터로 캠페인 자동 선택
-  useEffect(() => {
-    const paramId = searchParams.get('campaignId')
-    if (paramId && campaigns.some(x => x.id === paramId)) {
-      setSelectedCampaignId(paramId)
-    }
-  }, [searchParams, campaigns])
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
+  const selectedGroup: CtPlusGroup | null = ctGroups.find(g => g.id === selectedGroupId) ?? null
 
   // 결과 데이터
   const [rowsByMedia, setRowsByMedia] = useState<Partial<Record<MediaType, RawRow[]>>>({})
-  const [activeTab, setActiveTab]     = useState<MediaType | null>(null)
-  const [csvCampaignMatches, setCsvCampaignMatches] = useState<Map<string, CampaignLookupResult | null>>(new Map())
-  const [csvCampaignOverrides, setCsvCampaignOverrides] = useState<Map<string, string>>(new Map()) // csvName → campaignId
+  const [activeTab, setActiveTab] = useState<MediaType | null>(null)
 
-  const [showHistory, setShowHistory]     = useState(false)
-  const [savedToast, setSavedToast]       = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [savedToast, setSavedToast] = useState(false)
 
   // 캠페인 이름 필터 (CSV 원본 캠페인명 기준)
   const [selectedCsvCampaigns, setSelectedCsvCampaigns] = useState<Set<string>>(new Set())
-
-  const selectedCampaign   = campaigns.find(c => c.id === selectedCampaignId) ?? null
-
-  function getAdvertiserName(c: Campaign) {
-    return advertisers.find(a => a.id === c.advertiserId)?.name ?? '—'
-  }
-  function getAgencyName(c: Campaign) {
-    return agencies.find(a => a.id === c.agencyId)?.name ?? '—'
-  }
-
-  function getEffectiveCampaignForCsvName(csvName: string): Campaign | null {
-    const overrideId = csvCampaignOverrides.get(csvName)
-    if (overrideId) return campaigns.find(c => c.id === overrideId) ?? null
-    const match = csvCampaignMatches.get(csvName)
-    return match?.campaign ?? null
-  }
-
-  function handleCsvCampaignOverride(csvName: string, campaignId: string) {
-    setCsvCampaignOverrides(prev => {
-      const next = new Map(prev)
-      if (campaignId) next.set(csvName, campaignId)
-      else next.delete(csvName)
-      return next
-    })
-  }
 
   async function handleProcess() {
     if (!unifiedFile) return
@@ -105,7 +65,7 @@ function CtPlusDailyContent() {
     try {
       const formData = new FormData()
       formData.append('file', unifiedFile)
-      formData.append('campaign', JSON.stringify(selectedCampaign))
+      formData.append('campaign', JSON.stringify(null))
       const res = await fetch('/api/parse-unified-csv', { method: 'POST', body: formData })
       if (!res.ok) throw new Error(await res.text())
       const result: ParseUnifiedCsvResult = await res.json()
@@ -115,17 +75,6 @@ function CtPlusDailyContent() {
       if (result.skippedMediaCodes.length > 0) {
         console.warn('[parse-unified-csv] 알 수 없는 매체 코드:', result.skippedMediaCodes)
       }
-
-      // CSV 캠페인명 역방향 조회 (선택된 캠페인명 기준)
-      const matchMap = new Map<string, CampaignLookupResult | null>()
-      if (selectedCampaign?.campaignName) {
-        matchMap.set(
-          selectedCampaign.campaignName,
-          lookupCampaignByName(selectedCampaign.campaignName, campaigns, agencies, advertisers),
-        )
-      }
-      setCsvCampaignMatches(matchMap)
-
       setStep(3)
     } catch (e) {
       alert('파일 파싱 중 오류가 발생했습니다. CSV 파일 형식을 확인해주세요.')
@@ -135,39 +84,38 @@ function CtPlusDailyContent() {
     }
   }
 
-  // ── 리포트 저장 ──────────────────────────────────────────────
+  // ── 리포트 저장 ─────────────────────────────────────────────
   async function handleSaveReport() {
     const mediaTypes = Object.keys(rowsByMedia) as MediaType[]
     const report: SavedReport = {
       id: Date.now().toString(),
       savedAt: new Date().toISOString(),
-      label: makeLabel(rowsByMedia, mediaTypes, selectedCampaign?.campaignName ?? null),
-      campaignName: selectedCampaign?.campaignName ?? null,
+      label: makeLabel(rowsByMedia, mediaTypes, selectedGroup?.name ?? null),
+      campaignName: selectedGroup?.name ?? null,
       mediaTypes,
       rowsByMedia,
-      campaign: selectedCampaign,
+      campaign: null,
     }
     await saveReport(report)
     setSavedToast(true)
     setTimeout(() => setSavedToast(false), 4000)
   }
 
-  // ── 리포트 불러오기 ──────────────────────────────────────────
+  // ── 리포트 불러오기 ─────────────────────────────────────────
   function handleLoadReport(r: SavedReport) {
     setRowsByMedia(r.rowsByMedia)
     setActiveTab(r.mediaTypes[0] ?? null)
-    setSelectedCampaignId(r.campaign?.id ?? null)
+    setSelectedGroupId(null)
     setUnifiedFile(null)
     setShowHistory(false)
     setStep(3)
   }
 
-  // ── 리포트 삭제 ──────────────────────────────────────────────
   async function handleDeleteReport(id: string) {
     await deleteReport(id)
   }
 
-  // ── 현재 탭에서 고유 캠페인명 목록 ──────────────────────────
+  // ── 현재 탭에서 고유 캠페인명 목록 ─────────────────────────
   const activeCampaignNames = useMemo(() => {
     if (!activeTab) return []
     const rows = rowsByMedia[activeTab] ?? []
@@ -180,13 +128,23 @@ function CtPlusDailyContent() {
     setSelectedCsvCampaigns(new Set())
   }, [activeTab])
 
-  // ── 현재 탭 데이터 (캠페인 필터 적용) ───────────────────────
+  // ── 현재 탭 데이터 (캠페인 필터 적용) ──────────────────────
   const activeRows = useMemo(() => {
     if (!activeTab) return []
     const rows = rowsByMedia[activeTab] ?? []
     if (selectedCsvCampaigns.size === 0) return rows
     return rows.filter(r => selectedCsvCampaigns.has(r.campaignName))
   }, [activeTab, rowsByMedia, selectedCsvCampaigns])
+
+  // ── 미매칭 CSV 캠페인명 (선택된 그룹에 없는 것) ─────────────
+  const unmatchedCsvNames = useMemo<string[]>(() => {
+    if (!selectedGroup) return []
+    const allNames = new Set<string>()
+    for (const rows of Object.values(rowsByMedia)) {
+      rows?.forEach(r => { if (r.campaignName) allNames.add(r.campaignName) })
+    }
+    return Array.from(allNames).filter(n => !selectedGroup.csvNames.includes(n))
+  }, [selectedGroup, rowsByMedia])
 
   const activeMediaTypes = Object.keys(rowsByMedia) as MediaType[]
 
@@ -196,8 +154,8 @@ function CtPlusDailyContent() {
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">데일리 리포트</h1>
-            <p className="text-xs text-gray-400 mt-0.5">캠페인 리포트 · CT+ · 데일리</p>
+            <h1 className="text-base font-semibold text-gray-900">데이터 입력</h1>
+            <p className="text-xs text-gray-400 mt-0.5">캠페인 리포트 · CT+ · 데이터 입력</p>
           </div>
           <div className="flex items-center gap-3">
             {/* 이전 리포트 버튼 */}
@@ -228,7 +186,7 @@ function CtPlusDailyContent() {
                     {step > s ? '✓' : s}
                   </div>
                   <span className={`hidden text-xs sm:inline ${step === s ? 'font-medium text-gray-700' : 'text-gray-400'}`}>
-                    {s === 1 ? '파일 업로드' : s === 2 ? '캠페인 선택' : '데이터 확인'}
+                    {s === 1 ? '파일 업로드' : s === 2 ? '그룹 선택' : '데이터 확인'}
                   </span>
                   {s < 3 && <span className="text-xs text-gray-200">›</span>}
                 </div>
@@ -250,7 +208,6 @@ function CtPlusDailyContent() {
             {savedReports.length === 0 ? (
               <div className="px-5 py-8 text-center">
                 <p className="text-sm text-gray-400">저장된 리포트가 없습니다.</p>
-                <p className="mt-1 text-xs text-gray-300">데이터 추출 후 리포트를 저장할 수 있습니다.</p>
               </div>
             ) : (
               <ul className="divide-y divide-gray-50">
@@ -307,7 +264,6 @@ function CtPlusDailyContent() {
                 onRemove={() => setUnifiedFile(null)}
               />
             </div>
-
             {unifiedFile && (
               <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
                 <p className="text-sm text-blue-700">
@@ -324,41 +280,47 @@ function CtPlusDailyContent() {
           </div>
         )}
 
-        {/* ── STEP 2: 캠페인 선택 ──────────────────────────── */}
+        {/* ── STEP 2: CT+ 그룹 선택 ───────────────────────── */}
         {step === 2 && (
           <div>
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-gray-800">캠페인 선택</h2>
-                <p className="text-xs text-gray-400 mt-0.5">마크업 비중을 적용할 캠페인을 선택해주세요.</p>
+                <h2 className="text-sm font-semibold text-gray-800">CT+ 그룹 선택</h2>
+                <p className="text-xs text-gray-400 mt-0.5">이 데이터를 연결할 캠페인 그룹을 선택하세요. 건너뛰기도 가능합니다.</p>
               </div>
               <button onClick={() => setStep(1)} className="text-xs text-gray-400 hover:text-gray-600">← 파일 다시 선택</button>
             </div>
 
-            {campaigns.length === 0 ? (
+            {ctGroups.length === 0 ? (
               <div className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center">
-                <p className="text-sm text-gray-500">등록된 캠페인이 없습니다.</p>
-                <p className="mt-1 text-xs text-gray-400">캠페인 집행 현황에서 캠페인을 먼저 등록해주세요.</p>
-                <button
-                  onClick={() => {
-                    setSelectedCampaignId(null)
-                    handleProcess()
-                  }}
-                  disabled={loading}
-                  className="mt-4 rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  마크업 없이 계속 →
-                </button>
+                <p className="text-sm text-gray-500">등록된 CT+ 그룹이 없습니다.</p>
+                <p className="mt-1 text-xs text-gray-400">그룹 관리에서 그룹을 먼저 생성하거나 그룹 없이 진행하세요.</p>
+                <div className="mt-4 flex items-center justify-center gap-3">
+                  <Link
+                    href="/campaign/ct-plus/manage"
+                    className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                  >
+                    그룹 관리 →
+                  </Link>
+                  <button
+                    onClick={() => handleProcess()}
+                    disabled={loading}
+                    className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {loading ? '처리 중...' : '그룹 없이 진행'}
+                  </button>
+                </div>
               </div>
             ) : (
               <>
                 <div className="space-y-2">
-                  {campaigns.map(c => {
-                    const selected = selectedCampaignId === c.id
+                  {ctGroups.map(g => {
+                    const selected = selectedGroupId === g.id
+                    const mediaList = Object.keys(g.mediaMarkups) as MediaType[]
                     return (
                       <button
-                        key={c.id}
-                        onClick={() => setSelectedCampaignId(c.id)}
+                        key={g.id}
+                        onClick={() => setSelectedGroupId(prev => prev === g.id ? null : g.id)}
                         className={`w-full rounded-xl border px-5 py-4 text-left transition-all ${
                           selected
                             ? 'border-blue-300 bg-blue-50 ring-1 ring-blue-300'
@@ -367,38 +329,31 @@ function CtPlusDailyContent() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className={`text-sm font-semibold ${selected ? 'text-blue-800' : 'text-gray-800'}`}>
-                                {c.campaignName}
-                              </p>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                c.status === '집행 중'
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-gray-100 text-gray-500'
-                              }`}>
-                                {c.status}
-                              </span>
-                            </div>
-                            <p className="mt-0.5 text-xs text-gray-400">
-                              {getAdvertiserName(c)} · {getAgencyName(c)} · {c.startDate} ~ {c.endDate}
+                            <p className={`text-sm font-semibold ${selected ? 'text-blue-800' : 'text-gray-800'}`}>
+                              {g.name || '(이름 없음)'}
                             </p>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {c.mediaBudgets.map(mb => (
-                                <span
-                                  key={mb.media}
-                                  className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
-                                    selected ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
-                                  }`}
-                                >
-                                  {mb.media}
-                                  {selected && (
-                                    <span className="ml-1">
-                                      DMP {mb.dmp.agencyFeeRate}% / 일반 {mb.nonDmp.agencyFeeRate}%
+                            <p className="mt-0.5 text-xs text-gray-400">
+                              {g.startDate && g.endDate ? `${g.startDate} ~ ${g.endDate}` : '기간 미설정'}
+                              {g.csvNames.length > 0 && ` · CSV ${g.csvNames.length}개`}
+                            </p>
+                            {g.csvNames.length > 0 && (
+                              <p className="mt-1 text-[11px] text-gray-400 truncate">{g.csvNames.join(', ')}</p>
+                            )}
+                            {selected && mediaList.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {mediaList.map(mt => {
+                                  const cfg = MEDIA_CONFIG[mt]
+                                  const mu = g.mediaMarkups[mt]
+                                  return (
+                                    <span key={mt} className="flex items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-[10px] text-blue-700">
+                                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: cfg.color }} />
+                                      {cfg.label}
+                                      {mu && ` DMP ${mu.dmpRate}% / 일반 ${mu.nonDmpRate}%`}
                                     </span>
-                                  )}
-                                </span>
-                              ))}
-                            </div>
+                                  )
+                                })}
+                              </div>
+                            )}
                           </div>
                           <div className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 transition-colors ${
                             selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300'
@@ -410,28 +365,22 @@ function CtPlusDailyContent() {
                 </div>
 
                 <div className="mt-5 flex items-center justify-between">
-                  <p className="text-xs text-gray-400">
-                    {selectedCampaignId ? '캠페인 선택됨' : '캠페인을 선택하거나 마크업 없이 진행할 수 있습니다.'}
-                  </p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs text-gray-400">
+                      {selectedGroupId ? `"${selectedGroup?.name}" 선택됨` : '그룹을 선택하거나 그룹 없이 진행할 수 있습니다.'}
+                    </p>
+                    <Link href="/campaign/ct-plus/manage" className="text-xs text-blue-600 hover:underline">
+                      그룹 관리
+                    </Link>
+                  </div>
                   <div className="flex gap-2">
-                    {!selectedCampaignId && (
-                      <button
-                        onClick={() => handleProcess()}
-                        disabled={loading}
-                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        마크업 없이 진행
-                      </button>
-                    )}
-                    {selectedCampaignId && (
-                      <button
-                        onClick={handleProcess}
-                        disabled={loading}
-                        className="rounded-lg bg-blue-600 px-5 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        {loading ? '처리 중...' : '데이터 추출 →'}
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleProcess()}
+                      disabled={loading}
+                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {loading ? '처리 중...' : selectedGroupId ? '선택 완료 →' : '그룹 없이 진행 →'}
+                    </button>
                   </div>
                 </div>
               </>
@@ -446,15 +395,11 @@ function CtPlusDailyContent() {
               <div>
                 <h2 className="text-sm font-semibold text-gray-800">추출된 데이터</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {selectedCampaign
-                    ? `${selectedCampaign.campaignName} · 마크업 적용`
-                    : '마크업 미적용'}
-                  {' · '}
+                  {selectedGroup ? `${selectedGroup.name} · ` : ''}
                   {activeMediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {/* 리포트 저장 버튼 */}
                 <div className="relative">
                   <button
                     onClick={handleSaveReport}
@@ -469,7 +414,7 @@ function CtPlusDailyContent() {
                     <div className="absolute right-0 top-full mt-1.5 rounded-lg bg-gray-800 px-3 py-2 text-[11px] text-white shadow-lg z-10 flex items-center gap-3">
                       <span>저장되었습니다 ✓</span>
                       <Link href="/campaign/ct-plus/report" className="rounded bg-white/20 px-2 py-0.5 text-white hover:bg-white/30 transition-colors">
-                        통합 리포트 보기 →
+                        리포트 보기 →
                       </Link>
                     </div>
                   )}
@@ -478,69 +423,35 @@ function CtPlusDailyContent() {
                   onClick={() => setStep(2)}
                   className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
                 >
-                  ← 캠페인 재선택
+                  ← 그룹 재선택
                 </button>
               </div>
             </div>
 
-          {/* CSV 캠페인 역방향 매칭 결과 */}
-          {csvCampaignMatches.size > 0 && (
-            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
-              <p className="text-xs font-semibold text-blue-700 mb-3">캠페인 매칭</p>
-              <div className="space-y-3">
-                {[...csvCampaignMatches.entries()].map(([csvName, match]) => {
-                  const overrideId = csvCampaignOverrides.get(csvName) ?? ''
-                  const effectiveCampaign = getEffectiveCampaignForCsvName(csvName)
-                  const effectiveAgency = effectiveCampaign ? agencies.find(a => a.id === effectiveCampaign.agencyId) : null
-                  const effectiveAdvertiser = effectiveCampaign ? advertisers.find(a => a.id === effectiveCampaign.advertiserId) : null
-                  return (
-                    <div key={csvName} className="rounded-lg border border-blue-100 bg-white p-2.5 space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-gray-500 shrink-0">CSV</span>
-                        <span className="font-mono text-[11px] text-gray-700 truncate" title={csvName}>{csvName}</span>
-                        {match && !overrideId && (
-                          <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded shrink-0 ${
-                            match.matchType === 'exact' ? 'bg-green-100 text-green-700' :
-                            match.matchType === 'contains' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-gray-100 text-gray-500'
-                          }`}>{match.matchType === 'exact' ? '완전일치' : match.matchType === 'contains' ? '포함일치' : '부분일치'}</span>
-                        )}
-                        {overrideId && (
-                          <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded shrink-0 bg-purple-100 text-purple-700">수동선택</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-gray-400 shrink-0">캠페인</span>
-                        <select
-                          value={overrideId || match?.campaign?.id || ''}
-                          onChange={e => handleCsvCampaignOverride(csvName, e.target.value)}
-                          className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-700 focus:border-blue-300 focus:outline-none"
-                        >
-                          <option value="">-- 미매칭 --</option>
-                          {campaigns.map(c => (
-                            <option key={c.id} value={c.id}>{c.campaignName}</option>
-                          ))}
-                        </select>
-                      </div>
-                      {effectiveCampaign && (
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-1">
-                          {effectiveAgency && <span className="text-[10px] text-gray-500">대행사: <span className="text-gray-700">{effectiveAgency.name}</span></span>}
-                          {effectiveAdvertiser && <span className="text-[10px] text-gray-500">광고주: <span className="text-gray-700">{effectiveAdvertiser.name}</span></span>}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+            {/* 미매칭 캠페인 경고 */}
+            {unmatchedCsvNames.length > 0 && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-xs font-semibold text-amber-700 mb-1.5">
+                  그룹에 포함되지 않은 CSV 캠페인명 ({unmatchedCsvNames.length}개)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {unmatchedCsvNames.map(name => (
+                    <span key={name} className="rounded-full bg-amber-100 border border-amber-200 px-2.5 py-0.5 text-[11px] text-amber-700">
+                      {name}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-amber-500">
+                  <Link href="/campaign/ct-plus/manage" className="underline hover:text-amber-700">그룹 관리</Link>에서 해당 캠페인명을 그룹에 추가하세요.
+                </p>
               </div>
-            </div>
-          )}
+            )}
 
             {/* 매체 탭 */}
             <div className="mb-0 flex gap-2 border-b border-gray-200">
               {activeMediaTypes.map(media => {
                 const rows = rowsByMedia[media] ?? []
                 const cfg = MEDIA_CONFIG[media]
-                const hasCampaign = hasCampaignMedia(media, selectedCampaign)
                 return (
                   <button
                     key={media}
@@ -556,9 +467,6 @@ function CtPlusDailyContent() {
                     <span className="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
                       {fmt(rows.length)}
                     </span>
-                    {selectedCampaign && !hasCampaign && (
-                      <span className="ml-0.5 text-yellow-500" title="캠페인에 해당 매체 없음 — 마크업 0%">⚠</span>
-                    )}
                   </button>
                 )
               })}

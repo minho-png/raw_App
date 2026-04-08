@@ -45,6 +45,7 @@ const navItems: NavItem[] = [
           { label: "데이터 입력",  href: "/campaign/ct-plus/daily" },
           { label: "데이터 조회",  href: "/campaign/ct-plus/view" },
           { label: "리포트 생성",  href: "/campaign/ct-plus/report" },
+          { label: "그룹 관리",    href: "/campaign/ct-plus/manage" },
         ],
       },
     ],

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
 import type { Campaign, Agency, Advertiser, Operator } from '@/lib/campaignTypes'
 
-type MasterDataType = 'campaigns' | 'agencies' | 'advertisers' | 'operators'
+type MasterDataType = 'campaigns' | 'agencies' | 'advertisers' | 'operators' | 'ct-groups'
 
 const COLLECTION = 'ct_master_data'
 const WORKSPACE  = 'system'
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   if (!type) return NextResponse.json({ error: 'type required' }, { status: 400 })
   try {
     const body = await req.json()
-    const data: (Campaign | Agency | Advertiser | Operator)[] = body.data ?? []
+    const data: unknown[] = body.data ?? []
     const col = await getCollection()
     await col.updateOne(
       { workspace_id: WORKSPACE, type },
