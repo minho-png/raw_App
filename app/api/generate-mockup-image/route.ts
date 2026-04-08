@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export const maxDuration = 60
 
-const MODEL = 'gemini-3.0-flash-preview-image-generation'
+const MODEL = 'gpt-image-1'
+const GENERATIONS_URL = 'https://api.openai.com/v1/images/generations'
+const EDITS_URL       = 'https://api.openai.com/v1/images/edits'
 
 const PRESET_SURFACE_DESC: Record<string, string> = {
   'bizboard':         'Kakao Talk chat tab, top banner strip slot (비즈보드)',
@@ -11,26 +13,21 @@ const PRESET_SURFACE_DESC: Record<string, string> = {
   'native-view':      'Kakao View, full-width native card slot',
 }
 
-// Gemini generateContent 응답에서 이미지 추출
-function extractImage(json: unknown): { imageData: string; mimeType: string } | null {
-  const parts =
-    (json as { candidates?: { content?: { parts?: unknown[] } }[] })
-      ?.candidates?.[0]?.content?.parts ?? []
-  const imagePart = (parts as { inlineData?: { data: string; mimeType: string } }[])
-    .find(p => p.inlineData)
-  if (!imagePart?.inlineData) return null
-  return { imageData: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType ?? 'image/png' }
+function b64ToBlob(data: string, mime: string): Blob {
+  return new Blob([Buffer.from(data, 'base64')], { type: mime })
 }
 
-function makeInlineData(data: string, mimeType: string) {
-  return { inline_data: { mime_type: mimeType, data } }
+function extractB64(json: unknown): string | null {
+  return (json as { data?: { b64_json?: string }[] })?.data?.[0]?.b64_json ?? null
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY
+  const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
-    return NextResponse.json({ error: 'GEMINI_API_KEY not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 })
   }
+
+  const authHeader = { Authorization: `Bearer ${apiKey}` }
 
   let prompt = ''
   let referenceImageData: string | null = null
@@ -75,22 +72,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '프롬프트 또는 이미지가 필요합니다.' }, { status: 400 })
   }
 
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`
-  const generationConfig = { responseModalities: ['IMAGE'] }
-
-  async function callGemini(parts: unknown[]) {
-    const res = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts }], generationConfig }),
-    })
-    if (!res.ok) {
-      const errBody = await res.text()
-      throw new Error(`Gemini 3 Flash 오류 (${res.status}): ${errBody.slice(0, 200)}`)
-    }
-    return res.json()
-  }
-
   // ── Case A: 지면 이미지 + 광고 소재 → 게재 목업 합성 ──────────────────────
   if (mediaImageData && referenceImageData) {
     const campaignCtx = campaignName ? `Campaign: ${campaignName}. ` : ''
@@ -108,14 +89,29 @@ Place the creative into the banner/card/feed advertising slot naturally. Preserv
 Output: A photorealistic composited screenshot indistinguishable from an actual ad delivery proof (게재 확인 목업).${userExtra}`
 
     try {
-      const json = await callGemini([
-        { text: compositingPrompt },
-        makeInlineData(mediaImageData, mediaImageMime),
-        makeInlineData(referenceImageData, referenceImageMime),
-      ])
-      const result = extractImage(json)
-      if (!result) return NextResponse.json({ error: '목업 이미지 생성에 실패했습니다.' }, { status: 500 })
-      return NextResponse.json(result)
+      const form = new FormData()
+      form.append('model',           MODEL)
+      form.append('prompt',          compositingPrompt)
+      form.append('n',               '1')
+      form.append('size',            '1024x1536')
+      form.append('response_format', 'b64_json')
+      // gpt-image-1 accepts multiple images via image[] for multi-reference compositing
+      form.append('image[]', b64ToBlob(mediaImageData, mediaImageMime),     'media.png')
+      form.append('image[]', b64ToBlob(referenceImageData, referenceImageMime), 'creative.jpg')
+
+      const res = await fetch(EDITS_URL, { method: 'POST', headers: authHeader, body: form })
+      if (!res.ok) {
+        const errBody = await res.text()
+        console.error('[generate-mockup-image/compositing]', res.status, errBody)
+        return NextResponse.json(
+          { error: `OpenAI 오류 (${res.status}): ${errBody.slice(0, 200)}` },
+          { status: 500 },
+        )
+      }
+      const json = await res.json()
+      const imageData = extractB64(json)
+      if (!imageData) return NextResponse.json({ error: '목업 이미지 생성에 실패했습니다.' }, { status: 500 })
+      return NextResponse.json({ imageData, mimeType: 'image/png' })
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       console.error('[generate-mockup-image/compositing]', msg)
@@ -142,13 +138,27 @@ Rules:
 ${customReq}`
 
     try {
-      const json = await callGemini([
-        { text: adPrompt },
-        makeInlineData(referenceImageData, referenceImageMime),
-      ])
-      const result = extractImage(json)
-      if (!result) return NextResponse.json({ error: '응답에서 이미지를 찾을 수 없습니다.' }, { status: 500 })
-      return NextResponse.json(result)
+      const form = new FormData()
+      form.append('model',           MODEL)
+      form.append('prompt',          adPrompt)
+      form.append('n',               '1')
+      form.append('size',            '1024x1024')
+      form.append('response_format', 'b64_json')
+      form.append('image',           b64ToBlob(referenceImageData, referenceImageMime), 'reference.jpg')
+
+      const res = await fetch(EDITS_URL, { method: 'POST', headers: authHeader, body: form })
+      if (!res.ok) {
+        const errBody = await res.text()
+        console.error('[generate-mockup-image/reference]', res.status, errBody)
+        return NextResponse.json(
+          { error: `OpenAI 오류 (${res.status}): ${errBody.slice(0, 200)}` },
+          { status: 500 },
+        )
+      }
+      const json = await res.json()
+      const imageData = extractB64(json)
+      if (!imageData) return NextResponse.json({ error: '응답에서 이미지를 찾을 수 없습니다.' }, { status: 500 })
+      return NextResponse.json({ imageData, mimeType: 'image/png' })
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       console.error('[generate-mockup-image/reference]', msg)
@@ -159,7 +169,7 @@ ${customReq}`
   // ── Case C: 텍스트 전용 → 이미지 생성 ──────────────────────────────────────
   const campaignCtx = campaignName ? `Campaign: ${campaignName}. ` : ''
   const surfaceCtx  = presetId ? `Media surface: ${PRESET_SURFACE_DESC[presetId] ?? 'Korean digital media'}. ` : ''
-  const geminiPrompt = `${campaignCtx}${surfaceCtx}Korean digital advertising creative image.
+  const genPrompt   = `${campaignCtx}${surfaceCtx}Korean digital advertising creative image.
 
 ${prompt}
 
@@ -169,10 +179,29 @@ Requirements:
 - Photorealistic or clean graphic style appropriate for the Korean mobile ad market`
 
   try {
-    const json = await callGemini([{ text: geminiPrompt }])
-    const result = extractImage(json)
-    if (!result) return NextResponse.json({ error: '응답에서 이미지를 찾을 수 없습니다.' }, { status: 500 })
-    return NextResponse.json(result)
+    const res = await fetch(GENERATIONS_URL, {
+      method: 'POST',
+      headers: { ...authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model:           MODEL,
+        prompt:          genPrompt,
+        n:               1,
+        size:            '1024x1024',
+        response_format: 'b64_json',
+      }),
+    })
+    if (!res.ok) {
+      const errBody = await res.text()
+      console.error('[generate-mockup-image/text-only]', res.status, errBody)
+      return NextResponse.json(
+        { error: `OpenAI 오류 (${res.status}): ${errBody.slice(0, 200)}` },
+        { status: 500 },
+      )
+    }
+    const json = await res.json()
+    const imageData = extractB64(json)
+    if (!imageData) return NextResponse.json({ error: '응답에서 이미지를 찾을 수 없습니다.' }, { status: 500 })
+    return NextResponse.json({ imageData, mimeType: 'image/png' })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('[generate-mockup-image/text-only]', msg)
