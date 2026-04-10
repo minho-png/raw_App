@@ -1,11 +1,13 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import { BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts"
 import { useReports } from "@/lib/hooks/useReports"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import DailyDataTable from "@/components/ct-plus/DailyDataTable"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
-import { calcDmpSettlement, DMP_FEE_RATES_PERCENT } from "@/lib/calculationService"
+import { DMP_FEE_RATES_DECIMAL } from "@/lib/calculationService"
+import { exportByDmpType, SUPPORTED_EXPORT_DMPS } from "@/lib/dmpExport"
 import type { MediaType } from "@/lib/reportTypes"
 import type { RawRow, DmpType } from "@/lib/rawDataParser"
 import type { Campaign } from "@/lib/campaignTypes"
@@ -23,6 +25,11 @@ export default function CtPlusViewPage() {
   const [selectedMedia, setSelectedMedia] = useState<MediaType | null>(null)
   const [selectedCampaignName, setSelectedCampaignName] = useState<string | null>(null)
   const [innerTab, setInnerTab] = useState<InnerTab>('data')
+
+  // DMP tab year/month selectors
+  const [dmpYear, setDmpYear] = useState<number | null>(null)
+  const [dmpMonth, setDmpMonth] = useState<number | null>(null)
+  const [dmpTypeFilter, setDmpTypeFilter] = useState<DmpType | 'ALL'>('ALL')
 
   // 마크업 수정 임시 상태: { mediaLabel → { dmpRate, nonDmpRate } }
   const [markupEdits, setMarkupEdits] = useState<Record<string, { dmpRate: number; nonDmpRate: number }>>({})
@@ -88,16 +95,139 @@ export default function CtPlusViewPage() {
     return mediaRows.filter(r => r.campaignName === selectedCampaignName)
   }, [mediaRows, selectedCampaignName])
 
-  // ── DMP 정산 ───────────────────────────────────────────────
-  const dmpSettlement = useMemo(() => {
-    return calcDmpSettlement(
-      filteredRows.map(r => ({
-        dmpType: (r.dmpType as DmpType) || 'DIRECT',
-        executionAmount: r.executionAmount || r.grossCost,
-        netAmount: r.netAmount || r.netCost,
-      }))
-    )
-  }, [filteredRows])
+  // ── DMP tab: Available years from all reports
+  const availableYears = useMemo<number[]>(() => {
+    const set = new Set<number>()
+    for (const r of reports) {
+      for (const rows of Object.values(r.rowsByMedia)) {
+        for (const row of rows ?? []) {
+          const y = parseInt(row.date.slice(0, 4))
+          if (!isNaN(y)) set.add(y)
+        }
+      }
+    }
+    return Array.from(set).sort((a, b) => b - a)
+  }, [reports])
+
+  // ── DMP tab: Available months for selected year
+  const availableMonths = useMemo<number[]>(() => {
+    if (!dmpYear) return []
+    const set = new Set<number>()
+    for (const r of reports) {
+      for (const rows of Object.values(r.rowsByMedia)) {
+        for (const row of rows ?? []) {
+          if (!row.date.startsWith(String(dmpYear))) continue
+          const m = parseInt(row.date.slice(5, 7))
+          if (!isNaN(m)) set.add(m)
+        }
+      }
+    }
+    return Array.from(set).sort((a, b) => a - b)
+  }, [reports, dmpYear])
+
+  // ── DMP tab: Auto-select latest year when data loads
+  useEffect(() => {
+    if (availableYears.length && !dmpYear) setDmpYear(availableYears[0])
+  }, [availableYears, dmpYear])
+
+  // ── DMP tab: Auto-select latest month for selected year
+  useEffect(() => {
+    if (availableMonths.length) setDmpMonth(availableMonths[availableMonths.length - 1])
+  }, [availableMonths, dmpYear])
+
+  // ── DMP tab: Per-campaign settlement rows
+  interface DmpCampaignRow {
+    dmpType: DmpType
+    media: string
+    campaignName: string
+    netAmount: number
+    feeRate: number
+    feeAmount: number
+    impressions: number
+    clicks: number
+  }
+
+  const dmpCampaignRows = useMemo<DmpCampaignRow[]>(() => {
+    if (!dmpYear || !dmpMonth) return []
+    const prefix = `${dmpYear}-${String(dmpMonth).padStart(2, '0')}`
+    const map = new Map<string, DmpCampaignRow>()
+    for (const r of reports) {
+      for (const [media, rows] of Object.entries(r.rowsByMedia)) {
+        for (const row of rows ?? []) {
+          if (!row.date.startsWith(prefix)) continue
+          const dmpType = (row.dmpType as DmpType) || 'DIRECT'
+          const mediaLabel = MEDIA_CONFIG[media as MediaType]?.label ?? media
+          const key = `${dmpType}⌁${mediaLabel}⌁${row.campaignName}`
+          const cur = map.get(key) ?? {
+            dmpType,
+            media: mediaLabel,
+            campaignName: row.campaignName,
+            netAmount: 0,
+            feeRate: DMP_FEE_RATES_DECIMAL[dmpType] * 100,
+            feeAmount: 0,
+            impressions: 0,
+            clicks: 0,
+          }
+          cur.netAmount    += row.netAmount || row.netCost || 0
+          cur.impressions  += row.impressions || 0
+          cur.clicks       += row.clicks || 0
+          map.set(key, cur)
+        }
+      }
+    }
+    // compute feeAmount after aggregation
+    const result = Array.from(map.values()).map(r => ({
+      ...r,
+      feeAmount: Math.round(r.netAmount * (r.feeRate / 100) * 100) / 100,
+    }))
+    // Sort: by feeRate (fee > 0 first), then netAmount desc
+    return result.sort((a, b) => {
+      if (a.feeRate !== b.feeRate) return b.feeRate - a.feeRate
+      return b.netAmount - a.netAmount
+    })
+  }, [reports, dmpYear, dmpMonth])
+
+  // ── DMP tab: Totals and chart data
+  const dmpSummary = useMemo(() => {
+    const totalNet = dmpCampaignRows.reduce((s, r) => s + r.netAmount, 0)
+    const totalFee = dmpCampaignRows.reduce((s, r) => s + r.feeAmount, 0)
+    // Per DMP type totals for chart
+    const byType = new Map<string, { label: string; fee: number; net: number }>()
+    for (const r of dmpCampaignRows) {
+      if (r.feeRate === 0) continue
+      const cur = byType.get(r.dmpType) ?? { label: r.dmpType, fee: 0, net: 0 }
+      cur.fee += r.feeAmount
+      cur.net += r.netAmount
+      byType.set(r.dmpType, cur)
+    }
+    return {
+      totalNet: Math.round(totalNet),
+      totalFee: Math.round(totalFee),
+      chartData: Array.from(byType.values()).map(v => ({ ...v, fee: Math.round(v.fee), net: Math.round(v.net) })),
+      dmpTypes: Array.from(new Set(dmpCampaignRows.map(r => r.dmpType))),
+    }
+  }, [dmpCampaignRows])
+
+  // ── DMP tab: Filtered rows for campaign table
+  const filteredDmpCampaignRows = useMemo(() => {
+    if (dmpTypeFilter === 'ALL') return dmpCampaignRows
+    return dmpCampaignRows.filter(r => r.dmpType === dmpTypeFilter)
+  }, [dmpCampaignRows, dmpTypeFilter])
+
+  // ── DMP tab: Month-scoped rows for export
+  const dmpMonthRows = useMemo<RawRow[]>(() => {
+    if (!dmpYear || !dmpMonth) return []
+    const prefix = `${dmpYear}-${String(dmpMonth).padStart(2, '0')}`
+    const rows: RawRow[] = []
+    for (const r of reports) {
+      for (const mediaRows of Object.values(r.rowsByMedia)) {
+        for (const row of mediaRows ?? []) {
+          if (row.date.startsWith(prefix)) rows.push(row)
+        }
+      }
+    }
+    return rows
+  }, [reports, dmpYear, dmpMonth])
 
   // ── 마스터 캠페인 매칭 ──────────────────────────────────────
   const masterCampaign = useMemo<Campaign | null>(() => {
@@ -425,44 +555,51 @@ export default function CtPlusViewPage() {
             {/* ── DMP 정산 확인 ─────────────────────────────── */}
             {innerTab === 'dmp' && (
               <div className="space-y-4">
-                {/* 필터 정보 */}
-                <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 flex items-center gap-3 text-xs text-gray-500">
-                  <span>기준:</span>
-                  {selectedMedia && (
-                    <span className="font-medium text-gray-700">{MEDIA_CONFIG[selectedMedia].label}</span>
+                {/* Year/Month Selector */}
+                <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 py-3">
+                  <span className="text-xs font-medium text-gray-500">조회 기준</span>
+                  <select
+                    value={dmpYear ?? ''}
+                    onChange={e => { setDmpYear(Number(e.target.value)); setDmpMonth(null) }}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">연도 선택</option>
+                    {availableYears.map(y => <option key={y} value={y}>{y}년</option>)}
+                  </select>
+                  <select
+                    value={dmpMonth ?? ''}
+                    onChange={e => setDmpMonth(Number(e.target.value))}
+                    disabled={!dmpYear}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40"
+                  >
+                    <option value="">월 선택</option>
+                    {availableMonths.map(m => <option key={m} value={m}>{m}월</option>)}
+                  </select>
+                  {dmpYear && dmpMonth && (
+                    <span className="ml-auto text-xs text-gray-400">
+                      {dmpYear}년 {dmpMonth}월 · {dmpCampaignRows.length}개 캠페인
+                    </span>
                   )}
-                  {selectedCampaignName && (
-                    <>
-                      <span className="text-gray-300">·</span>
-                      <span className="font-medium text-gray-700">{selectedCampaignName}</span>
-                    </>
-                  )}
-                  {(dateFrom || dateTo) && (
-                    <>
-                      <span className="text-gray-300">·</span>
-                      <span>{dateFrom || '~'} ~ {dateTo || '~'}</span>
-                    </>
-                  )}
-                  <span className="ml-auto text-gray-400">{fmt(filteredRows.length)}행 기준</span>
                 </div>
 
-                {dmpSettlement.rows.length === 0 ? (
+                {!dmpYear || !dmpMonth ? (
                   <div className="flex h-40 items-center justify-center rounded-xl border border-gray-200 bg-white">
-                    <p className="text-sm text-gray-400">매체와 캠페인을 선택하면 DMP 정산 데이터가 표시됩니다</p>
+                    <p className="text-sm text-gray-400">연도와 월을 선택하면 DMP 정산 내역이 표시됩니다</p>
+                  </div>
+                ) : dmpCampaignRows.length === 0 ? (
+                  <div className="flex h-40 items-center justify-center rounded-xl border border-gray-200 bg-white">
+                    <p className="text-sm text-gray-400">{dmpYear}년 {dmpMonth}월 DMP 데이터가 없습니다</p>
                   </div>
                 ) : (
                   <>
-                    {/* 요약 카드 */}
+                    {/* Summary cards */}
                     <div className="grid grid-cols-3 gap-4">
                       {[
-                        { label: '총 집행 금액', value: `${fmt(dmpSettlement.totalExecution)}원`, sub: '마크업 포함' },
-                        { label: '총 순 금액(NET)', value: `${fmt(dmpSettlement.totalNet)}원`, sub: 'VAT 제외' },
-                        { label: '총 DMP 수수료', value: `${fmt(dmpSettlement.totalFee)}원`, highlight: true },
+                        { label: '총 집행금액(NET)', value: `${fmt(dmpSummary.totalNet)}원`, sub: 'VAT 별도' },
+                        { label: '총 DMP 수수료', value: `${fmt(dmpSummary.totalFee)}원`, highlight: true },
+                        { label: 'DMP 유형', value: `${dmpSummary.chartData.length}종`, sub: '수수료 발생 기준' },
                       ].map(c => (
-                        <div
-                          key={c.label}
-                          className={`rounded-xl border p-4 shadow-sm ${c.highlight ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-white'}`}
-                        >
+                        <div key={c.label} className={`rounded-xl border p-4 shadow-sm ${c.highlight ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-white'}`}>
                           <p className={`text-xs ${c.highlight ? 'text-blue-600' : 'text-gray-500'}`}>{c.label}</p>
                           <p className={`mt-1 text-xl font-bold ${c.highlight ? 'text-blue-700' : 'text-gray-900'}`}>{c.value}</p>
                           {c.sub && <p className="text-[11px] text-gray-400">{c.sub}</p>}
@@ -470,61 +607,123 @@ export default function CtPlusViewPage() {
                       ))}
                     </div>
 
-                    {/* DMP별 테이블 */}
+                    {/* Chart */}
+                    {dmpSummary.chartData.length > 0 && (
+                      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                        <h3 className="mb-4 text-sm font-semibold text-gray-700">DMP별 수수료 현황</h3>
+                        <BarChart width={560} height={200} data={dmpSummary.chartData} margin={{ top: 4, right: 20, left: 20, bottom: 4 }}>
+                          <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                          <YAxis tickFormatter={(v: number | undefined) => v ? `${Math.round(v / 10000)}만` : ''} tick={{ fontSize: 10 }} />
+                          <Tooltip formatter={(v: unknown) => [`${fmt(typeof v === 'number' ? v : 0)}원`, 'DMP 수수료']} />
+                          <Bar dataKey="fee" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </div>
+                    )}
+
+                    {/* Campaign table with DMP type filter chips */}
                     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-                      <div className="border-b border-gray-100 px-5 py-3">
-                        <h3 className="text-sm font-semibold text-gray-700">DMP별 정산 내역</h3>
+                      <div className="border-b border-gray-100 px-5 py-3 flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-semibold text-gray-700 mr-2">캠페인별 정산 내역</h3>
+                        {/* DMP type filter chips */}
+                        <button
+                          onClick={() => setDmpTypeFilter('ALL')}
+                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${dmpTypeFilter === 'ALL' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                        >전체</button>
+                        {dmpSummary.dmpTypes.map(dt => (
+                          <button
+                            key={dt}
+                            onClick={() => setDmpTypeFilter(dt as DmpType)}
+                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${dmpTypeFilter === dt ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                          >{dt}</button>
+                        ))}
                       </div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="border-b border-gray-100 bg-gray-50 text-gray-500">
                               <th className="px-4 py-2.5 text-left font-medium">DMP</th>
+                              <th className="px-4 py-2.5 text-left font-medium">매체</th>
+                              <th className="px-4 py-2.5 text-left font-medium">캠페인명</th>
+                              <th className="px-4 py-2.5 text-right font-medium">집행금액(NET)</th>
                               <th className="px-4 py-2.5 text-right font-medium">수수료율</th>
-                              <th className="px-4 py-2.5 text-right font-medium">집행 금액</th>
-                              <th className="px-4 py-2.5 text-right font-medium">순 금액(NET)</th>
-                              <th className="px-4 py-2.5 text-right font-medium">DMP 수수료</th>
-                              <th className="px-4 py-2.5 text-right font-medium">행 수</th>
+                              <th className="px-4 py-2.5 text-right font-medium">수수료</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {dmpSettlement.rows.map(row => (
-                              <tr
-                                key={row.dmpType}
-                                className={`hover:bg-gray-50 ${row.feeRate > 0 ? '' : 'text-gray-400'}`}
-                              >
-                                <td className="px-4 py-2.5 font-medium text-gray-700">
+                            {filteredDmpCampaignRows.map((row, i) => (
+                              <tr key={i} className={`hover:bg-gray-50 ${row.feeRate === 0 ? 'text-gray-400' : ''}`}>
+                                <td className="px-4 py-2.5 font-medium">
                                   {row.dmpType}
                                   {row.feeRate > 0 && (
-                                    <span className="ml-1.5 rounded bg-blue-50 px-1 py-0.5 text-[10px] text-blue-600">
-                                      DMP
-                                    </span>
+                                    <span className="ml-1 rounded bg-blue-50 px-1 py-0.5 text-[10px] text-blue-600">DMP</span>
                                   )}
                                 </td>
-                                <td className="px-4 py-2.5 text-right tabular-nums">
-                                  {DMP_FEE_RATES_PERCENT[row.dmpType]}%
-                                </td>
-                                <td className="px-4 py-2.5 text-right tabular-nums">{fmt(row.totalExecution)}원</td>
-                                <td className="px-4 py-2.5 text-right tabular-nums">{fmt(row.totalNet)}원</td>
+                                <td className="px-4 py-2.5 text-gray-600">{row.media}</td>
+                                <td className="px-4 py-2.5 max-w-[200px] truncate text-gray-700">{row.campaignName}</td>
+                                <td className="px-4 py-2.5 text-right tabular-nums">{fmt(Math.round(row.netAmount))}원</td>
+                                <td className="px-4 py-2.5 text-right">{row.feeRate}%</td>
                                 <td className={`px-4 py-2.5 text-right font-medium tabular-nums ${row.feeAmount > 0 ? 'text-blue-700' : ''}`}>
-                                  {row.feeAmount > 0 ? `${fmt(row.feeAmount)}원` : '—'}
+                                  {row.feeAmount > 0 ? `${fmt(Math.round(row.feeAmount))}원` : '—'}
                                 </td>
-                                <td className="px-4 py-2.5 text-right text-gray-400">{row.rowCount}</td>
                               </tr>
                             ))}
                           </tbody>
                           <tfoot>
                             <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                              <td className="px-4 py-3 text-gray-700" colSpan={2}>합계</td>
-                              <td className="px-4 py-3 text-right tabular-nums text-gray-800">{fmt(dmpSettlement.totalExecution)}원</td>
-                              <td className="px-4 py-3 text-right tabular-nums text-gray-800">{fmt(dmpSettlement.totalNet)}원</td>
-                              <td className="px-4 py-3 text-right tabular-nums text-blue-700">{fmt(dmpSettlement.totalFee)}원</td>
-                              <td className="px-4 py-3 text-right text-gray-400">
-                                {dmpSettlement.rows.reduce((s, r) => s + r.rowCount, 0)}
+                              <td className="px-4 py-3 text-gray-700" colSpan={3}>
+                                합계 ({filteredDmpCampaignRows.length}건)
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums text-gray-800">
+                                {fmt(Math.round(filteredDmpCampaignRows.reduce((s, r) => s + r.netAmount, 0)))}원
+                              </td>
+                              <td />
+                              <td className="px-4 py-3 text-right tabular-nums text-blue-700">
+                                {fmt(Math.round(filteredDmpCampaignRows.reduce((s, r) => s + r.feeAmount, 0)))}원
                               </td>
                             </tr>
                           </tfoot>
                         </table>
+                      </div>
+                    </div>
+
+                    {/* Export */}
+                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+                      <div className="border-b border-gray-100 px-5 py-3 flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-700">DMP 정산서 내보내기</h3>
+                          <p className="text-xs text-gray-400 mt-0.5">{dmpYear}년 {dmpMonth}월 전체 매체 기준</p>
+                        </div>
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">Excel (.xlsx)</span>
+                      </div>
+                      <div className="px-5 py-4">
+                        {(() => {
+                          const exportableDmps = SUPPORTED_EXPORT_DMPS.filter(d =>
+                            dmpCampaignRows.some(r => r.dmpType === d.dmpType && r.feeAmount > 0)
+                          )
+                          const periodLabel = `${dmpYear}-${String(dmpMonth).padStart(2, '0')}-01~${dmpYear}-${String(dmpMonth).padStart(2, '0')}-31`
+                          return exportableDmps.length === 0 ? (
+                            <p className="text-xs text-gray-400">내보낼 DMP 데이터가 없습니다</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {exportableDmps.map(d => (
+                                <button
+                                  key={d.dmpType}
+                                  onClick={() => exportByDmpType(d.dmpType, dmpMonthRows, periodLabel)}
+                                  className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                >
+                                  <svg className="h-3.5 w-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                                  </svg>
+                                  {d.label}
+                                  <span className="rounded bg-gray-100 px-1 py-0.5 text-[10px] text-gray-500">{d.feeLabel}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )
+                        })()}
+                        <p className="mt-3 text-[11px] text-gray-400">
+                          * 광고주명은 캠페인명으로 대체됩니다. Agent 정보는 포함되지 않습니다.
+                        </p>
                       </div>
                     </div>
                   </>

@@ -5,16 +5,22 @@ import Link from "next/link"
 import { useCtGroups } from "@/lib/hooks/useCtGroups"
 import { useReports } from "@/lib/hooks/useReports"
 import type { CtPlusGroup, CtGroupMediaMarkup } from "@/lib/ctGroupTypes"
+import type { SavedReport } from "@/lib/hooks/useReports"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 
 const MEDIA_TYPES: MediaType[] = ['google', 'naver', 'kakao', 'meta']
 
+type ManageTab = 'groups' | 'data'
+
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 
 export default function CtPlusManagePage() {
   const { groups, loading, addGroup, updateGroup, deleteGroup, newGroup } = useCtGroups()
-  const { reports } = useReports()
+  const { reports, deleteReport } = useReports()
+
+  // ── 탭 상태 ────────────────────────────────────────────────
+  const [manageTab, setManageTab] = useState<ManageTab>('groups')
 
   // ── 선택/편집 상태 ──────────────────────────────────────────
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
@@ -23,6 +29,10 @@ export default function CtPlusManagePage() {
   const [saving, setSaving] = useState(false)
   const [savedToast, setSavedToast] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+
+  // ── 저장 데이터 관리 상태 ────────────────────────────────────
+  const [deleteReportConfirm, setDeleteReportConfirm] = useState<string | null>(null)
+  const [deleteMonthConfirm, setDeleteMonthConfirm] = useState<string | null>(null)
 
   // ── 저장된 보고서에서 고유 CSV 캠페인명 추출 ────────────────
   const allCsvNames = useMemo<string[]>(() => {
@@ -130,27 +140,108 @@ export default function CtPlusManagePage() {
     if (g && !isDirty) setEditDraft(JSON.parse(JSON.stringify(g)))
   }, [groups, selectedGroupId, isDirty])
 
+  // ── 저장 데이터 관리 헬퍼 함수 ──────────────────────────────
+  // 보고서들을 연월(YYYY-MM)별로 그룹화
+  const groupedReports = useMemo(() => {
+    const map: Record<string, SavedReport[]> = {}
+    for (const r of reports) {
+      // 모든 행에서 날짜 추출
+      const dates: string[] = []
+      for (const rows of Object.values(r.rowsByMedia)) {
+        dates.push(...(rows ?? []).map(row => row.date))
+      }
+      // 가장 빠른 날짜의 연월 추출 또는 저장일 사용
+      const ym = dates.length > 0
+        ? dates.sort()[0].slice(0, 7)  // YYYY-MM
+        : r.savedAt.slice(0, 7)
+      ;(map[ym] ??= []).push(r)
+    }
+    // 최신순 정렬
+    return Object.fromEntries(
+      Object.entries(map).sort(([a], [b]) => b.localeCompare(a))
+    )
+  }, [reports])
+
+  function getTotalRows(r: SavedReport): number {
+    return Object.values(r.rowsByMedia).reduce((s, rows) => s + (rows?.length ?? 0), 0)
+  }
+
+  function getDateRange(r: SavedReport): string {
+    const dates: string[] = []
+    for (const rows of Object.values(r.rowsByMedia)) {
+      dates.push(...(rows ?? []).map(row => row.date))
+    }
+    if (!dates.length) return '—'
+    const sorted = dates.sort()
+    return `${sorted[0]} ~ ${sorted[sorted.length - 1]}`
+  }
+
+  function formatYM(ym: string): string {
+    const [y, m] = ym.split('-')
+    return `${y}년 ${parseInt(m)}월`
+  }
+
+  function formatSavedAt(savedAt: string): string {
+    return savedAt.slice(5, 10).replace('-', '/')
+  }
+
+  const totalReportCount = reports.length
+  const totalRowCount = reports.reduce((s, r) => s + getTotalRows(r), 0)
+
+  async function handleDeleteReport(id: string) {
+    setDeleteReportConfirm(null)
+    await deleteReport(id)
+  }
+
+  async function handleDeleteMonth(ym: string, reportsInMonth: SavedReport[]) {
+    setDeleteMonthConfirm(null)
+    for (const r of reportsInMonth) {
+      await deleteReport(r.id)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* 헤더 */}
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">그룹 관리</h1>
-            <p className="text-xs text-gray-400 mt-0.5">캠페인 리포트 · CT+ · 그룹 관리</p>
+            <h1 className="text-base font-semibold text-gray-900">CT+ 관리</h1>
+            <p className="text-xs text-gray-400 mt-0.5">캠페인 리포트 · CT+ · 관리</p>
           </div>
-          <button
-            onClick={() => openNewGroup()}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            새 그룹
-          </button>
+          {manageTab === 'groups' && (
+            <button
+              onClick={() => openNewGroup()}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              새 그룹
+            </button>
+          )}
         </div>
       </header>
 
+      {/* 탭 바 */}
+      <div className="flex gap-0 border-b border-gray-200 bg-white px-6">
+        {[
+          { id: 'groups' as ManageTab, label: '그룹 관리' },
+          { id: 'data'   as ManageTab, label: '저장 데이터 관리' },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setManageTab(tab.id)}
+            className={`border-b-2 px-5 py-3 text-xs font-medium transition-colors ${
+              manageTab === tab.id
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >{tab.label}</button>
+        ))}
+      </div>
+
+      {manageTab === 'groups' ? (
       <div className="flex flex-1 min-h-0">
         {/* ── 좌측 패널 ─────────────────────────────────────── */}
         <aside className="w-72 shrink-0 border-r border-gray-200 bg-white overflow-y-auto">
@@ -465,8 +556,74 @@ export default function CtPlusManagePage() {
           )}
         </main>
       </div>
+      ) : (
+      /* 저장 데이터 관리 탭 */
+      <main className="flex-1 p-6 overflow-y-auto">
+        <div className="space-y-6 max-w-5xl">
+          {/* 요약 */}
+          <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 flex gap-6">
+            <span className="text-sm text-gray-700"><span className="font-semibold">{totalReportCount}</span>건의 리포트</span>
+            <span className="text-sm text-gray-700"><span className="font-semibold">{fmt(totalRowCount)}</span>행의 데이터</span>
+          </div>
 
-      {/* 삭제 확인 모달 */}
+          {/* 빈 상태 */}
+          {reports.length === 0 && (
+            <div className="flex h-32 items-center justify-center rounded-xl border border-gray-200 bg-white">
+              <p className="text-sm text-gray-400">저장된 리포트가 없습니다</p>
+            </div>
+          )}
+
+          {/* 월별 그룹화 */}
+          {Object.entries(groupedReports).map(([ym, reportsInMonth]) => (
+            <div key={ym} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-5 py-3">
+                <h3 className="text-sm font-semibold text-gray-700">{formatYM(ym)} ({reportsInMonth.length}건)</h3>
+                <button
+                  onClick={() => setDeleteMonthConfirm(ym)}
+                  className="text-xs text-red-500 hover:text-red-700 font-medium"
+                >
+                  이 달 전체 삭제
+                </button>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50 text-gray-500">
+                    <th className="px-4 py-2 text-left">라벨</th>
+                    <th className="px-4 py-2 text-left">날짜 범위</th>
+                    <th className="px-4 py-2 text-left">매체</th>
+                    <th className="px-4 py-2 text-right">행 수</th>
+                    <th className="px-4 py-2 text-right">저장일</th>
+                    <th className="px-4 py-2 text-center">삭제</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {reportsInMonth.map(r => (
+                    <tr key={r.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-2.5 font-medium text-gray-700">{r.label}</td>
+                      <td className="px-4 py-2.5 text-gray-500">{getDateRange(r)}</td>
+                      <td className="px-4 py-2.5 text-gray-500">{r.mediaTypes.join(', ')}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmt(getTotalRows(r))}행</td>
+                      <td className="px-4 py-2.5 text-right text-gray-400">{formatSavedAt(r.savedAt)}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        <button
+                          onClick={() => setDeleteReportConfirm(r.id)}
+                          className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          title="삭제"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      </main>
+      )}
+
+      {/* 그룹 삭제 확인 모달 */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="rounded-xl bg-white shadow-xl p-6 w-80">
@@ -477,6 +634,38 @@ export default function CtPlusManagePage() {
             <div className="mt-4 flex gap-2 justify-end">
               <button onClick={() => setDeleteConfirm(null)} className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50">취소</button>
               <button onClick={() => handleDelete(deleteConfirm)} className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700">삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 리포트 삭제 확인 모달 */}
+      {deleteReportConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="rounded-xl bg-white shadow-xl p-6 w-80">
+            <p className="text-sm font-semibold text-gray-800">리포트를 삭제하시겠습니까?</p>
+            <p className="mt-1 text-xs text-gray-400">
+              삭제된 리포트는 복구할 수 없습니다.
+            </p>
+            <div className="mt-4 flex gap-2 justify-end">
+              <button onClick={() => setDeleteReportConfirm(null)} className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50">취소</button>
+              <button onClick={() => handleDeleteReport(deleteReportConfirm)} className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700">삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 월별 전체 삭제 확인 모달 */}
+      {deleteMonthConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="rounded-xl bg-white shadow-xl p-6 w-80">
+            <p className="text-sm font-semibold text-gray-800">{formatYM(deleteMonthConfirm)} 데이터를 모두 삭제하시겠습니까?</p>
+            <p className="mt-1 text-xs text-gray-400">
+              {groupedReports[deleteMonthConfirm]?.length ?? 0}건의 리포트가 삭제됩니다.
+            </p>
+            <div className="mt-4 flex gap-2 justify-end">
+              <button onClick={() => setDeleteMonthConfirm(null)} className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50">취소</button>
+              <button onClick={() => handleDeleteMonth(deleteMonthConfirm, groupedReports[deleteMonthConfirm] ?? [])} className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700">삭제</button>
             </div>
           </div>
         </div>
