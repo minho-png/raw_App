@@ -71,7 +71,9 @@ export function parseUnifiedCsv(
   csvText: string,
   campaign: Campaign | null,
 ): ParseUnifiedCsvResult {
-  const lines = csvText.split(/\r?\n/)
+  // BOM(﻿) 제거 — UTF-8 with BOM 파일 지원
+  const cleanText = csvText.replace(/^\uFEFF/, '')
+  const lines = cleanText.split(/\r?\n/)
   if (lines.length < 2) {
     return { rowsByMedia: {}, skippedMediaCodes: [], totalRows: 0, skippedRows: 0 }
   }

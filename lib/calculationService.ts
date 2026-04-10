@@ -49,7 +49,7 @@ const DMP_KEYWORD_TABLE: DmpKeyword[] = [
   { dmp: 'BC',         keywords: ['BC', 'BC카드', 'BCCARD'] },
   { dmp: 'SH',         keywords: ['SH', '신한', 'SHINHAN'] },
   { dmp: 'WIFI',       keywords: ['WIFI', 'WI-FI', '와이파이', 'WIFI타겟', '로플랫', 'ROPLAT'] },
-  { dmp: 'HyperLocal', keywords: ['HYPERLOCAL', 'HYPER LOCAL', '하이퍼로컬'] },
+  { dmp: 'HyperLocal', keywords: ['HYPERLOCAL', 'HYPER LOCAL', '하이퍼로컬', '실내위치', '실내 위치', 'INDOOR'] },
 ]
 
 /**

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { parseUnifiedCsv } from '@/lib/unifiedCsvParser'
 import type { Campaign } from '@/lib/campaignTypes'
 
+// 대용량 CSV 파일 지원 (모티브 광고성과 등 4~5MB 파일)
+export const maxDuration = 60
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
@@ -14,11 +18,12 @@ export async function POST(req: NextRequest) {
 
     const campaign: Campaign | null = campaignJson ? JSON.parse(campaignJson) : null
 
-    // UTF-8 → EUC-KR 폴백으로 텍스트 읽기
+    // UTF-8(with BOM 포함) → EUC-KR 폴백으로 텍스트 읽기
     let csvText: string
     try {
       const arrayBuffer = await file.arrayBuffer()
-      const decoder = new TextDecoder('utf-8', { fatal: true })
+      // ignoreBOM: true → BOM 자동 제거
+      const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
       try {
         csvText = decoder.decode(arrayBuffer)
       } catch {
