@@ -42,14 +42,14 @@ interface DmpKeyword {
 }
 
 const DMP_KEYWORD_TABLE: DmpKeyword[] = [
-  { dmp: 'SKP',        keywords: ['SKP', 'SK플래닛', 'SK PLANET', 'T딜', 'T-딜', 'SKPLANET'] },
-  { dmp: 'KB',         keywords: ['KB', 'KB국민', 'KBCARD', 'KB카드', 'KB금융'] },
-  { dmp: 'LOTTE',      keywords: ['LOTTE', '롯데', 'LOTTEDFS', '롯데DFS', '롯데카드'] },
-  { dmp: 'TG360',      keywords: ['TG360', 'TG 360', '티지360', 'TG'] },
+  { dmp: 'SKP',        keywords: ['SKP', 'SK플래닛', 'SK Planet', 'SK PLANET', 'SKPLANET'] },
+  { dmp: 'KB',         keywords: ['KB', '국민카드', 'KB DMP', 'KBDMP'] },
+  { dmp: 'LOTTE',      keywords: ['LOTTE', '롯데', 'LOTTEDMP', '롯데딥애드', 'DEEPAD'] },
+  { dmp: 'TG360',      keywords: ['TG360', 'TG 360', '티지360'] },
   { dmp: 'BC',         keywords: ['BC', 'BC카드', 'BCCARD'] },
-  { dmp: 'SH',         keywords: ['SH', '신한', '신한카드', 'SHINHAN'] },
-  { dmp: 'WIFI',       keywords: ['WIFI', 'WI-FI', '와이파이', 'WIFI타겟'] },
-  { dmp: 'HyperLocal', keywords: ['HYPERLOCAL', 'HYPER LOCAL', '하이퍼로컬', 'HYPERL'] },
+  { dmp: 'SH',         keywords: ['SH', '신한', 'SHINHAN'] },
+  { dmp: 'WIFI',       keywords: ['WIFI', 'WI-FI', '와이파이', 'WIFI타겟', '로플랫', 'ROPLAT'] },
+  { dmp: 'HyperLocal', keywords: ['HYPERLOCAL', 'HYPER LOCAL', '하이퍼로컬'] },
 ]
 
 /**
