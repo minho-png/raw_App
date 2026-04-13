@@ -4,6 +4,15 @@ import { useState, useEffect, useCallback } from 'react'
 import type { MediaType } from '@/lib/reportTypes'
 import type { RawRow } from '@/lib/rawDataParser'
 import type { Campaign } from '@/lib/campaignTypes'
+import {
+  needsChunking,
+  splitIntoChunks,
+  mergeChunks,
+  totalRowCount,
+  type ChunkedRowsMap,
+} from '@/lib/csvChunker'
+
+// ── 타입 정의 ────────────────────────────────────────────────────
 
 export interface SavedReport {
   id: string
@@ -11,12 +20,27 @@ export interface SavedReport {
   label: string
   campaignName: string | null
   mediaTypes: MediaType[]
+  /** 소규모: 행 보유 / chunked=true: 빈 객체 → expandReport()로 로드 */
   rowsByMedia: Partial<Record<MediaType, RawRow[]>>
   campaign: Campaign | null
+  chunked?: boolean
+  totalRows?: number
+  totalChunks?: number
 }
 
-const LS_KEY = 'ct-plus-daily-reports-v1'
+export interface SaveProgress {
+  phase: 'saving' | 'done' | 'error'
+  current: number
+  total: number
+  message: string
+}
+
+// ── 상수 ─────────────────────────────────────────────────────────
+
+const LS_KEY      = 'ct-plus-daily-reports-v1'
 const REPORT_TYPE = 'ct-plus'
+
+// ── DB API 헬퍼 ──────────────────────────────────────────────────
 
 async function fetchReports(): Promise<SavedReport[]> {
   try {
@@ -27,6 +51,26 @@ async function fetchReports(): Promise<SavedReport[]> {
   } catch { return [] }
 }
 
+async function fetchChunks(parentId: string): Promise<ChunkedRowsMap[]> {
+  try {
+    const res = await fetch(`/api/v1/reports?parentId=${parentId}`, { cache: 'no-store' })
+    if (!res.ok) return []
+    const json = await res.json()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (json.chunks ?? []).map((c: any) => c.rowsByMedia as ChunkedRowsMap)
+  } catch { return [] }
+}
+
+async function postReport(body: object): Promise<void> {
+  await fetch('/api/v1/reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+// ── localStorage 헬퍼 ─────────────────────────────────────────────
+
 function lsRead(): SavedReport[] {
   try {
     const raw = localStorage.getItem(LS_KEY)
@@ -34,18 +78,29 @@ function lsRead(): SavedReport[] {
   } catch { return [] }
 }
 
+/** 청크 리포트는 rowsByMedia를 비워서 저장 (크기 절약) */
 function lsWrite(data: SavedReport[]): void {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(data)) } catch {}
+  try {
+    const lean = data.map(r => r.chunked ? { ...r, rowsByMedia: {} } : r)
+    localStorage.setItem(LS_KEY, JSON.stringify(lean))
+  } catch {
+    // 용량 초과 시 최근 5개 메타데이터만
+    try {
+      const lean = data.slice(0, 5).map(r => ({ ...r, rowsByMedia: {} }))
+      localStorage.setItem(LS_KEY, JSON.stringify(lean))
+    } catch {}
+  }
 }
 
+// ── 훅 ──────────────────────────────────────────────────────────
+
 export function useReports() {
-  const [reports, setReports] = useState<SavedReport[]>([])
-  const [loading, setLoading]  = useState(true)
+  const [reports, setReports]           = useState<SavedReport[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [saveProgress, setSaveProgress] = useState<SaveProgress | null>(null)
 
   const loadAll = useCallback(async () => {
-    // Instant from localStorage
     setReports(lsRead())
-    // Sync from MongoDB
     const mongoReports = await fetchReports()
     if (mongoReports.length) {
       setReports(mongoReports)
@@ -56,27 +111,93 @@ export function useReports() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  async function saveReport(report: SavedReport) {
-    const next = [report, ...reports.filter(r => r.id !== report.id)]
+  /** 청크 리포트의 전체 행 데이터를 MongoDB에서 조립하여 반환 */
+  const expandReport = useCallback(async (id: string): Promise<SavedReport | null> => {
+    const meta = reports.find(r => r.id === id)
+    if (!meta) return null
+    if (!meta.chunked) return meta
+
+    const chunkMaps = await fetchChunks(id)
+    if (chunkMaps.length === 0) return meta
+    return { ...meta, rowsByMedia: mergeChunks(chunkMaps) }
+  }, [reports])
+
+  /** 저장 — 5,000행 초과 시 자동 청크 분할 */
+  async function saveReport(
+    report: SavedReport,
+    onProgress?: (p: SaveProgress) => void,
+  ) {
+    const notify = (p: SaveProgress) => {
+      setSaveProgress(p)
+      onProgress?.(p)
+    }
+
+    const isLarge  = needsChunking(report.rowsByMedia)
+    const rowCount = totalRowCount(report.rowsByMedia)
+
+    if (!isLarge) {
+      notify({ phase: 'saving', current: 0, total: 1, message: 'DB에 저장 중...' })
+      const next = [report, ...reports.filter(r => r.id !== report.id)]
+      setReports(next)
+      lsWrite(next)
+      try { await postReport({ ...report, type: REPORT_TYPE }) } catch {}
+      notify({ phase: 'done', current: 1, total: 1, message: '저장 완료' })
+      setTimeout(() => setSaveProgress(null), 3000)
+      return
+    }
+
+    // ── 대규모: 청크 분할 저장 ────────────────────────────────
+    const chunks      = splitIntoChunks(report.rowsByMedia)
+    const totalChunks = chunks.length
+
+    const parentDoc: SavedReport = {
+      ...report,
+      chunked: true,
+      totalRows: rowCount,
+      totalChunks,
+      rowsByMedia: {},
+    }
+    const next = [parentDoc, ...reports.filter(r => r.id !== report.id)]
     setReports(next)
     lsWrite(next)
-    try {
-      await fetch('/api/v1/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...report, type: REPORT_TYPE }),
+
+    notify({ phase: 'saving', current: 0, total: totalChunks + 1, message: '메타데이터 저장 중...' })
+    try { await postReport({ ...parentDoc, type: REPORT_TYPE }) } catch {}
+
+    for (let i = 0; i < chunks.length; i++) {
+      notify({
+        phase: 'saving',
+        current: i + 1,
+        total: totalChunks + 1,
+        message: `청크 저장 중 (${i + 1} / ${totalChunks})…`,
       })
-    } catch {}
+      try {
+        await postReport({
+          id: `${report.id}_chunk_${i}`,
+          isChunk: true,
+          parentId: report.id,
+          chunkIndex: i,
+          rowsByMedia: chunks[i],
+        })
+      } catch {}
+    }
+
+    notify({
+      phase: 'done',
+      current: totalChunks + 1,
+      total: totalChunks + 1,
+      message: `저장 완료 — ${rowCount.toLocaleString('ko-KR')}행 (${totalChunks}청크)`,
+    })
+    setTimeout(() => setSaveProgress(null), 4000)
   }
 
+  /** 삭제 — MongoDB에서 청크 cascade 삭제는 API route가 담당 */
   async function deleteReport(id: string) {
     const next = reports.filter(r => r.id !== id)
     setReports(next)
     lsWrite(next)
-    try {
-      await fetch(`/api/v1/reports?id=${id}`, { method: 'DELETE' })
-    } catch {}
+    try { await fetch(`/api/v1/reports?id=${id}`, { method: 'DELETE' }) } catch {}
   }
 
-  return { reports, loading, saveReport, deleteReport, refresh: loadAll }
+  return { reports, loading, saveProgress, saveReport, deleteReport, expandReport, refresh: loadAll }
 }

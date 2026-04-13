@@ -7,11 +7,12 @@ import DailyDataTable from "@/components/ct-plus/DailyDataTable"
 import type { RawRow } from "@/lib/rawDataParser"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
-import type { ParseUnifiedCsvResult } from "@/lib/unifiedCsvParser"
+import { parseUnifiedCsv } from "@/lib/unifiedCsvParser"
 import { useCtGroups } from "@/lib/hooks/useCtGroups"
 import type { CtPlusGroup } from "@/lib/ctGroupTypes"
 import { useReports } from "@/lib/hooks/useReports"
-import type { SavedReport } from "@/lib/hooks/useReports"
+import type { SavedReport, SaveProgress } from "@/lib/hooks/useReports"
+import { totalRowCount } from "@/lib/csvChunker"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 
@@ -44,7 +45,7 @@ function CtPlusDailyContent() {
   const [loading, setLoading] = useState(false)
 
   const { groups: ctGroups } = useCtGroups()
-  const { reports: savedReports, saveReport, deleteReport } = useReports()
+  const { reports: savedReports, saveReport, deleteReport, expandReport } = useReports()
 
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const selectedGroup: CtPlusGroup | null = ctGroups.find(g => g.id === selectedGroupId) ?? null
@@ -55,36 +56,37 @@ function CtPlusDailyContent() {
 
   const [showHistory, setShowHistory] = useState(false)
   const [savedToast, setSavedToast] = useState(false)
+  const [saveProgressLocal, setSaveProgressLocal] = useState<SaveProgress | null>(null)
+  const [parseError, setParseError] = useState<string | null>(null)
 
   // 캠페인 이름 필터 (CSV 원본 캠페인명 기준)
   const [selectedCsvCampaigns, setSelectedCsvCampaigns] = useState<Set<string>>(new Set())
 
+  // ── 클라이언트 사이드 CSV 파싱 (서버 API 미사용 → 용량 제한 없음) ──
   async function handleProcess() {
     if (!unifiedFile) return
     setLoading(true)
+    setParseError(null)
     try {
-      const formData = new FormData()
-      formData.append('file', unifiedFile)
-      formData.append('campaign', JSON.stringify(null))
-      const res = await fetch('/api/parse-unified-csv', { method: 'POST', body: formData })
-      if (!res.ok) throw new Error(await res.text())
-      const result: ParseUnifiedCsvResult = await res.json()
+      const text = await readFileAsText(unifiedFile)
+      const result = parseUnifiedCsv(text, null)
       setRowsByMedia(result.rowsByMedia)
       const mediaKeys = Object.keys(result.rowsByMedia) as MediaType[]
       setActiveTab(mediaKeys[0] ?? null)
       if (result.skippedMediaCodes.length > 0) {
-        console.warn('[parse-unified-csv] 알 수 없는 매체 코드:', result.skippedMediaCodes)
+        console.warn('[CSV] 알 수 없는 매체 코드:', result.skippedMediaCodes)
       }
       setStep(3)
     } catch (e) {
-      alert('파일 파싱 중 오류가 발생했습니다. CSV 파일 형식을 확인해주세요.')
+      const msg = e instanceof Error ? e.message : '파싱 오류'
+      setParseError(msg)
       console.error(e)
     } finally {
       setLoading(false)
     }
   }
 
-  // ── 리포트 저장 ─────────────────────────────────────────────
+  // ── 리포트 저장 (자동 청크) ─────────────────────────────────
   async function handleSaveReport() {
     const mediaTypes = Object.keys(rowsByMedia) as MediaType[]
     const report: SavedReport = {
@@ -96,15 +98,27 @@ function CtPlusDailyContent() {
       rowsByMedia,
       campaign: null,
     }
-    await saveReport(report)
-    setSavedToast(true)
-    setTimeout(() => setSavedToast(false), 4000)
+    await saveReport(report, (p) => setSaveProgressLocal(p))
+    if (saveProgressLocal?.phase !== 'error') {
+      setSavedToast(true)
+      setTimeout(() => setSavedToast(false), 4000)
+    }
   }
 
   // ── 리포트 불러오기 ─────────────────────────────────────────
-  function handleLoadReport(r: SavedReport) {
-    setRowsByMedia(r.rowsByMedia)
-    setActiveTab(r.mediaTypes[0] ?? null)
+  async function handleLoadReport(r: SavedReport) {
+    if (r.chunked) {
+      setLoading(true)
+      const full = await expandReport(r.id)
+      setLoading(false)
+      if (full) {
+        setRowsByMedia(full.rowsByMedia)
+        setActiveTab(full.mediaTypes[0] ?? null)
+      }
+    } else {
+      setRowsByMedia(r.rowsByMedia)
+      setActiveTab(r.mediaTypes[0] ?? null)
+    }
     setSelectedGroupId(null)
     setUnifiedFile(null)
     setShowHistory(false)
@@ -214,15 +228,25 @@ function CtPlusDailyContent() {
                 {savedReports.map(r => {
                   const d = new Date(r.savedAt)
                   const dateStr = `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
-                  const totalRows = r.mediaTypes.reduce((s, m) => s + (r.rowsByMedia[m]?.length ?? 0), 0)
+                  const rowCount = r.chunked
+                    ? (r.totalRows ?? 0)
+                    : r.mediaTypes.reduce((s, m) => s + (r.rowsByMedia[m]?.length ?? 0), 0)
                   return (
                     <li key={r.id} className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-gray-50/50 transition-colors">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-800 truncate">{r.label}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-gray-800 truncate">{r.label}</p>
+                          {r.chunked && (
+                            <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
+                              대용량
+                            </span>
+                          )}
+                        </div>
                         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
                           <span>{dateStr} 저장</span>
                           <span>·</span>
-                          <span>{fmt(totalRows)}행</span>
+                          <span>{fmt(rowCount)}행</span>
+                          {r.chunked && <span>· {r.totalChunks}청크</span>}
                           <span>·</span>
                           <span>{r.mediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')}</span>
                         </div>
@@ -232,7 +256,7 @@ function CtPlusDailyContent() {
                           onClick={() => handleLoadReport(r)}
                           className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
                         >
-                          불러오기
+                          {r.chunked ? '불러오기 (DB)' : '불러오기'}
                         </button>
                         <button
                           onClick={() => handleDeleteReport(r.id)}
@@ -373,13 +397,22 @@ function CtPlusDailyContent() {
                       그룹 관리
                     </Link>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col items-end gap-2">
+                    {parseError && (
+                      <p className="text-[11px] text-red-500">{parseError}</p>
+                    )}
+                    {unifiedFile && (
+                      <p className="text-[11px] text-gray-400">
+                        {(unifiedFile.size / 1024 / 1024).toFixed(1)}MB
+                        {unifiedFile.size > 3 * 1024 * 1024 && ' · 대용량 → 자동 청크 저장'}
+                      </p>
+                    )}
                     <button
                       onClick={() => handleProcess()}
                       disabled={loading}
                       className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                     >
-                      {loading ? '처리 중...' : selectedGroupId ? '선택 완료 →' : '그룹 없이 진행 →'}
+                      {loading ? '파싱 중...' : selectedGroupId ? '선택 완료 →' : '그룹 없이 진행 →'}
                     </button>
                   </div>
                 </div>
@@ -403,14 +436,35 @@ function CtPlusDailyContent() {
                 <div className="relative">
                   <button
                     onClick={handleSaveReport}
-                    className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                    disabled={saveProgressLocal?.phase === 'saving'}
+                    className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                     </svg>
-                    리포트 저장
+                    {saveProgressLocal?.phase === 'saving' ? '저장 중...' : '리포트 저장'}
                   </button>
-                  {savedToast && (
+                  {/* 저장 프로그레스 */}
+                  {saveProgressLocal && saveProgressLocal.phase === 'saving' && (
+                    <div className="absolute right-0 top-full mt-1.5 w-56 rounded-lg border border-gray-200 bg-white px-3 py-2.5 shadow-lg z-10">
+                      <p className="text-[11px] text-gray-600 mb-1.5">{saveProgressLocal.message}</p>
+                      <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                          style={{ width: `${saveProgressLocal.total > 0 ? Math.round(saveProgressLocal.current / saveProgressLocal.total * 100) : 0}%` }}
+                        />
+                      </div>
+                      <p className="mt-1 text-[10px] text-gray-400 text-right">
+                        {saveProgressLocal.current} / {saveProgressLocal.total} 청크
+                      </p>
+                    </div>
+                  )}
+                  {saveProgressLocal?.phase === 'done' && (
+                    <div className="absolute right-0 top-full mt-1.5 rounded-lg bg-gray-800 px-3 py-2 text-[11px] text-white shadow-lg z-10 flex items-center gap-3">
+                      <span>{saveProgressLocal.message} ✓</span>
+                    </div>
+                  )}
+                  {savedToast && !saveProgressLocal && (
                     <div className="absolute right-0 top-full mt-1.5 rounded-lg bg-gray-800 px-3 py-2 text-[11px] text-white shadow-lg z-10 flex items-center gap-3">
                       <span>저장되었습니다 ✓</span>
                       <Link href="/campaign/ct-plus/report" className="rounded bg-white/20 px-2 py-0.5 text-white hover:bg-white/30 transition-colors">
@@ -522,4 +576,18 @@ function CtPlusDailyContent() {
       </main>
     </div>
   )
+}
+
+// ── 헬퍼: FileReader로 텍스트 읽기 (BOM 자동 제거) ─────────────
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const text = e.target?.result as string
+      // BOM 제거
+      resolve(text.replace(/^\uFEFF/, ''))
+    }
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'))
+    reader.readAsText(file, 'utf-8')
+  })
 }

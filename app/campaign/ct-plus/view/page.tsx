@@ -17,8 +17,47 @@ type InnerTab = 'data' | 'markup' | 'dmp'
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 
 export default function CtPlusViewPage() {
-  const { reports, loading: reportsLoading } = useReports()
+  const { reports, loading: reportsLoading, expandReport } = useReports()
   const { campaigns, saveCampaigns } = useMasterData()
+
+  // 청크 리포트는 rowsByMedia가 비어 있으므로 자동 확장하여 fullReports에 저장
+  const [expandedMap, setExpandedMap] = useState<Record<string, Partial<Record<MediaType, RawRow[]>>>>({})
+  const [expandingIds, setExpandingIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const chunked = reports.filter(r => r.chunked && !expandedMap[r.id] && !expandingIds.has(r.id))
+    if (chunked.length === 0) return
+    setExpandingIds(prev => {
+      const next = new Set(prev)
+      chunked.forEach(r => next.add(r.id))
+      return next
+    })
+    Promise.all(chunked.map(r => expandReport(r.id))).then(results => {
+      setExpandedMap(prev => {
+        const next = { ...prev }
+        results.forEach(full => {
+          if (full) next[full.id] = full.rowsByMedia
+        })
+        return next
+      })
+      setExpandingIds(prev => {
+        const next = new Set(prev)
+        chunked.forEach(r => next.delete(r.id))
+        return next
+      })
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reports])
+
+  // 청크 리포트의 rowsByMedia를 확장된 데이터로 대체
+  const fullReports = useMemo(() =>
+    reports.map(r =>
+      r.chunked && expandedMap[r.id]
+        ? { ...r, rowsByMedia: expandedMap[r.id]! }
+        : r
+    ),
+    [reports, expandedMap]
+  )
 
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -39,7 +78,7 @@ export default function CtPlusViewPage() {
   // ── 날짜+전체 리포트 기준 사용 가능한 매체 ─────────────────
   const availableMedia = useMemo<MediaType[]>(() => {
     const set = new Set<MediaType>()
-    for (const r of reports) {
+    for (const r of fullReports) {
       for (const [media, rows] of Object.entries(r.rowsByMedia)) {
         if (!rows?.length) continue
         const hasInRange = rows.some(row => {
@@ -51,7 +90,7 @@ export default function CtPlusViewPage() {
       }
     }
     return Array.from(set)
-  }, [reports, dateFrom, dateTo])
+  }, [fullReports, dateFrom, dateTo])
 
   // 매체 없어지면 자동 선택
   useEffect(() => {
@@ -68,7 +107,7 @@ export default function CtPlusViewPage() {
   const mediaRows = useMemo<RawRow[]>(() => {
     if (!selectedMedia) return []
     const rows: RawRow[] = []
-    for (const r of reports) {
+    for (const r of fullReports) {
       for (const row of r.rowsByMedia[selectedMedia] ?? []) {
         if (dateFrom && row.date < dateFrom) continue
         if (dateTo   && row.date > dateTo)   continue
@@ -76,7 +115,7 @@ export default function CtPlusViewPage() {
       }
     }
     return rows
-  }, [reports, selectedMedia, dateFrom, dateTo])
+  }, [fullReports, selectedMedia, dateFrom, dateTo])
 
   // ── 해당 매체의 고유 캠페인명 ───────────────────────────────
   const campaignNames = useMemo<string[]>(() => {
@@ -98,7 +137,7 @@ export default function CtPlusViewPage() {
   // ── DMP tab: Available years from all reports
   const availableYears = useMemo<number[]>(() => {
     const set = new Set<number>()
-    for (const r of reports) {
+    for (const r of fullReports) {
       for (const rows of Object.values(r.rowsByMedia)) {
         for (const row of rows ?? []) {
           const y = parseInt(row.date.slice(0, 4))
@@ -107,13 +146,13 @@ export default function CtPlusViewPage() {
       }
     }
     return Array.from(set).sort((a, b) => b - a)
-  }, [reports])
+  }, [fullReports])
 
   // ── DMP tab: Available months for selected year
   const availableMonths = useMemo<number[]>(() => {
     if (!dmpYear) return []
     const set = new Set<number>()
-    for (const r of reports) {
+    for (const r of fullReports) {
       for (const rows of Object.values(r.rowsByMedia)) {
         for (const row of rows ?? []) {
           if (!row.date.startsWith(String(dmpYear))) continue
@@ -123,7 +162,7 @@ export default function CtPlusViewPage() {
       }
     }
     return Array.from(set).sort((a, b) => a - b)
-  }, [reports, dmpYear])
+  }, [fullReports, dmpYear])
 
   // ── DMP tab: Auto-select latest year when data loads
   useEffect(() => {
@@ -151,7 +190,7 @@ export default function CtPlusViewPage() {
     if (!dmpYear || !dmpMonth) return []
     const prefix = `${dmpYear}-${String(dmpMonth).padStart(2, '0')}`
     const map = new Map<string, DmpCampaignRow>()
-    for (const r of reports) {
+    for (const r of fullReports) {
       for (const [media, rows] of Object.entries(r.rowsByMedia)) {
         for (const row of rows ?? []) {
           if (!row.date.startsWith(prefix)) continue
@@ -185,7 +224,7 @@ export default function CtPlusViewPage() {
       if (a.feeRate !== b.feeRate) return b.feeRate - a.feeRate
       return b.netAmount - a.netAmount
     })
-  }, [reports, dmpYear, dmpMonth])
+  }, [fullReports, dmpYear, dmpMonth])
 
   // ── DMP tab: Totals and chart data
   const dmpSummary = useMemo(() => {
@@ -219,7 +258,7 @@ export default function CtPlusViewPage() {
     if (!dmpYear || !dmpMonth) return []
     const prefix = `${dmpYear}-${String(dmpMonth).padStart(2, '0')}`
     const rows: RawRow[] = []
-    for (const r of reports) {
+    for (const r of fullReports) {
       for (const mediaRows of Object.values(r.rowsByMedia)) {
         for (const row of mediaRows ?? []) {
           if (row.date.startsWith(prefix)) rows.push(row)
@@ -227,7 +266,7 @@ export default function CtPlusViewPage() {
       }
     }
     return rows
-  }, [reports, dmpYear, dmpMonth])
+  }, [fullReports, dmpYear, dmpMonth])
 
   // ── 마스터 캠페인 매칭 ──────────────────────────────────────
   const masterCampaign = useMemo<Campaign | null>(() => {
@@ -325,7 +364,7 @@ export default function CtPlusViewPage() {
             <div className="flex flex-col gap-0.5 pb-3">
               {availableMedia.length === 0 ? (
                 <p className="px-2 py-2 text-xs text-gray-400">
-                  {reportsLoading ? '로딩 중...' : '저장된 데이터 없음'}
+                  {reportsLoading || expandingIds.size > 0 ? '데이터 로딩 중...' : '저장된 데이터 없음'}
                 </p>
               ) : (
                 availableMedia.map(mt => {
