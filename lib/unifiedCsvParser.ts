@@ -145,9 +145,10 @@ export function parseUnifiedCsv(
     // 전체 수수료율: 1 - (1 - 각 수수료율의 곱) 방식이 아닌 합산 사용 (RAW_APP 방식)
     const totalFeeDecimal = mediaMarkup + dmpFeeRate + agencyFee
 
-    // VAT 처리: 카카오, 네이버는 공급가 = 비용 ÷ 1.1
-    const isNaverOrKakao = mediaType === 'naver' || mediaType === 'kakao'
-    const { netAmount, executionAmount } = calcCosts(supplyValue, isNaverOrKakao, totalFeeDecimal)
+    // VAT 처리: 네이버 GFA만 VAT 포함 금액 → 공급가 = 비용 ÷ 1.1
+    // 카카오·구글·메타는 이미 공급가(VAT 제외) 기준으로 청구됨
+    const isNaver = mediaType === 'naver'
+    const { netAmount, executionAmount } = calcCosts(supplyValue, isNaver, totalFeeDecimal)
 
     // views: 구글/메타는 숫자, 그 외 null
     const viewsRaw = viewStr.trim()
