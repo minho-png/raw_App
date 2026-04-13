@@ -51,5 +51,6 @@ export function performanceRecordToRawRow(record: PerformanceRecord): RawRow {
     executionAmount: record.execution_amount,
     netAmount: record.net_amount,
     supplyValue: record.supply_value ?? record.net_amount,
+    advertiserHint: null,
   };
 }

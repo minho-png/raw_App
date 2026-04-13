@@ -26,6 +26,8 @@ export interface SavedReport {
   chunked?: boolean
   totalRows?: number
   totalChunks?: number
+  /** 계정명에서 추출된 광고주 힌트 목록 (Google 제외) */
+  detectedAdvertiserHints?: string[]
 }
 
 export interface SaveProgress {

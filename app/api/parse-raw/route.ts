@@ -303,6 +303,7 @@ export async function POST(request: NextRequest) {
         executionAmount: Math.round(executionAmount),
         netAmount: Math.round(netAmount),
         supplyValue: Math.round(supplyValue),
+        advertiserHint: null,
       })
     }
 

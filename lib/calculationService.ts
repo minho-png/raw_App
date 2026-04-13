@@ -10,28 +10,30 @@ import type { DmpType } from './rawDataParser'
 
 // ── DMP 수수료율 (RAW_APP 기준, 소수) ──────────────────────────
 export const DMP_FEE_RATES_DECIMAL: Record<DmpType, number> = {
-  SKP:        0.10,
-  KB:         0.10,
-  LOTTE:      0.09,  // KIM 기준 9%
-  TG360:      0.10,
-  BC:         0,     // 계약 확정 0%
-  SH:         0,     // 계약 확정 0%
-  WIFI:       0.10,
-  HyperLocal: 0,
-  DIRECT:     0,
+  SKP:              0.10,
+  KB:               0.10,
+  LOTTE:            0.09,  // KIM 기준 9%
+  TG360:            0.10,
+  BC:               0,     // 계약 확정 0%
+  SH:               0,     // 계약 확정 0%
+  WIFI:             0.10,
+  HyperLocal:       0,
+  MEDIA_TARGETING:  0,     // _N 접미사 — 매체 타게팅 (DMP 수수료 없음)
+  DIRECT:           0,
 }
 
 // KIM 기존 DMP_FEE_RATES와 동기화 (% 단위)
 export const DMP_FEE_RATES_PERCENT: Record<DmpType, number> = {
-  SKP:        10,
-  KB:         10,
-  LOTTE:      9,
-  TG360:      10,
-  BC:         0,
-  SH:         0,
-  WIFI:       10,
-  HyperLocal: 0,
-  DIRECT:     0,
+  SKP:              10,
+  KB:               10,
+  LOTTE:            9,
+  TG360:            10,
+  BC:               0,
+  SH:               0,
+  WIFI:             10,
+  HyperLocal:       0,
+  MEDIA_TARGETING:  0,
+  DIRECT:           0,
 }
 
 // ── DMP 키워드 감지 테이블 ────────────────────────────────────
@@ -58,6 +60,15 @@ const DMP_KEYWORD_TABLE: DmpKeyword[] = [
  */
 export function detectDmpType(adGroupName: string): DmpType {
   if (!adGroupName || !adGroupName.trim()) return 'DIRECT'
+
+  // ── 최우선: _N 토큰 → 매체 타게팅 (DMP 수수료 0%) ───────────
+  // "_N"이 토큰 끝(문자열 끝 or 다음 구분자 _ 앞)에 있으면 매체 타게팅으로 분류.
+  // 예: "SKP_N", "KB_N_리타겟", "광고그룹_SKP_N"  → MEDIA_TARGETING
+  // 예외: "_NEW", "_NAVER" 등 _N 뒤에 알파벳이 이어지는 경우는 제외.
+  if (/_N(_|$)/i.test(adGroupName)) {
+    return 'MEDIA_TARGETING'
+  }
+
   const upper = adGroupName.toUpperCase()
   for (const { dmp, keywords } of DMP_KEYWORD_TABLE) {
     if (keywords.some(k => upper.includes(k))) return dmp
@@ -162,7 +173,7 @@ export function calcDmpSettlement(
   }
 
   // DMP 타입 순서 정렬
-  const DMP_ORDER: DmpType[] = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH', 'WIFI', 'HyperLocal', 'DIRECT']
+  const DMP_ORDER: DmpType[] = ['SKP', 'KB', 'LOTTE', 'TG360', 'BC', 'SH', 'WIFI', 'HyperLocal', 'MEDIA_TARGETING', 'DIRECT']
   settlementRows.sort((a, b) => DMP_ORDER.indexOf(a.dmpType) - DMP_ORDER.indexOf(b.dmpType))
 
   return { rows: settlementRows, totalExecution, totalNet, totalFee, verificationStatus, diffPercentage }

@@ -10,6 +10,7 @@ import type { Campaign } from './campaignTypes'
 import { detectDmpType } from './calculationService'
 import { calcCosts, DMP_FEE_RATES_DECIMAL } from './calculationService'
 import { MEDIA_MARKUP_RATE } from './campaignTypes'
+import { extractAdvertiserHint } from './advertiserMatcher'
 
 // CSV 매체 코드 → MediaType 매핑
 const CSV_MEDIA_CODE_MAP: Record<string, MediaType> = {
@@ -62,6 +63,8 @@ export interface ParseUnifiedCsvResult {
   skippedMediaCodes: string[]  // 알 수 없는 매체 코드 목록
   totalRows: number
   skippedRows: number  // 노출+클릭+비용 모두 0인 행
+  /** 계정명에서 추출된 광고주 힌트 목록 (Google 제외, 중복 제거) */
+  detectedAdvertiserHints: string[]
 }
 
 /**
@@ -75,7 +78,7 @@ export function parseUnifiedCsv(
   const cleanText = csvText.replace(/^\uFEFF/, '')
   const lines = cleanText.split(/\r?\n/)
   if (lines.length < 2) {
-    return { rowsByMedia: {}, skippedMediaCodes: [], totalRows: 0, skippedRows: 0 }
+    return { rowsByMedia: {}, skippedMediaCodes: [], totalRows: 0, skippedRows: 0, detectedAdvertiserHints: [] }
   }
 
   // 헤더 파싱 (따옴표 제거)
@@ -175,10 +178,20 @@ export function parseUnifiedCsv(
       executionAmount,
       netAmount,
       supplyValue,
+      // 계정명 → 광고주 힌트 추출 (Google 제외)
+      advertiserHint:  extractAdvertiserHint(accountName, mediaType),
     }
 
     if (!rowsByMedia[mediaType]) rowsByMedia[mediaType] = []
     rowsByMedia[mediaType]!.push(row)
+  }
+
+  // 감지된 광고주 힌트 수집 (중복 제거)
+  const hintSet = new Set<string>()
+  for (const rows of Object.values(rowsByMedia)) {
+    for (const row of rows ?? []) {
+      if (row.advertiserHint) hintSet.add(row.advertiserHint)
+    }
   }
 
   return {
@@ -186,6 +199,7 @@ export function parseUnifiedCsv(
     skippedMediaCodes: [...unknownMediaCodes],
     totalRows,
     skippedRows,
+    detectedAdvertiserHints: [...hintSet].sort(),
   }
 }
 

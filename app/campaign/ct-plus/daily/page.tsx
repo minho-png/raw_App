@@ -59,6 +59,9 @@ function CtPlusDailyContent() {
   const [saveProgressLocal, setSaveProgressLocal] = useState<SaveProgress | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
 
+  // 파싱 결과에서 감지된 광고주 힌트 목록
+  const [detectedHints, setDetectedHints] = useState<string[]>([])
+
   // 캠페인 이름 필터 (CSV 원본 캠페인명 기준)
   const [selectedCsvCampaigns, setSelectedCsvCampaigns] = useState<Set<string>>(new Set())
 
@@ -71,6 +74,7 @@ function CtPlusDailyContent() {
       const text = await readFileAsText(unifiedFile)
       const result = parseUnifiedCsv(text, null)
       setRowsByMedia(result.rowsByMedia)
+      setDetectedHints(result.detectedAdvertiserHints ?? [])
       const mediaKeys = Object.keys(result.rowsByMedia) as MediaType[]
       setActiveTab(mediaKeys[0] ?? null)
       if (result.skippedMediaCodes.length > 0) {
@@ -97,6 +101,7 @@ function CtPlusDailyContent() {
       mediaTypes,
       rowsByMedia,
       campaign: null,
+      detectedAdvertiserHints: detectedHints.length > 0 ? detectedHints : undefined,
     }
     await saveReport(report, (p) => setSaveProgressLocal(p))
     if (saveProgressLocal?.phase !== 'error') {
@@ -121,6 +126,7 @@ function CtPlusDailyContent() {
     }
     setSelectedGroupId(null)
     setUnifiedFile(null)
+    setDetectedHints(r.detectedAdvertiserHints ?? [])
     setShowHistory(false)
     setStep(3)
   }
@@ -481,6 +487,25 @@ function CtPlusDailyContent() {
                 </button>
               </div>
             </div>
+
+            {/* 감지된 광고주 힌트 */}
+            {detectedHints.length > 0 && (
+              <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+                <p className="text-xs font-semibold text-indigo-700 mb-1.5">
+                  감지된 광고주 ({detectedHints.length}개)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {detectedHints.map(hint => (
+                    <span key={hint} className="rounded-full bg-white border border-indigo-200 px-2.5 py-0.5 text-[11px] text-indigo-700">
+                      {hint}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-indigo-400">
+                  카카오·META·네이버 계정명 기반으로 추출된 광고주 후보입니다. (Google 제외)
+                </p>
+              </div>
+            )}
 
             {/* 미매칭 캠페인 경고 */}
             {unmatchedCsvNames.length > 0 && (

@@ -3,7 +3,7 @@ import { MEDIA_CONFIG } from './reportTypes'
 import type { Campaign } from './campaignTypes'
 
 // RAW_APP에서 지원하는 DMP 타입 (BC, SH 포함)
-export type DmpType = 'SKP' | 'KB' | 'LOTTE' | 'TG360' | 'BC' | 'SH' | 'WIFI' | 'HyperLocal' | 'DIRECT'
+export type DmpType = 'SKP' | 'KB' | 'LOTTE' | 'TG360' | 'BC' | 'SH' | 'WIFI' | 'HyperLocal' | 'MEDIA_TARGETING' | 'DIRECT'
 
 export interface RawRow {
   date: string        // YYYY-MM-DD
@@ -22,6 +22,8 @@ export interface RawRow {
   executionAmount: number  // 실제 집행 금액 (= grossCost)
   netAmount: number        // 순 금액 (Naver: 공급가/1.1, 기타: 공급가)
   supplyValue: number      // 파일 원본 비용 (공급가액)
+  /** 계정명에서 추출한 광고주 후보명 (Google 제외, null = 매칭 불가) */
+  advertiserHint: string | null
 }
 
 /** 캠페인에 해당 매체가 설정돼 있는지 확인 */
