@@ -15,6 +15,37 @@ const globalWithMongo = global as typeof globalThis & {
   _indexesEnsured?: boolean;
 };
 
+/**
+ * 최초 관리자 자동 시드
+ * users 컬렉션이 비어 있으면 Test1234 / Test1234 관리자 계정을 자동 생성합니다.
+ */
+async function seedDefaultAdmin(c: MongoClient): Promise<void> {
+  try {
+    const col = c.db().collection('users');
+    const count = await col.countDocuments();
+    if (count > 0) return;
+
+    const crypto = await import('crypto');
+    const COST = 16384;
+    const KEY_LEN = 64;
+    const salt = crypto.randomBytes(32).toString('hex');
+    const passwordHash = crypto
+      .scryptSync('Test1234', salt, KEY_LEN, { N: COST })
+      .toString('hex');
+
+    await col.insertOne({
+      username: 'Test1234',
+      passwordHash,
+      passwordSalt: salt,
+      role: 'admin',
+      createdAt: new Date().toISOString(),
+    });
+    console.log('[MongoDB] 기본 관리자 계정 자동 생성 완료 (Test1234 / Test1234)');
+  } catch (e) {
+    console.warn('[MongoDB] 기본 관리자 시드 실패:', (e as Error).message);
+  }
+}
+
 async function connectAndEnsureIndexes(): Promise<MongoClient> {
   const c = new MongoClient(getUri());
   await c.connect();
@@ -22,7 +53,8 @@ async function connectAndEnsureIndexes(): Promise<MongoClient> {
     globalWithMongo._indexesEnsured = true;
     const { RepositoryService } = await import('@/services/repositoryService');
     const repo = new RepositoryService(c);
-    repo.ensureIndexes().catch(e => console.warn('[MongoDB] Index creation warning:', e.message));
+    repo.ensureIndexes().catch(e => console.warn('[MongoDB] Index creation warning:', (e as Error).message));
+    seedDefaultAdmin(c).catch(() => null);
   }
   return c;
 }
@@ -35,8 +67,9 @@ if (process.env.NODE_ENV === 'development') {
         globalWithMongo._indexesEnsured = true;
         import('@/services/repositoryService').then(({ RepositoryService }) => {
           new RepositoryService(connectedClient).ensureIndexes()
-            .catch(e => console.warn('[MongoDB] Index creation warning:', e.message));
+            .catch(e => console.warn('[MongoDB] Index creation warning:', (e as Error).message));
         });
+        seedDefaultAdmin(connectedClient).catch(() => null);
       }
       return connectedClient;
     });
