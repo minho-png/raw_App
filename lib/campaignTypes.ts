@@ -72,6 +72,7 @@ export interface Campaign {
   managerId: string
   status: CampaignStatus
   createdAt: string
+  agencyFeeRate?: number  // 대행수수료율 (%) — 정산 페이지 기본값으로 활용
 }
 
 export function getTotalMarkup(mediaMarkup: number, dmpFeeRate: number, agencyFeeRate: number): number {
