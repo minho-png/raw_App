@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifySessionToken, COOKIE_NAME } from '@/lib/auth/session'
 
 // 인증이 필요 없는 공개 경로
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/init-admin']
+const PUBLIC_PREFIXES = ['/login', '/api/auth/login', '/api/auth/init-admin']
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // 공개 경로는 패스
-  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
+  // 공개 경로 패스
+  if (PUBLIC_PREFIXES.some(p => pathname.startsWith(p))) {
     return NextResponse.next()
   }
 
-  // 정적 파일 (_next/static, _next/image, favicon 등) 제외
+  // 정적 파일 제외
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
@@ -21,8 +21,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  const token = request.cookies.get(COOKIE_NAME)?.value
-  const payload = token ? verifySessionToken(token) : null
+  const token   = request.cookies.get(COOKIE_NAME)?.value
+  const payload = token ? await verifySessionToken(token) : null
 
   if (!payload) {
     const loginUrl = new URL('/login', request.url)

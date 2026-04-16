@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = (user._id as { toString(): string })?.toString() ?? username
-    const token = createSessionToken({
+    const token = await createSessionToken({
       userId,
       username: user.username,
       role: user.role,

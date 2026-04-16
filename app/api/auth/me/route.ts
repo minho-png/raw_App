@@ -5,7 +5,7 @@ export async function GET(req: NextRequest) {
   const token = req.cookies.get(COOKIE_NAME)?.value
   if (!token) return NextResponse.json({ authenticated: false }, { status: 401 })
 
-  const payload = verifySessionToken(token)
+  const payload = await verifySessionToken(token)
   if (!payload) return NextResponse.json({ authenticated: false }, { status: 401 })
 
   return NextResponse.json({

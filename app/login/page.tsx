@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function LoginPage() {
-  const router = useRouter()
+// useSearchParams를 사용하는 부분을 별도 컴포넌트로 분리 (Suspense 필수)
+function LoginForm() {
+  const router       = useRouter()
   const searchParams = useSearchParams()
-  const redirect = searchParams.get('redirect') ?? '/'
+  const redirect     = searchParams.get('redirect') ?? '/'
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -41,6 +42,62 @@ export default function LoginPage() {
   }
 
   return (
+    <div className="rounded-2xl bg-white shadow-sm border border-gray-200 px-8 py-8">
+      <h1 className="mb-6 text-lg font-semibold text-gray-800">로그인</h1>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600" htmlFor="username">
+            아이디
+          </label>
+          <input
+            id="username"
+            type="text"
+            autoComplete="username"
+            required
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition"
+            placeholder="사용자 아이디"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600" htmlFor="password">
+            비밀번호
+          </label>
+          <input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition"
+            placeholder="••••••••"
+          />
+        </div>
+
+        {error && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 border border-red-100">
+            {error}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        >
+          {loading ? '로그인 중...' : '로그인'}
+        </button>
+      </form>
+    </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm">
         {/* 로고 */}
@@ -55,65 +112,21 @@ export default function LoginPage() {
                 <path fill="#EF4F23" d="M93.695,17.292h5.838v1.74H95.84v1.479h3.387v1.739H95.84v1.479h3.681v1.739h-5.827L93.695,17.292L93.695,17.292z"/>
                 <path fill="#EF4F23" d="M104.127,17.292h7.046v1.74h-2.462v6.436h-2.123v-6.436h-2.462L104.127,17.292L104.127,17.292z"/>
               </g>
-              <path fill="#1F2353" d="M33.242,1.443c-2.297-0.915-4.811-1.176-7.237-0.741c-2.037,0.349-3.987,1.219-5.591,2.527c-0.563,1.525-1.084,3.006-1.647,4.531c-0.39-0.392-0.823-0.784-1.344-1.089c-0.997,1.743-1.56,3.748-1.647,5.751c-0.087,2.352,0.477,4.705,1.647,6.753c1.56-0.349,3.163-0.697,4.724-1.002c-0.563,1.525-1.127,3.049-1.69,4.574c2.124,1.699,4.811,2.658,7.542,2.744c3.034,0.087,6.111-0.915,8.495-2.876c2.124-1.743,3.597-4.226,4.16-6.883c0.737-3.355,0.043-7.014-1.907-9.846C37.403,3.883,35.453,2.358,33.242,1.443z M35.365,17.083c-1.171,1.743-3.034,2.962-5.071,3.398c-2.341,0.522-4.854,0.13-6.848-1.219c-1.473-0.959-2.558-2.483-2.991-4.182c-0.39-1.351-0.39-2.832,0.043-4.182l0.043,0.044c-0.217-1.002-0.694-1.917-1.344-2.701c-0.13-0.174-0.26-0.305-0.39-0.479c1.56-0.305,3.12-0.653,4.681-0.959c1.604-1.133,3.597-1.612,5.504-1.525c1.95,0.087,3.901,0.828,5.33,2.179c1.3,1.176,2.081,2.876,2.254,4.618C36.752,13.816,36.319,15.646,35.365,17.083z"/>
+              <path fill="#1F2353" d="M33.242,1.443c-2.297-0.915-4.811-1.176-7.237-0.741c-2.037,0.349-3.987,1.219-5.591,2.527c-0.563,1.525-1.084,3.006-1.647,4.531c-0.39-0.392-0.823-0.784-1.344-1.089c-0.997,1.743-1.56,3.748-1.647,5.751c-0.087,2.352,0.477,4.705,1.647,6.753c1.56-0.349,3.163-0.697,4.724-1.002c-0.563,1.525-1.127,3.049-1.69,4.574c2.124,1.699,4.811,2.658,7.542,2.744c3.034,0.087,6.111-0.915,8.495-2.876c2.124-1.743,3.597-4.226,4.16-6.883c0.737-3.355,0.043-7.014-1.907-9.846C37.403,3.883,35.453,2.358,33.242,1.443z"/>
               <path fill="#EF4F23" d="M23.447,6.826c-1.56,0.305-3.12,0.653-4.681,0.959c0.13,0.13,0.26,0.305,0.39,0.479c0.607,0.784,1.084,1.699,1.344,2.701c0.347,1.351,0.347,2.788-0.043,4.139c0.303,1.176,0.91,2.222,1.733,3.093c-1.56,0.305-3.163,0.697-4.724,1.002c-1.473,1.002-3.251,1.525-4.984,1.481c-2.167,0-4.377-0.784-5.938-2.352c-1.257-1.263-2.037-3.006-2.167-4.792S4.81,9.92,5.894,8.482c1.3-1.699,3.251-2.788,5.33-3.093c2.124-0.305,4.421,0.087,6.241,1.307c0.477,0.305,0.91,0.697,1.344,1.089c0.563-1.525,1.084-3.006,1.647-4.531c-1.95-1.525-4.334-2.483-6.805-2.658c-2.341-0.218-4.767,0.218-6.891,1.307C4.464,3.036,2.558,4.952,1.387,7.217C0.563,8.829,0.087,10.659,0,12.489v0.959c0.043,2.309,0.78,4.661,2.081,6.578c1.344,2.004,3.337,3.616,5.591,4.488c2.514,1.002,5.33,1.219,7.974,0.566c1.733-0.435,3.38-1.219,4.811-2.352c0.563-1.525,1.171-3.049,1.69-4.574c0.39,0.392,0.823,0.784,1.257,1.089c1.257-2.179,1.821-4.749,1.604-7.275C24.921,10.137,24.357,8.394,23.447,6.826z"/>
             </g>
           </svg>
           <p className="text-sm font-medium text-gray-500">광고 운영 대시보드</p>
         </div>
 
-        {/* 폼 카드 */}
-        <div className="rounded-2xl bg-white shadow-sm border border-gray-200 px-8 py-8">
-          <h1 className="mb-6 text-lg font-semibold text-gray-800">로그인</h1>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600" htmlFor="username">
-                아이디
-              </label>
-              <input
-                id="username"
-                type="text"
-                autoComplete="username"
-                required
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition"
-                placeholder="사용자 아이디"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600" htmlFor="password">
-                비밀번호
-              </label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition"
-                placeholder="••••••••"
-              />
-            </div>
-
-            {error && (
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 border border-red-100">
-                {error}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {loading ? '로그인 중...' : '로그인'}
-            </button>
-          </form>
-        </div>
+        {/* Suspense로 useSearchParams 경계 설정 */}
+        <Suspense fallback={
+          <div className="rounded-2xl bg-white shadow-sm border border-gray-200 px-8 py-8 text-center text-sm text-gray-400">
+            로딩 중...
+          </div>
+        }>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   )

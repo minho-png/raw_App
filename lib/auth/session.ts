@@ -1,8 +1,15 @@
-import crypto from 'crypto'
+/**
+ * lib/auth/session.ts
+ *
+ * Web Crypto API(SubtleCrypto) 기반 세션 토큰 생성/검증.
+ * Node.js 18+ / Edge Runtime / 브라우저 모두에서 동작합니다.
+ * (Node.js 'crypto' 모듈을 직접 import하지 않습니다)
+ */
+
 import type { SessionPayload } from '@/types/auth'
 
-const COOKIE_NAME = 'ct_session'
-const SESSION_TTL  = 60 * 60 * 24 * 7  // 7일 (초)
+export const COOKIE_NAME = 'ct_session'
+const SESSION_TTL = 60 * 60 * 24 * 7  // 7일 (초)
 
 function getSecret(): string {
   const s = process.env.SESSION_SECRET
@@ -10,42 +17,78 @@ function getSecret(): string {
   return s
 }
 
+// ── Web Crypto 헬퍼 ──────────────────────────────────────────
+
+async function importHmacKey(secret: string): Promise<CryptoKey> {
+  const raw = new TextEncoder().encode(secret)
+  return globalThis.crypto.subtle.importKey(
+    'raw', raw,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify'],
+  )
+}
+
+function bufToHex(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+function hexToBuf(hex: string): Uint8Array {
+  const arr = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < arr.length; i++) {
+    arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+  }
+  return arr
+}
+
+// ── base64url 헬퍼 ───────────────────────────────────────────
+
+function toBase64url(json: string): string {
+  // btoa는 Edge/Node 모두 전역 사용 가능
+  return btoa(json).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function fromBase64url(b64: string): string {
+  const pad = b64.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = pad + '='.repeat((4 - (pad.length % 4)) % 4)
+  return atob(padded)
+}
+
+// ── 공개 API ────────────────────────────────────────────────
+
 /**
- * SessionPayload → 서명된 쿠키 값 생성
- * 형식: base64(JSON) . HMAC-SHA256(base64(JSON))
+ * SessionPayload → 서명된 쿠키 문자열
+ * 형식: base64url(JSON) . hex(HMAC-SHA256)
  */
-export function createSessionToken(payload: SessionPayload): string {
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url')
-  const sig  = crypto
-    .createHmac('sha256', getSecret())
-    .update(data)
-    .digest('hex')
-  return `${data}.${sig}`
+export async function createSessionToken(payload: SessionPayload): Promise<string> {
+  const data = toBase64url(JSON.stringify(payload))
+  const key  = await importHmacKey(getSecret())
+  const sig  = await globalThis.crypto.subtle.sign(
+    'HMAC', key, new TextEncoder().encode(data),
+  )
+  return `${data}.${bufToHex(sig)}`
 }
 
 /**
- * 쿠키 값 → SessionPayload | null
- * 서명 검증 실패 또는 만료 시 null 반환
+ * 쿠키 문자열 → SessionPayload | null
+ * 서명 불일치 또는 만료 시 null
  */
-export function verifySessionToken(token: string): SessionPayload | null {
+export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
-    const [data, sig] = token.split('.')
-    if (!data || !sig) return null
+    const dot = token.lastIndexOf('.')
+    if (dot < 1) return null
+    const data = token.slice(0, dot)
+    const sig  = token.slice(dot + 1)
 
-    const expected = crypto
-      .createHmac('sha256', getSecret())
-      .update(data)
-      .digest('hex')
-
-    if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) {
-      return null
-    }
-
-    const payload: SessionPayload = JSON.parse(
-      Buffer.from(data, 'base64url').toString('utf8'),
+    const key  = await importHmacKey(getSecret())
+    const valid = await globalThis.crypto.subtle.verify(
+      'HMAC', key, hexToBuf(sig).buffer as ArrayBuffer, new TextEncoder().encode(data),
     )
+    if (!valid) return null
 
-    // 만료 체크
+    const payload: SessionPayload = JSON.parse(fromBase64url(data))
     const age = Math.floor(Date.now() / 1000) - payload.issuedAt
     if (age > SESSION_TTL) return null
 
@@ -54,5 +97,3 @@ export function verifySessionToken(token: string): SessionPayload | null {
     return null
   }
 }
-
-export { COOKIE_NAME }
