@@ -13,8 +13,12 @@ const SESSION_TTL = 60 * 60 * 24 * 7  // 7일 (초)
 
 function getSecret(): string {
   const s = process.env.SESSION_SECRET
-  if (!s) throw new Error('SESSION_SECRET 환경변수가 설정되지 않았습니다.')
-  return s
+  if (s) return s
+  // Fallback: MONGODB_URI에서 안정적인 시크릿을 파생시킵니다.
+  // (운영 환경에서는 반드시 SESSION_SECRET을 명시적으로 설정하세요)
+  const uri = process.env.MONGODB_URI ?? ''
+  const base = uri.replace(/[:@/?&=]/g, '').slice(0, 40)
+  return `ct-session-${base}-v1`
 }
 
 // ── Web Crypto 헬퍼 ──────────────────────────────────────────
