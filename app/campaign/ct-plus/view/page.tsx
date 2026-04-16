@@ -336,7 +336,7 @@ export default function CtPlusViewPage() {
               onChange={e => setDateFrom(e.target.value)}
               className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <span className="text-xs text-gray-300">~</span>
+            <span className="text-xs text-gray-500">~</span>
             <input
               type="date"
               value={dateTo}

@@ -2,6 +2,13 @@
 
 import React, { useState, useMemo } from "react"
 import Link from "next/link"
+import dynamic from "next/dynamic"
+
+// 탭으로 병합된 페이지들 (코드 스플리팅으로 로드)
+const CTPlusOverviewTab  = dynamic(() => import("../overview/page"),  { ssr: false, loading: () => <div className="p-8 text-center text-sm text-gray-500">로딩 중…</div> })
+const CTPlusManageTab    = dynamic(() => import("../manage/page"),    { ssr: false, loading: () => <div className="p-8 text-center text-sm text-gray-500">로딩 중…</div> })
+
+type OuterTab = "overview" | "status" | "groups"
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, TargetingBudget,
   AVAILABLE_MEDIA, MEDIA_MARKUP_RATE, MEDIA_COLORS,
@@ -45,7 +52,47 @@ type FilterStatus = "전체" | "집행 중" | "종료"
 interface ConfirmCfg { title: string; message: string; onConfirm: () => void }
 
 // ════════════════════════════════════════════════════════
-export default function CampaignStatusPage() {
+// 외부 탭 컨테이너
+export default function CampaignStatusOuter() {
+  const [outerTab, setOuterTab] = useState<OuterTab>("status")
+
+  const outerTabs: { key: OuterTab; label: string; emoji: string }[] = [
+    { key: "overview", label: "CT+ 현황",   emoji: "📊" },
+    { key: "status",   label: "집행 관리",  emoji: "📋" },
+    { key: "groups",   label: "그룹 관리",  emoji: "🗂" },
+  ]
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      {/* 외부 탭 바 */}
+      <div className="border-b border-gray-200 bg-white px-6 pt-3 flex gap-1">
+        {outerTabs.map(({ key, label, emoji }) => (
+          <button
+            key={key}
+            onClick={() => setOuterTab(key)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+              outerTab === key
+                ? "border-orange-500 text-orange-700 bg-orange-50"
+                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50"
+            }`}
+          >
+            <span>{emoji}</span>{label}
+          </button>
+        ))}
+      </div>
+
+      {/* 탭 패널 */}
+      <div className="flex-1">
+        {outerTab === "overview" && <CTPlusOverviewTab />}
+        {outerTab === "status"   && <CampaignStatusPage />}
+        {outerTab === "groups"   && <CTPlusManageTab />}
+      </div>
+    </div>
+  )
+}
+
+// ── 기존 집행 관리 페이지 (내부 컴포넌트로 변환) ────────────
+function CampaignStatusPage() {
   const {
     campaigns, operators, agencies, advertisers,
     saveCampaigns, saveOperators, saveAgencies, saveAdvertisers,
@@ -412,7 +459,7 @@ export default function CampaignStatusPage() {
                               {/* 메모 버튼 — 호버 시 내용 표시 */}
                               <div className="relative group">
                                 <button onClick={() => setMemoTarget(c)}
-                                  className={`rounded px-1.5 py-1 text-sm transition-colors ${c.memo ? "text-amber-500 hover:bg-amber-50" : "text-gray-300 hover:text-gray-400 hover:bg-gray-50"}`}
+                                  className={`rounded px-1.5 py-1 text-sm transition-colors ${c.memo ? "text-amber-500 hover:bg-amber-50" : "text-gray-500 hover:text-gray-600 hover:bg-gray-50"}`}
                                   title={c.memo ? "메모 보기/수정" : "메모 추가"}>
                                   📝
                                 </button>
@@ -451,9 +498,9 @@ export default function CampaignStatusPage() {
                                         <span className={`text-xs font-bold ${col.text}`}>{mb.media}</span>
                                         <div className="flex items-center gap-3 text-xs text-gray-600">
                                           <span>소진 <strong className={spendRateStyle(mt.spendRate).text}>{fmt(mt.totalSpend)}원</strong></span>
-                                          <span className="text-gray-300">|</span>
+                                          <span className="text-gray-500">|</span>
                                           <span>세팅비용 {fmt(mt.totalSettingCost)}원</span>
-                                          <span className="text-gray-300">|</span>
+                                          <span className="text-gray-500">|</span>
                                           <span>소진율 <strong className={spendRateStyle(mt.spendRate).text}>{mt.spendRate}%</strong></span>
                                         </div>
                                       </div>
@@ -481,7 +528,7 @@ export default function CampaignStatusPage() {
                                               <td className="py-2 px-3">
                                                 <div className="flex flex-wrap gap-1">
                                                   {r.tb.targetings.length === 0
-                                                    ? <span className="text-gray-300">-</span>
+                                                    ? <span className="text-gray-500">-</span>
                                                     : r.tb.targetings.map(t => (
                                                       <span key={t} className={`rounded-full border px-1.5 py-0.5 text-xs font-medium ${r.isDmp ? "bg-violet-50 border-violet-200 text-violet-700" : "bg-gray-50 border-gray-200 text-gray-500"}`}>{t}</span>
                                                     ))}

@@ -9,15 +9,14 @@ interface SubItem {
   href: string
 }
 
-// ── CT+ 전용 네비게이션 ─────────────────────────────────────
+// ── CT+ 전용 네비게이션 (7 → 4개로 통합) ────────────────────
+// 현황·집행관리·그룹관리 → /status 한 페이지 (탭 전환)
+// 리포트 생성·종료 리포트  → /report 한 페이지 (탭 전환)
 const CT_PLUS_ITEMS: SubItem[] = [
-  { label: "CT+ 현황",     href: "/campaign/ct-plus/overview" },
-  { label: "집행 현황",    href: "/campaign/ct-plus/status" },
+  { label: "캠페인 관리",  href: "/campaign/ct-plus/status" },
   { label: "데이터 입력",  href: "/campaign/ct-plus/daily" },
   { label: "데이터 조회",  href: "/campaign/ct-plus/view" },
-  { label: "리포트 생성",  href: "/campaign/ct-plus/report" },
-  { label: "종료 리포트",  href: "/campaign/ct-plus/final" },
-  { label: "그룹 관리",    href: "/campaign/ct-plus/manage" },
+  { label: "리포트",       href: "/campaign/ct-plus/report" },
 ]
 
 // ── 그 외 메뉴 ────────────────────────────────────────────
@@ -77,7 +76,7 @@ export default function Sidebar() {
         : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
     }`
 
-  const dot = <span className="mr-2 text-gray-300">·</span>
+  const dot = <span className="mr-2 text-gray-500">·</span>
 
   return (
     <aside className="flex h-full w-56 flex-col border-r border-gray-200 bg-white">
@@ -140,17 +139,26 @@ export default function Sidebar() {
 
           {ctPlusOpen && (
             <div className="px-1 pb-1.5 space-y-0.5">
-              {CT_PLUS_ITEMS.map(item => (
-                <Link key={item.href} href={item.href}
-                  className={`flex items-center rounded-lg px-3 py-2 text-sm transition-colors ${
-                    pathname === item.href
-                      ? "bg-orange-100 font-medium text-orange-700"
-                      : "text-orange-600/80 hover:bg-orange-100/60 hover:text-orange-700"
-                  }`}
-                >
-                  {dot}{item.label}
-                </Link>
-              ))}
+              {CT_PLUS_ITEMS.map(item => {
+                // 병합된 페이지들도 활성으로 처리
+                const isActive =
+                  pathname === item.href ||
+                  (item.href === "/campaign/ct-plus/status" &&
+                    ["/campaign/ct-plus/overview", "/campaign/ct-plus/manage"].some(p => pathname === p)) ||
+                  (item.href === "/campaign/ct-plus/report" &&
+                    pathname === "/campaign/ct-plus/final")
+                return (
+                  <Link key={item.href} href={item.href}
+                    className={`flex items-center rounded-lg px-3 py-2 text-sm transition-colors ${
+                      isActive
+                        ? "bg-orange-100 font-medium text-orange-700"
+                        : "text-orange-600/80 hover:bg-orange-100/60 hover:text-orange-700"
+                    }`}
+                  >
+                    {dot}{item.label}
+                  </Link>
+                )
+              })}
             </div>
           )}
         </div>

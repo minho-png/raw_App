@@ -256,7 +256,7 @@ export default function CtPlusManagePage() {
             ) : groups.length === 0 ? (
               <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center">
                 <p className="text-xs text-gray-400">그룹이 없습니다</p>
-                <p className="mt-0.5 text-[11px] text-gray-300">아래 미연결 캠페인에서 바로 생성하세요</p>
+                <p className="mt-0.5 text-[11px] text-gray-500">아래 미연결 캠페인에서 바로 생성하세요</p>
               </div>
             ) : (
               <div className="space-y-1 pb-2">
@@ -281,7 +281,7 @@ export default function CtPlusManagePage() {
                           {g.endDate && `~${g.endDate.slice(2)}`}
                         </p>
                         {g.csvNames.length > 0 && (
-                          <p className="mt-1 text-[10px] text-gray-300 truncate">
+                          <p className="mt-1 text-[10px] text-gray-500 truncate">
                             {g.csvNames.join(', ')}
                           </p>
                         )}
@@ -289,7 +289,7 @@ export default function CtPlusManagePage() {
                       {/* 삭제 버튼 */}
                       <button
                         onClick={() => setDeleteConfirm(g.id)}
-                        className="absolute right-2 top-2 hidden rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-500 group-hover:block"
+                        className="absolute right-2 top-2 hidden rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-500 group-hover:block"
                         title="삭제"
                       >
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

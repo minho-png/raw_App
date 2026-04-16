@@ -2,7 +2,16 @@
 
 import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
+import dynamic from "next/dynamic"
 import { generateDailyHtmlReport, downloadHtml } from "@/lib/htmlReportGenerator"
+
+// 종료 리포트 탭 (코드 스플리팅)
+const CtPlusFinalTab = dynamic(() => import("../final/page"), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-sm text-gray-500">로딩 중…</div>,
+})
+
+type ReportOuterTab = "report" | "final"
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -29,7 +38,42 @@ const MEDIA_CHART_COLORS: Record<string, string> = {
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 function fmtPct(n: number) { return n.toFixed(2) + '%' }
 
-export default function CtPlusReportPage() {
+// ── 외부 탭 래퍼 ────────────────────────────────────────────
+export default function CtPlusReportOuter() {
+  const [reportTab, setReportTab] = useState<ReportOuterTab>("report")
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      {/* 탭 바 */}
+      <div className="border-b border-gray-200 bg-white px-6 pt-3 flex gap-1">
+        {([
+          { key: "report" as const, label: "리포트 생성", emoji: "📈" },
+          { key: "final"  as const, label: "종료 리포트", emoji: "📄" },
+        ]).map(({ key, label, emoji }) => (
+          <button
+            key={key}
+            onClick={() => setReportTab(key)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+              reportTab === key
+                ? "border-blue-500 text-blue-700 bg-blue-50"
+                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50"
+            }`}
+          >
+            <span>{emoji}</span>{label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1">
+        {reportTab === "report" && <CtPlusReportPage />}
+        {reportTab === "final"  && <CtPlusFinalTab />}
+      </div>
+    </div>
+  )
+}
+
+// ── 기존 리포트 생성 페이지 (내부 컴포넌트로 변환) ───────────
+function CtPlusReportPage() {
   const { campaigns } = useMasterData()
   const { reports: savedReports } = useReports()
   const [dateFrom, setDateFrom] = useState('')
@@ -366,7 +410,7 @@ export default function CtPlusReportPage() {
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">CT+ 그룹</p>
                 <div className="flex gap-1.5 text-[11px] text-blue-600">
                   <button onClick={() => setSelectedGroupIds(new Set(ctGroups.map(g => g.id)))}>전체</button>
-                  <span className="text-gray-300">|</span>
+                  <span className="text-gray-500">|</span>
                   <button onClick={() => setSelectedGroupIds(new Set())}>해제</button>
                 </div>
               </div>
@@ -413,7 +457,7 @@ export default function CtPlusReportPage() {
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">매체 선택</p>
                 <div className="flex gap-1.5 text-[11px] text-blue-600">
                   <button onClick={() => setSelectedMediaTypes(new Set(availableMediaTypes))}>전체</button>
-                  <span className="text-gray-300">|</span>
+                  <span className="text-gray-500">|</span>
                   <button onClick={() => setSelectedMediaTypes(new Set())}>해제</button>
                 </div>
               </div>

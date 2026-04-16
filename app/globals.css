@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
+/* ── 라이트 모드 고정 ────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f9fafb;
+  --foreground: #111827;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,12 +14,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* 다크 모드 시스템 설정 무시 — 앱은 항상 라이트 모드 */
 
 body {
   background: var(--background);
@@ -25,24 +22,20 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* ── 가독성 보정 ─────────────────────────────────────────────── */
+th                { color: #374151; }
+::placeholder     { color: #9ca3af; }
+select, input, textarea { color: #111827; }
+
+/* ── 인쇄 ────────────────────────────────────────────────────── */
 @media print {
   @page { margin: 15mm 12mm; size: A4; }
-
-  /* 모든 overflow 해제 → 잘림 방지 */
   html, body { height: auto !important; overflow: visible !important; }
   * { overflow: visible !important; }
-
-  /* 사이드바·헤더 버튼 숨김 */
   aside { display: none !important; }
   .print\:hidden { display: none !important; }
-
-  /* 배경·여백 정리 */
   body { background: white !important; }
   main { padding: 8px !important; }
-
-  /* 섹션별 페이지 분리 방지 */
   section { break-inside: avoid; page-break-inside: avoid; }
-
-  /* 차트 컨테이너 고정 크기 유지 */
   .recharts-responsive-container { page-break-inside: avoid; }
 }

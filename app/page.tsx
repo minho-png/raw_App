@@ -74,11 +74,11 @@ function CampaignCard({ c, advertiserName, agencyName }: {
           </div>
           <div className="shrink-0 text-right">
             <span className={`text-sm font-bold ${
-              dday.expired ? 'text-gray-300' : dday.urgent ? 'text-red-500' : 'text-gray-500'
+              dday.expired ? 'text-gray-500' : dday.urgent ? 'text-red-500' : 'text-gray-500'
             }`}>
               {dday.label}
             </span>
-            <p className="text-[10px] text-gray-300 mt-0.5">{c.endDate.slice(2).replace(/-/g, '.')}</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">{c.endDate.slice(2).replace(/-/g, '.')}</p>
           </div>
         </div>
 
@@ -130,7 +130,7 @@ function CampaignCard({ c, advertiserName, agencyName }: {
           </div>
           <div className="text-right shrink-0">
             <p className="text-xs tabular-nums text-gray-700 font-medium">₩{fmt(totals.totalSpend)}</p>
-            <p className="text-[10px] text-gray-300">/ ₩{fmt(totals.totalSettingCost)}</p>
+            <p className="text-[10px] text-gray-500">/ ₩{fmt(totals.totalSettingCost)}</p>
           </div>
         </div>
 

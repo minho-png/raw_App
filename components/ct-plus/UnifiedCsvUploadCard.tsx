@@ -74,7 +74,7 @@ export default function UnifiedCsvUploadCard({ fileName, onFileSelect, onRemove 
             <p>수집일 · 일자 · 매체 · 광고그룹명 · 소재명</p>
             <p>노출 · 클릭 · 총재생 · 비용</p>
           </div>
-          <p className="text-[11px] text-gray-300">.csv 형식만 지원</p>
+          <p className="text-[11px] text-gray-500">.csv 형식만 지원</p>
         </div>
       )}
     </div>

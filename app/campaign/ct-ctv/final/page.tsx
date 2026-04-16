@@ -500,7 +500,7 @@ export default function CtCtvFinalPage() {
                         </button>
                         <button
                           onClick={() => deleteHistory(h.id)}
-                          className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-400 transition-colors"
+                          className="rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-400 transition-colors"
                         >
                           ✕
                         </button>

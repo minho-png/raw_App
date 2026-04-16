@@ -583,7 +583,7 @@ export default function MockupPage() {
                 onChange={e => setAiPrompt(e.target.value)}
                 placeholder="생성할 광고 이미지를 설명하세요&#10;예: 여름 화장품 광고, 파란 배경에 세럼 제품"
                 rows={3}
-                className="w-full rounded-lg border border-violet-200 bg-white px-2.5 py-2 text-xs text-gray-700 focus:border-violet-400 focus:outline-none resize-none placeholder:text-gray-300"
+                className="w-full rounded-lg border border-violet-200 bg-white px-2.5 py-2 text-xs text-gray-700 focus:border-violet-400 focus:outline-none resize-none placeholder:text-gray-500"
               />
 
               {/* 참고 이미지 업로드 */}
@@ -703,7 +703,7 @@ export default function MockupPage() {
                         isSel ? "bg-blue-50 border border-blue-200" : "border border-transparent hover:bg-gray-50"
                       }`}>
                       <button onClick={e=>{e.stopPropagation(); upd(layer.id,{visible:!layer.visible})}}
-                        className={`w-4 shrink-0 text-center ${layer.visible?"text-gray-500":"text-gray-300"}`}>
+                        className={`w-4 shrink-0 text-center ${layer.visible?"text-gray-500":"text-gray-500"}`}>
                         {layer.visible ? "●" : "○"}
                       </button>
                       <span className="flex-1 truncate text-gray-700">{icon} {layer.label}</span>

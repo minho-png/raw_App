@@ -88,7 +88,7 @@ function dDay(endDate: string): { label: string; color: string } {
   const diff  = Math.round((end.getTime() - today.getTime()) / 86400000)
   if (diff > 0)  return { label: `D-${diff}`,       color: diff <= 4 ? 'text-red-500' : diff <= 9 ? 'text-orange-500' : 'text-gray-400' }
   if (diff === 0) return { label: 'D-Day',           color: 'text-red-600 font-bold' }
-  return              { label: `D+${Math.abs(diff)}`, color: 'text-gray-300' }
+  return              { label: `D+${Math.abs(diff)}`, color: 'text-gray-500' }
 }
 
 function fmtDate(d: string) { return d.slice(2).replace(/-/g, '.') } // "2026-03-01" → "26.03.01"
@@ -198,7 +198,7 @@ function KpiCard({ label, todayVal, yestVal, threshold, decimals = 2, note, benc
   return (
     <div className={`rounded-xl border bg-white px-5 py-4 ${isAlert ? 'border-red-200 ring-1 ring-red-200' : 'border-gray-200'}`}>
       <p className="text-[11px] font-medium text-gray-400 mb-1">{label}</p>
-      {note && <p className="text-[10px] text-gray-300 mb-1.5">{note}</p>}
+      {note && <p className="text-[10px] text-gray-500 mb-1.5">{note}</p>}
       <p className={`text-2xl font-bold ${belowBenchmark ? 'text-red-600' : 'text-gray-900'}`}>{todayVal.toFixed(decimals)}%</p>
       <div className="mt-1.5 flex items-center gap-2">
         <span className="text-[11px] text-gray-400">전일 {yestVal.toFixed(decimals)}%</span>
@@ -734,7 +734,7 @@ export default function CtCtvAnalysisPage() {
                       {/* 캠페인명 + 대행사 */}
                       <td className="px-4 py-3 max-w-[170px]">
                         <div className="font-medium text-gray-800 truncate">{c.name}</div>
-                        <div className="text-[11px] text-gray-300 truncate">{c.agency}</div>
+                        <div className="text-[11px] text-gray-500 truncate">{c.agency}</div>
                       </td>
                       <td className="px-3 py-3 text-center">
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${TYPE_COLOR[c.type]}`}>{TYPE_LABEL[c.type]}</span>

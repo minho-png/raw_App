@@ -332,7 +332,7 @@ export default function MediaCostPage() {
         {rows.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white px-6 py-16 text-center">
             <p className="text-sm text-gray-400">해당 월에 집행된 캠페인이 없습니다.</p>
-            <p className="mt-1 text-xs text-gray-300">캠페인 집행 현황에서 캠페인의 집행금액을 입력해주세요.</p>
+            <p className="mt-1 text-xs text-gray-500">캠페인 집행 현황에서 캠페인의 집행금액을 입력해주세요.</p>
           </div>
         ) : (
           <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
