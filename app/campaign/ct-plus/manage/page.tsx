@@ -11,7 +11,7 @@ import type { MediaType } from "@/lib/reportTypes"
 
 const MEDIA_TYPES: MediaType[] = ['google', 'naver', 'kakao', 'meta']
 
-type ManageTab = 'groups' | 'data'
+type ManageTab = 'groups' | 'upload'
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 
@@ -34,7 +34,7 @@ export default function CtPlusManagePage() {
   const [deleteReportConfirm, setDeleteReportConfirm] = useState<string | null>(null)
   const [deleteMonthConfirm, setDeleteMonthConfirm] = useState<string | null>(null)
 
-  // ── 저장된 보고서에서 고유 CSV 캠페인명 추출 ────────────────
+  // ── DB 저장 리포트에서 고유 캠페인명 추출 ───────────────────
   const allCsvNames = useMemo<string[]>(() => {
     const set = new Set<string>()
     for (const r of reports) {
@@ -140,8 +140,7 @@ export default function CtPlusManagePage() {
     if (g && !isDirty) setEditDraft(JSON.parse(JSON.stringify(g)))
   }, [groups, selectedGroupId, isDirty])
 
-  // ── 저장 데이터 관리 헬퍼 함수 ──────────────────────────────
-  // 보고서들을 연월(YYYY-MM)별로 그룹화
+  // ── 보고서들을 연월(YYYY-MM)별로 그룹화 ─────────────────────
   const groupedReports = useMemo(() => {
     const map: Record<string, SavedReport[]> = {}
     for (const r of reports) {
@@ -162,32 +161,6 @@ export default function CtPlusManagePage() {
     )
   }, [reports])
 
-  function getTotalRows(r: SavedReport): number {
-    return Object.values(r.rowsByMedia).reduce((s, rows) => s + (rows?.length ?? 0), 0)
-  }
-
-  function getDateRange(r: SavedReport): string {
-    const dates: string[] = []
-    for (const rows of Object.values(r.rowsByMedia)) {
-      dates.push(...(rows ?? []).map(row => row.date))
-    }
-    if (!dates.length) return '—'
-    const sorted = dates.sort()
-    return `${sorted[0]} ~ ${sorted[sorted.length - 1]}`
-  }
-
-  function formatYM(ym: string): string {
-    const [y, m] = ym.split('-')
-    return `${y}년 ${parseInt(m)}월`
-  }
-
-  function formatSavedAt(savedAt: string): string {
-    return savedAt.slice(5, 10).replace('-', '/')
-  }
-
-  const totalReportCount = reports.length
-  const totalRowCount = reports.reduce((s, r) => s + getTotalRows(r), 0)
-
   async function handleDeleteReport(id: string) {
     setDeleteReportConfirm(null)
     await deleteReport(id)
@@ -199,6 +172,84 @@ export default function CtPlusManagePage() {
       await deleteReport(r.id)
     }
   }
+
+  // ── 데이터 업로드 탭 상태 ────────────────────────────────────
+  const [uploadFilterStart, setUploadFilterStart] = useState('')
+  const [uploadFilterEnd, setUploadFilterEnd] = useState('')
+  const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
+  const [selectedMedias, setSelectedMedias] = useState<Set<string>>(new Set())
+
+  // ── 날짜 필터링된 리포트 (데이터 업로드 탭용) ────────────────
+  const filteredUploadReports = useMemo(() => {
+    if (!uploadFilterStart && !uploadFilterEnd) return reports
+    return reports.filter(r => {
+      let minDate: string | null = null
+      let maxDate: string | null = null
+      if (r.chunked) {
+        // label에서 날짜 파싱
+        const match = r.label.match(/(\d{4}[-./]\d{2}[-./]\d{2})\s*[~–]\s*(\d{4}[-./]\d{2}[-./]\d{2})/)
+        if (match) { minDate = match[1].replace(/[./]/g, '-'); maxDate = match[2].replace(/[./]/g, '-') }
+        else {
+          const single = r.label.match(/(\d{4}[-./]\d{2}[-./]\d{2})/)
+          if (single) { minDate = single[1].replace(/[./]/g, '-'); maxDate = minDate }
+        }
+        if (!minDate) return true // 날짜 파싱 불가 → 항상 포함
+      } else {
+        const dates = r.mediaTypes.flatMap(m => (r.rowsByMedia[m] ?? []).map(row => row.date)).sort()
+        if (!dates.length) return true
+        minDate = dates[0]; maxDate = dates[dates.length - 1]
+      }
+      if (uploadFilterEnd && minDate > uploadFilterEnd) return false
+      if (uploadFilterStart && maxDate! < uploadFilterStart) return false
+      return true
+    })
+  }, [reports, uploadFilterStart, uploadFilterEnd])
+
+  // ── 캠페인명 테이블 데이터 ────────────────────────────────────
+  const campaignTableRows = useMemo(() => {
+    type Entry = { mediaTypes: Set<MediaType>; dateMin: string; dateMax: string; rowCount: number }
+    const map = new Map<string, Entry>()
+    for (const r of filteredUploadReports) {
+      for (const mt of r.mediaTypes as MediaType[]) {
+        const rows = r.rowsByMedia[mt]
+        if (!rows) continue
+        for (const row of rows) {
+          if (!row.campaignName) continue
+          const e = map.get(row.campaignName) ?? { mediaTypes: new Set(), dateMin: row.date, dateMax: row.date, rowCount: 0 }
+          e.mediaTypes.add(mt)
+          if (row.date < e.dateMin) e.dateMin = row.date
+          if (row.date > e.dateMax) e.dateMax = row.date
+          e.rowCount++
+          map.set(row.campaignName, e)
+        }
+      }
+    }
+    // chunked 리포트의 campaignName 메타도 추가
+    for (const r of filteredUploadReports) {
+      if (!r.chunked || !r.campaignName) continue
+      if (!map.has(r.campaignName)) {
+        map.set(r.campaignName, { mediaTypes: new Set(r.mediaTypes as MediaType[]), dateMin: '', dateMax: '', rowCount: r.totalRows ?? 0 })
+      }
+    }
+    return Array.from(map.entries())
+      .map(([name, e]) => ({ name, mediaTypes: Array.from(e.mediaTypes), dateMin: e.dateMin, dateMax: e.dateMax, rowCount: e.rowCount }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  }, [filteredUploadReports])
+
+  // ── 매체명 테이블 데이터 ──────────────────────────────────────
+  const mediaTableRows = useMemo(() => {
+    type MEntry = { reportCount: number; rowCount: number }
+    const map = new Map<MediaType, MEntry>()
+    for (const r of filteredUploadReports) {
+      for (const mt of r.mediaTypes as MediaType[]) {
+        const e = map.get(mt) ?? { reportCount: 0, rowCount: 0 }
+        e.reportCount++
+        e.rowCount += r.rowsByMedia[mt]?.length ?? 0
+        map.set(mt, e)
+      }
+    }
+    return Array.from(map.entries()).map(([mt, e]) => ({ mt, ...e }))
+  }, [filteredUploadReports])
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -227,7 +278,7 @@ export default function CtPlusManagePage() {
       <div className="flex gap-0 border-b border-gray-200 bg-white px-6">
         {[
           { id: 'groups' as ManageTab, label: '그룹 관리' },
-          { id: 'data'   as ManageTab, label: '저장 데이터 관리' },
+          { id: 'upload'   as ManageTab, label: '데이터 업로드' },
         ].map(tab => (
           <button
             key={tab.id}
@@ -303,11 +354,11 @@ export default function CtPlusManagePage() {
             )}
           </div>
 
-          {/* 미연결 CSV 캠페인명 */}
+          {/* 미연결 캠페인명 */}
           {unassignedCsvNames.length > 0 && (
             <div className="border-t border-gray-100 px-3 pt-4 pb-4">
               <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-amber-500">
-                미연결 CSV 캠페인 ({unassignedCsvNames.length})
+                미연결 캠페인 ({unassignedCsvNames.length})
               </p>
               <div className="space-y-0.5">
                 {unassignedCsvNames.map(name => (
@@ -329,7 +380,7 @@ export default function CtPlusManagePage() {
             <div className="border-t border-gray-100 px-4 py-6 text-center">
               <p className="text-xs text-gray-400">저장된 데이터가 없습니다</p>
               <Link href="/campaign/ct-plus/daily" className="mt-2 inline-block text-[11px] text-blue-600 hover:underline">
-                데이터 입력 →
+                데이터 업로드 →
               </Link>
             </div>
           )}
@@ -427,10 +478,10 @@ export default function CtPlusManagePage() {
                 </div>
               </div>
 
-              {/* CSV 캠페인명 */}
+              {/* 캠페인명 연결 */}
               <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                 <div className="border-b border-gray-100 px-5 py-3 flex items-center justify-between">
-                  <p className="text-xs font-semibold text-gray-600">CSV 캠페인명 연결</p>
+                  <p className="text-xs font-semibold text-gray-600">캠페인명 연결</p>
                   <span className="text-[11px] text-gray-400">{editDraft.csvNames.length}개</span>
                 </div>
                 <div className="px-5 py-4 space-y-3">
@@ -456,8 +507,8 @@ export default function CtPlusManagePage() {
                     if (addable.length === 0) return (
                       <p className="text-[11px] text-gray-400">
                         {allCsvNames.length === 0
-                          ? '저장된 CSV 데이터가 없습니다'
-                          : '연결 가능한 CSV 캠페인명이 없습니다'}
+                          ? 'DB에 저장된 데이터가 없습니다'
+                          : '연결 가능한 캠페인명이 없습니다'}
                       </p>
                     )
                     return (
@@ -466,7 +517,7 @@ export default function CtPlusManagePage() {
                         onChange={e => { if (e.target.value) { addCsvName(e.target.value); e.target.value = '' } }}
                         className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="">+ CSV 캠페인명 추가...</option>
+                        <option value="">+ 캠페인명 추가...</option>
                         {addable.map(n => (
                           <option key={n} value={n}>{n}</option>
                         ))}
@@ -557,68 +608,219 @@ export default function CtPlusManagePage() {
         </main>
       </div>
       ) : (
-      /* 저장 데이터 관리 탭 */
+      /* 데이터 업로드 탭 */
       <main className="flex-1 p-6 overflow-y-auto">
-        <div className="space-y-6 max-w-5xl">
-          {/* 요약 */}
-          <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 flex gap-6">
-            <span className="text-sm text-gray-700"><span className="font-semibold">{totalReportCount}</span>건의 리포트</span>
-            <span className="text-sm text-gray-700"><span className="font-semibold">{fmt(totalRowCount)}</span>행의 데이터</span>
+        <div className="space-y-5 max-w-5xl">
+          {/* 날짜 필터 */}
+          <div className="rounded-xl border border-gray-200 bg-white px-5 py-4">
+            <p className="text-xs font-semibold text-gray-600 mb-3">날짜 범위 필터</p>
+            <div className="flex items-center gap-3">
+              <input
+                type="date"
+                value={uploadFilterStart}
+                onChange={e => setUploadFilterStart(e.target.value)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="text-xs text-gray-400">~</span>
+              <input
+                type="date"
+                value={uploadFilterEnd}
+                onChange={e => setUploadFilterEnd(e.target.value)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {(uploadFilterStart || uploadFilterEnd) && (
+                <button
+                  onClick={() => { setUploadFilterStart(''); setUploadFilterEnd('') }}
+                  className="text-xs text-gray-400 hover:text-gray-600 underline"
+                >
+                  초기화
+                </button>
+              )}
+              <span className="ml-auto text-[11px] text-gray-400">
+                {filteredUploadReports.length}건 / 전체 {reports.length}건
+              </span>
+            </div>
           </div>
 
-          {/* 빈 상태 */}
-          {reports.length === 0 && (
-            <div className="flex h-32 items-center justify-center rounded-xl border border-gray-200 bg-white">
-              <p className="text-sm text-gray-400">저장된 리포트가 없습니다</p>
-            </div>
-          )}
-
-          {/* 월별 그룹화 */}
-          {Object.entries(groupedReports).map(([ym, reportsInMonth]) => (
-            <div key={ym} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-              <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-5 py-3">
-                <h3 className="text-sm font-semibold text-gray-700">{formatYM(ym)} ({reportsInMonth.length}건)</h3>
+          {/* 캠페인명 테이블 */}
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-5 py-3">
+              <h3 className="text-sm font-semibold text-gray-700">
+                캠페인명
+                <span className="ml-2 text-xs font-normal text-gray-400">({campaignTableRows.length}개)</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                {selectedCampaigns.size > 0 && (
+                  <span className="text-[11px] text-blue-600 font-medium">{selectedCampaigns.size}개 선택됨</span>
+                )}
                 <button
-                  onClick={() => setDeleteMonthConfirm(ym)}
-                  className="text-xs text-red-500 hover:text-red-700 font-medium"
+                  onClick={() => {
+                    if (selectedCampaigns.size === campaignTableRows.length) setSelectedCampaigns(new Set())
+                    else setSelectedCampaigns(new Set(campaignTableRows.map(r => r.name)))
+                  }}
+                  className="text-[11px] text-gray-400 hover:text-gray-600"
                 >
-                  이 달 전체 삭제
+                  {selectedCampaigns.size === campaignTableRows.length ? '전체 해제' : '전체 선택'}
                 </button>
               </div>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50 text-gray-500">
-                    <th className="px-4 py-2 text-left">라벨</th>
-                    <th className="px-4 py-2 text-left">날짜 범위</th>
-                    <th className="px-4 py-2 text-left">매체</th>
-                    <th className="px-4 py-2 text-right">행 수</th>
-                    <th className="px-4 py-2 text-right">저장일</th>
-                    <th className="px-4 py-2 text-center">삭제</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {reportsInMonth.map(r => (
-                    <tr key={r.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2.5 font-medium text-gray-700">{r.label}</td>
-                      <td className="px-4 py-2.5 text-gray-500">{getDateRange(r)}</td>
-                      <td className="px-4 py-2.5 text-gray-500">{r.mediaTypes.join(', ')}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmt(getTotalRows(r))}행</td>
-                      <td className="px-4 py-2.5 text-right text-gray-400">{formatSavedAt(r.savedAt)}</td>
-                      <td className="px-4 py-2.5 text-center">
-                        <button
-                          onClick={() => setDeleteReportConfirm(r.id)}
-                          className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                          title="삭제"
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
-          ))}
+            {campaignTableRows.length === 0 ? (
+              <div className="flex items-center justify-center py-10 text-sm text-gray-400">
+                {reports.length === 0 ? (
+                  <span>저장된 데이터가 없습니다. <Link href="/campaign/ct-plus/daily" className="text-blue-600 hover:underline">데이터 업로드 →</Link></span>
+                ) : '선택한 날짜 범위에 캠페인 데이터가 없습니다.'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50/60 text-gray-500">
+                      <th className="w-10 px-4 py-2.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedCampaigns.size === campaignTableRows.length && campaignTableRows.length > 0}
+                          onChange={e => setSelectedCampaigns(e.target.checked ? new Set(campaignTableRows.map(r => r.name)) : new Set())}
+                          className="rounded"
+                        />
+                      </th>
+                      <th className="px-4 py-2.5 text-left">캠페인명</th>
+                      <th className="px-4 py-2.5 text-left">매체</th>
+                      <th className="px-4 py-2.5 text-left">날짜 범위</th>
+                      <th className="px-4 py-2.5 text-right">행 수</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {campaignTableRows.map(row => {
+                      const checked = selectedCampaigns.has(row.name)
+                      return (
+                        <tr
+                          key={row.name}
+                          onClick={() => {
+                            const next = new Set(selectedCampaigns)
+                            checked ? next.delete(row.name) : next.add(row.name)
+                            setSelectedCampaigns(next)
+                          }}
+                          className={`cursor-pointer transition-colors ${checked ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`}
+                        >
+                          <td className="w-10 px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={e => {
+                                const next = new Set(selectedCampaigns)
+                                e.target.checked ? next.add(row.name) : next.delete(row.name)
+                                setSelectedCampaigns(next)
+                              }}
+                              className="rounded"
+                            />
+                          </td>
+                          <td className="px-4 py-2.5 font-medium text-gray-700 max-w-xs truncate" title={row.name}>{row.name}</td>
+                          <td className="px-4 py-2.5 text-gray-500">
+                            {row.mediaTypes.map(mt => MEDIA_CONFIG[mt]?.label ?? mt).join(', ') || '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-400 tabular-nums">
+                            {row.dateMin ? (row.dateMin === row.dateMax ? row.dateMin : `${row.dateMin} ~ ${row.dateMax}`) : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
+                            {row.rowCount > 0 ? fmt(row.rowCount) : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* 매체명 테이블 */}
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-5 py-3">
+              <h3 className="text-sm font-semibold text-gray-700">
+                매체명
+                <span className="ml-2 text-xs font-normal text-gray-400">({mediaTableRows.length}개)</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                {selectedMedias.size > 0 && (
+                  <span className="text-[11px] text-blue-600 font-medium">{selectedMedias.size}개 선택됨</span>
+                )}
+                <button
+                  onClick={() => {
+                    if (selectedMedias.size === mediaTableRows.length) setSelectedMedias(new Set())
+                    else setSelectedMedias(new Set(mediaTableRows.map(r => r.mt)))
+                  }}
+                  className="text-[11px] text-gray-400 hover:text-gray-600"
+                >
+                  {selectedMedias.size === mediaTableRows.length ? '전체 해제' : '전체 선택'}
+                </button>
+              </div>
+            </div>
+            {mediaTableRows.length === 0 ? (
+              <div className="flex items-center justify-center py-10 text-sm text-gray-400">
+                {reports.length === 0 ? '저장된 데이터가 없습니다.' : '선택한 날짜 범위에 매체 데이터가 없습니다.'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50/60 text-gray-500">
+                      <th className="w-10 px-4 py-2.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedMedias.size === mediaTableRows.length && mediaTableRows.length > 0}
+                          onChange={e => setSelectedMedias(e.target.checked ? new Set(mediaTableRows.map(r => r.mt)) : new Set())}
+                          className="rounded"
+                        />
+                      </th>
+                      <th className="px-4 py-2.5 text-left">매체명</th>
+                      <th className="px-4 py-2.5 text-right">리포트 수</th>
+                      <th className="px-4 py-2.5 text-right">행 수</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {mediaTableRows.map(row => {
+                      const checked = selectedMedias.has(row.mt)
+                      const cfg = MEDIA_CONFIG[row.mt]
+                      return (
+                        <tr
+                          key={row.mt}
+                          onClick={() => {
+                            const next = new Set(selectedMedias)
+                            checked ? next.delete(row.mt) : next.add(row.mt)
+                            setSelectedMedias(next)
+                          }}
+                          className={`cursor-pointer transition-colors ${checked ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`}
+                        >
+                          <td className="w-10 px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={e => {
+                                const next = new Set(selectedMedias)
+                                e.target.checked ? next.add(row.mt) : next.delete(row.mt)
+                                setSelectedMedias(next)
+                              }}
+                              className="rounded"
+                            />
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: cfg?.color ?? '#888' }} />
+                              <span className="font-medium text-gray-700">{cfg?.label ?? row.mt}</span>
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">{fmt(row.reportCount)}건</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
+                            {row.rowCount > 0 ? fmt(row.rowCount) + '행' : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </main>
       )}
@@ -644,9 +846,7 @@ export default function CtPlusManagePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="rounded-xl bg-white shadow-xl p-6 w-80">
             <p className="text-sm font-semibold text-gray-800">리포트를 삭제하시겠습니까?</p>
-            <p className="mt-1 text-xs text-gray-400">
-              삭제된 리포트는 복구할 수 없습니다.
-            </p>
+            <p className="mt-1 text-xs text-gray-400">삭제된 리포트는 복구할 수 없습니다.</p>
             <div className="mt-4 flex gap-2 justify-end">
               <button onClick={() => setDeleteReportConfirm(null)} className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50">취소</button>
               <button onClick={() => handleDeleteReport(deleteReportConfirm)} className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700">삭제</button>
@@ -659,7 +859,7 @@ export default function CtPlusManagePage() {
       {deleteMonthConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="rounded-xl bg-white shadow-xl p-6 w-80">
-            <p className="text-sm font-semibold text-gray-800">{formatYM(deleteMonthConfirm)} 데이터를 모두 삭제하시겠습니까?</p>
+            <p className="text-sm font-semibold text-gray-800">{deleteMonthConfirm} 데이터를 모두 삭제하시겠습니까?</p>
             <p className="mt-1 text-xs text-gray-400">
               {groupedReports[deleteMonthConfirm]?.length ?? 0}건의 리포트가 삭제됩니다.
             </p>

@@ -14,7 +14,7 @@ interface SubItem {
 // 리포트 생성·종료 리포트  → /report 한 페이지 (탭 전환)
 const CT_PLUS_ITEMS: SubItem[] = [
   { label: "캠페인 관리",  href: "/campaign/ct-plus/status" },
-  { label: "데이터 입력",  href: "/campaign/ct-plus/daily" },
+  { label: "데이터 업로드",  href: "/campaign/ct-plus/daily" },
   { label: "데이터 조회",  href: "/campaign/ct-plus/view" },
   { label: "리포트",       href: "/campaign/ct-plus/report" },
 ]
