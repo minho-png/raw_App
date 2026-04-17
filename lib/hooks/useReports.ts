@@ -94,6 +94,110 @@ function lsWrite(data: SavedReport[]): void {
   }
 }
 
+// ── mergeReport 헬퍼 함수 ────────────────────────────────────────
+
+/**
+ * 들어오는 리포트의 행들을 기존 리포트의 행들과 병합한다.
+ * 합성 키(date + campaignName + dmpName)로 기존 행을 찾아서:
+ * - 찾으면: 수치 필드(impressions, clicks, 비용 필드들)을 덮어쓴다
+ * - 찾지 못하면: 새 행으로 추가한다
+ *
+ * @param incoming 들어오는 CSV 데이터
+ * @param existing 기존 리포트 목록
+ * @returns { mergedReports, overwrittenCount } 병합된 리포트 목록과 덮어쓴 행 개수
+ */
+export function mergeReport(
+  incoming: SavedReport,
+  existing: SavedReport[],
+): { mergedReports: SavedReport[]; overwrittenCount: number } {
+  let overwrittenCount = 0
+  const now = new Date().toISOString()
+
+  // 들어오는 리포트의 미디어 타입 추출
+  const incomingMediaTypes = incoming.mediaTypes ?? []
+
+  // 기존 리포트 중 들어오는 리포트와 같은 미디어를 가진 리포트 찾기
+  // 없으면 새로 만들 것
+  const result = existing.map(existingReport => {
+    // 겹치는 미디어가 없으면 그대로 반환
+    const overlap = incomingMediaTypes.filter(m => existingReport.mediaTypes?.includes(m))
+    if (overlap.length === 0) return existingReport
+
+    // 겹치는 미디어별로 행 병합
+    const mergedRowsByMedia = { ...existingReport.rowsByMedia }
+
+    for (const mediaType of overlap) {
+      const incomingRows = incoming.rowsByMedia[mediaType] ?? []
+      const existingRows = mergedRowsByMedia[mediaType] ?? []
+
+      // 합성 키 맵 생성: 기존 행들을 빠르게 찾기 위해
+      const existingMap = new Map<string, RawRow>()
+      for (const row of existingRows) {
+        const key = `${row.date}__${row.campaignName}__${row.dmpName}`
+        existingMap.set(key, row)
+      }
+
+      // 들어오는 행들을 순회하면서 병합
+      for (const incomingRow of incomingRows) {
+        const key = `${incomingRow.date}__${incomingRow.campaignName}__${incomingRow.dmpName}`
+        const existing = existingMap.get(key)
+
+        if (existing) {
+          // 찾았으면: 수치 필드 덮어쓰기
+          existing.impressions = incomingRow.impressions
+          existing.clicks = incomingRow.clicks
+          existing.grossCost = incomingRow.grossCost
+          existing.netCost = incomingRow.netCost
+          existing.executionAmount = incomingRow.executionAmount
+          existing.netAmount = incomingRow.netAmount
+          existing.supplyValue = incomingRow.supplyValue
+          if (incomingRow.views !== null) {
+            existing.views = incomingRow.views
+          }
+          overwrittenCount++
+        } else {
+          // 찾지 못했으면: 새 행 추가
+          existingRows.push(incomingRow)
+        }
+      }
+
+      mergedRowsByMedia[mediaType] = existingRows
+    }
+
+    return {
+      ...existingReport,
+      rowsByMedia: mergedRowsByMedia,
+      savedAt: now,
+    }
+  })
+
+  // 기존 리포트에 없는 미디어가 들어온 경우 새 리포트 추가
+  const existingMediaTypes = new Set<MediaType>()
+  for (const report of existing) {
+    report.mediaTypes?.forEach(m => existingMediaTypes.add(m))
+  }
+
+  const newMediaTypes = incomingMediaTypes.filter(m => !existingMediaTypes.has(m))
+  if (newMediaTypes.length > 0) {
+    // 새로운 미디어만 가진 리포트 추가
+    const newMediaRowsByMedia: Partial<Record<MediaType, RawRow[]>> = {}
+    for (const mediaType of newMediaTypes) {
+      newMediaRowsByMedia[mediaType] = incoming.rowsByMedia[mediaType] ?? []
+    }
+
+    const newReport: SavedReport = {
+      ...incoming,
+      id: incoming.id.startsWith('tmp-') ? `report-${Date.now()}` : incoming.id,
+      mediaTypes: newMediaTypes,
+      rowsByMedia: newMediaRowsByMedia,
+      savedAt: now,
+    }
+    result.push(newReport)
+  }
+
+  return { mergedReports: result, overwrittenCount }
+}
+
 // ── 훅 ──────────────────────────────────────────────────────────
 
 export function useReports() {
@@ -201,5 +305,5 @@ export function useReports() {
     try { await fetch(`/api/v1/reports?id=${id}`, { method: 'DELETE' }) } catch {}
   }
 
-  return { reports, loading, saveProgress, saveReport, deleteReport, expandReport, refresh: loadAll }
+  return { reports, loading, saveProgress, saveReport, deleteReport, expandReport, refresh: loadAll, mergeReport }
 }

@@ -17,6 +17,8 @@ import {
   getMediaTotals, getCampaignTotals, getCampaignProgress, getDday,
 } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
+import { useReports } from "@/lib/hooks/useReports"
+import type { MediaType } from "@/lib/reportTypes"
 
 // ── 유틸 ─────────────────────────────────────────────────
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
@@ -97,13 +99,14 @@ function CampaignStatusPage() {
     campaigns, operators, agencies, advertisers,
     saveCampaigns, saveOperators, saveAgencies, saveAdvertisers,
   } = useMasterData()
-  const [mainTab,      setMainTab]      = useState<MainTab>("campaigns")
+  const [mainTab,        setMainTab]        = useState<MainTab>("campaigns")
   const [filterStatus,   setFilterStatus]   = useState<FilterStatus>("전체")
   const [filterMonth,    setFilterMonth]    = useState("")
   const [filterOperator, setFilterOperator] = useState("")
   const [filterMedia,    setFilterMedia]    = useState("")
   const [searchQuery,    setSearchQuery]    = useState("")
   const [expandedIds,    setExpandedIds]    = useState<Set<string>>(new Set())
+  const [drawerCampaignId, setDrawerCampaignId] = useState<string | null>(null)
   const [modalOpen,    setModalOpen]    = useState(false)
   const [editTarget,   setEditTarget]   = useState<Campaign | null>(null)
   const [opModalOpen,  setOpModalOpen]  = useState(false)
@@ -364,7 +367,7 @@ function CampaignStatusPage() {
                         <tr className={`hover:bg-gray-50 transition-colors ${isLagging ? "bg-yellow-50/30" : ""}`}>
                           {/* 펼치기 */}
                           <td className="px-3 py-3 text-center">
-                            <button onClick={() => setExpandedIds(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })}
+                            <button onClick={() => setExpandedIds(prev => { const n = new Set(prev); if (n.has(c.id)) { n.delete(c.id) } else { n.add(c.id) }; return n })}
                               className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:bg-gray-100 mx-auto">
                               <svg className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -469,6 +472,7 @@ function CampaignStatusPage() {
                                   </div>
                                 )}
                               </div>
+                              <button onClick={() => setDrawerCampaignId(c.id)} className="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">리포트</button>
                               <Link href={`/campaign/ct-plus/daily?campaignId=${c.id}`} className="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">데이터 입력</Link>
                               <button onClick={() => { setEditTarget(c); setModalOpen(true) }} className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">수정</button>
                               <button onClick={() => handleDelete(c.id)} className="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-50">삭제</button>
@@ -717,6 +721,16 @@ function CampaignStatusPage() {
       {memoTarget   && <MemoModal campaign={memoTarget}
                           onSave={memo => { saveCampaigns(campaigns.map(c => c.id === memoTarget.id ? { ...c, memo } : c)); setMemoTarget(null) }}
                           onClose={() => setMemoTarget(null)} />}
+
+      {/* 캠페인 리포트 드로어 */}
+      {drawerCampaignId && (
+        <CampaignReportDrawer
+          campaignId={drawerCampaignId}
+          campaigns={campaigns}
+          advertisers={advertisers}
+          onClose={() => setDrawerCampaignId(null)}
+        />
+      )}
     </div>
   )
 }
@@ -1121,6 +1135,183 @@ function MemoModal({ campaign, onSave, onClose }: {
             <button onClick={onClose}           className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
             <button onClick={() => onSave(memo)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700">저장</button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 매체 키를 라벨로 변환 ─────────────────────────────────
+function getMediaLabelForKey(key: MediaType): string | null {
+  const labels: Record<MediaType, string> = {
+    google: "Google",
+    naver: "네이버 GFA",
+    kakao: "카카오모먼트",
+    meta: "META",
+  }
+  return labels[key] ?? null
+}
+
+// ── 캠페인 리포트 드로어 ───────────────────────────────────
+function CampaignReportDrawer({ campaignId, campaigns, advertisers, onClose }: {
+  campaignId: string
+  campaigns: Campaign[]
+  advertisers: Advertiser[]
+  onClose: () => void
+}) {
+  const { reports } = useReports()
+  const campaign = campaigns.find(c => c.id === campaignId)
+  if (!campaign) return null
+
+  const advertiser = advertisers.find(a => a.id === campaign.advertiserId)
+  const advertiserName = advertiser?.name ?? "-"
+
+  // 리포트에서 수동으로 매체별 KPI 계산
+  const mediaKpis: Record<string, { impressions: number; clicks: number; spend: number }> = {}
+  let totalImpressions = 0
+  let totalClicks = 0
+  let totalSpend = 0
+  let minDate: string | null = null
+  let maxDate: string | null = null
+
+  const hasCsvNames = (campaign.csvNames?.length ?? 0) > 0
+  const csvNameSet = new Set(campaign.csvNames ?? [])
+
+  // reports 순회하며 데이터 집계
+  for (const report of reports) {
+    // report가 csvNames 모드로 필터되어야 함
+    if (hasCsvNames) {
+      const hasMatch = Object.values(report.rowsByMedia).some(rows =>
+        rows?.some(r => r.campaignName && csvNameSet.has(r.campaignName))
+      )
+      if (!hasMatch) continue
+    }
+
+    for (const [mediaKey, rows] of Object.entries(report.rowsByMedia)) {
+      if (!rows || rows.length === 0) continue
+
+      // 행 필터: 날짜 범위 + csvNames 체크
+      const filteredRows = rows.filter(r => {
+        if (r.date < campaign.startDate || r.date > campaign.endDate) return false
+        if (hasCsvNames && r.campaignName && !csvNameSet.has(r.campaignName)) return false
+        return true
+      })
+      if (filteredRows.length === 0) continue
+
+      // 매체 라벨 매핑
+      const mediaLabel = getMediaLabelForKey(mediaKey as MediaType)
+      if (!mediaLabel) continue
+      const campaignHasMedia = campaign.mediaBudgets.some(mb => mb.media === mediaLabel)
+      if (!campaignHasMedia) continue
+
+      if (!mediaKpis[mediaLabel]) {
+        mediaKpis[mediaLabel] = { impressions: 0, clicks: 0, spend: 0 }
+      }
+
+      for (const row of filteredRows) {
+        mediaKpis[mediaLabel].impressions += row.impressions ?? 0
+        mediaKpis[mediaLabel].clicks += row.clicks ?? 0
+        mediaKpis[mediaLabel].spend += row.netAmount ?? row.netCost ?? 0
+        totalImpressions += row.impressions ?? 0
+        totalClicks += row.clicks ?? 0
+        totalSpend += row.netAmount ?? row.netCost ?? 0
+        if (!minDate || row.date < minDate) minDate = row.date
+        if (!maxDate || row.date > maxDate) maxDate = row.date
+      }
+    }
+  }
+
+  const ctr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : "0.00"
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose}>
+      <div className="fixed right-0 top-0 h-full w-[560px] bg-white shadow-2xl flex flex-col animate-in slide-in-from-right-full duration-300"
+        onClick={e => e.stopPropagation()}>
+        {/* 헤더 */}
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">{campaign.campaignName}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{advertiserName}</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">✕</button>
+        </div>
+
+        {/* 스크롤 가능 콘텐츠 */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {/* 날짜 범위 */}
+          {minDate && maxDate && (
+            <div className="text-xs text-gray-500">
+              <span className="font-medium">{minDate}</span>
+              {" ~ "}
+              <span className="font-medium">{maxDate}</span>
+            </div>
+          )}
+
+          {/* KPI 요약 카드 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+              <p className="text-xs text-gray-500">노출수</p>
+              <p className="text-sm font-semibold text-gray-900 mt-1">{fmt(totalImpressions)}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+              <p className="text-xs text-gray-500">클릭수</p>
+              <p className="text-sm font-semibold text-gray-900 mt-1">{fmt(totalClicks)}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+              <p className="text-xs text-gray-500">CTR</p>
+              <p className="text-sm font-semibold text-gray-900 mt-1">{ctr}%</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+              <p className="text-xs text-gray-500">집행금액</p>
+              <p className="text-sm font-semibold text-gray-900 mt-1">{fmt(totalSpend)}<span className="text-xs font-normal text-gray-500 ml-0.5">원</span></p>
+            </div>
+          </div>
+
+          {/* 매체별 상세 테이블 */}
+          {Object.keys(mediaKpis).length > 0 && (
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-3 py-2 text-left text-gray-600 font-medium">매체</th>
+                    <th className="px-3 py-2 text-right text-gray-600 font-medium">노출</th>
+                    <th className="px-3 py-2 text-right text-gray-600 font-medium">클릭</th>
+                    <th className="px-3 py-2 text-right text-gray-600 font-medium">CTR</th>
+                    <th className="px-3 py-2 text-right text-gray-600 font-medium">집행금액</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {Object.entries(mediaKpis).map(([mediaLabel, data]) => {
+                    const mediaCtr = data.impressions > 0 ? ((data.clicks / data.impressions) * 100).toFixed(2) : "0.00"
+                    return (
+                      <tr key={mediaLabel} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 text-gray-900 font-medium">{mediaLabel}</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{fmt(data.impressions)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{fmt(data.clicks)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{mediaCtr}%</td>
+                        <td className="px-3 py-2 text-right text-gray-700 font-semibold">{fmt(data.spend)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 데이터 없음 상태 */}
+          {Object.keys(mediaKpis).length === 0 && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-center">
+              <p className="text-sm text-gray-500">해당하는 리포트 데이터가 없습니다</p>
+              <p className="text-xs text-gray-400 mt-1">캠페인 기간 내 데이터를 입력해주세요</p>
+            </div>
+          )}
+        </div>
+
+        {/* 푸터 */}
+        <div className="border-t border-gray-200 px-6 py-3 shrink-0">
+          <button className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+            HTML 리포트 다운로드
+          </button>
         </div>
       </div>
     </div>

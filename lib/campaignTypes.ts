@@ -73,6 +73,7 @@ export interface Campaign {
   status: CampaignStatus
   createdAt: string
   agencyFeeRate?: number  // 대행수수료율 (%) — 정산 페이지 기본값으로 활용
+  csvNames?: string[]    // CSV 캠페인명 연결 목록 (데이터 입력 시 매칭용)
 }
 
 export function getTotalMarkup(mediaMarkup: number, dmpFeeRate: number, agencyFeeRate: number): number {

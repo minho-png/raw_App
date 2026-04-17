@@ -7,9 +7,66 @@ import type { MediaType } from "@/lib/reportTypes"
 interface Props {
   rows: RawRow[]
   media: MediaType
+  onRowUpdate?: (rowIndex: number, field: string, value: number) => void
 }
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
+
+/** Editable numeric cell component */
+function EditableCell({
+  value,
+  onUpdate,
+  disabled = false,
+}: {
+  value: number
+  onUpdate: (newValue: number) => void
+  disabled?: boolean
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [inputValue, setInputValue] = useState(String(value))
+
+  const handleBlur = () => {
+    const num = parseInt(inputValue.replace(/,/g, ''), 10)
+    if (!isNaN(num)) {
+      onUpdate(num)
+    }
+    setIsEditing(false)
+    setInputValue(String(value))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleBlur()
+    } else if (e.key === 'Escape') {
+      setIsEditing(false)
+      setInputValue(String(value))
+    }
+  }
+
+  if (!isEditing && disabled) {
+    return <span>{fmt(value)}</span>
+  }
+
+  return isEditing ? (
+    <input
+      type="number"
+      value={inputValue}
+      onChange={(e) => setInputValue(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      autoFocus
+      className="w-full border-0 bg-transparent px-0 py-1 text-right text-xs text-gray-700 tabular-nums outline-none ring-1 ring-blue-400 rounded"
+      style={{ fontSize: 'inherit' }}
+    />
+  ) : (
+    <span
+      onClick={() => !disabled && setIsEditing(true)}
+      className={!disabled ? 'cursor-text hover:bg-blue-50 rounded px-1' : ''}
+    >
+      {fmt(value)}
+    </span>
+  )
+}
 
 /** Google/META만 조회 컬럼 표시 */
 const MEDIA_WITH_VIEWS: MediaType[] = ['google', 'meta']
@@ -31,7 +88,7 @@ const DMP_LABELS: Record<string, string> = {
   MEDIA_TARGETING: '매체 타게팅',
 }
 
-export default function DailyDataTable({ rows, media }: Props) {
+export default function DailyDataTable({ rows, media, onRowUpdate }: Props) {
   const [copied, setCopied] = useState(false)
   const showViews = MEDIA_WITH_VIEWS.includes(media)
 
@@ -156,16 +213,68 @@ export default function DailyDataTable({ rows, media }: Props) {
                     </span>
                   ) : '—'}
                 </td>
-                <td className={tdR}>{fmt(row.impressions)}</td>
-                <td className={tdR}>{fmt(row.clicks)}</td>
+                <td className={tdR}>
+                  <EditableCell
+                    value={row.impressions}
+                    onUpdate={(val) => onRowUpdate?.(i, 'impressions', val)}
+                    disabled={!onRowUpdate}
+                  />
+                </td>
+                <td className={tdR}>
+                  <EditableCell
+                    value={row.clicks}
+                    onUpdate={(val) => onRowUpdate?.(i, 'clicks', val)}
+                    disabled={!onRowUpdate}
+                  />
+                </td>
                 {showViews && (
-                  <td className={tdR}>{row.views !== null ? fmt(row.views) : '—'}</td>
+                  <td className={tdR}>
+                    {row.views !== null ? (
+                      <EditableCell
+                        value={row.views}
+                        onUpdate={(val) => onRowUpdate?.(i, 'views', val)}
+                        disabled={!onRowUpdate}
+                      />
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                 )}
-                <td className={tdR}>{fmt(row.grossCost)}</td>
-                <td className={tdR}>{fmt(row.netCost)}</td>
-                <td className={`${tdR} text-blue-700`}>{fmt(row.executionAmount ?? row.grossCost)}</td>
-                <td className={tdR}>{fmt(row.netAmount ?? row.netCost)}</td>
-                <td className={`${tdR} text-gray-400`}>{fmt(row.supplyValue ?? row.netCost)}</td>
+                <td className={tdR}>
+                  <EditableCell
+                    value={row.grossCost}
+                    onUpdate={(val) => onRowUpdate?.(i, 'grossCost', val)}
+                    disabled={!onRowUpdate}
+                  />
+                </td>
+                <td className={tdR}>
+                  <EditableCell
+                    value={row.netCost}
+                    onUpdate={(val) => onRowUpdate?.(i, 'netCost', val)}
+                    disabled={!onRowUpdate}
+                  />
+                </td>
+                <td className={`${tdR} text-blue-700`}>
+                  <EditableCell
+                    value={row.executionAmount ?? row.grossCost}
+                    onUpdate={(val) => onRowUpdate?.(i, 'executionAmount', val)}
+                    disabled={!onRowUpdate}
+                  />
+                </td>
+                <td className={tdR}>
+                  <EditableCell
+                    value={row.netAmount ?? row.netCost}
+                    onUpdate={(val) => onRowUpdate?.(i, 'netAmount', val)}
+                    disabled={!onRowUpdate}
+                  />
+                </td>
+                <td className={`${tdR} text-gray-400`}>
+                  <EditableCell
+                    value={row.supplyValue ?? row.netCost}
+                    onUpdate={(val) => onRowUpdate?.(i, 'supplyValue', val)}
+                    disabled={!onRowUpdate}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
