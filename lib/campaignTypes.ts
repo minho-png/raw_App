@@ -47,10 +47,25 @@ export interface Operator {
 
 export interface Agency {
   id: string
-  name: string           // 대행사명
-  contactName: string    // 담당자명
+  name: string                   // 대행사명
+  contactName: string            // 담당자명
   email: string
   phone: string
+  // ── 세금계산서 발행 정보 ──────────────────────────────────
+  corporateName?: string         // 법인명 (계산서 수신처)
+  businessNumber?: string        // 사업자등록번호 (000-00-00000)
+  representative?: string        // 대표자명
+  address?: string               // 주소
+  businessType?: string          // 업태
+  businessItem?: string          // 종목
+  // ── 정산 정책 ──────────────────────────────────────────
+  defaultMarkupRate?: number     // 기본 대행수수료율 (%)
+  // ── 첨부 파일 ──────────────────────────────────────────
+  registrationPdfBase64?: string // 사업자등록증 PDF (base64)
+  registrationPdfName?: string   // 원본 파일명
+  // ── 메타 ───────────────────────────────────────────────
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface Advertiser {

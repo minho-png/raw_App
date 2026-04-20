@@ -1,14 +1,17 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useRef } from "react"
 import Link from "next/link"
 import dynamic from "next/dynamic"
+import * as XLSX from 'xlsx'
 
 // 탭으로 병합된 페이지들 (코드 스플리팅으로 로드)
 const CTPlusOverviewTab  = dynamic(() => import("../overview/page"),  { ssr: false, loading: () => <div className="p-8 text-center text-sm text-gray-500">로딩 중…</div> })
-const CTPlusManageTab    = dynamic(() => import("../manage/page"),    { ssr: false, loading: () => <div className="p-8 text-center text-sm text-gray-500">로딩 중…</div> })
 
-type OuterTab = "overview" | "status" | "groups"
+type OuterTab = "overview" | "status"
+type StatusTab = "campaigns" | "agencies" | "advertisers" | "operators"
+type AgencySubTab = "list" | "edit"
+
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, TargetingBudget,
   AVAILABLE_MEDIA, MEDIA_MARKUP_RATE, MEDIA_COLORS,
@@ -45,13 +48,15 @@ function getDailySuggestion(c: Campaign): string {
   return `미소진 ${fmt(remaining)}원 · 남은 ${days}일 기준 일 예산 약 ${fmt(daily)}원으로 조정 필요`
 }
 
-
 function emptyTB(): TargetingBudget { return { budget: 0, spend: 0, agencyFeeRate: 10, targetings: [] } }
 function emptyMB(media: string): MediaBudget { return { media, dmp: emptyTB(), nonDmp: emptyTB() } }
 
-type MainTab = "campaigns" | "operators" | "agencies" | "advertisers"
 type FilterStatus = "전체" | "집행 중" | "종료"
 interface ConfirmCfg { title: string; message: string; onConfirm: () => void }
+
+const btnPrimary = "inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+const selectCls = "rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:border-gray-400 transition-colors"
+const inputCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
 
 // ════════════════════════════════════════════════════════
 // 외부 탭 컨테이너
@@ -61,7 +66,6 @@ export default function CampaignStatusOuter() {
   const outerTabs: { key: OuterTab; label: string; emoji: string }[] = [
     { key: "overview", label: "CT+ 현황",   emoji: "📊" },
     { key: "status",   label: "집행 관리",  emoji: "📋" },
-    { key: "groups",   label: "그룹 관리",  emoji: "🗂" },
   ]
 
   return (
@@ -87,37 +91,40 @@ export default function CampaignStatusOuter() {
       <div className="flex-1">
         {outerTab === "overview" && <CTPlusOverviewTab />}
         {outerTab === "status"   && <CampaignStatusPage />}
-        {outerTab === "groups"   && <CTPlusManageTab />}
       </div>
     </div>
   )
 }
 
-// ── 기존 집행 관리 페이지 (내부 컴포넌트로 변환) ────────────
+// ── 집행 관리 페이지 (내부 4개 탭) ────────────
 function CampaignStatusPage() {
   const {
     campaigns, operators, agencies, advertisers,
     saveCampaigns, saveOperators, saveAgencies, saveAdvertisers,
   } = useMasterData()
-  const [mainTab,        setMainTab]        = useState<MainTab>("campaigns")
+  const { reports } = useReports()
+
+  const [statusTab,      setStatusTab]      = useState<StatusTab>("campaigns")
   const [filterStatus,   setFilterStatus]   = useState<FilterStatus>("전체")
   const [filterMonth,    setFilterMonth]    = useState("")
   const [filterOperator, setFilterOperator] = useState("")
   const [filterMedia,    setFilterMedia]    = useState("")
   const [searchQuery,    setSearchQuery]    = useState("")
   const [expandedIds,    setExpandedIds]    = useState<Set<string>>(new Set())
-  const [drawerCampaignId, setDrawerCampaignId] = useState<string | null>(null)
-  const [modalOpen,    setModalOpen]    = useState(false)
-  const [editTarget,   setEditTarget]   = useState<Campaign | null>(null)
-  const [opModalOpen,  setOpModalOpen]  = useState(false)
-  const [editOp,       setEditOp]       = useState<Operator | null>(null)
-  const [agModalOpen,  setAgModalOpen]  = useState(false)
-  const [editAg,       setEditAg]       = useState<Agency | null>(null)
-  const [advModalOpen, setAdvModalOpen] = useState(false)
-  const [editAdv,      setEditAdv]      = useState<Advertiser | null>(null)
-  const [confirmCfg,   setConfirmCfg]   = useState<ConfirmCfg | null>(null)
-  const [alertOpen,    setAlertOpen]    = useState(true)
-  const [memoTarget,   setMemoTarget]   = useState<Campaign | null>(null)
+  const [modalOpen,      setModalOpen]      = useState(false)
+  const [editTarget,     setEditTarget]     = useState<Campaign | null>(null)
+  const [opModalOpen,    setOpModalOpen]    = useState(false)
+  const [editOp,         setEditOp]         = useState<Operator | null>(null)
+  const [agencySubTab,   setAgencySubTab]   = useState<AgencySubTab>("list")
+  const [editAg,         setEditAg]         = useState<Agency | null>(null)
+  const [agModalOpen,    setAgModalOpen]    = useState(false)
+  const [advModalOpen,   setAdvModalOpen]   = useState(false)
+  const [editAdv,        setEditAdv]        = useState<Advertiser | null>(null)
+  const [confirmCfg,     setConfirmCfg]     = useState<ConfirmCfg | null>(null)
+  const [alertOpen,      setAlertOpen]      = useState(true)
+  const [memoTarget,     setMemoTarget]     = useState<Campaign | null>(null)
+  const [toast,          setToast]          = useState<{ message: string; type: "success" | "error" } | null>(null)
+  const fileInputRef     = useRef<HTMLInputElement>(null)
 
   const filtered = useMemo(() => campaigns.filter(c => {
     if (filterStatus !== "전체" && c.status !== filterStatus) return false
@@ -147,6 +154,10 @@ function CampaignStatusPage() {
 
   // ── 액션 ──────────────────────────────────────────────
   function confirm(cfg: ConfirmCfg) { setConfirmCfg(cfg) }
+  function showToast(message: string, type: "success" | "error" = "success") {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   function handleStatusToggle(id: string) {
     const c = campaigns.find(x => x.id === id)!
@@ -178,6 +189,46 @@ function CampaignStatusPage() {
       onConfirm: () => { saveAdvertisers(advertisers.filter(a => a.id !== id)); setConfirmCfg(null) } })
   }
 
+  // 대행사 일괄 등록 (Excel)
+  async function handleAgencyExcelUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      const buffer = await file.arrayBuffer()
+      const workbook = XLSX.read(buffer)
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const data = XLSX.utils.sheet_to_json<{
+        대행사명: string; 담당자명: string; 이메일: string; 전화번호: string
+        법인명?: string; 사업자등록번호?: string; 대표자명?: string; 주소?: string
+        업태?: string; 종목?: string; '기본수수료율(%)'?: string
+      }>(sheet)
+
+      const newAgencies = data.map(row => ({
+        id: Date.now().toString() + Math.random(),
+        name: row.대행사명 ?? "",
+        contactName: row.담당자명 ?? "",
+        email: row.이메일 ?? "",
+        phone: row.전화번호 ?? "",
+        corporateName: row.법인명,
+        businessNumber: row.사업자등록번호,
+        representative: row.대표자명,
+        address: row.주소,
+        businessType: row.업태,
+        businessItem: row.종목,
+        defaultMarkupRate: row['기본수수료율(%)'] ? parseFloat(row['기본수수료율(%)']) : undefined,
+        createdAt: new Date().toISOString(),
+      } as Agency))
+
+      saveAgencies([...agencies, ...newAgencies])
+      showToast(`${newAgencies.length}개 대행사가 추가됐습니다.`)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    } catch (err) {
+      showToast("Excel 파일 처리 중 오류가 발생했습니다.", "error")
+      console.error(err)
+    }
+  }
+
   function opName(id: string)  { return operators.find(o => o.id === id)?.name  ?? "-" }
   function agName(id: string)  { return agencies.find(a => a.id === id)?.name   ?? "-" }
   function advName(id: string) { return advertisers.find(a => a.id === id)?.name ?? "-" }
@@ -194,35 +245,48 @@ function CampaignStatusPage() {
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">캠페인 집행 현황</h1>
-            <p className="text-xs text-gray-400 mt-0.5">캠페인 리포트 · CT+ · 집행 현황</p>
+            <h1 className="text-base font-semibold text-gray-900">집행 관리</h1>
+            <p className="text-xs text-gray-400 mt-0.5">캠페인 · 대행사 · 광고주 · 운영자 관리</p>
           </div>
           <div className="flex gap-2">
-            {mainTab === "campaigns"   && <button onClick={() => { setEditTarget(null); setModalOpen(true) }}  className={btnPrimary}>+ 캠페인 추가</button>}
-            {mainTab === "operators"   && <button onClick={() => { setEditOp(null);     setOpModalOpen(true) }} className={btnPrimary}>+ 운영자 추가</button>}
-            {mainTab === "agencies"    && <button onClick={() => { setEditAg(null);     setAgModalOpen(true) }} className={btnPrimary}>+ 대행사 추가</button>}
-            {mainTab === "advertisers" && <button onClick={() => { setEditAdv(null);    setAdvModalOpen(true) }} className={btnPrimary}>+ 광고주 추가</button>}
+            {statusTab === "campaigns"   && <button onClick={() => { setEditTarget(null); setModalOpen(true) }}  className={btnPrimary}>+ 캠페인 추가</button>}
+            {statusTab === "operators"   && <button onClick={() => { setEditOp(null);     setOpModalOpen(true) }} className={btnPrimary}>+ 운영자 추가</button>}
+            {statusTab === "agencies"    && agencySubTab === "list" && (
+              <div className="flex gap-2">
+                <button onClick={() => { setEditAg(null); setAgencySubTab("edit") }} className={btnPrimary}>+ 새 대행사</button>
+                <button onClick={() => fileInputRef.current?.click()} className={btnPrimary}>📊 Excel 일괄 등록</button>
+                <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleAgencyExcelUpload} className="hidden" />
+              </div>
+            )}
+            {statusTab === "advertisers" && <button onClick={() => { setEditAdv(null);    setAdvModalOpen(true) }} className={btnPrimary}>+ 광고주 추가</button>}
           </div>
         </div>
         <div className="mt-3 flex gap-1">
           {([
-            ["campaigns",   "캠페인 목록"],
-            ["operators",   "운영자 관리"],
+            ["campaigns",   "캠페인 관리"],
             ["agencies",    "대행사 관리"],
             ["advertisers", "광고주 관리"],
-          ] as [MainTab, string][]).map(([tab, label]) => (
-            <button key={tab} onClick={() => setMainTab(tab)}
-              className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${mainTab === tab ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-100"}`}>
+            ["operators",   "운영자 관리"],
+          ] as [StatusTab, string][]).map(([tab, label]) => (
+            <button key={tab} onClick={() => { setStatusTab(tab); if (tab === "agencies") setAgencySubTab("list") }}
+              className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${statusTab === tab ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-100"}`}>
               {label}
             </button>
           ))}
         </div>
       </header>
 
+      {/* 토스트 알림 */}
+      {toast && (
+        <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg text-sm font-medium text-white ${toast.type === "success" ? "bg-green-500" : "bg-red-500"}`}>
+          {toast.message}
+        </div>
+      )}
+
       <main className="p-6 space-y-4">
 
-        {/* ══ 캠페인 목록 탭 ══════════════════════════════ */}
-        {mainTab === "campaigns" && (
+        {/* ══ 캠페인 관리 ══════════════════════════════ */}
+        {statusTab === "campaigns" && (
           <>
             {/* 요약 카드 */}
             <div className="space-y-1.5">
@@ -303,488 +367,466 @@ function CampaignStatusPage() {
                 <option value="">매체 전체</option>
                 {AVAILABLE_MEDIA.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
-              {isFiltered && (
-                <button onClick={() => { setFilterStatus("전체"); setFilterMonth(""); setFilterOperator(""); setFilterMedia(""); setSearchQuery("") }}
-                  className="rounded-full border border-gray-200 px-2 py-1 text-xs text-gray-400 hover:text-red-500 hover:border-red-200">
-                  초기화 ✕
-                </button>
-              )}
-              <div className="ml-auto">
-                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="광고주·캠페인·대행사 검색"
-                  className="rounded-lg border border-gray-200 px-3 py-1 text-xs w-52 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-              </div>
+              <input type="text" placeholder="캠페인명·광고주·대행사명 검색" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 placeholder-gray-400 hover:border-gray-400 transition-colors flex-1 min-w-40" />
+              {isFiltered && <button onClick={() => { setFilterStatus("전체"); setFilterMonth(""); setFilterOperator(""); setFilterMedia(""); setSearchQuery("") }}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium">초기화</button>}
             </div>
 
-            {/* 캠페인 테이블 */}
-            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
-                    <th className="w-8 px-3 py-3"></th>
-                    <th className="px-4 py-3 text-left">광고주 / 캠페인</th>
-                    <th className="px-4 py-3 text-left">매체</th>
-                    <th className="px-4 py-3 text-right">부킹 금액</th>
-                    <th className="px-4 py-3 text-right">세팅 금액</th>
-                    <th className="px-4 py-3 text-right">소진 / 소진율</th>
-                    <th className="px-4 py-3 text-center">진행률</th>
-                    <th className="px-4 py-3 text-center">정산 월</th>
-                    <th className="px-4 py-3 text-center">담당자</th>
-                    <th className="px-4 py-3 text-center">상태</th>
-                    <th className="px-4 py-3 text-center">관리</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filtered.length === 0 && campaigns.length === 0 && (
-                    <tr>
-                      <td colSpan={11} className="py-16 text-center">
-                        <div className="inline-flex flex-col items-center gap-3">
-                          <svg className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            {/* 캠페인 목록 */}
+            <div className="space-y-3">
+              {filtered.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 py-12 text-center">
+                  <p className="text-sm text-gray-500">캠페인이 없습니다.</p>
+                </div>
+              ) : (
+                filtered.map(c => {
+                  const totals    = getCampaignTotals(c)
+                  const dday      = getDday(c.endDate)
+                  const progress  = getCampaignProgress(c.startDate, c.endDate)
+                  const isLagging = c.status === "집행 중" && (progress - totals.spendRate) >= 15
+                  const expanded  = expandedIds.has(c.id)
+                  const sc        = spendRateStyle(totals.spendRate)
+                  const reportCount = reports.filter(r => c.csvNames?.includes(r.campaignName ?? '')).length
+
+                  return (
+                    <div key={c.id} className={`rounded-xl border transition-colors ${isLagging ? "border-yellow-300 bg-yellow-50" : "border-gray-200 bg-white"}`}>
+                      <button onClick={() => setExpandedIds(prev => { const n = new Set(prev); if (n.has(c.id)) { n.delete(c.id) } else { n.add(c.id) }; return n })}
+                        className="flex w-full items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <svg className={`h-4 w-4 text-gray-400 transition-transform flex-shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
-                          <p className="text-sm font-medium text-gray-500">등록된 캠페인이 없습니다</p>
-                          <p className="text-xs text-gray-400">캠페인을 추가하면 집행 현황과 소진율을 한눈에 확인할 수 있습니다</p>
-                          <button onClick={() => { setEditTarget(null); setModalOpen(true) }}
-                            className="mt-1 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700">
-                            + 첫 번째 캠페인 추가
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {filtered.length === 0 && campaigns.length > 0 && (
-                    <tr><td colSpan={11} className="py-12 text-center text-sm text-gray-400">조건에 맞는 캠페인이 없습니다.</td></tr>
-                  )}
-                  {filtered.map(c => {
-                    const totals    = getCampaignTotals(c)
-                    const dday      = getDday(c.endDate)
-                    const progress  = getCampaignProgress(c.startDate, c.endDate)
-                    const isLagging = c.status === "집행 중" && (progress - totals.spendRate) >= 15
-                    const expanded  = expandedIds.has(c.id)
-                    const sc        = spendRateStyle(totals.spendRate)
-
-                    return (
-                      <React.Fragment key={c.id}>
-                        <tr className={`hover:bg-gray-50 transition-colors ${isLagging ? "bg-yellow-50/30" : ""}`}>
-                          {/* 펼치기 */}
-                          <td className="px-3 py-3 text-center">
-                            <button onClick={() => setExpandedIds(prev => { const n = new Set(prev); if (n.has(c.id)) { n.delete(c.id) } else { n.add(c.id) }; return n })}
-                              className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:bg-gray-100 mx-auto">
-                              <svg className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                              </svg>
-                            </button>
-                          </td>
-
-                          {/* 광고주 / 캠페인 */}
-                          <td className="px-4 py-3">
-                            <p className="text-sm font-medium text-gray-900">{advName(c.advertiserId)}</p>
-                            <p className="text-xs text-gray-500 mt-0.5 max-w-[160px] truncate">{c.campaignName}</p>
-                            <p className="text-xs text-gray-400 mt-0.5">{agName(c.agencyId)}</p>
-                          </td>
-
-                          {/* 매체 배지만 표시 */}
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-1">
-                              {c.mediaBudgets.map(mb => {
-                                const col = MEDIA_COLORS[mb.media] ?? { bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" }
-                                return (
-                                  <span key={mb.media} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${col.bg} ${col.text} ${col.border}`}>
-                                    {mb.media}
-                                  </span>
-                                )
-                              })}
-                            </div>
-                          </td>
-
-                          {/* 부킹 금액 */}
-                          <td className="px-4 py-3 text-right">
-                            <span className="text-sm text-gray-700">{fmt(totals.totalBudget)}</span>
-                            <span className="text-xs text-gray-400 ml-0.5">원</span>
-                          </td>
-
-                          {/* 세팅 금액 */}
-                          <td className="px-4 py-3 text-right">
-                            <span className="text-sm text-gray-700">{fmt(totals.totalSettingCost)}</span>
-                            <span className="text-xs text-gray-400 ml-0.5">원</span>
-                          </td>
-
-                          {/* 소진 / 소진율 + 지연 툴팁 */}
-                          <td className="px-4 py-3 text-right">
-                            <p className={`text-sm font-bold ${sc.text}`}>{fmt(totals.totalSpend)}<span className="text-xs font-normal ml-0.5">원</span></p>
-                            <div className="mt-1 flex items-center justify-end gap-1">
-                              <div className="h-1.5 w-16 rounded-full bg-gray-100 overflow-hidden">
-                                <div className={`h-full rounded-full transition-all ${sc.bar}`} style={{ width: `${Math.min(totals.spendRate, 100)}%` }} />
-                              </div>
-                              <span className={`text-xs font-semibold ${sc.text}`}>{totals.spendRate}%</span>
-                            </div>
-                            {isLagging && (
-                              <div className="relative mt-1 inline-block group">
-                                <span className="cursor-help text-xs font-semibold text-yellow-600">⚠️ 지연</span>
-                                <div className="pointer-events-none absolute bottom-full right-0 z-20 mb-1.5 w-64 rounded-lg bg-gray-800 px-3 py-2 text-xs leading-relaxed text-white opacity-0 group-hover:opacity-100 transition-opacity whitespace-normal">
-                                  {getDailySuggestion(c)}
-                                </div>
-                              </div>
-                            )}
-                          </td>
-
-                          {/* 진행률 — D-일자 + 기간 + 바 */}
-                          <td className="px-4 py-3 text-center">
-                            {c.status === "종료" ? <span className="text-xs text-gray-400">-</span> : (
-                              <div className="flex flex-col items-center gap-0.5">
-                                <span className={`text-xs font-bold ${dday.expired ? "text-gray-400" : dday.urgent ? "text-orange-600" : "text-blue-600"}`}>
-                                  {dday.label}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-semibold text-gray-900 truncate">{c.campaignName}</h3>
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${c.status === "집행 중" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"}`}>
+                                {c.status}
+                              </span>
+                              {reportCount > 0 && (
+                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700">
+                                  리포트 {reportCount}
                                 </span>
-                                <p className="text-xs text-gray-400">{c.startDate} ~ {c.endDate}</p>
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <div className="h-1.5 w-14 rounded-full bg-gray-100 overflow-hidden">
-                                    <div className="h-full rounded-full bg-blue-300 transition-all" style={{ width: `${Math.min(progress, 100)}%` }} />
-                                  </div>
-                                  <span className="text-xs text-blue-600 font-medium">{progress}%</span>
-                                </div>
-                              </div>
-                            )}
-                          </td>
-
-                          <td className="px-4 py-3 text-center text-xs text-gray-600">{c.settlementMonth}</td>
-                          <td className="px-4 py-3 text-center text-xs text-gray-600">{opName(c.managerId)}</td>
-
-                          {/* 상태 */}
-                          <td className="px-4 py-3 text-center">
-                            <button onClick={() => handleStatusToggle(c.id)}
-                              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${c.status === "집행 중" ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
-                              {c.status}
-                            </button>
-                          </td>
-
-                          {/* 관리 */}
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              {/* 메모 버튼 — 호버 시 내용 표시 */}
-                              <div className="relative group">
-                                <button onClick={() => setMemoTarget(c)}
-                                  className={`rounded px-1.5 py-1 text-sm transition-colors ${c.memo ? "text-amber-500 hover:bg-amber-50" : "text-gray-500 hover:text-gray-600 hover:bg-gray-50"}`}
-                                  title={c.memo ? "메모 보기/수정" : "메모 추가"}>
-                                  📝
-                                </button>
-                                {c.memo && (
-                                  <div className="pointer-events-none absolute bottom-full right-0 z-30 mb-1.5 w-56 rounded-lg bg-gray-800 px-3 py-2 text-xs leading-relaxed text-white opacity-0 group-hover:opacity-100 transition-opacity whitespace-pre-wrap">
-                                    {c.memo}
-                                  </div>
-                                )}
-                              </div>
-                              <button onClick={() => setDrawerCampaignId(c.id)} className="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">리포트</button>
-                              <Link href={`/campaign/ct-plus/daily?campaignId=${c.id}`} className="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">데이터 입력</Link>
-                              <button onClick={() => { setEditTarget(c); setModalOpen(true) }} className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">수정</button>
-                              <button onClick={() => handleDelete(c.id)} className="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-50">삭제</button>
+                              )}
                             </div>
-                          </td>
-                        </tr>
+                            <p className="text-xs text-gray-500 mt-0.5">{advName(c.advertiserId)} · {agName(c.agencyId)} · {opName(c.managerId)}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 flex-shrink-0 text-right">
+                          <div className="text-xs">
+                            <div className="text-gray-900 font-semibold">{progress}% / {totals.spendRate}%</div>
+                            <div className="text-gray-500 text-xs">{dday.label}</div>
+                          </div>
+                          <div className={`text-xs ${sc.text}`}>
+                            <div className="font-semibold">{totals.spendRate}%</div>
+                            <div className="text-gray-500">소진율</div>
+                          </div>
+                        </div>
+                      </button>
 
-                        {/* 매체별 상세 — 매체를 카드로 구분 */}
-                        {expanded && (
-                          <tr className="bg-slate-50">
-                            <td></td>
-                            <td colSpan={10} className="px-4 py-3">
-                              <div className="space-y-3">
-                                {c.mediaBudgets.map(mb => {
-                                  const mm  = MEDIA_MARKUP_RATE[mb.media] ?? 0
-                                  const mt  = getMediaTotals(mb)
-                                  const col = MEDIA_COLORS[mb.media] ?? { bg: "bg-gray-100", text: "text-gray-700", border: "border-gray-200" }
-                                  const rows = [
-                                    { label: "DMP 활용",   tb: mb.dmp,    dmpRate: DMP_FEE_RATE, markup: mt.dmpMarkup,    sc: mt.dmpSC,    isDmp: true  },
-                                    { label: "DMP 미활용", tb: mb.nonDmp, dmpRate: 0,            markup: mt.nonDmpMarkup, sc: mt.nonDmpSC, isDmp: false },
-                                  ].filter(r => r.tb.budget > 0 || r.tb.targetings.length > 0)
+                      {expanded && (
+                        <div className="border-t border-gray-200 px-4 py-3 space-y-3 bg-gray-50">
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div><span className="text-xs text-gray-500">부킹 금액</span><div className="text-sm font-semibold text-gray-900">{fmt(totals.totalBudget)}원</div></div>
+                            <div><span className="text-xs text-gray-500">세팅 금액</span><div className="text-sm font-semibold text-gray-900">{fmt(totals.totalSettingCost)}원</div></div>
+                            <div><span className="text-xs text-gray-500">집행액</span><div className="text-sm font-semibold text-gray-900">{fmt(totals.totalSpend)}원</div></div>
+                            <div><span className="text-xs text-gray-500">미소진</span><div className="text-sm font-semibold text-gray-900">{fmt(totals.totalSettingCost - totals.totalSpend)}원</div></div>
+                          </div>
 
-                                  return (
-                                    <div key={mb.media} className="rounded-lg border border-gray-200 overflow-hidden">
-                                      {/* 매체 헤더 */}
-                                      <div className={`flex items-center justify-between px-3 py-2 ${col.bg} border-b ${col.border}`}>
-                                        <span className={`text-xs font-bold ${col.text}`}>{mb.media}</span>
-                                        <div className="flex items-center gap-3 text-xs text-gray-600">
-                                          <span>소진 <strong className={spendRateStyle(mt.spendRate).text}>{fmt(mt.totalSpend)}원</strong></span>
-                                          <span className="text-gray-500">|</span>
-                                          <span>세팅비용 {fmt(mt.totalSettingCost)}원</span>
-                                          <span className="text-gray-500">|</span>
-                                          <span>소진율 <strong className={spendRateStyle(mt.spendRate).text}>{mt.spendRate}%</strong></span>
-                                        </div>
-                                      </div>
-                                      {/* 세부 행 테이블 */}
-                                      <table className="w-full text-xs">
-                                        <thead>
-                                          <tr className="text-gray-400 bg-white border-b border-gray-100">
-                                            <th className="text-left py-1.5 px-3 font-medium">구간</th>
-                                            <th className="text-left py-1.5 px-3 font-medium">타겟팅</th>
-                                            <th className="text-right py-1.5 px-3 font-medium">마크업</th>
-                                            <th className="text-right py-1.5 px-3 font-medium">부킹 금액</th>
-                                            <th className="text-right py-1.5 px-3 font-medium">세팅 금액</th>
-                                            <th className="text-right py-1.5 px-3 font-medium">소진</th>
-                                            <th className="text-right py-1.5 px-3 font-medium">소진율</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-100 bg-white">
-                                          {rows.map(r => (
-                                            <tr key={r.label} className="hover:bg-gray-50">
-                                              <td className="py-2 px-3">
-                                                <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${r.isDmp ? "bg-violet-50 border-violet-200 text-violet-700" : "bg-gray-50 border-gray-200 text-gray-500"}`}>
-                                                  {r.label}
-                                                </span>
-                                              </td>
-                                              <td className="py-2 px-3">
-                                                <div className="flex flex-wrap gap-1">
-                                                  {r.tb.targetings.length === 0
-                                                    ? <span className="text-gray-500">-</span>
-                                                    : r.tb.targetings.map(t => (
-                                                      <span key={t} className={`rounded-full border px-1.5 py-0.5 text-xs font-medium ${r.isDmp ? "bg-violet-50 border-violet-200 text-violet-700" : "bg-gray-50 border-gray-200 text-gray-500"}`}>{t}</span>
-                                                    ))}
-                                                </div>
-                                              </td>
-                                              <td className="py-2 px-3 text-right text-gray-500 whitespace-nowrap">
-                                                {mm > 0 && <span className="text-orange-500 font-medium">운영 {mm}%</span>}
-                                                {mm > 0 && <span> + </span>}
-                                                {r.dmpRate > 0 && <span>DMP {r.dmpRate}% + </span>}
-                                                대행 {r.tb.agencyFeeRate}% = <strong className="text-gray-700">{r.markup}%</strong>
-                                              </td>
-                                              <td className="py-2 px-3 text-right text-gray-700">{fmt(r.tb.budget)}원</td>
-                                              <td className="py-2 px-3 text-right text-gray-700">{fmt(r.sc)}원</td>
-                                              <td className="py-2 px-3 text-right font-bold text-gray-700">{fmt(r.tb.spend)}원</td>
-                                              <td className="py-2 px-3 text-right">
-                                                {(() => { const s = spendRateStyle(calcSpendRate(r.tb.spend, r.sc)); return (
-                                                  <span className={`font-semibold ${s.text}`}>{calcSpendRate(r.tb.spend, r.sc)}%</span>
-                                                )})()}
-                                              </td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    )
-                  })}
-                </tbody>
-              </table>
+                          {/* 매체별 상세 */}
+                          <div className="space-y-1">
+                            {c.mediaBudgets.map((mb, idx) => {
+                              const mm  = MEDIA_MARKUP_RATE[mb.media] ?? 0
+                              const mt  = getMediaTotals(mb)
+                              const col = MEDIA_COLORS[mb.media] ?? { bg: "bg-gray-100", text: "text-gray-700", border: "border-gray-200" }
+                              return (
+                                <div key={idx} className={`rounded-lg border ${col.border} ${col.bg} px-3 py-2 text-xs`}>
+                                  <div className={`font-semibold ${col.text} mb-1`}>{mb.media}</div>
+                                  <div className="grid grid-cols-3 gap-2 text-gray-700">
+                                    <div><span className="text-gray-500">DMP</span> {fmt(mb.dmp.budget)} / {fmt(mb.dmp.spend)} ({calcSpendRate(mb.dmp.spend, calcSettingCost(mb.dmp.budget, getTotalMarkup(mm, DMP_FEE_RATE, mb.dmp.agencyFeeRate)))}%)</div>
+                                    <div><span className="text-gray-500">비DMP</span> {fmt(mb.nonDmp.budget)} / {fmt(mb.nonDmp.spend)} ({calcSpendRate(mb.nonDmp.spend, calcSettingCost(mb.nonDmp.budget, getTotalMarkup(mm, 0, mb.nonDmp.agencyFeeRate)))}%)</div>
+                                    <div><span className="text-gray-500">소계</span> {fmt(mt.totalBudget)} / {fmt(mt.totalSpend)} ({mt.spendRate}%)</div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+
+                          <div className="flex gap-2 pt-2">
+                            <button onClick={() => { setEditTarget(c); setModalOpen(true) }} className="flex-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors">수정</button>
+                            <button onClick={() => handleStatusToggle(c.id)} className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">{c.status === "집행 중" ? "종료" : "재개"}</button>
+                            <button onClick={() => handleDelete(c.id)} className="flex-1 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors">삭제</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
             </div>
           </>
         )}
 
-        {/* ══ 운영자 관리 탭 ══════════════════════════════ */}
-        {mainTab === "operators" && (
-          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
-                  <th className="px-4 py-3 text-left">이름</th>
-                  <th className="px-4 py-3 text-left">이메일</th>
-                  <th className="px-4 py-3 text-left">연락처</th>
-                  <th className="px-4 py-3 text-center">담당 캠페인</th>
-                  <th className="px-4 py-3 text-center">관리</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {operators.length === 0 && <tr><td colSpan={5} className="py-12 text-center text-sm text-gray-400">등록된 운영자가 없습니다.</td></tr>}
-                {operators.map(op => {
-                  const assigned = campaigns.filter(c => c.managerId === op.id)
-                  return (
-                    <tr key={op.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">{op.name}</td>
-                      <td className="px-4 py-3 text-gray-600">{op.email}</td>
-                      <td className="px-4 py-3 text-gray-600">{op.phone}</td>
-                      <td className="px-4 py-3 text-center">
-                        {assigned.length === 0 ? <span className="text-xs text-gray-400">없음</span> : (
-                          <div className="flex flex-wrap gap-1 justify-center">
-                            {assigned.map(c => <CampaignBadge key={c.id} c={c} label={`${advName(c.advertiserId)} · ${c.campaignName}`} />)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <ActionBtns onEdit={() => { setEditOp(op); setOpModalOpen(true) }} onDelete={() => handleDeleteOp(op.id)} />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        {/* ══ 대행사 관리 ══════════════════════════════ */}
+        {statusTab === "agencies" && (
+          <>
+            {agencySubTab === "list" && <AgencyListTab agencies={agencies} campaigns={campaigns} onEdit={(ag) => { setEditAg(ag); setAgencySubTab("edit") }} onDelete={handleDeleteAg} />}
+            {agencySubTab === "edit" && <AgencyEditTab agency={editAg} agencies={agencies} onSave={(ag) => {
+              if (editAg) {
+                saveAgencies(agencies.map(a => a.id === ag.id ? ag : a))
+              } else {
+                saveAgencies([...agencies, ag])
+              }
+              setAgencySubTab("list")
+              showToast(editAg ? "대행사가 수정되었습니다." : "대행사가 추가되었습니다.")
+            }} onCancel={() => setAgencySubTab("list")} />}
+          </>
+        )}
+
+        {/* ══ 광고주 관리 ══════════════════════════════ */}
+        {statusTab === "advertisers" && (
+          <div className="space-y-3">
+            {advertisers.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 py-12 text-center">
+                <p className="text-sm text-gray-500">광고주가 없습니다.</p>
+              </div>
+            ) : (
+              advertisers.map(adv => {
+                const agencyName = agName(adv.agencyId)
+                const assigned = campaigns.filter(c => c.advertiserId === adv.id)
+                return (
+                  <div key={adv.id} className="rounded-lg border border-gray-200 bg-white p-4 hover:border-gray-300 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-gray-900">{adv.name}</h3>
+                        <p className="text-xs text-gray-500 mt-0.5">{agencyName} · 캠페인 {assigned.length}개</p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => { setEditAdv(adv); setAdvModalOpen(true) }} className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors">수정</button>
+                        <button onClick={() => handleDeleteAdv(adv.id)} className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors">삭제</button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         )}
 
-        {/* ══ 대행사 관리 탭 ══════════════════════════════ */}
-        {mainTab === "agencies" && (
-          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
-                  <th className="px-4 py-3 text-left">대행사명</th>
-                  <th className="px-4 py-3 text-left">담당자</th>
-                  <th className="px-4 py-3 text-left">이메일</th>
-                  <th className="px-4 py-3 text-left">연락처</th>
-                  <th className="px-4 py-3 text-left">소속 광고주</th>
-                  <th className="px-4 py-3 text-center">진행 캠페인</th>
-                  <th className="px-4 py-3 text-center">관리</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {agencies.length === 0 && <tr><td colSpan={7} className="py-12 text-center text-sm text-gray-400">등록된 대행사가 없습니다.</td></tr>}
-                {agencies.map(ag => {
-                  const agAdvs   = advertisers.filter(a => a.agencyId === ag.id)
-                  const assigned = campaigns.filter(c => c.agencyId === ag.id)
-                  return (
-                    <tr key={ag.id} className="hover:bg-gray-50 align-top">
-                      <td className="px-4 py-3 font-semibold text-gray-900">{ag.name}</td>
-                      <td className="px-4 py-3 text-gray-700">{ag.contactName}</td>
-                      <td className="px-4 py-3 text-gray-600">{ag.email}</td>
-                      <td className="px-4 py-3 text-gray-600">{ag.phone}</td>
-                      <td className="px-4 py-3">
-                        {agAdvs.length === 0 ? <span className="text-xs text-gray-400">없음</span> : (
-                          <div className="flex flex-wrap gap-1">
-                            {agAdvs.map(a => (
-                              <span key={a.id} className="rounded-full border border-purple-100 bg-purple-50 px-2 py-0.5 text-xs text-purple-700">{a.name}</span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {assigned.length === 0 ? <span className="text-xs text-gray-400">없음</span> : (
-                          <div className="flex flex-wrap gap-1 justify-center">
-                            {assigned.map(c => <CampaignBadge key={c.id} c={c} label={`${advName(c.advertiserId)} · ${c.campaignName}`} />)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <ActionBtns onEdit={() => { setEditAg(ag); setAgModalOpen(true) }} onDelete={() => handleDeleteAg(ag.id)} />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        {/* ══ 운영자 관리 ══════════════════════════════ */}
+        {statusTab === "operators" && (
+          <div className="space-y-3">
+            {operators.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 py-12 text-center">
+                <p className="text-sm text-gray-500">운영자가 없습니다.</p>
+              </div>
+            ) : (
+              operators.map(op => {
+                const assigned = campaigns.filter(c => c.managerId === op.id)
+                return (
+                  <div key={op.id} className="rounded-lg border border-gray-200 bg-white p-4 hover:border-gray-300 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold text-gray-900">{op.name}</h3>
+                        <p className="text-xs text-gray-500 mt-0.5">{op.email} · {op.phone} · 캠페인 {assigned.length}개</p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => { setEditOp(op); setOpModalOpen(true) }} className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors">수정</button>
+                        <button onClick={() => handleDeleteOp(op.id)} className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors">삭제</button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         )}
 
-        {/* ══ 광고주 관리 탭 ══════════════════════════════ */}
-        {mainTab === "advertisers" && (
-          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
-                  <th className="px-4 py-3 text-left">광고주명</th>
-                  <th className="px-4 py-3 text-left">소속 대행사</th>
-                  <th className="px-4 py-3 text-center">진행 캠페인</th>
-                  <th className="px-4 py-3 text-center">관리</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {advertisers.length === 0 && <tr><td colSpan={4} className="py-12 text-center text-sm text-gray-400">등록된 광고주가 없습니다.</td></tr>}
-                {advertisers.map(adv => {
-                  const assigned = campaigns.filter(c => c.advertiserId === adv.id)
-                  return (
-                    <tr key={adv.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">{adv.name}</td>
-                      <td className="px-4 py-3 text-gray-600">{agName(adv.agencyId)}</td>
-                      <td className="px-4 py-3 text-center">
-                        {assigned.length === 0 ? <span className="text-xs text-gray-400">없음</span> : (
-                          <div className="flex flex-wrap gap-1 justify-center">
-                            {assigned.map(c => <CampaignBadge key={c.id} c={c} label={c.campaignName} />)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <ActionBtns onEdit={() => { setEditAdv(adv); setAdvModalOpen(true) }} onDelete={() => handleDeleteAdv(adv.id)} />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
       </main>
 
-      {/* 모달 */}
-      {modalOpen    && <CampaignModal    initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers}
-                          onSave={c  => { saveCampaigns(editTarget ? campaigns.map(x => x.id === c.id ? c : x) : [...campaigns, c]); setModalOpen(false); setEditTarget(null) }}
-                          onClose={() => { setModalOpen(false); setEditTarget(null) }} />}
-      {opModalOpen  && <PersonModal title={editOp ? "운영자 수정" : "운영자 추가"} initial={editOp}
-                          onSave={op => { saveOperators(editOp ? operators.map(o => o.id === op.id ? op : o) : [...operators, op]); setOpModalOpen(false); setEditOp(null) }}
-                          onClose={() => { setOpModalOpen(false); setEditOp(null) }} />}
-      {agModalOpen  && <AgencyModal initial={editAg}
-                          onSave={ag => { saveAgencies(editAg ? agencies.map(a => a.id === ag.id ? ag : a) : [...agencies, ag]); setAgModalOpen(false); setEditAg(null) }}
-                          onClose={() => { setAgModalOpen(false); setEditAg(null) }} />}
-      {advModalOpen && <AdvertiserModal initial={editAdv} agencies={agencies}
-                          onSave={adv => { saveAdvertisers(editAdv ? advertisers.map(a => a.id === adv.id ? adv : a) : [...advertisers, adv]); setAdvModalOpen(false); setEditAdv(null) }}
-                          onClose={() => { setAdvModalOpen(false); setEditAdv(null) }} />}
-      {confirmCfg   && <ConfirmModal title={confirmCfg.title} message={confirmCfg.message} onConfirm={confirmCfg.onConfirm} onCancel={() => setConfirmCfg(null)} />}
-      {memoTarget   && <MemoModal campaign={memoTarget}
-                          onSave={memo => { saveCampaigns(campaigns.map(c => c.id === memoTarget.id ? { ...c, memo } : c)); setMemoTarget(null) }}
-                          onClose={() => setMemoTarget(null)} />}
+      {/* 모달들 */}
+      {modalOpen && <CampaignModal initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers} onSave={(c) => {
+        if (editTarget) {
+          saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))
+        } else {
+          saveCampaigns([...campaigns, { ...c, id: Date.now().toString() }])
+        }
+        setModalOpen(false)
+      }} onClose={() => setModalOpen(false)} />}
+      {opModalOpen && <PersonModal title="운영자" initial={editOp} onSave={(op) => {
+        if (editOp) {
+          saveOperators(operators.map(o => o.id === op.id ? op : o))
+        } else {
+          saveOperators([...operators, { ...op, id: Date.now().toString() }])
+        }
+        setOpModalOpen(false)
+      }} onClose={() => setOpModalOpen(false)} />}
+      {advModalOpen && <AdvertiserModal initial={editAdv} agencies={agencies} onSave={(adv) => {
+        if (editAdv) {
+          saveAdvertisers(advertisers.map(a => a.id === adv.id ? adv : a))
+        } else {
+          saveAdvertisers([...advertisers, { ...adv, id: Date.now().toString() }])
+        }
+        setAdvModalOpen(false)
+      }} onClose={() => setAdvModalOpen(false)} />}
+      {agModalOpen && <AgencyModal initial={editAg} onSave={(ag) => {
+        if (editAg) {
+          saveAgencies(agencies.map(a => a.id === ag.id ? ag : a))
+        } else {
+          saveAgencies([...agencies, { ...ag, id: Date.now().toString() }])
+        }
+        setAgModalOpen(false)
+      }} onClose={() => setAgModalOpen(false)} />}
 
-      {/* 캠페인 리포트 드로어 */}
-      {drawerCampaignId && (
-        <CampaignReportDrawer
-          campaignId={drawerCampaignId}
-          campaigns={campaigns}
-          advertisers={advertisers}
-          onClose={() => setDrawerCampaignId(null)}
-        />
+      {confirmCfg && <ConfirmModal title={confirmCfg.title} message={confirmCfg.message} onConfirm={confirmCfg.onConfirm} onCancel={() => setConfirmCfg(null)} />}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════
+// 대행사 관리 - 목록 탭
+function AgencyListTab({ agencies, campaigns, onEdit, onDelete }: {
+  agencies: Agency[]
+  campaigns: Campaign[]
+  onEdit: (ag: Agency) => void
+  onDelete: (id: string) => void
+}) {
+  return (
+    <div className="space-y-3">
+      {agencies.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 py-12 text-center">
+          <p className="text-sm text-gray-500">대행사가 없습니다.</p>
+        </div>
+      ) : (
+        agencies.map(ag => (
+          <div key={ag.id} className="rounded-lg border border-gray-200 bg-white p-4 hover:border-gray-300 transition-colors">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-semibold text-gray-900">{ag.name}</h3>
+                <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-gray-600">
+                  <div><span className="text-gray-500">담당자:</span> {ag.contactName}</div>
+                  <div><span className="text-gray-500">이메일:</span> {ag.email}</div>
+                  <div><span className="text-gray-500">전화:</span> {ag.phone}</div>
+                  {ag.defaultMarkupRate !== undefined && <div><span className="text-gray-500">기본수수료:</span> {ag.defaultMarkupRate}%</div>}
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 flex-shrink-0">
+                {ag.registrationPdfBase64 && ag.registrationPdfName && (
+                  <a href={`data:application/pdf;base64,${ag.registrationPdfBase64}`} download={ag.registrationPdfName}
+                    className="rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 transition-colors text-center">
+                    📄 PDF
+                  </a>
+                )}
+                <button onClick={() => onEdit(ag)} className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors">수정</button>
+                <button onClick={() => onDelete(ag.id)} className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors">삭제</button>
+              </div>
+            </div>
+          </div>
+        ))
       )}
     </div>
   )
 }
 
-// ── 공용 소형 컴포넌트 ────────────────────────────────────
-function CampaignBadge({ c, label }: { c: Campaign; label: string }) {
-  return (
-    <span className={`rounded-full border px-2 py-0.5 text-xs ${c.status === "집행 중" ? "bg-blue-50 border-blue-100 text-blue-700" : "bg-gray-50 border-gray-200 text-gray-500"}`}>
-      {label}
-    </span>
-  )
-}
-function ActionBtns({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
-  return (
-    <div className="flex items-center justify-center gap-1">
-      <button onClick={onEdit}   className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">수정</button>
-      <button onClick={onDelete} className="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-50">삭제</button>
-    </div>
-  )
-}
+// 대행사 관리 - 수정/입력 탭
+function AgencyEditTab({ agency, agencies, onSave, onCancel }: {
+  agency: Agency | null
+  agencies: Agency[]
+  onSave: (ag: Agency) => void
+  onCancel: () => void
+}) {
+  const [name,                setName]                = useState(agency?.name ?? "")
+  const [contactName,         setContactName]         = useState(agency?.contactName ?? "")
+  const [email,               setEmail]               = useState(agency?.email ?? "")
+  const [phone,               setPhone]               = useState(agency?.phone ?? "")
+  const [corporateName,       setCorporateName]       = useState(agency?.corporateName ?? "")
+  const [businessNumber,      setBusinessNumber]      = useState(agency?.businessNumber ?? "")
+  const [representative,      setRepresentative]      = useState(agency?.representative ?? "")
+  const [address,             setAddress]             = useState(agency?.address ?? "")
+  const [businessType,        setBusinessType]        = useState(agency?.businessType ?? "")
+  const [businessItem,        setBusinessItem]        = useState(agency?.businessItem ?? "")
+  const [defaultMarkupRate,   setDefaultMarkupRate]   = useState(agency?.defaultMarkupRate?.toString() ?? "")
+  const [pdfFile,             setPdfFile]             = useState<File | null>(null)
+  const [uploading,           setUploading]           = useState(false)
 
-// ── 요약 카드 ─────────────────────────────────────────────
-function SCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: "blue" | "gray" }) {
-  const cls = color === "blue" ? "text-blue-600" : color === "gray" ? "text-gray-400" : "text-gray-900"
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-      <p className="text-xs text-gray-400">{label}</p>
-      <p className={`mt-1 text-base font-semibold ${cls}`}>{value}{sub && <span className="text-xs font-normal text-gray-400 ml-0.5">{sub}</span>}</p>
-    </div>
-  )
-}
+  function handleSave() {
+    if (!name.trim() || !contactName.trim()) {
+      alert("대행사명과 담당자명은 필수입니다.")
+      return
+    }
+    const saved: Agency = {
+      id: agency?.id ?? Date.now().toString(),
+      name,
+      contactName,
+      email,
+      phone,
+      corporateName: corporateName || undefined,
+      businessNumber: businessNumber || undefined,
+      representative: representative || undefined,
+      address: address || undefined,
+      businessType: businessType || undefined,
+      businessItem: businessItem || undefined,
+      defaultMarkupRate: defaultMarkupRate ? parseFloat(defaultMarkupRate) : undefined,
+      registrationPdfBase64: agency?.registrationPdfBase64,
+      registrationPdfName: agency?.registrationPdfName,
+      createdAt: agency?.createdAt,
+      updatedAt: new Date().toISOString(),
+    }
 
-// ── 확인 모달 ─────────────────────────────────────────────
-function ConfirmModal({ title, message, onConfirm, onCancel }: { title: string; message: string; onConfirm: () => void; onCancel: () => void }) {
+    if (pdfFile && agency?.id) {
+      // 기존 대행사: PDF 업로드 후 저장
+      handlePdfUpload(saved)
+    } else {
+      onSave(saved)
+    }
+  }
+
+  async function handlePdfUpload(ag: Agency) {
+    if (!pdfFile || !ag.id) return
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", pdfFile)
+      formData.append("agencyId", ag.id)
+      const res = await fetch("/api/v1/agencies/upload-pdf", { method: "POST", body: formData })
+      if (!res.ok) throw new Error("PDF 업로드 실패")
+      const { pdfBase64, pdfName } = await res.json()
+      onSave({ ...ag, registrationPdfBase64: pdfBase64, registrationPdfName: pdfName })
+    } catch (err) {
+      alert("PDF 업로드 중 오류가 발생했습니다.")
+      console.error(err)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
-        <div className="px-6 pt-6 pb-4">
-          <h3 className="text-base font-semibold text-gray-900 mb-2">{title}</h3>
-          <p className="text-sm text-gray-600 whitespace-pre-line">{message}</p>
+    <div className="max-w-2xl mx-auto">
+      <div className="rounded-lg border border-gray-200 bg-white p-6 space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">{agency ? "대행사 정보 수정" : "새 대행사 추가"}</h2>
         </div>
-        <div className="flex justify-end gap-2 border-t border-gray-100 px-6 py-4">
-          <button onClick={onCancel}  className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-          <button onClick={onConfirm} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700">확인</button>
+
+        {/* 기본 정보 */}
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">기본 정보</h3>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <MF label="대행사명 *">
+                <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputCls} placeholder="ex) OO 에이전시" />
+              </MF>
+              <MF label="담당자명 *">
+                <input type="text" value={contactName} onChange={e => setContactName(e.target.value)} className={inputCls} placeholder="담당자 이름" />
+              </MF>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <MF label="이메일">
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} placeholder="email@example.com" />
+              </MF>
+              <MF label="전화번호">
+                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} placeholder="010-0000-0000" />
+              </MF>
+            </div>
+          </div>
+        </section>
+
+        {/* 세금계산서 정보 */}
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">세금계산서 정보</h3>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <MF label="법인명">
+                <input type="text" value={corporateName} onChange={e => setCorporateName(e.target.value)} className={inputCls} />
+              </MF>
+              <MF label="사업자등록번호">
+                <input type="text" value={businessNumber} onChange={e => setBusinessNumber(e.target.value)} className={inputCls} placeholder="000-00-00000" />
+              </MF>
+            </div>
+            <MF label="대표자명">
+              <input type="text" value={representative} onChange={e => setRepresentative(e.target.value)} className={inputCls} />
+            </MF>
+            <MF label="주소">
+              <input type="text" value={address} onChange={e => setAddress(e.target.value)} className={inputCls} />
+            </MF>
+            <div className="grid grid-cols-2 gap-4">
+              <MF label="업태">
+                <input type="text" value={businessType} onChange={e => setBusinessType(e.target.value)} className={inputCls} />
+              </MF>
+              <MF label="종목">
+                <input type="text" value={businessItem} onChange={e => setBusinessItem(e.target.value)} className={inputCls} />
+              </MF>
+            </div>
+          </div>
+        </section>
+
+        {/* 정산 정책 */}
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">정산 정책</h3>
+          <div className="space-y-3">
+            <MF label="기본 대행수수료율 (%)">
+              <input type="number" value={defaultMarkupRate} onChange={e => setDefaultMarkupRate(e.target.value)} className={inputCls} placeholder="10" min="0" step="0.1" />
+            </MF>
+          </div>
+        </section>
+
+        {/* 사업자등록증 PDF */}
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">사업자등록증</h3>
+          <div className="space-y-3">
+            {agency?.registrationPdfBase64 && agency?.registrationPdfName && (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                <p className="text-sm text-green-700">
+                  <span className="font-medium">현재 파일:</span> {agency.registrationPdfName}
+                </p>
+                <a href={`data:application/pdf;base64,${agency.registrationPdfBase64}`} download={agency.registrationPdfName}
+                  className="text-xs text-green-600 hover:text-green-700 mt-1 block">
+                  다운로드
+                </a>
+              </div>
+            )}
+            <MF label="PDF 파일">
+              <input type="file" accept=".pdf" onChange={e => setPdfFile(e.target.files?.[0] ?? null)} className={inputCls} />
+            </MF>
+          </div>
+        </section>
+
+        {/* 액션 */}
+        <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">
+          <button onClick={onCancel} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
+          <button onClick={handleSave} disabled={uploading} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:bg-gray-400">{uploading ? "업로드 중..." : "저장"}</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ── 캠페인 모달 ───────────────────────────────────────────
+// ════════════════════════════════════════════════════════
+// 기타 모달/컴포넌트
+
+function ConfirmModal({ title, message, onConfirm, onCancel }: {
+  title: string; message: string; onConfirm: () => void; onCancel: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg max-w-sm mx-4 p-6">
+        <h2 className="text-base font-semibold text-gray-900 mb-2">{title}</h2>
+        <p className="text-sm text-gray-600 mb-6 whitespace-pre-wrap">{message}</p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
+          <button onClick={onConfirm} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors">확인</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose }: {
-  initial: Campaign | null; operators: Operator[]; agencies: Agency[]; advertisers: Advertiser[]
-  onSave: (c: Campaign) => void; onClose: () => void
+  initial: Campaign | null
+  operators: Operator[]
+  agencies: Agency[]
+  advertisers: Advertiser[]
+  onSave: (c: Campaign) => void
+  onClose: () => void
 }) {
   const [agencyId,        setAgencyId]        = useState(initial?.agencyId        ?? "")
   const [advertiserId,    setAdvertiserId]    = useState(initial?.advertiserId    ?? "")
@@ -797,536 +839,294 @@ function CampaignModal({ initial, operators, agencies, advertisers, onSave, onCl
   const [mediaBudgets,    setMediaBudgets]    = useState<MediaBudget[]>(initial?.mediaBudgets ?? [])
   const [memo,            setMemo]            = useState(initial?.memo ?? "")
 
-  // 대행사 선택 시 해당 대행사 소속 광고주만 필터
   const filteredAdvertisers = agencyId ? advertisers.filter(a => a.agencyId === agencyId) : advertisers
 
   function handleAgencyChange(id: string) {
     setAgencyId(id)
-    setAdvertiserId("")  // 대행사 변경 시 광고주 초기화
+    setAdvertiserId("")
   }
 
   function toggleMedia(media: string) {
-    setMediaBudgets(prev => prev.find(mb => mb.media === media) ? prev.filter(mb => mb.media !== media) : [...prev, emptyMB(media)])
+    if (mediaBudgets.some(mb => mb.media === media)) {
+      setMediaBudgets(mediaBudgets.filter(mb => mb.media !== media))
+    } else {
+      setMediaBudgets([...mediaBudgets, emptyMB(media)])
+    }
   }
+
   function updateTB(media: string, kind: "dmp" | "nonDmp", field: keyof TargetingBudget, value: string | number | string[]) {
-    setMediaBudgets(prev => prev.map(mb => mb.media === media ? { ...mb, [kind]: { ...mb[kind], [field]: value } } : mb))
-  }
-  function toggleTarget(media: string, kind: "dmp" | "nonDmp", t: string) {
-    setMediaBudgets(prev => prev.map(mb => {
+    setMediaBudgets(mediaBudgets.map(mb => {
       if (mb.media !== media) return mb
-      const already = mb[kind].targetings.includes(t)
-      return { ...mb, [kind]: { ...mb[kind], targetings: already ? mb[kind].targetings.filter(x => x !== t) : [...mb[kind].targetings, t] } }
+      const updated = { ...mb, [kind]: { ...mb[kind] } }
+      if (field === "budget" || field === "spend" || field === "agencyFeeRate") {
+        (updated[kind] as any)[field] = typeof value === "string" ? parseFloat(value) || 0 : value
+      } else {
+        (updated[kind] as any)[field] = value
+      }
+      return updated
     }))
   }
 
-  function handleSubmit() {
-    if (!agencyId)             { alert("대행사를 선택해주세요."); return }
-    if (!advertiserId)         { alert("광고주를 선택해주세요."); return }
-    if (!campaignName.trim())  { alert("캠페인명을 입력해주세요."); return }
-    if (!startDate)            { alert("시작일을 입력해주세요."); return }
-    if (!endDate)              { alert("종료일을 입력해주세요."); return }
-    if (!settlementMonth)      { alert("정산 월을 입력해주세요."); return }
-    if (mediaBudgets.length === 0) { alert("1개 이상의 매체를 선택해주세요."); return }
-    if (!managerId)            { alert("담당 운영자를 선택해주세요."); return }
-    onSave({ id: initial?.id ?? Date.now().toString(), advertiserId, campaignName: campaignName.trim(),
-      agencyId, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo: memo.trim() || undefined,
-      createdAt: initial?.createdAt ?? new Date().toISOString() })
+  function handleSave() {
+    if (!campaignName.trim() || !agencyId || !advertiserId || !managerId || !startDate || !endDate || !settlementMonth) {
+      alert("필수 항목을 입력하세요.")
+      return
+    }
+    onSave({
+      id: initial?.id ?? Date.now().toString(),
+      campaignName, agencyId, advertiserId, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo,
+      createdAt: initial?.createdAt ?? new Date().toISOString(),
+    } as Campaign)
   }
 
-  const preview = useMemo(() => {
-    let budget = 0, sc = 0
-    mediaBudgets.forEach(mb => { const t = getMediaTotals(mb); budget += t.totalBudget; sc += t.totalSettingCost })
-    return { budget, sc }
-  }, [mediaBudgets])
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4 z-10">
-          <h2 className="text-base font-semibold text-gray-900">{initial ? "캠페인 수정" : "캠페인 추가"}</h2>
-          <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">✕</button>
-        </div>
-        <div className="px-6 py-5 space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <MF label="대행사 *">
-              <select value={agencyId} onChange={e => handleAgencyChange(e.target.value)} className={ic}>
-                <option value="">선택</option>
-                {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </MF>
-            <MF label="광고주 *">
-              <select value={advertiserId} onChange={e => setAdvertiserId(e.target.value)} className={ic} disabled={!agencyId}>
-                <option value="">{agencyId ? "선택" : "대행사를 먼저 선택하세요"}</option>
-                {filteredAdvertisers.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </MF>
-            <MF label="캠페인명 *"><input value={campaignName} onChange={e => setCampaignName(e.target.value)} className={ic} placeholder="예) 2026 봄 브랜딩" /></MF>
-            <MF label="담당 운영자 *">
-              <select value={managerId} onChange={e => setManagerId(e.target.value)} className={ic}>
-                <option value="">선택</option>
-                {operators.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-            </MF>
-            <MF label="시작일 *"><input type="date"  value={startDate}        onChange={e => setStartDate(e.target.value)}        className={ic} /></MF>
-            <MF label="종료일 *"><input type="date"  value={endDate}          onChange={e => setEndDate(e.target.value)}          className={ic} /></MF>
-            <MF label="정산 월 *"><input type="month" value={settlementMonth} onChange={e => setSettlementMonth(e.target.value)} className={ic} /></MF>
-            <MF label="상태">
-              <select value={status} onChange={e => setStatus(e.target.value as "집행 중" | "종료")} className={ic}>
-                <option value="집행 중">집행 중</option>
-                <option value="종료">종료</option>
-              </select>
-            </MF>
-          {/* 메모 (전체 너비) */}
-          <div>
-            <MF label="특이사항 메모">
-              <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2}
-                className={`${ic} resize-none`} placeholder="캠페인 특이사항을 입력하세요 (선택)" />
-            </MF>
-          </div>
-          </div>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-900">{initial ? "캠페인 수정" : "캠페인 추가"}</h2>
 
-          {/* 매체 선택 */}
-          <div>
-            <p className="text-sm font-semibold text-gray-800 mb-2">매체 선택 *</p>
-            <div className="flex flex-wrap gap-2">
-              {AVAILABLE_MEDIA.map(media => {
-                const sel = mediaBudgets.some(mb => mb.media === media)
-                const col = MEDIA_COLORS[media] ?? { bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" }
-                return (
-                  <button key={media} type="button" onClick={() => toggleMedia(media)}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${sel ? `${col.bg} ${col.text} ${col.border}` : "bg-white border-gray-200 text-gray-400 hover:border-gray-300"}`}>
-                    {media}{sel && " ✓"}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 매체별 DMP / 비DMP 예산 설정 */}
-          {mediaBudgets.map(mb => {
-            const col = MEDIA_COLORS[mb.media] ?? { bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" }
-            const mt  = getMediaTotals(mb)
-            const mm  = MEDIA_MARKUP_RATE[mb.media] ?? 0
-            return (
-              <div key={mb.media} className="rounded-xl border border-gray-200 overflow-hidden">
-                <div className={`flex items-center gap-2 px-4 py-2.5 ${col.bg}`}>
-                  <span className={`text-sm font-bold ${col.text}`}>{mb.media}</span>
-                  {mm > 0 && (
-                    <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-600">
-                      운영수수료 {mm}%
-                    </span>
-                  )}
-                  <span className="ml-auto text-xs text-gray-500">부킹 금액 <strong>{fmt(mt.totalBudget)}</strong>원 · 세팅 금액 <strong>{fmt(mt.totalSettingCost)}</strong>원</span>
-                </div>
-                <div className="divide-y divide-gray-100">
-                  <TSection label="DMP 활용" isDmp={true} dmpRate={DMP_FEE_RATE} mediaMarkup={mm}
-                    targets={DMP_TARGETS as unknown as string[]} tb={mb.dmp}
-                    onToggle={t => toggleTarget(mb.media, "dmp", t)}
-                    onUpdate={(f, v) => updateTB(mb.media, "dmp", f, v)} />
-                  <TSection label="DMP 미활용" isDmp={false} dmpRate={0} mediaMarkup={mm}
-                    targets={NON_DMP_TARGETS as unknown as string[]} tb={mb.nonDmp}
-                    onToggle={t => toggleTarget(mb.media, "nonDmp", t)}
-                    onUpdate={(f, v) => updateTB(mb.media, "nonDmp", f, v)} />
-                </div>
-              </div>
-            )
-          })}
-
-          {mediaBudgets.length > 0 && (
-            <div className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 flex items-center justify-between">
-              <span className="text-xs text-gray-500 font-medium">전체 합계</span>
-              <div className="flex gap-6">
-                <div className="text-right"><p className="text-xs text-gray-400">부킹 금액</p><p className="text-sm font-semibold text-gray-800">{fmt(preview.budget)}원</p></div>
-                <div className="text-right"><p className="text-xs text-gray-400">세팅 금액</p><p className="text-sm font-semibold text-gray-800">{fmt(preview.sc)}원</p></div>
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-gray-100 bg-white px-6 py-4">
-          <button onClick={onClose}      className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-          <button onClick={handleSubmit} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700">저장</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── 타겟팅 섹션 ───────────────────────────────────────────
-function TSection({ label, isDmp, dmpRate, mediaMarkup, targets, tb, onToggle, onUpdate }: {
-  label: string; isDmp: boolean; dmpRate: number; mediaMarkup: number
-  targets: string[]; tb: TargetingBudget
-  onToggle: (t: string) => void
-  onUpdate: (f: keyof TargetingBudget, v: string | number) => void
-}) {
-  const totalMarkup = getTotalMarkup(mediaMarkup, dmpRate, tb.agencyFeeRate)
-  const sc          = calcSettingCost(tb.budget, totalMarkup)
-  const badge       = isDmp ? "bg-violet-50 border-violet-200 text-violet-700" : "bg-gray-50 border-gray-200 text-gray-500"
-  const btnSel      = isDmp ? "bg-violet-100 border-violet-300 text-violet-700" : "bg-gray-200 border-gray-400 text-gray-700"
-
-  return (
-    <div className="p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${badge}`}>{label}</span>
-        {mediaMarkup > 0 && (
-          <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-600">
-            운영수수료 {mediaMarkup}%
-          </span>
-        )}
-        {dmpRate > 0 && <span className="text-xs text-gray-400">DMP 수수료 {dmpRate}%</span>}
-        <span className="ml-auto text-xs text-gray-500">
-          {mediaMarkup > 0 && <span className="text-orange-500">운영 {mediaMarkup}%</span>}
-          {mediaMarkup > 0 && " + "}
-          {dmpRate > 0 && `DMP ${dmpRate}% + `}
-          대행 {tb.agencyFeeRate}% = <strong className="text-gray-700">{totalMarkup}%</strong>
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {targets.map(t => {
-          const sel = tb.targetings.includes(t)
-          return <button key={t} type="button" onClick={() => onToggle(t)}
-            className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${sel ? btnSel : "bg-white border-gray-200 text-gray-400 hover:border-gray-300"}`}>
-            {t}{sel && " ✓"}
-          </button>
-        })}
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        <MF label="부킹 금액 (원)"><input type="number" min={0} value={tb.budget || ""} onChange={e => onUpdate("budget", Number(e.target.value))} className={ic} placeholder="0" /></MF>
-        <MF label="소진 금액 (원)"><input type="number" min={0} value={tb.spend  || ""} onChange={e => onUpdate("spend",  Number(e.target.value))} className={ic} placeholder="0" /></MF>
-        <MF label="대행수수료 (%)"><input type="number" min={0} max={100} value={tb.agencyFeeRate || ""} onChange={e => onUpdate("agencyFeeRate", Number(e.target.value))} className={ic} placeholder="10" /></MF>
-      </div>
-      {tb.budget > 0 && (
-        <div className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-xs">
-          <span className="text-gray-400">세팅 금액</span>
-          <span className="font-semibold text-gray-800">{fmt(sc)}원</span>
-          <span className="text-gray-400">({fmt(tb.budget)} × {100 - totalMarkup}%)</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── 운영자 모달 ───────────────────────────────────────────
-function PersonModal({ title, initial, onSave, onClose }: {
-  title: string; initial: Operator | null
-  onSave: (op: Operator) => void; onClose: () => void
-}) {
-  const [name,  setName]  = useState(initial?.name  ?? "")
-  const [email, setEmail] = useState(initial?.email ?? "")
-  const [phone, setPhone] = useState(initial?.phone ?? "")
-  function handleSubmit() {
-    if (!name.trim()) { alert("이름을 입력해주세요."); return }
-    onSave({ id: initial?.id ?? Date.now().toString(), name: name.trim(), email: email.trim(), phone: phone.trim() })
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">✕</button>
-        </div>
-        <div className="px-6 py-5 space-y-4">
-          <MF label="이름 *"><input value={name}  onChange={e => setName(e.target.value)}  className={ic} placeholder="예) 김지훈" /></MF>
-          <MF label="이메일"><input type="email" value={email} onChange={e => setEmail(e.target.value)} className={ic} placeholder="example@company.com" /></MF>
-          <MF label="연락처"><input value={phone} onChange={e => setPhone(e.target.value)} className={ic} placeholder="010-0000-0000" /></MF>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-gray-100 px-6 py-4">
-          <button onClick={onClose}      className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-          <button onClick={handleSubmit} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700">저장</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── 대행사 모달 ───────────────────────────────────────────
-function AgencyModal({ initial, onSave, onClose }: {
-  initial: Agency | null; onSave: (a: Agency) => void; onClose: () => void
-}) {
-  const [name,        setName]        = useState(initial?.name        ?? "")
-  const [contactName, setContactName] = useState(initial?.contactName ?? "")
-  const [email,       setEmail]       = useState(initial?.email       ?? "")
-  const [phone,       setPhone]       = useState(initial?.phone       ?? "")
-  function handleSubmit() {
-    if (!name.trim()) { alert("대행사명을 입력해주세요."); return }
-    onSave({ id: initial?.id ?? Date.now().toString(), name: name.trim(), contactName: contactName.trim(), email: email.trim(), phone: phone.trim() })
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-base font-semibold text-gray-900">{initial ? "대행사 수정" : "대행사 추가"}</h2>
-          <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">✕</button>
-        </div>
-        <div className="px-6 py-5 space-y-4">
-          <MF label="대행사명 *"><input value={name}        onChange={e => setName(e.target.value)}        className={ic} placeholder="예) 모티브인텔리전스" /></MF>
-          <MF label="담당자명">  <input value={contactName} onChange={e => setContactName(e.target.value)} className={ic} placeholder="예) 박민준" /></MF>
-          <MF label="이메일">    <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={ic} placeholder="contact@agency.co.kr" /></MF>
-          <MF label="연락처">    <input value={phone} onChange={e => setPhone(e.target.value)} className={ic} placeholder="02-0000-0000" /></MF>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-gray-100 px-6 py-4">
-          <button onClick={onClose}      className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-          <button onClick={handleSubmit} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700">저장</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── 광고주 모달 ───────────────────────────────────────────
-function AdvertiserModal({ initial, agencies, onSave, onClose }: {
-  initial: Advertiser | null; agencies: Agency[]
-  onSave: (adv: Advertiser) => void; onClose: () => void
-}) {
-  const [name,     setName]     = useState(initial?.name     ?? "")
-  const [agencyId, setAgencyId] = useState(initial?.agencyId ?? "")
-  function handleSubmit() {
-    if (!name.trim()) { alert("광고주명을 입력해주세요."); return }
-    if (!agencyId)    { alert("소속 대행사를 선택해주세요."); return }
-    onSave({ id: initial?.id ?? Date.now().toString(), name: name.trim(), agencyId })
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-base font-semibold text-gray-900">{initial ? "광고주 수정" : "광고주 추가"}</h2>
-          <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">✕</button>
-        </div>
-        <div className="px-6 py-5 space-y-4">
-          <MF label="광고주명 *"><input value={name} onChange={e => setName(e.target.value)} className={ic} placeholder="예) 트립앤샵" /></MF>
-          <MF label="소속 대행사 *">
-            <select value={agencyId} onChange={e => setAgencyId(e.target.value)} className={ic}>
-              <option value="">선택</option>
+        <div className="grid grid-cols-2 gap-4">
+          <MF label="대행사 *">
+            <select value={agencyId} onChange={e => handleAgencyChange(e.target.value)} className={inputCls}>
+              <option value="">선택하세요</option>
               {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </MF>
+          <MF label="광고주 *">
+            <select value={advertiserId} onChange={e => setAdvertiserId(e.target.value)} className={inputCls}>
+              <option value="">선택하세요</option>
+              {filteredAdvertisers.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </MF>
         </div>
-        <div className="flex justify-end gap-2 border-t border-gray-100 px-6 py-4">
-          <button onClick={onClose}      className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-          <button onClick={handleSubmit} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700">저장</button>
+
+        <MF label="캠페인명 *">
+          <input type="text" value={campaignName} onChange={e => setCampaignName(e.target.value)} className={inputCls} />
+        </MF>
+
+        <div className="grid grid-cols-2 gap-4">
+          <MF label="담당자 *">
+            <select value={managerId} onChange={e => setManagerId(e.target.value)} className={inputCls}>
+              <option value="">선택하세요</option>
+              {operators.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </MF>
+          <MF label="상태">
+            <select value={status} onChange={e => setStatus(e.target.value as any)} className={inputCls}>
+              <option value="집행 중">집행 중</option>
+              <option value="종료">종료</option>
+            </select>
+          </MF>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <MF label="시작일 *">
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputCls} />
+          </MF>
+          <MF label="종료일 *">
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={inputCls} />
+          </MF>
+          <MF label="정산월 *">
+            <input type="month" value={settlementMonth} onChange={e => setSettlementMonth(e.target.value)} className={inputCls} />
+          </MF>
+        </div>
+
+        <MF label="매체 선택">
+          <div className="flex flex-wrap gap-2">
+            {AVAILABLE_MEDIA.map(m => (
+              <button key={m} onClick={() => toggleMedia(m)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${mediaBudgets.some(mb => mb.media === m) ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                {m}
+              </button>
+            ))}
+          </div>
+        </MF>
+
+        {mediaBudgets.map(mb => (
+          <div key={mb.media} className="rounded-lg border border-gray-200 p-3 space-y-2">
+            <h3 className="text-sm font-semibold text-gray-900">{mb.media}</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <MF label="DMP 예산">
+                <input type="number" value={mb.dmp.budget} onChange={e => updateTB(mb.media, "dmp", "budget", e.target.value)} className={inputCls} />
+              </MF>
+              <MF label="DMP 집행">
+                <input type="number" value={mb.dmp.spend} onChange={e => updateTB(mb.media, "dmp", "spend", e.target.value)} className={inputCls} />
+              </MF>
+              <MF label="비DMP 예산">
+                <input type="number" value={mb.nonDmp.budget} onChange={e => updateTB(mb.media, "nonDmp", "budget", e.target.value)} className={inputCls} />
+              </MF>
+              <MF label="비DMP 집행">
+                <input type="number" value={mb.nonDmp.spend} onChange={e => updateTB(mb.media, "nonDmp", "spend", e.target.value)} className={inputCls} />
+              </MF>
+            </div>
+          </div>
+        ))}
+
+        <MF label="특이사항">
+          <textarea value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} rows={3} />
+        </MF>
+
+        <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">
+          <button onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
+          <button onClick={handleSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ── 메모 빠른 편집 모달 ───────────────────────────────────
-function MemoModal({ campaign, onSave, onClose }: {
-  campaign: Campaign; onSave: (memo: string) => void; onClose: () => void
-}) {
-  const [memo, setMemo] = useState(campaign.memo ?? "")
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">특이사항 메모</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{campaign.campaignName}</p>
-          </div>
-          <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">✕</button>
-        </div>
-        <div className="px-6 py-5">
-          <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={5}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
-            placeholder="캠페인 특이사항, 주의사항 등을 입력하세요" />
-        </div>
-        <div className="flex justify-between gap-2 border-t border-gray-100 px-6 py-4">
-          <button onClick={() => onSave("")} className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-400 hover:bg-red-50 hover:text-red-400 hover:border-red-200">메모 삭제</button>
-          <div className="flex gap-2">
-            <button onClick={onClose}           className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-            <button onClick={() => onSave(memo)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700">저장</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── 매체 키를 라벨로 변환 ─────────────────────────────────
-function getMediaLabelForKey(key: MediaType): string | null {
-  const labels: Record<MediaType, string> = {
-    google: "Google",
-    naver: "네이버 GFA",
-    kakao: "카카오모먼트",
-    meta: "META",
-  }
-  return labels[key] ?? null
-}
-
-// ── 캠페인 리포트 드로어 ───────────────────────────────────
-function CampaignReportDrawer({ campaignId, campaigns, advertisers, onClose }: {
-  campaignId: string
-  campaigns: Campaign[]
-  advertisers: Advertiser[]
+function PersonModal({ title, initial, onSave, onClose }: {
+  title: string
+  initial: Operator | null
+  onSave: (op: Operator) => void
   onClose: () => void
 }) {
-  const { reports } = useReports()
-  const campaign = campaigns.find(c => c.id === campaignId)
-  if (!campaign) return null
+  const [name, setName] = useState(initial?.name ?? "")
+  const [email, setEmail] = useState(initial?.email ?? "")
+  const [phone, setPhone] = useState(initial?.phone ?? "")
 
-  const advertiser = advertisers.find(a => a.id === campaign.advertiserId)
-  const advertiserName = advertiser?.name ?? "-"
-
-  // 리포트에서 수동으로 매체별 KPI 계산
-  const mediaKpis: Record<string, { impressions: number; clicks: number; spend: number }> = {}
-  let totalImpressions = 0
-  let totalClicks = 0
-  let totalSpend = 0
-  let minDate: string | null = null
-  let maxDate: string | null = null
-
-  const hasCsvNames = (campaign.csvNames?.length ?? 0) > 0
-  const csvNameSet = new Set(campaign.csvNames ?? [])
-
-  // reports 순회하며 데이터 집계
-  for (const report of reports) {
-    // report가 csvNames 모드로 필터되어야 함
-    if (hasCsvNames) {
-      const hasMatch = Object.values(report.rowsByMedia).some(rows =>
-        rows?.some(r => r.campaignName && csvNameSet.has(r.campaignName))
-      )
-      if (!hasMatch) continue
+  function handleSave() {
+    if (!name.trim() || !email.trim() || !phone.trim()) {
+      alert("모든 항목을 입력하세요.")
+      return
     }
-
-    for (const [mediaKey, rows] of Object.entries(report.rowsByMedia)) {
-      if (!rows || rows.length === 0) continue
-
-      // 행 필터: 날짜 범위 + csvNames 체크
-      const filteredRows = rows.filter(r => {
-        if (r.date < campaign.startDate || r.date > campaign.endDate) return false
-        if (hasCsvNames && r.campaignName && !csvNameSet.has(r.campaignName)) return false
-        return true
-      })
-      if (filteredRows.length === 0) continue
-
-      // 매체 라벨 매핑
-      const mediaLabel = getMediaLabelForKey(mediaKey as MediaType)
-      if (!mediaLabel) continue
-      const campaignHasMedia = campaign.mediaBudgets.some(mb => mb.media === mediaLabel)
-      if (!campaignHasMedia) continue
-
-      if (!mediaKpis[mediaLabel]) {
-        mediaKpis[mediaLabel] = { impressions: 0, clicks: 0, spend: 0 }
-      }
-
-      for (const row of filteredRows) {
-        mediaKpis[mediaLabel].impressions += row.impressions ?? 0
-        mediaKpis[mediaLabel].clicks += row.clicks ?? 0
-        mediaKpis[mediaLabel].spend += row.netAmount ?? row.netCost ?? 0
-        totalImpressions += row.impressions ?? 0
-        totalClicks += row.clicks ?? 0
-        totalSpend += row.netAmount ?? row.netCost ?? 0
-        if (!minDate || row.date < minDate) minDate = row.date
-        if (!maxDate || row.date > maxDate) maxDate = row.date
-      }
-    }
+    onSave({ id: initial?.id ?? Date.now().toString(), name, email, phone } as Operator)
   }
 
-  const ctr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : "0.00"
-
   return (
-    <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose}>
-      <div className="fixed right-0 top-0 h-full w-[560px] bg-white shadow-2xl flex flex-col animate-in slide-in-from-right-full duration-300"
-        onClick={e => e.stopPropagation()}>
-        {/* 헤더 */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 shrink-0">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">{campaign.campaignName}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{advertiserName}</p>
-          </div>
-          <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">✕</button>
-        </div>
-
-        {/* 스크롤 가능 콘텐츠 */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {/* 날짜 범위 */}
-          {minDate && maxDate && (
-            <div className="text-xs text-gray-500">
-              <span className="font-medium">{minDate}</span>
-              {" ~ "}
-              <span className="font-medium">{maxDate}</span>
-            </div>
-          )}
-
-          {/* KPI 요약 카드 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
-              <p className="text-xs text-gray-500">노출수</p>
-              <p className="text-sm font-semibold text-gray-900 mt-1">{fmt(totalImpressions)}</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
-              <p className="text-xs text-gray-500">클릭수</p>
-              <p className="text-sm font-semibold text-gray-900 mt-1">{fmt(totalClicks)}</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
-              <p className="text-xs text-gray-500">CTR</p>
-              <p className="text-sm font-semibold text-gray-900 mt-1">{ctr}%</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
-              <p className="text-xs text-gray-500">집행금액</p>
-              <p className="text-sm font-semibold text-gray-900 mt-1">{fmt(totalSpend)}<span className="text-xs font-normal text-gray-500 ml-0.5">원</span></p>
-            </div>
-          </div>
-
-          {/* 매체별 상세 테이블 */}
-          {Object.keys(mediaKpis).length > 0 && (
-            <div className="rounded-lg border border-gray-200 overflow-hidden">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-3 py-2 text-left text-gray-600 font-medium">매체</th>
-                    <th className="px-3 py-2 text-right text-gray-600 font-medium">노출</th>
-                    <th className="px-3 py-2 text-right text-gray-600 font-medium">클릭</th>
-                    <th className="px-3 py-2 text-right text-gray-600 font-medium">CTR</th>
-                    <th className="px-3 py-2 text-right text-gray-600 font-medium">집행금액</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {Object.entries(mediaKpis).map(([mediaLabel, data]) => {
-                    const mediaCtr = data.impressions > 0 ? ((data.clicks / data.impressions) * 100).toFixed(2) : "0.00"
-                    return (
-                      <tr key={mediaLabel} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-gray-900 font-medium">{mediaLabel}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{fmt(data.impressions)}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{fmt(data.clicks)}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{mediaCtr}%</td>
-                        <td className="px-3 py-2 text-right text-gray-700 font-semibold">{fmt(data.spend)}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* 데이터 없음 상태 */}
-          {Object.keys(mediaKpis).length === 0 && (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-center">
-              <p className="text-sm text-gray-500">해당하는 리포트 데이터가 없습니다</p>
-              <p className="text-xs text-gray-400 mt-1">캠페인 기간 내 데이터를 입력해주세요</p>
-            </div>
-          )}
-        </div>
-
-        {/* 푸터 */}
-        <div className="border-t border-gray-200 px-6 py-3 shrink-0">
-          <button className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
-            HTML 리포트 다운로드
-          </button>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-lg max-w-sm w-full p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-900">{initial ? `${title} 수정` : `${title} 추가`}</h2>
+        <MF label={`${title}명 *`}>
+          <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputCls} />
+        </MF>
+        <MF label="이메일 *">
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} />
+        </MF>
+        <MF label="전화 *">
+          <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} />
+        </MF>
+        <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">
+          <button onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
+          <button onClick={handleSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ── 공통 스타일 헬퍼 ─────────────────────────────────────
+function AdvertiserModal({ initial, agencies, onSave, onClose }: {
+  initial: Advertiser | null
+  agencies: Agency[]
+  onSave: (adv: Advertiser) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState(initial?.name ?? "")
+  const [agencyId, setAgencyId] = useState(initial?.agencyId ?? "")
+
+  function handleSave() {
+    if (!name.trim() || !agencyId) {
+      alert("모든 항목을 입력하세요.")
+      return
+    }
+    onSave({ id: initial?.id ?? Date.now().toString(), name, agencyId } as Advertiser)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-lg max-w-sm w-full p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-900">{initial ? "광고주 수정" : "광고주 추가"}</h2>
+        <MF label="광고주명 *">
+          <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputCls} />
+        </MF>
+        <MF label="대행사 *">
+          <select value={agencyId} onChange={e => setAgencyId(e.target.value)} className={inputCls}>
+            <option value="">선택하세요</option>
+            {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </MF>
+        <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">
+          <button onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
+          <button onClick={handleSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AgencyModal({ initial, onSave, onClose }: {
+  initial: Agency | null
+  onSave: (ag: Agency) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState(initial?.name ?? "")
+  const [contactName, setContactName] = useState(initial?.contactName ?? "")
+  const [email, setEmail] = useState(initial?.email ?? "")
+  const [phone, setPhone] = useState(initial?.phone ?? "")
+
+  function handleSave() {
+    if (!name.trim() || !contactName.trim()) {
+      alert("대행사명과 담당자명은 필수입니다.")
+      return
+    }
+    onSave({
+      id: initial?.id ?? Date.now().toString(),
+      name, contactName, email, phone,
+      corporateName: initial?.corporateName,
+      businessNumber: initial?.businessNumber,
+      representative: initial?.representative,
+      address: initial?.address,
+      businessType: initial?.businessType,
+      businessItem: initial?.businessItem,
+      defaultMarkupRate: initial?.defaultMarkupRate,
+      registrationPdfBase64: initial?.registrationPdfBase64,
+      registrationPdfName: initial?.registrationPdfName,
+      createdAt: initial?.createdAt,
+      updatedAt: new Date().toISOString(),
+    } as Agency)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-lg max-w-sm w-full p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-900">{initial ? "대행사 수정" : "대행사 추가"}</h2>
+        <MF label="대행사명 *">
+          <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputCls} />
+        </MF>
+        <MF label="담당자명 *">
+          <input type="text" value={contactName} onChange={e => setContactName(e.target.value)} className={inputCls} />
+        </MF>
+        <MF label="이메일">
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} />
+        </MF>
+        <MF label="전화">
+          <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} />
+        </MF>
+        <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">
+          <button onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
+          <button onClick={handleSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SCard({ label, value, sub, color }: {
+  label: string; value: string; sub?: string; color?: "blue" | "gray"
+}) {
+  const cls = color === "blue" ? "text-blue-600" : color === "gray" ? "text-gray-400" : "text-gray-900"
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+      <p className="text-xs text-gray-500 font-medium">{label}</p>
+      <p className={`text-lg font-semibold ${cls} mt-1`}>{value}{sub && <span className="text-sm ml-1">{sub}</span>}</p>
+    </div>
+  )
+}
+
 function MF({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <label className="block text-xs font-semibold text-gray-700 mb-1">{label}</label>
       {children}
     </div>
   )
 }
-const ic         = "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-const selectCls  = "rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-const btnPrimary = "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"

@@ -4,20 +4,23 @@ import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { useCtGroups } from "@/lib/hooks/useCtGroups"
 import { useReports } from "@/lib/hooks/useReports"
+import { useMasterData } from "@/lib/hooks/useMasterData"
 import type { CtPlusGroup, CtGroupMediaMarkup } from "@/lib/ctGroupTypes"
 import type { SavedReport } from "@/lib/hooks/useReports"
+import type { Campaign } from "@/lib/campaignTypes"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 
 const MEDIA_TYPES: MediaType[] = ['google', 'naver', 'kakao', 'meta']
 
-type ManageTab = 'groups' | 'upload'
+export type ManageTab = 'groups' | 'upload'
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 
 export default function CtPlusManagePage() {
   const { groups, loading, addGroup, updateGroup, deleteGroup, newGroup } = useCtGroups()
   const { reports, deleteReport } = useReports()
+  const { campaigns, saveCampaigns } = useMasterData()
 
   // ── 탭 상태 ────────────────────────────────────────────────
   const [manageTab, setManageTab] = useState<ManageTab>('groups')
@@ -173,11 +176,40 @@ export default function CtPlusManagePage() {
     }
   }
 
+  // ── 캠페인 연결 저장 ────────────────────────────────────────
+  async function handleConnectSave() {
+    if (!selectedConnectCampaignId || selectedCampaigns.size === 0) return
+
+    const targetCampaign = campaigns.find(c => c.id === selectedConnectCampaignId)
+    if (!targetCampaign) return
+
+    const selectedNames = Array.from(selectedCampaigns)
+    const existingNames = targetCampaign.csvNames ?? []
+
+    // 중복 제거하면서 병합
+    const merged = Array.from(new Set([...existingNames, ...selectedNames]))
+
+    // 업데이트된 campaigns 배열 생성
+    const updated = campaigns.map(c =>
+      c.id === selectedConnectCampaignId
+        ? { ...c, csvNames: merged }
+        : c
+    )
+
+    await saveCampaigns(updated)
+    setConnectSaved(true)
+    setTimeout(() => setConnectSaved(false), 3000)
+    setSelectedCampaigns(new Set())
+    setSelectedConnectCampaignId('')
+  }
+
   // ── 데이터 업로드 탭 상태 ────────────────────────────────────
   const [uploadFilterStart, setUploadFilterStart] = useState('')
   const [uploadFilterEnd, setUploadFilterEnd] = useState('')
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
   const [selectedMedias, setSelectedMedias] = useState<Set<string>>(new Set())
+  const [selectedConnectCampaignId, setSelectedConnectCampaignId] = useState<string>('')
+  const [connectSaved, setConnectSaved] = useState(false)
 
   // ── 날짜 필터링된 리포트 (데이터 업로드 탭용) ────────────────
   const filteredUploadReports = useMemo(() => {
@@ -640,6 +672,75 @@ export default function CtPlusManagePage() {
                 {filteredUploadReports.length}건 / 전체 {reports.length}건
               </span>
             </div>
+          </div>
+
+          {/* 캠페인 연결 패널 */}
+          <div className="rounded-xl border border-blue-100 bg-blue-50/30 px-5 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-700">캠페인 연결</p>
+              <div className="flex items-center gap-2">
+                {connectSaved && <span className="text-xs font-medium text-green-600">연결이 저장됐습니다 ✓</span>}
+                <button
+                  onClick={handleConnectSave}
+                  disabled={selectedCampaigns.size === 0 || !selectedConnectCampaignId}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  연결 저장
+                </button>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-gray-600 mb-3">선택한 캠페인명을 아래 캠페인과 연결합니다.</p>
+
+            {selectedCampaigns.size === 0 ? (
+              <p className="text-[11px] text-gray-400 py-2">위 테이블에서 캠페인명을 선택하세요</p>
+            ) : (
+              <>
+                <div className="mb-3">
+                  <label className="block text-[11px] text-gray-600 mb-1.5">캠페인 선택:</label>
+                  <select
+                    value={selectedConnectCampaignId}
+                    onChange={e => setSelectedConnectCampaignId(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="">캠페인을 선택하세요</option>
+                    {campaigns.map(c => (
+                      <option key={c.id} value={c.id}>{c.campaignName}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedConnectCampaignId && (() => {
+                  const selectedCampaign = campaigns.find(c => c.id === selectedConnectCampaignId)
+                  return selectedCampaign ? (
+                    <>
+                      {(selectedCampaign.csvNames ?? []).length > 0 && (
+                        <div className="mb-3">
+                          <p className="text-[11px] text-gray-600 mb-1.5">현재 연결:</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(selectedCampaign.csvNames ?? []).map(name => (
+                              <span key={name} className="rounded-full bg-green-100 border border-green-300 px-2.5 py-0.5 text-[11px] text-green-700">
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="mb-3">
+                        <p className="text-[11px] text-gray-600 mb-1.5">추가될 캠페인명 ({selectedCampaigns.size}개):</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {Array.from(selectedCampaigns).map(name => (
+                            <span key={name} className="rounded-full bg-blue-100 border border-blue-300 px-2.5 py-0.5 text-[11px] text-blue-700">
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  ) : null
+                })()}
+              </>
+            )}
           </div>
 
           {/* 캠페인명 테이블 */}
