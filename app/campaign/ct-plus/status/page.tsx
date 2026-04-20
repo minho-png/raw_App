@@ -373,95 +373,122 @@ function CampaignStatusPage() {
                 className="text-xs text-blue-600 hover:text-blue-700 font-medium">초기화</button>}
             </div>
 
-            {/* 캠페인 목록 */}
-            <div className="space-y-3">
+            {/* 캠페인 목록 — 테이블 */}
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
               {filtered.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 py-12 text-center">
+                <div className="py-12 text-center">
                   <p className="text-sm text-gray-500">캠페인이 없습니다.</p>
                 </div>
               ) : (
-                filtered.map(c => {
-                  const totals    = getCampaignTotals(c)
-                  const dday      = getDday(c.endDate)
-                  const progress  = getCampaignProgress(c.startDate, c.endDate)
-                  const isLagging = c.status === "집행 중" && (progress - totals.spendRate) >= 15
-                  const expanded  = expandedIds.has(c.id)
-                  const sc        = spendRateStyle(totals.spendRate)
-                  const reportCount = reports.filter(r => c.csvNames?.includes(r.campaignName ?? '')).length
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-500">
+                        <th className="px-4 py-3 text-left">캠페인명</th>
+                        <th className="px-4 py-3 text-left">광고주</th>
+                        <th className="px-4 py-3 text-left">대행사</th>
+                        <th className="px-4 py-3 text-left">담당자</th>
+                        <th className="px-4 py-3 text-left">기간</th>
+                        <th className="px-4 py-3 text-center">진행률</th>
+                        <th className="px-4 py-3 text-center">소진율</th>
+                        <th className="px-4 py-3 text-center">연결</th>
+                        <th className="px-4 py-3 text-center">관리</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filtered.map(c => {
+                        const totals   = getCampaignTotals(c)
+                        const dday     = getDday(c.endDate)
+                        const progress = getCampaignProgress(c.startDate, c.endDate)
+                        const isLagging = c.status === "집행 중" && (progress - totals.spendRate) >= 15
+                        const sc       = spendRateStyle(totals.spendRate)
+                        const csvCount = c.csvNames?.length ?? 0
 
-                  return (
-                    <div key={c.id} className={`rounded-xl border transition-colors ${isLagging ? "border-yellow-300 bg-yellow-50" : "border-gray-200 bg-white"}`}>
-                      <button onClick={() => setExpandedIds(prev => { const n = new Set(prev); if (n.has(c.id)) { n.delete(c.id) } else { n.add(c.id) }; return n })}
-                        className="flex w-full items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <svg className={`h-4 w-4 text-gray-400 transition-transform flex-shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <h3 className="text-sm font-semibold text-gray-900 truncate">{c.campaignName}</h3>
-                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${c.status === "집행 중" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"}`}>
-                                {c.status}
-                              </span>
-                              {reportCount > 0 && (
-                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700">
-                                  리포트 {reportCount}
+                        return (
+                          <tr key={c.id} className={`hover:bg-gray-50 transition-colors ${isLagging ? "bg-yellow-50/60" : ""}`}>
+                            {/* 캠페인명 + 상태 */}
+                            <td className="px-4 py-3 max-w-[200px]">
+                              <div className="font-medium text-gray-900 truncate" title={c.campaignName}>{c.campaignName}</div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${c.status === "집행 중" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
+                                  {c.status}
                                 </span>
+                                {dday.label && (
+                                  <span className={`text-[10px] font-medium ${dday.urgent ? "text-red-600" : dday.expired ? "text-gray-400" : "text-gray-500"}`}>
+                                    {dday.label}
+                                  </span>
+                                )}
+                                {isLagging && <span className="text-[10px] font-semibold text-yellow-700">⚠ 지연</span>}
+                              </div>
+                            </td>
+                            {/* 광고주 */}
+                            <td className="px-4 py-3 text-xs text-gray-600 max-w-[120px] truncate" title={advName(c.advertiserId)}>
+                              {advName(c.advertiserId)}
+                            </td>
+                            {/* 대행사 */}
+                            <td className="px-4 py-3 text-xs text-gray-600 max-w-[120px] truncate" title={agName(c.agencyId)}>
+                              {agName(c.agencyId)}
+                            </td>
+                            {/* 담당자 */}
+                            <td className="px-4 py-3 text-xs text-gray-500">{opName(c.managerId)}</td>
+                            {/* 기간 */}
+                            <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap tabular-nums">
+                              <div>{c.startDate.slice(2)}</div>
+                              <div>{c.endDate.slice(2)}</div>
+                            </td>
+                            {/* 진행률 */}
+                            <td className="px-4 py-3 text-center">
+                              <div className="text-xs font-semibold text-blue-600">{progress}%</div>
+                              <div className="mt-1 h-1.5 w-16 mx-auto rounded-full bg-gray-200">
+                                <div className="h-full rounded-full bg-blue-400 transition-all" style={{ width: `${Math.min(progress, 100)}%` }} />
+                              </div>
+                            </td>
+                            {/* 소진율 */}
+                            <td className="px-4 py-3 text-center">
+                              <div className={`text-xs font-semibold ${sc.text}`}>{totals.spendRate}%</div>
+                              <div className="mt-1 h-1.5 w-16 mx-auto rounded-full bg-gray-200">
+                                <div className={`h-full rounded-full transition-all ${sc.bar}`} style={{ width: `${Math.min(totals.spendRate, 100)}%` }} />
+                              </div>
+                            </td>
+                            {/* 연결 데이터 */}
+                            <td className="px-4 py-3 text-center">
+                              {csvCount > 0 ? (
+                                <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">
+                                  DB {csvCount}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-gray-400">—</span>
                               )}
-                            </div>
-                            <p className="text-xs text-gray-500 mt-0.5">{advName(c.advertiserId)} · {agName(c.agencyId)} · {opName(c.managerId)}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4 flex-shrink-0 text-right">
-                          <div className="text-xs">
-                            <div className="text-gray-900 font-semibold">{progress}% / {totals.spendRate}%</div>
-                            <div className="text-gray-500 text-xs">{dday.label}</div>
-                          </div>
-                          <div className={`text-xs ${sc.text}`}>
-                            <div className="font-semibold">{totals.spendRate}%</div>
-                            <div className="text-gray-500">소진율</div>
-                          </div>
-                        </div>
-                      </button>
-
-                      {expanded && (
-                        <div className="border-t border-gray-200 px-4 py-3 space-y-3 bg-gray-50">
-                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                            <div><span className="text-xs text-gray-500">부킹 금액</span><div className="text-sm font-semibold text-gray-900">{fmt(totals.totalBudget)}원</div></div>
-                            <div><span className="text-xs text-gray-500">세팅 금액</span><div className="text-sm font-semibold text-gray-900">{fmt(totals.totalSettingCost)}원</div></div>
-                            <div><span className="text-xs text-gray-500">집행액</span><div className="text-sm font-semibold text-gray-900">{fmt(totals.totalSpend)}원</div></div>
-                            <div><span className="text-xs text-gray-500">미소진</span><div className="text-sm font-semibold text-gray-900">{fmt(totals.totalSettingCost - totals.totalSpend)}원</div></div>
-                          </div>
-
-                          {/* 매체별 상세 */}
-                          <div className="space-y-1">
-                            {c.mediaBudgets.map((mb, idx) => {
-                              const mm  = MEDIA_MARKUP_RATE[mb.media] ?? 0
-                              const mt  = getMediaTotals(mb)
-                              const col = MEDIA_COLORS[mb.media] ?? { bg: "bg-gray-100", text: "text-gray-700", border: "border-gray-200" }
-                              return (
-                                <div key={idx} className={`rounded-lg border ${col.border} ${col.bg} px-3 py-2 text-xs`}>
-                                  <div className={`font-semibold ${col.text} mb-1`}>{mb.media}</div>
-                                  <div className="grid grid-cols-3 gap-2 text-gray-700">
-                                    <div><span className="text-gray-500">DMP</span> {fmt(mb.dmp.budget)} / {fmt(mb.dmp.spend)} ({calcSpendRate(mb.dmp.spend, calcSettingCost(mb.dmp.budget, getTotalMarkup(mm, DMP_FEE_RATE, mb.dmp.agencyFeeRate)))}%)</div>
-                                    <div><span className="text-gray-500">비DMP</span> {fmt(mb.nonDmp.budget)} / {fmt(mb.nonDmp.spend)} ({calcSpendRate(mb.nonDmp.spend, calcSettingCost(mb.nonDmp.budget, getTotalMarkup(mm, 0, mb.nonDmp.agencyFeeRate)))}%)</div>
-                                    <div><span className="text-gray-500">소계</span> {fmt(mt.totalBudget)} / {fmt(mt.totalSpend)} ({mt.spendRate}%)</div>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-
-                          <div className="flex gap-2 pt-2">
-                            <button onClick={() => { setEditTarget(c); setModalOpen(true) }} className="flex-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors">수정</button>
-                            <button onClick={() => handleStatusToggle(c.id)} className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">{c.status === "집행 중" ? "종료" : "재개"}</button>
-                            <button onClick={() => handleDelete(c.id)} className="flex-1 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors">삭제</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })
+                            </td>
+                            {/* 관리 버튼 */}
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => { setEditTarget(c); setModalOpen(true) }}
+                                  className="rounded-md border border-blue-300 bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                                >
+                                  수정
+                                </button>
+                                <button
+                                  onClick={() => handleStatusToggle(c.id)}
+                                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                                >
+                                  {c.status === "집행 중" ? "종료" : "재개"}
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(c.id)}
+                                  className="rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-100 transition-colors"
+                                >
+                                  삭제
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </>
@@ -545,7 +572,7 @@ function CampaignStatusPage() {
       </main>
 
       {/* 모달들 */}
-      {modalOpen && <CampaignModal initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers} onSave={(c) => {
+      {modalOpen && <CampaignModal initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers} reports={reports} onSave={(c) => {
         if (editTarget) {
           saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))
         } else {
@@ -820,11 +847,12 @@ function ConfirmModal({ title, message, onConfirm, onCancel }: {
   )
 }
 
-function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose }: {
+function CampaignModal({ initial, operators, agencies, advertisers, reports, onSave, onClose }: {
   initial: Campaign | null
   operators: Operator[]
   agencies: Agency[]
   advertisers: Advertiser[]
+  reports: import("@/lib/hooks/useReports").SavedReport[]
   onSave: (c: Campaign) => void
   onClose: () => void
 }) {
@@ -838,6 +866,18 @@ function CampaignModal({ initial, operators, agencies, advertisers, onSave, onCl
   const [status,          setStatus]          = useState<"집행 중" | "종료">(initial?.status ?? "집행 중")
   const [mediaBudgets,    setMediaBudgets]    = useState<MediaBudget[]>(initial?.mediaBudgets ?? [])
   const [memo,            setMemo]            = useState(initial?.memo ?? "")
+  const [csvNames,        setCsvNames]        = useState<string[]>(initial?.csvNames ?? [])
+
+  const allReportCampaignNames = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of reports) {
+      if (r.campaignName) set.add(r.campaignName)
+      for (const rows of Object.values(r.rowsByMedia ?? {})) {
+        rows?.forEach((row: { campaignName?: string }) => { if (row.campaignName) set.add(row.campaignName) })
+      }
+    }
+    return Array.from(set).sort()
+  }, [reports])
 
   const filteredAdvertisers = agencyId ? advertisers.filter(a => a.agencyId === agencyId) : advertisers
 
@@ -875,6 +915,7 @@ function CampaignModal({ initial, operators, agencies, advertisers, onSave, onCl
     onSave({
       id: initial?.id ?? Date.now().toString(),
       campaignName, agencyId, advertiserId, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo,
+      csvNames,
       createdAt: initial?.createdAt ?? new Date().toISOString(),
     } as Campaign)
   }
@@ -960,6 +1001,36 @@ function CampaignModal({ initial, operators, agencies, advertisers, onSave, onCl
             </div>
           </div>
         ))}
+
+        {/* DB 데이터 연결 */}
+        {allReportCampaignNames.length > 0 && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2">DB 데이터 연결</label>
+            <p className="text-[11px] text-gray-500 mb-2">업로드된 데이터 중 이 캠페인에 해당하는 항목을 선택하세요.</p>
+            <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2 space-y-1">
+              {allReportCampaignNames.map(name => {
+                const checked = csvNames.includes(name)
+                return (
+                  <label key={name} className={`flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors ${checked ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={e => {
+                        if (e.target.checked) setCsvNames(prev => [...prev, name])
+                        else setCsvNames(prev => prev.filter(n => n !== name))
+                      }}
+                      className="rounded"
+                    />
+                    <span className={`text-xs ${checked ? "text-blue-700 font-medium" : "text-gray-600"}`}>{name}</span>
+                  </label>
+                )
+              })}
+            </div>
+            {csvNames.length > 0 && (
+              <p className="mt-1.5 text-[11px] text-blue-600">{csvNames.length}개 선택됨</p>
+            )}
+          </div>
+        )}
 
         <MF label="특이사항">
           <textarea value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} rows={3} />
@@ -1130,3 +1201,4 @@ function MF({ label, children }: { label: string; children: React.ReactNode }) {
     </div>
   )
 }
+  

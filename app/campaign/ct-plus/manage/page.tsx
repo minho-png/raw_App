@@ -176,40 +176,9 @@ export default function CtPlusManagePage() {
     }
   }
 
-  // ── 캠페인 연결 저장 ────────────────────────────────────────
-  async function handleConnectSave() {
-    if (!selectedConnectCampaignId || selectedCampaigns.size === 0) return
-
-    const targetCampaign = campaigns.find(c => c.id === selectedConnectCampaignId)
-    if (!targetCampaign) return
-
-    const selectedNames = Array.from(selectedCampaigns)
-    const existingNames = targetCampaign.csvNames ?? []
-
-    // 중복 제거하면서 병합
-    const merged = Array.from(new Set([...existingNames, ...selectedNames]))
-
-    // 업데이트된 campaigns 배열 생성
-    const updated = campaigns.map(c =>
-      c.id === selectedConnectCampaignId
-        ? { ...c, csvNames: merged }
-        : c
-    )
-
-    await saveCampaigns(updated)
-    setConnectSaved(true)
-    setTimeout(() => setConnectSaved(false), 3000)
-    setSelectedCampaigns(new Set())
-    setSelectedConnectCampaignId('')
-  }
-
   // ── 데이터 업로드 탭 상태 ────────────────────────────────────
   const [uploadFilterStart, setUploadFilterStart] = useState('')
   const [uploadFilterEnd, setUploadFilterEnd] = useState('')
-  const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
-  const [selectedMedias, setSelectedMedias] = useState<Set<string>>(new Set())
-  const [selectedConnectCampaignId, setSelectedConnectCampaignId] = useState<string>('')
-  const [connectSaved, setConnectSaved] = useState(false)
 
   // ── 날짜 필터링된 리포트 (데이터 업로드 탭용) ────────────────
   const filteredUploadReports = useMemo(() => {
@@ -236,52 +205,6 @@ export default function CtPlusManagePage() {
       return true
     })
   }, [reports, uploadFilterStart, uploadFilterEnd])
-
-  // ── 캠페인명 테이블 데이터 ────────────────────────────────────
-  const campaignTableRows = useMemo(() => {
-    type Entry = { mediaTypes: Set<MediaType>; dateMin: string; dateMax: string; rowCount: number }
-    const map = new Map<string, Entry>()
-    for (const r of filteredUploadReports) {
-      for (const mt of r.mediaTypes as MediaType[]) {
-        const rows = r.rowsByMedia[mt]
-        if (!rows) continue
-        for (const row of rows) {
-          if (!row.campaignName) continue
-          const e = map.get(row.campaignName) ?? { mediaTypes: new Set(), dateMin: row.date, dateMax: row.date, rowCount: 0 }
-          e.mediaTypes.add(mt)
-          if (row.date < e.dateMin) e.dateMin = row.date
-          if (row.date > e.dateMax) e.dateMax = row.date
-          e.rowCount++
-          map.set(row.campaignName, e)
-        }
-      }
-    }
-    // chunked 리포트의 campaignName 메타도 추가
-    for (const r of filteredUploadReports) {
-      if (!r.chunked || !r.campaignName) continue
-      if (!map.has(r.campaignName)) {
-        map.set(r.campaignName, { mediaTypes: new Set(r.mediaTypes as MediaType[]), dateMin: '', dateMax: '', rowCount: r.totalRows ?? 0 })
-      }
-    }
-    return Array.from(map.entries())
-      .map(([name, e]) => ({ name, mediaTypes: Array.from(e.mediaTypes), dateMin: e.dateMin, dateMax: e.dateMax, rowCount: e.rowCount }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  }, [filteredUploadReports])
-
-  // ── 매체명 테이블 데이터 ──────────────────────────────────────
-  const mediaTableRows = useMemo(() => {
-    type MEntry = { reportCount: number; rowCount: number }
-    const map = new Map<MediaType, MEntry>()
-    for (const r of filteredUploadReports) {
-      for (const mt of r.mediaTypes as MediaType[]) {
-        const e = map.get(mt) ?? { reportCount: 0, rowCount: 0 }
-        e.reportCount++
-        e.rowCount += r.rowsByMedia[mt]?.length ?? 0
-        map.set(mt, e)
-      }
-    }
-    return Array.from(map.entries()).map(([mt, e]) => ({ mt, ...e }))
-  }, [filteredUploadReports])
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -438,7 +361,7 @@ export default function CtPlusManagePage() {
                   {groups.some(g => g.id === editDraft.id) ? '그룹 편집' : '새 그룹'}
                 </h2>
                 <div className="flex items-center gap-2">
-                  {savedToast && <span className="text-xs font-medium text-green-600">저장 완료 ✓</span>}
+                  {savedToast && <span className="text-xs font-medium text-green-600">저장 완료</span>}
                   {isDirty && (
                     <button
                       onClick={() => {
@@ -674,245 +597,84 @@ export default function CtPlusManagePage() {
             </div>
           </div>
 
-          {/* 캠페인 연결 패널 */}
-          <div className="rounded-xl border border-blue-100 bg-blue-50/30 px-5 py-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-semibold text-gray-700">캠페인 연결</p>
-              <div className="flex items-center gap-2">
-                {connectSaved && <span className="text-xs font-medium text-green-600">연결이 저장됐습니다 ✓</span>}
-                <button
-                  onClick={handleConnectSave}
-                  disabled={selectedCampaigns.size === 0 || !selectedConnectCampaignId}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  연결 저장
-                </button>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-gray-600 mb-3">선택한 캠페인명을 아래 캠페인과 연결합니다.</p>
-
-            {selectedCampaigns.size === 0 ? (
-              <p className="text-[11px] text-gray-400 py-2">위 테이블에서 캠페인명을 선택하세요</p>
-            ) : (
-              <>
-                <div className="mb-3">
-                  <label className="block text-[11px] text-gray-600 mb-1.5">캠페인 선택:</label>
-                  <select
-                    value={selectedConnectCampaignId}
-                    onChange={e => setSelectedConnectCampaignId(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="">캠페인을 선택하세요</option>
-                    {campaigns.map(c => (
-                      <option key={c.id} value={c.id}>{c.campaignName}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedConnectCampaignId && (() => {
-                  const selectedCampaign = campaigns.find(c => c.id === selectedConnectCampaignId)
-                  return selectedCampaign ? (
-                    <>
-                      {(selectedCampaign.csvNames ?? []).length > 0 && (
-                        <div className="mb-3">
-                          <p className="text-[11px] text-gray-600 mb-1.5">현재 연결:</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {(selectedCampaign.csvNames ?? []).map(name => (
-                              <span key={name} className="rounded-full bg-green-100 border border-green-300 px-2.5 py-0.5 text-[11px] text-green-700">
-                                {name}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <div className="mb-3">
-                        <p className="text-[11px] text-gray-600 mb-1.5">추가될 캠페인명 ({selectedCampaigns.size}개):</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {Array.from(selectedCampaigns).map(name => (
-                            <span key={name} className="rounded-full bg-blue-100 border border-blue-300 px-2.5 py-0.5 text-[11px] text-blue-700">
-                              {name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  ) : null
-                })()}
-              </>
-            )}
-          </div>
-
-          {/* 캠페인명 테이블 */}
+          {/* 저장된 리포트 목록 (raw, 그룹핑 없음) */}
           <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
             <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-5 py-3">
               <h3 className="text-sm font-semibold text-gray-700">
-                캠페인명
-                <span className="ml-2 text-xs font-normal text-gray-400">({campaignTableRows.length}개)</span>
+                저장된 데이터
+                <span className="ml-2 text-xs font-normal text-gray-400">({filteredUploadReports.length}건)</span>
               </h3>
-              <div className="flex items-center gap-2">
-                {selectedCampaigns.size > 0 && (
-                  <span className="text-[11px] text-blue-600 font-medium">{selectedCampaigns.size}개 선택됨</span>
-                )}
-                <button
-                  onClick={() => {
-                    if (selectedCampaigns.size === campaignTableRows.length) setSelectedCampaigns(new Set())
-                    else setSelectedCampaigns(new Set(campaignTableRows.map(r => r.name)))
-                  }}
-                  className="text-[11px] text-gray-400 hover:text-gray-600"
-                >
-                  {selectedCampaigns.size === campaignTableRows.length ? '전체 해제' : '전체 선택'}
-                </button>
-              </div>
+              <span className="text-[11px] text-gray-400">전체 {reports.length}건</span>
             </div>
-            {campaignTableRows.length === 0 ? (
+
+            {filteredUploadReports.length === 0 ? (
               <div className="flex items-center justify-center py-10 text-sm text-gray-400">
                 {reports.length === 0 ? (
                   <span>저장된 데이터가 없습니다. <Link href="/campaign/ct-plus/daily" className="text-blue-600 hover:underline">데이터 업로드 →</Link></span>
-                ) : '선택한 날짜 범위에 캠페인 데이터가 없습니다.'}
+                ) : '선택한 날짜 범위에 해당하는 데이터가 없습니다.'}
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50/60 text-gray-500">
-                      <th className="w-10 px-4 py-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedCampaigns.size === campaignTableRows.length && campaignTableRows.length > 0}
-                          onChange={e => setSelectedCampaigns(e.target.checked ? new Set(campaignTableRows.map(r => r.name)) : new Set())}
-                          className="rounded"
-                        />
-                      </th>
-                      <th className="px-4 py-2.5 text-left">캠페인명</th>
+                      <th className="px-4 py-2.5 text-left">업로드 일시</th>
+                      <th className="px-4 py-2.5 text-left">레이블</th>
                       <th className="px-4 py-2.5 text-left">매체</th>
-                      <th className="px-4 py-2.5 text-left">날짜 범위</th>
+                      <th className="px-4 py-2.5 text-left">데이터 기간</th>
                       <th className="px-4 py-2.5 text-right">행 수</th>
+                      <th className="px-4 py-2.5 text-center">삭제</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {campaignTableRows.map(row => {
-                      const checked = selectedCampaigns.has(row.name)
-                      return (
-                        <tr
-                          key={row.name}
-                          onClick={() => {
-                            const next = new Set(selectedCampaigns)
-                            checked ? next.delete(row.name) : next.add(row.name)
-                            setSelectedCampaigns(next)
-                          }}
-                          className={`cursor-pointer transition-colors ${checked ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`}
-                        >
-                          <td className="w-10 px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={e => {
-                                const next = new Set(selectedCampaigns)
-                                e.target.checked ? next.add(row.name) : next.delete(row.name)
-                                setSelectedCampaigns(next)
-                              }}
-                              className="rounded"
-                            />
-                          </td>
-                          <td className="px-4 py-2.5 font-medium text-gray-700 max-w-xs truncate" title={row.name}>{row.name}</td>
-                          <td className="px-4 py-2.5 text-gray-500">
-                            {row.mediaTypes.map(mt => MEDIA_CONFIG[mt]?.label ?? mt).join(', ') || '—'}
-                          </td>
-                          <td className="px-4 py-2.5 text-gray-400 tabular-nums">
-                            {row.dateMin ? (row.dateMin === row.dateMax ? row.dateMin : `${row.dateMin} ~ ${row.dateMax}`) : '—'}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
-                            {row.rowCount > 0 ? fmt(row.rowCount) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    {filteredUploadReports.map(r => {
+                      // 날짜 범위 계산
+                      let dateRange = '—'
+                      if (!r.chunked) {
+                        const dates = r.mediaTypes.flatMap(m => (r.rowsByMedia[m] ?? []).map((row: { date: string }) => row.date)).sort()
+                        if (dates.length) {
+                          dateRange = dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]} ~ ${dates[dates.length - 1]}`
+                        }
+                      } else {
+                        const match = r.label.match(/(\d{4}[-./]\d{2}[-./]\d{2})\s*[~–]\s*(\d{4}[-./]\d{2}[-./]\d{2})/)
+                        if (match) dateRange = `${match[1].replace(/[./]/g, '-')} ~ ${match[2].replace(/[./]/g, '-')}`
+                        else {
+                          const single = r.label.match(/(\d{4}[-./]\d{2}[-./]\d{2})/)
+                          if (single) dateRange = single[1].replace(/[./]/g, '-')
+                        }
+                      }
 
-          {/* 매체명 테이블 */}
-          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-            <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-5 py-3">
-              <h3 className="text-sm font-semibold text-gray-700">
-                매체명
-                <span className="ml-2 text-xs font-normal text-gray-400">({mediaTableRows.length}개)</span>
-              </h3>
-              <div className="flex items-center gap-2">
-                {selectedMedias.size > 0 && (
-                  <span className="text-[11px] text-blue-600 font-medium">{selectedMedias.size}개 선택됨</span>
-                )}
-                <button
-                  onClick={() => {
-                    if (selectedMedias.size === mediaTableRows.length) setSelectedMedias(new Set())
-                    else setSelectedMedias(new Set(mediaTableRows.map(r => r.mt)))
-                  }}
-                  className="text-[11px] text-gray-400 hover:text-gray-600"
-                >
-                  {selectedMedias.size === mediaTableRows.length ? '전체 해제' : '전체 선택'}
-                </button>
-              </div>
-            </div>
-            {mediaTableRows.length === 0 ? (
-              <div className="flex items-center justify-center py-10 text-sm text-gray-400">
-                {reports.length === 0 ? '저장된 데이터가 없습니다.' : '선택한 날짜 범위에 매체 데이터가 없습니다.'}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50/60 text-gray-500">
-                      <th className="w-10 px-4 py-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedMedias.size === mediaTableRows.length && mediaTableRows.length > 0}
-                          onChange={e => setSelectedMedias(e.target.checked ? new Set(mediaTableRows.map(r => r.mt)) : new Set())}
-                          className="rounded"
-                        />
-                      </th>
-                      <th className="px-4 py-2.5 text-left">매체명</th>
-                      <th className="px-4 py-2.5 text-right">리포트 수</th>
-                      <th className="px-4 py-2.5 text-right">행 수</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {mediaTableRows.map(row => {
-                      const checked = selectedMedias.has(row.mt)
-                      const cfg = MEDIA_CONFIG[row.mt]
+                      // 총 행 수
+                      const rowCount = r.chunked
+                        ? (r.totalRows ?? 0)
+                        : r.mediaTypes.reduce((s: number, m: string) => s + (r.rowsByMedia[m as MediaType]?.length ?? 0), 0)
+
                       return (
-                        <tr
-                          key={row.mt}
-                          onClick={() => {
-                            const next = new Set(selectedMedias)
-                            checked ? next.delete(row.mt) : next.add(row.mt)
-                            setSelectedMedias(next)
-                          }}
-                          className={`cursor-pointer transition-colors ${checked ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`}
-                        >
-                          <td className="w-10 px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={e => {
-                                const next = new Set(selectedMedias)
-                                e.target.checked ? next.add(row.mt) : next.delete(row.mt)
-                                setSelectedMedias(next)
-                              }}
-                              className="rounded"
-                            />
+                        <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-2.5 text-gray-400 tabular-nums whitespace-nowrap">
+                            {new Date(r.savedAt).toLocaleString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                           </td>
-                          <td className="px-4 py-2.5">
-                            <span className="flex items-center gap-2">
-                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: cfg?.color ?? '#888' }} />
-                              <span className="font-medium text-gray-700">{cfg?.label ?? row.mt}</span>
-                            </span>
+                          <td className="px-4 py-2.5 font-medium text-gray-700 max-w-xs truncate" title={r.label}>
+                            {r.label}
+                            {r.chunked && <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] text-amber-700">대용량</span>}
                           </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">{fmt(row.reportCount)}건</td>
+                          <td className="px-4 py-2.5 text-gray-500">
+                            {r.mediaTypes.map((m: string) => MEDIA_CONFIG[m as MediaType]?.label ?? m).join(', ') || '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-400 tabular-nums whitespace-nowrap">{dateRange}</td>
                           <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
-                            {row.rowCount > 0 ? fmt(row.rowCount) + '행' : '—'}
+                            {rowCount > 0 ? fmt(rowCount) : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <button
+                              onClick={() => setDeleteReportConfirm(r.id)}
+                              className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                              title="삭제"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
                           </td>
                         </tr>
                       )
