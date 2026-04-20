@@ -129,6 +129,13 @@ function CtPlusDailyContent() {
       rowsByMedia: dataToSave,
       campaign: null,
       detectedAdvertiserHints: detectedHints.length > 0 ? detectedHints : undefined,
+      detectedCampaignNames: (() => {
+        const names = new Set<string>()
+        for (const rows of Object.values(dataToSave)) {
+          rows?.forEach(r => { if (r.campaignName) names.add(r.campaignName) })
+        }
+        return names.size > 0 ? Array.from(names) : undefined
+      })(),
     }
 
     const { mergedReports, overwrittenCount } = mergeReport(report, savedReports)
@@ -768,11 +775,8 @@ function CtPlusDailyContent() {
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = (e) => {
-      const text = e.target?.result as string
-      resolve(text.replace(/^\uFEFF/, ''))
-    }
-    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'))
+    reader.onload = e => resolve((e.target?.result as string) || '')
+    reader.onerror = () => reject(new Error('파일 읽기 실패'))
     reader.readAsText(file, 'utf-8')
   })
 }

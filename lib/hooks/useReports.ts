@@ -28,6 +28,8 @@ export interface SavedReport {
   totalChunks?: number
   /** 계정명에서 추출된 광고주 힌트 목록 (Google 제외) */
   detectedAdvertiserHints?: string[]
+  /** 행(row)에서 추출된 캠페인명 목록 — 청크 리포트에서도 참조 가능 */
+  detectedCampaignNames?: string[]
 }
 
 export interface SaveProgress {

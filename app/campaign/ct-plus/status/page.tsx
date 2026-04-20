@@ -675,6 +675,39 @@ function AgencyEditTab({ agency, agencies, onSave, onCancel }: {
   const [defaultMarkupRate,   setDefaultMarkupRate]   = useState(agency?.defaultMarkupRate?.toString() ?? "")
   const [pdfFile,             setPdfFile]             = useState<File | null>(null)
   const [uploading,           setUploading]           = useState(false)
+  const [analyzing,           setAnalyzing]           = useState(false)
+  const [analyzeToast,        setAnalyzeToast]        = useState<string | null>(null)
+
+  async function analyzePdf(file: File) {
+    setAnalyzing(true)
+    setAnalyzeToast(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/v1/agencies/analyze-pdf', { method: 'POST', body: formData })
+      if (!res.ok) throw new Error('분석 실패')
+      const { fields } = await res.json()
+      if (fields) {
+        if (fields.corporateName) setCorporateName(fields.corporateName)
+        if (fields.businessNumber) setBusinessNumber(fields.businessNumber)
+        if (fields.representative) setRepresentative(fields.representative)
+        if (fields.address) setAddress(fields.address)
+        if (fields.businessType) setBusinessType(fields.businessType)
+        if (fields.businessItem) setBusinessItem(fields.businessItem)
+        setAnalyzeToast('자동 분석 완료 — 내용을 확인하고 저장하세요')
+      } else {
+        setAnalyzeToast('추출된 필드가 없습니다. 직접 입력해주세요.')
+      }
+    } catch (err) {
+      console.error(err)
+      setAnalyzeToast('분석 중 오류가 발생했습니다')
+    } finally {
+      setAnalyzing(false)
+      setTimeout(() => setAnalyzeToast(null), 5000)
+    }
+  }
+
+  function handleAnalyzePdf() { if (pdfFile) analyzePdf(pdfFile) }
 
   function handleSave() {
     if (!name.trim() || !contactName.trim()) {
@@ -812,8 +845,44 @@ function AgencyEditTab({ agency, agencies, onSave, onCancel }: {
               </div>
             )}
             <MF label="PDF 파일">
-              <input type="file" accept=".pdf" onChange={e => setPdfFile(e.target.files?.[0] ?? null)} className={inputCls} />
+              <input type="file" accept=".pdf" onChange={e => {
+                const file = e.target.files?.[0] ?? null
+                setPdfFile(file)
+                if (file) analyzePdf(file)  // 파일 선택 즉시 자동 분석
+              }} className={inputCls} />
             </MF>
+            {pdfFile && (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleAnalyzePdf}
+                  disabled={analyzing}
+                  className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {analyzing ? (
+                    <>
+                      <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      분석 중...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a3.5 3.5 0 00-1.043 2.31v.133a1 1 0 01-1 1H9.92a1 1 0 01-1-1v-.133c0-.895-.356-1.754-.988-2.386l-.347-.347z" />
+                      </svg>
+                      PDF 자동 분석
+                    </>
+                  )}
+                </button>
+                {analyzeToast && (
+                  <span className={`text-sm font-medium ${analyzeToast.includes('오류') ? 'text-red-600' : 'text-purple-700'}`}>
+                    {analyzeToast}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </section>
 
@@ -867,17 +936,38 @@ function CampaignModal({ initial, operators, agencies, advertisers, reports, onS
   const [mediaBudgets,    setMediaBudgets]    = useState<MediaBudget[]>(initial?.mediaBudgets ?? [])
   const [memo,            setMemo]            = useState(initial?.memo ?? "")
   const [csvNames,        setCsvNames]        = useState<string[]>(initial?.csvNames ?? [])
+  const [csvSearch,       setCsvSearch]       = useState('')
+  const [csvMediaFilter,  setCsvMediaFilter]  = useState('')
 
-  const allReportCampaignNames = useMemo(() => {
-    const set = new Set<string>()
+  // 각 캠페인명 → 연관 매체/레이블 메타 계산
+  const reportNameMeta = useMemo(() => {
+    const meta = new Map<string, { media: Set<string>; labels: string[] }>()
+    const addName = (name: string, media: string[], label: string) => {
+      if (!meta.has(name)) meta.set(name, { media: new Set(), labels: [] })
+      const m = meta.get(name)!
+      media.forEach(t => m.media.add(t))
+      if (label && !m.labels.includes(label)) m.labels.push(label)
+    }
     for (const r of reports) {
-      if (r.campaignName) set.add(r.campaignName)
+      const label = r.label ?? ''
+      const media = r.mediaTypes ?? []
+      if (r.campaignName) addName(r.campaignName, media, label)
+      // detectedCampaignNames (chunked 리포트도 포함)
+      r.detectedCampaignNames?.forEach(n => addName(n, media, label))
+      // row-level (non-chunked)
       for (const rows of Object.values(r.rowsByMedia ?? {})) {
-        rows?.forEach((row: { campaignName?: string }) => { if (row.campaignName) set.add(row.campaignName) })
+        rows?.forEach((row: { campaignName?: string }) => {
+          if (row.campaignName) addName(row.campaignName, media, label)
+        })
       }
     }
-    return Array.from(set).sort()
+    return meta
   }, [reports])
+
+  const allReportCampaignNames = useMemo(
+    () => Array.from(reportNameMeta.keys()).sort(),
+    [reportNameMeta]
+  )
 
   const filteredAdvertisers = agencyId ? advertisers.filter(a => a.agencyId === agencyId) : advertisers
 
@@ -1003,34 +1093,85 @@ function CampaignModal({ initial, operators, agencies, advertisers, reports, onS
         ))}
 
         {/* DB 데이터 연결 */}
-        {allReportCampaignNames.length > 0 && (
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-2">DB 데이터 연결</label>
-            <p className="text-[11px] text-gray-500 mb-2">업로드된 데이터 중 이 캠페인에 해당하는 항목을 선택하세요.</p>
-            <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2 space-y-1">
-              {allReportCampaignNames.map(name => {
-                const checked = csvNames.includes(name)
-                return (
-                  <label key={name} className={`flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors ${checked ? "bg-blue-50" : "hover:bg-gray-50"}`}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={e => {
-                        if (e.target.checked) setCsvNames(prev => [...prev, name])
-                        else setCsvNames(prev => prev.filter(n => n !== name))
-                      }}
-                      className="rounded"
-                    />
-                    <span className={`text-xs ${checked ? "text-blue-700 font-medium" : "text-gray-600"}`}>{name}</span>
-                  </label>
-                )
-              })}
+        {allReportCampaignNames.length > 0 && (() => {
+          // 모든 매체 목록 수집
+          const allMedia = Array.from(new Set(
+            allReportCampaignNames.flatMap(n => Array.from(reportNameMeta.get(n)?.media ?? []))
+          )).sort()
+
+          // 검색 + 매체 필터 적용
+          const filtered = allReportCampaignNames.filter(name => {
+            if (csvSearch && !name.toLowerCase().includes(csvSearch.toLowerCase())) return false
+            if (csvMediaFilter) {
+              const meta = reportNameMeta.get(name)
+              if (!meta?.media.has(csvMediaFilter)) return false
+            }
+            return true
+          })
+
+          return (
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">DB 데이터 연결</label>
+              <p className="text-[11px] text-gray-500 mb-2">업로드된 데이터 중 이 캠페인에 해당하는 항목을 선택하세요.</p>
+
+              {/* 검색 + 매체 필터 */}
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={csvSearch}
+                  onChange={e => setCsvSearch(e.target.value)}
+                  placeholder="캠페인명 검색..."
+                  className="flex-1 rounded-md border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <select
+                  value={csvMediaFilter}
+                  onChange={e => setCsvMediaFilter(e.target.value)}
+                  className="rounded-md border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value="">전체 매체</option>
+                  {allMedia.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 p-2 space-y-1">
+                {filtered.length === 0 && (
+                  <p className="text-[11px] text-gray-400 text-center py-2">검색 결과 없음</p>
+                )}
+                {filtered.map(name => {
+                  const checked = csvNames.includes(name)
+                  const meta = reportNameMeta.get(name)
+                  const mediaTags = meta ? Array.from(meta.media) : []
+                  return (
+                    <label key={name} className={`flex items-start gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors ${checked ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={e => {
+                          if (e.target.checked) setCsvNames(prev => [...prev, name])
+                          else setCsvNames(prev => prev.filter(n => n !== name))
+                        }}
+                        className="rounded mt-0.5 flex-shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <span className={`text-xs block truncate ${checked ? "text-blue-700 font-medium" : "text-gray-700"}`}>{name}</span>
+                        {mediaTags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            {mediaTags.map(t => (
+                              <span key={t} className="inline-block rounded px-1 py-0 text-[10px] bg-gray-100 text-gray-500">{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+              {csvNames.length > 0 && (
+                <p className="mt-1.5 text-[11px] text-blue-600">{csvNames.length}개 선택됨</p>
+              )}
             </div>
-            {csvNames.length > 0 && (
-              <p className="mt-1.5 text-[11px] text-blue-600">{csvNames.length}개 선택됨</p>
-            )}
-          </div>
-        )}
+          )
+        })()}
 
         <MF label="특이사항">
           <textarea value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} rows={3} />
@@ -1201,4 +1342,3 @@ function MF({ label, children }: { label: string; children: React.ReactNode }) {
     </div>
   )
 }
-  
