@@ -1,79 +1,96 @@
 /**
- * 사업자등록증 PDF OCR — Python pdfplumber + 정규식 파싱
- * AI API 미사용. Python 3 + pdfplumber 필요.
+ * 사업자등록증 PDF OCR — pdf-parse(pure JS) + 정규식 파싱
+ * Python / AI API 미사용. Node.js 환경에서 바로 동작.
  */
-import { spawn } from 'child_process'
-import path from 'path'
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse = require('pdf-parse') as (
+  dataBuffer: Buffer,
+  options?: Record<string, unknown>
+) => Promise<{ text: string; numpages: number }>
 
 export interface OcrExtractedFields {
-  corporateName?: string   // 법인명 / 상호
-  businessNumber?: string  // 사업자등록번호 (000-00-00000)
-  representative?: string  // 대표자명
-  address?: string         // 사업장소재지
-  businessType?: string    // 업태
-  businessItem?: string    // 종목
+  corporateName?: string
+  businessNumber?: string
+  representative?: string
+  address?: string
+  businessType?: string
+  businessItem?: string
 }
 
-/**
- * PDF Buffer를 Python 스크립트(scripts/pdf_extract.py)로 전달하여
- * 사업자등록증 필드를 추출합니다.
- *
- * @param pdfBuffer - PDF 파일의 raw Buffer
- * @returns 추출된 필드 (파싱 불가 필드는 undefined)
- */
+function normalize(text: string): string {
+  text = text.replace(/(?<=[가-힣])\s+(?=[가-힣])/g, '')
+  text = text.replace(/[ 	]+/g, ' ')
+  return text
+}
+
+function findAfterLabel(
+  text: string,
+  labels: string[],
+  stopLabels: string[] = [],
+  maxLen = 60
+): string | undefined {
+  for (const label of labels) {
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const stopPart = stopLabels.length
+      ? '(?=' + stopLabels.map(esc).join('|') + '|$)'
+      : ''
+    const pattern = new RegExp(esc(label) + '[\\s\uff1a:]*([\\s\\S]{1,' + maxLen + '})' + stopPart)
+    const m = text.match(pattern)
+    if (m) {
+      const val = m[1].trim().replace(/\s+/g, ' ')
+      if (val) return val
+    }
+  }
+  return undefined
+}
+
+function parseFields(rawText: string): OcrExtractedFields {
+  const text = normalize(rawText)
+  const result: OcrExtractedFields = {}
+
+  const bn = text.match(/\b(\d{3}-\d{2}-\d{5})\b/)
+  if (bn) result.businessNumber = bn[1]
+
+  const stopCorp = ['성명', '대표', '사업장', '개업', '법인등록', '주민', '전화']
+  const corp = findAfterLabel(text, ['법인명(단체명)', '법인명', '상호'], stopCorp, 50)
+  if (corp) result.corporateName = corp.split(/[(\[（]/)[0].trim()
+
+  const stopRep = ['개업', '사업장', '법인', '주민', '전화', '업태', '종목']
+  const rep = findAfterLabel(text, ['성명', '대표자성명', '대표자'], stopRep, 20)
+  if (rep) {
+    const clean = rep.replace(/[^가-힣a-zA-Z\s]/g, '').trim().split(/\s+/)[0]
+    if (clean) result.representative = clean
+  }
+
+  const stopAddr = ['업태', '종목', '개업', '발급', '이 증명서', '사업의 종류']
+  const addr = findAfterLabel(text, ['사업장소재지', '사업장 소재지'], stopAddr, 100)
+  if (addr) result.address = addr.split(/본\s*점/)[0].trim()
+
+  const bizLine = text.match(/업\s*태\s*[\uff1a:]?\s*([\s\S]+?)(?=종\s*목|$)/)
+  if (bizLine) {
+    const bt = bizLine[1].split(/종\s*목/)[0].trim().replace(/\s+/g, ' ')
+    if (bt) result.businessType = bt
+  }
+
+  const itemLine = text.match(/종\s*목\s*[\uff1a:]?\s*([\s\S]+?)(?=전화|팩스|발급|이 증명서|사업장|$)/)
+  if (itemLine) {
+    const it = itemLine[1].trim().replace(/\s+/g, ' ')
+    if (it) result.businessItem = it
+  }
+
+  return result
+}
+
 export async function extractBusinessRegistrationFields(
   pdfBuffer: Buffer
 ): Promise<OcrExtractedFields> {
-  return new Promise((resolve) => {
-    const scriptPath = path.join(process.cwd(), 'scripts', 'pdf_extract.py')
-
-    const python = spawn('python3', [scriptPath], {
-      timeout: 30_000, // 30초 타임아웃
-    })
-
-    let stdout = ''
-    let stderr = ''
-
-    python.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf-8') })
-    python.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf-8') })
-
-    python.on('error', (err) => {
-      console.error('[pdfOcr] spawn error:', err.message)
-      resolve({})
-    })
-
-    python.on('close', (code) => {
-      if (code !== 0) {
-        console.error('[pdfOcr] python exited with code', code, ':', stderr.trim())
-        resolve({})
-        return
-      }
-      try {
-        const parsed = JSON.parse(stdout.trim()) as Record<string, unknown>
-        const result: OcrExtractedFields = {}
-
-        if (typeof parsed.corporateName === 'string'  && parsed.corporateName.trim())
-          result.corporateName  = parsed.corporateName.trim()
-        if (typeof parsed.businessNumber === 'string' && parsed.businessNumber.trim())
-          result.businessNumber = parsed.businessNumber.trim()
-        if (typeof parsed.representative === 'string' && parsed.representative.trim())
-          result.representative = parsed.representative.trim()
-        if (typeof parsed.address === 'string'        && parsed.address.trim())
-          result.address        = parsed.address.trim()
-        if (typeof parsed.businessType === 'string'   && parsed.businessType.trim())
-          result.businessType   = parsed.businessType.trim()
-        if (typeof parsed.businessItem === 'string'   && parsed.businessItem.trim())
-          result.businessItem   = parsed.businessItem.trim()
-
-        resolve(result)
-      } catch (e) {
-        console.error('[pdfOcr] JSON parse error:', e, 'stdout:', stdout)
-        resolve({})
-      }
-    })
-
-    // PDF를 base64로 인코딩해서 stdin으로 전달
-    python.stdin.write(pdfBuffer.toString('base64'))
-    python.stdin.end()
-  })
+  try {
+    const data = await pdfParse(pdfBuffer, { max: 3 })
+    if (!data?.text) return {}
+    return parseFields(data.text)
+  } catch (err) {
+    console.error('[pdfOcr] pdf-parse error:', err)
+    return {}
+  }
 }
