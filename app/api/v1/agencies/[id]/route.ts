@@ -10,14 +10,14 @@ interface PatchResponse {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<PatchResponse>> {
   try {
-    const agencyId = params.id
+    const { id: agencyId } = await params
     const updates = (await req.json()) as Partial<Agency>
 
     // agencyId 검증
-    if (!agencyId || typeof agencyId !== 'string') {
+    if (!agencyId) {
       return NextResponse.json(
         { error: 'Invalid agency id' },
         { status: 400 }
