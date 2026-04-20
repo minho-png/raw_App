@@ -67,31 +67,31 @@ export default function CtPlusViewPage() {
   }, [campaigns, selectedCampaignId])
 
   // 캠페인에 연결된 리포트 필터링 (csvNames 기반)
-  const linkedReports = useMemo(() =>
-    selectedCampaign
-      ? reports.filter(r =>
-          r.campaignName && selectedCampaign.csvNames?.includes(r.campaignName)
-        )
-      : [],
-    [reports, selectedCampaign]
-  )
+  // ① report-level campaignName 일치 (업로드 시 캠페인 선택한 경우)
+  // ② row-level row.campaignName 일치 (CSV 행 캠페인명이 csvNames에 포함)
+  const linkedReports = useMemo(() => {
+    if (!selectedCampaign || !selectedCampaign.csvNames?.length) return []
+    const csvNames = selectedCampaign.csvNames
+    return fullReports.filter(r => {
+      if (r.campaignName && csvNames.includes(r.campaignName)) return true
+      return Object.values(r.rowsByMedia).some(rows =>
+        rows?.some(row => row.campaignName && csvNames.includes(row.campaignName))
+      )
+    })
+  }, [fullReports, selectedCampaign])
 
-  // 확장된 리포트 데이터 사용
-  const linkedFullReports = useMemo(() =>
-    linkedReports.map(r =>
-      r.chunked && expandedMap[r.id]
-        ? { ...r, rowsByMedia: expandedMap[r.id]! }
-        : r
-    ),
-    [linkedReports, expandedMap]
-  )
+  // 확장된 리포트 데이터 사용 (linkedReports는 이미 fullReports 기반이므로 그대로)
+  const linkedFullReports = linkedReports
 
-  // 날짜 범위 필터 적용 후 매체별 RawRow 추출
+  // 날짜 범위 필터 + csvNames 행 필터 적용 후 매체별 RawRow 추출
   const filteredRows = useMemo(() => {
+    const csvNames = selectedCampaign?.csvNames ?? []
     const result: Partial<Record<MediaType, RawRow[]>> = {}
     for (const r of linkedFullReports) {
       for (const [mt, rows] of Object.entries(r.rowsByMedia)) {
         const filtered = (rows ?? []).filter(row => {
+          // csvNames가 있으면 row-level 캠페인명도 필터
+          if (csvNames.length > 0 && row.campaignName && !csvNames.includes(row.campaignName)) return false
           if (dateFrom && row.date < dateFrom) return false
           if (dateTo && row.date > dateTo) return false
           return true
@@ -102,7 +102,7 @@ export default function CtPlusViewPage() {
       }
     }
     return result
-  }, [linkedFullReports, dateFrom, dateTo])
+  }, [linkedFullReports, selectedCampaign, dateFrom, dateTo])
 
   // 사용 가능한 매체 목록
   const availableMedia = useMemo<MediaType[]>(() => {
