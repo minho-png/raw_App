@@ -230,6 +230,30 @@ function CtPlusDailyContent() {
 
   const activeMediaTypes = Object.keys(rowsByMedia) as MediaType[]
 
+  // 리포트별 매칭 캠페인 계산
+  const reportMatchMap = useMemo(() => {
+    const map = new Map<string, { matched: boolean; campaignNames: string[] }>()
+    for (const r of savedReports) {
+      const rNames = new Set<string>([
+        ...(r.detectedCampaignNames ?? []),
+        ...(r.campaignName ? [r.campaignName] : []),
+      ])
+      for (const rows of Object.values(r.rowsByMedia ?? {})) {
+        rows?.forEach((row: { campaignName?: string }) => {
+          if (row.campaignName) rNames.add(row.campaignName)
+        })
+      }
+      const matchedCampaigns = campaigns.filter(c =>
+        (c.csvNames ?? []).some(n => rNames.has(n))
+      )
+      map.set(r.id, {
+        matched: matchedCampaigns.length > 0,
+        campaignNames: matchedCampaigns.map(c => c.campaignName),
+      })
+    }
+    return map
+  }, [savedReports, campaigns])
+
   // ── 브라우즈 모드로 복귀 ─────────────────────────────────────
   function goToBrowse() {
     setMode('browse')
@@ -384,8 +408,29 @@ function CtPlusDailyContent() {
               </div>
             ) : (
               /* 저장 리포트 선택 표 */
-              <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                <div className="border-b border-gray-100 px-5 py-3.5 flex items-center justify-between">
+              <>
+                {/* 매칭 요약 */}
+                {campaigns.length > 0 && (() => {
+                  const matched = savedReports.filter(r => reportMatchMap.get(r.id)?.matched).length
+                  const unmatched = savedReports.length - matched
+                  return (
+                    <div className="flex items-center gap-3 px-1 mb-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-green-500" />
+                        <span className="text-xs text-gray-600">캠페인 연결 <strong>{matched}개</strong></span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-gray-300" />
+                        <span className="text-xs text-gray-600">미연결 <strong>{unmatched}개</strong></span>
+                      </div>
+                      {unmatched > 0 && (
+                        <span className="text-[11px] text-orange-500">미연결 데이터는 캠페인 수정에서 CSV명을 연결해주세요</span>
+                      )}
+                    </div>
+                  )
+                })()}
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                  <div className="border-b border-gray-100 px-5 py-3.5 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-semibold text-gray-800">저장된 데이터</p>
                     <p className="text-xs text-gray-400 mt-0.5">항목을 선택하면 해당 데이터를 불러옵니다.</p>
@@ -396,12 +441,13 @@ function CtPlusDailyContent() {
                 </div>
 
                 {/* 표 헤더 */}
-                <div className="grid grid-cols-[2fr_1.5fr_1.5fr_80px_80px_100px] border-b border-gray-100 bg-gray-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                <div className="grid grid-cols-[2fr_1fr_1.5fr_80px_80px_80px_90px] border-b border-gray-100 bg-gray-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
                   <span>캠페인명</span>
                   <span>매체</span>
                   <span>기간</span>
                   <span className="text-right">행 수</span>
                   <span className="text-right">저장일</span>
+                  <span className="text-center">연결</span>
                   <span />
                 </div>
 
@@ -417,7 +463,7 @@ function CtPlusDailyContent() {
                     return (
                       <li
                         key={r.id}
-                        className="grid grid-cols-[2fr_1.5fr_1.5fr_80px_80px_100px] items-center gap-2 px-5 py-4 hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                        className="grid grid-cols-[2fr_1fr_1.5fr_80px_80px_80px_90px] items-center gap-2 px-5 py-4 hover:bg-blue-50/40 transition-colors cursor-pointer group"
                         onClick={() => handleLoadReport(r)}
                       >
                         {/* 캠페인명 */}
@@ -462,6 +508,34 @@ function CtPlusDailyContent() {
                         {/* 저장일 */}
                         <p className="text-xs text-gray-400 tabular-nums text-right">{fmtSavedAt(r.savedAt)}</p>
 
+                        {/* 연결 상태 */}
+                        <div className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                          {(() => {
+                            const match = reportMatchMap.get(r.id)
+                            if (!match) return <span className="text-[10px] text-gray-300">—</span>
+                            if (match.matched) {
+                              return (
+                                <div className="group relative">
+                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                    연결
+                                  </span>
+                                  {match.campaignNames.length > 0 && (
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-10 bg-gray-800 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap max-w-[200px] truncate">
+                                      {match.campaignNames.join(', ')}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            }
+                            return (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-400">
+                                미연결
+                              </span>
+                            )
+                          })()}
+                        </div>
+
                         {/* 액션 */}
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
                           <button
@@ -484,7 +558,8 @@ function CtPlusDailyContent() {
                     )
                   })}
                 </ul>
-              </div>
+                </div>
+              </>
             )}
           </div>
         )}
