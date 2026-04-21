@@ -8,10 +8,14 @@ import type { RawRow } from "@/lib/rawDataParser"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 import { parseUnifiedCsv } from "@/lib/unifiedCsvParser"
+import type { CampaignMatchEntry } from "@/lib/unifiedCsvParser"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import type { Campaign } from "@/lib/campaignTypes"
 import { useReports } from "@/lib/hooks/useReports"
 import type { SavedReport, SaveProgress } from "@/lib/hooks/useReports"
+import { saveRawBatch } from "@/lib/rawDataStore"
+import type { RawBatch } from "@/lib/rawDataStore"
+import { applyMarkupToRows, recomputeAllCampaigns } from "@/lib/markupService"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 
@@ -88,6 +92,8 @@ function CtPlusDailyContent() {
   const [mergeToast, setMergeToast] = useState<{ count: number; show: boolean }>({ count: 0, show: false })
   const [detectedHints, setDetectedHints] = useState<string[]>([])
   const [selectedCsvCampaigns, setSelectedCsvCampaigns] = useState<Set<string>>(new Set())
+  const [campaignMatchSummary, setCampaignMatchSummary] = useState<CampaignMatchEntry[]>([])
+  const [unmatchedCsvNames, setUnmatchedCsvNames] = useState<string[]>([])
 
   // ── CSV 파싱 ─────────────────────────────────────────────────
   async function handleProcess() {
@@ -96,11 +102,35 @@ function CtPlusDailyContent() {
     setParseError(null)
     try {
       const text = await readFileAsText(unifiedFile)
-      const result = parseUnifiedCsv(text, null)
-      setRowsByMedia(result.rowsByMedia)
-      setLocalRowsByMedia(result.rowsByMedia)
+      // 1단계: raw 파싱 (markup 미적용 — supplyValue 기준)
+      const result = parseUnifiedCsv(text, campaigns)
+
+      // 2단계: raw rows를 로컬스토리지에 원본 저장
+      const allRawRows = Object.values(result.rowsByMedia).flat() as typeof result.rowsByMedia[MediaType]
+      const batch: RawBatch = {
+        id: Date.now().toString(),
+        uploadedAt: new Date().toISOString(),
+        fileName: unifiedFile.name,
+        rowCount: allRawRows?.length ?? 0,
+        rows: allRawRows ?? [],
+      }
+      saveRawBatch(batch)
+
+      // 3단계: markup 적용 (캠페인별 수수료율 반영) → 화면 표시용
+      const computedRowsByMedia: Partial<Record<MediaType, typeof result.rowsByMedia[MediaType]>> = {}
+      for (const [media, rows] of Object.entries(result.rowsByMedia) as [MediaType, NonNullable<typeof result.rowsByMedia[MediaType]>][]) {
+        computedRowsByMedia[media] = applyMarkupToRows(rows ?? [], campaigns)
+      }
+
+      // 4단계: 캠페인별 computed rows 로컬스토리지에 저장 (캠페인 상세 패널에서 참조)
+      recomputeAllCampaigns(allRawRows ?? [], campaigns)
+
+      setRowsByMedia(computedRowsByMedia)
+      setLocalRowsByMedia(computedRowsByMedia)
       setDetectedHints(result.detectedAdvertiserHints ?? [])
-      const mediaKeys = Object.keys(result.rowsByMedia) as MediaType[]
+      setCampaignMatchSummary(result.campaignMatchSummary ?? [])
+      setUnmatchedCsvNames(result.unmatchedCsvNames ?? [])
+      const mediaKeys = Object.keys(computedRowsByMedia) as MediaType[]
       setActiveTab(mediaKeys[0] ?? null)
       if (result.skippedMediaCodes.length > 0) {
         console.warn('[CSV] 알 수 없는 매체 코드:', result.skippedMediaCodes)
@@ -217,16 +247,6 @@ function CtPlusDailyContent() {
       return { ...prev, [activeTab]: updated }
     })
   }
-
-  const unmatchedCsvNames = useMemo<string[]>(() => {
-    if (!selectedCampaign) return []
-    const csvNames = selectedCampaign.csvNames ?? []
-    const allNames = new Set<string>()
-    for (const rows of Object.values(rowsByMedia)) {
-      rows?.forEach(r => { if (r.campaignName) allNames.add(r.campaignName) })
-    }
-    return Array.from(allNames).filter(n => !csvNames.includes(n))
-  }, [selectedCampaign, rowsByMedia])
 
   const activeMediaTypes = Object.keys(rowsByMedia) as MediaType[]
 
@@ -750,6 +770,32 @@ function CtPlusDailyContent() {
               </div>
             )}
 
+            {/* 캠페인별 매칭 요약 */}
+            {campaignMatchSummary.length > 0 && (
+              <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+                <p className="text-xs font-semibold text-green-800 mb-2">
+                  캠페인 자동 매칭 결과 — {campaignMatchSummary.length}개 캠페인
+                </p>
+                <div className="space-y-1.5">
+                  {campaignMatchSummary.map(entry => (
+                    <div key={entry.campaignId} className="flex items-center justify-between rounded-lg bg-white border border-green-100 px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-semibold text-gray-800 truncate block">{entry.campaignName}</span>
+                        <span className="text-[11px] text-gray-400">{entry.csvNames.join(', ')}</span>
+                      </div>
+                      <div className="flex items-center gap-3 ml-3 text-right flex-shrink-0">
+                        <span className="text-[11px] text-gray-500">{entry.rowCount.toLocaleString()}행</span>
+                        <span className="text-xs font-semibold text-blue-700">{entry.totalCost.toLocaleString()}원</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-green-600">
+                  ✓ 각 행에 캠페인 설정의 마크업(미디어·DMP·대행사)이 자동 적용되었습니다.
+                </p>
+              </div>
+            )}
+
             {/* 미매칭 캠페인 경고 */}
             {unmatchedCsvNames.length > 0 && (
               <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
@@ -822,7 +868,7 @@ function CtPlusDailyContent() {
                           return next
                         })
                       }}
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors \${
                         selected
                           ? 'bg-blue-600 text-white'
                           : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
@@ -835,7 +881,7 @@ function CtPlusDailyContent() {
               </div>
             )}
 
-            {/* 테이블 */}
+            {/* \u355c\ud14c\uc774\ube14 */}
             {activeTab && (
               <DailyDataTable rows={activeRows} media={activeTab} onRowUpdate={handleRowUpdate} />
             )}
@@ -846,12 +892,12 @@ function CtPlusDailyContent() {
   )
 }
 
-// ── 헬퍼: FileReader로 텍스트 읽기 (BOM 자동 제거) ─────────────
+// \u2500\u2500 \ud5ec\ud37c: FileReader\ub85c \ud14d\uc2a4\ud2b8 \uc77d\uae30 (BOM \uc790\ub3d9 \uc81c\uac70) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = e => resolve((e.target?.result as string) || '')
-    reader.onerror = () => reject(new Error('파일 읽기 실패'))
+    reader.onerror = () => reject(new Error('\ud30c\uc77c \uc77d\uae30 \uc2e4\ud328'))
     reader.readAsText(file, 'utf-8')
   })
 }

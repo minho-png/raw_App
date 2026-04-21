@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo, useRef } from "react"
+import React, { useState, useMemo, useRef, useEffect } from "react"
 import dynamic from "next/dynamic"
 import * as XLSX from 'xlsx'
 import {
@@ -24,6 +24,8 @@ import {
 } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useReports } from "@/lib/hooks/useReports"
+import { loadComputedRows } from "@/lib/markupService"
+import type { RawRow } from "@/lib/rawDataParser"
 
 // ── 유틸 ─────────────────────────────────────────────────
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
@@ -1383,6 +1385,13 @@ function CampaignDetailPanel({
   onClose: () => void
   onEdit: (c: Campaign) => void
 }) {
+  // 업로드된 실적 데이터 (raw → computed)
+  const [computedRows, setComputedRows] = useState<RawRow[]>([])
+  useEffect(() => {
+    const rows = loadComputedRows(campaign.id)
+    setComputedRows(rows)
+  }, [campaign.id])
+
   const totals   = getCampaignTotals(campaign)
   const progress = getCampaignProgress(campaign.startDate, campaign.endDate)
   const dday     = getDday(campaign.endDate)
@@ -1545,6 +1554,70 @@ function CampaignDetailPanel({
             </div>
           )}
 
+          {/* 업로드 실적 데이터 (raw → markup computed) */}
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">업로드 실적 데이터</h3>
+              {computedRows.length > 0 && (
+                <span className="text-[10px] text-gray-400">{computedRows.length}행</span>
+              )}
+            </div>
+            {computedRows.length === 0 ? (
+              <div className="px-4 py-6 text-center">
+                <p className="text-xs text-gray-400">데이터 없음</p>
+                <p className="text-[10px] text-gray-300 mt-1">데이터 입력 탭에서 CSV를 업로드하면 자동으로 연결됩니다</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                {/* 매체별 집계 요약 */}
+                {(() => {
+                  const byMedia = new Map<string, { rows: number; impressions: number; clicks: number; executionAmount: number; netAmount: number }>()
+                  for (const r of computedRows) {
+                    const cur = byMedia.get(r.media) ?? { rows: 0, impressions: 0, clicks: 0, executionAmount: 0, netAmount: 0 }
+                    cur.rows++
+                    cur.impressions += r.impressions
+                    cur.clicks += r.clicks
+                    cur.executionAmount += r.executionAmount
+                    cur.netAmount += r.netAmount
+                    byMedia.set(r.media, cur)
+                  }
+                  const entries = Array.from(byMedia.entries())
+                  return (
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-gray-500 font-medium">매체</th>
+                          <th className="px-3 py-2 text-right text-gray-500 font-medium">노출</th>
+                          <th className="px-3 py-2 text-right text-gray-500 font-medium">클릭</th>
+                          <th className="px-3 py-2 text-right text-gray-500 font-medium">집행금액</th>
+                          <th className="px-3 py-2 text-right text-gray-500 font-medium">순금액</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {entries.map(([media, agg]) => (
+                          <tr key={media} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 font-medium text-gray-700">{media}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-600">{fmt(agg.impressions)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-600">{fmt(agg.clicks)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums font-medium text-blue-700">{fmt(agg.executionAmount)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-600">{fmt(agg.netAmount)}</td>
+                          </tr>
+                        ))}
+                        <tr className="bg-gray-50 font-semibold">
+                          <td className="px-3 py-2 text-gray-700">합계</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(computedRows.reduce((s, r) => s + r.impressions, 0))}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(computedRows.reduce((s, r) => s + r.clicks, 0))}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-blue-700">{fmt(computedRows.reduce((s, r) => s + r.executionAmount, 0))}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(computedRows.reduce((s, r) => s + r.netAmount, 0))}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  )
+                })()}
+              </div>
+            )}
+          </div>
+
           {/* 연결 데이터 */}
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">연결 데이터</h3>
@@ -1608,3 +1681,5 @@ function MF({ label, children }: { label: string; children: React.ReactNode }) {
     </div>
   )
 }
+
+                   

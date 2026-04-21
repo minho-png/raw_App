@@ -10,13 +10,24 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File | null
-    const campaignJson = formData.get('campaign') as string | null
+    // campaigns: JSON array of Campaign objects (다중 캠페인)
+    // campaign:  단일 Campaign (하위 호환)
+    const campaignsJson = formData.get('campaigns') as string | null
+    const campaignJson  = formData.get('campaign')  as string | null
 
     if (!file) {
       return NextResponse.json({ error: '파일이 없습니다.' }, { status: 400 })
     }
 
-    const campaign: Campaign | null = campaignJson ? JSON.parse(campaignJson) : null
+    let campaigns: Campaign[]
+    if (campaignsJson) {
+      campaigns = JSON.parse(campaignsJson) as Campaign[]
+    } else if (campaignJson) {
+      const c = JSON.parse(campaignJson) as Campaign | null
+      campaigns = c ? [c] : []
+    } else {
+      campaigns = []
+    }
 
     // UTF-8(with BOM 포함) → EUC-KR 폴백으로 텍스트 읽기
     let csvText: string
@@ -34,7 +45,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '파일 인코딩을 읽을 수 없습니다.' }, { status: 400 })
     }
 
-    const result = parseUnifiedCsv(csvText, campaign)
+    const result = parseUnifiedCsv(csvText, campaigns)
 
     return NextResponse.json(result)
   } catch (e) {

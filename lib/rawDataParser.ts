@@ -24,6 +24,8 @@ export interface RawRow {
   supplyValue: number      // 파일 원본 비용 (공급가액)
   /** 계정명에서 추출한 광고주 후보명 (Google 제외, null = 매칭 불가) */
   advertiserHint: string | null
+  /** csvNames 역매칭으로 확정된 캠페인 ID (없으면 undefined = 미매칭) */
+  matchedCampaignId?: string
 }
 
 /** 캠페인에 해당 매체가 설정돼 있는지 확인 */

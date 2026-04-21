@@ -2,14 +2,16 @@
  * unifiedCsvParser.ts
  * 통합 CSV 형식 파서 (모티브 광고성과 포맷)
  * 컬럼: 수집일,일자,매체,계정명,계정ID,캠페인명,캠페인ID,광고그룹명,광고그룹ID,게재위치,소재명,소재ID,노출,클릭,총재생,비용
+ *
+ * v2: 다중 캠페인 지원 — 각 행의 campaignName을 csvNames로 역매칭하여
+ *     해당 캠페인의 마크업(미디어+DMP+대행사)을 적용하고 matchedCampaignId를 태깅
  */
 
 import type { MediaType } from './reportTypes'
 import type { RawRow, DmpType } from './rawDataParser'
 import type { Campaign } from './campaignTypes'
 import { detectDmpType } from './calculationService'
-import { calcCosts, DMP_FEE_RATES_DECIMAL } from './calculationService'
-import { MEDIA_MARKUP_RATE } from './campaignTypes'
+import { calcCosts } from './calculationService'
 import { extractAdvertiserHint } from './advertiserMatcher'
 
 // CSV 매체 코드 → MediaType 매핑
@@ -35,24 +37,35 @@ function getDayOfWeek(dateStr: string): string {
   return isNaN(d.getTime()) ? '' : DAY_OF_WEEK[d.getDay()]
 }
 
-/** 캠페인 설정에서 해당 매체의 대행사 수수료율 가져오기 (DMP 여부에 따라) */
-function getAgencyFeeDecimal(
-  campaign: Campaign | null,
-  mediaType: MediaType,
-  isDmp: boolean,
-): number {
-  if (!campaign) return 0
-  const label = MEDIA_TYPE_TO_LABEL[mediaType]
-  const mb = campaign.mediaBudgets.find(m => m.media === label)
-  if (!mb) return 0
-  const targeting = isDmp ? mb.dmp : mb.nonDmp
-  return targeting.agencyFeeRate / 100
+/** csvNames 기반 역매칭 맵 구성: CSV캠페인명(소문자) → Campaign */
+function buildCsvLookup(campaigns: Campaign[]): Map<string, Campaign> {
+  const map = new Map<string, Campaign>()
+  for (const c of campaigns) {
+    for (const name of c.csvNames ?? []) {
+      map.set(name.trim().toLowerCase(), c)
+    }
+  }
+  return map
 }
 
-/** 미디어 마크업율 (소수) */
-function getMediaMarkupDecimal(mediaType: MediaType): number {
-  const label = MEDIA_TYPE_TO_LABEL[mediaType]
-  return (MEDIA_MARKUP_RATE[label] ?? 0) / 100
+/** CSV 캠페인명으로 매칭 캠페인 조회 (csvNames 완전 일치 우선) */
+function lookupCampaign(
+  csvCampaignName: string,
+  csvLookup: Map<string, Campaign>,
+): Campaign | null {
+  if (!csvCampaignName) return null
+  return csvLookup.get(csvCampaignName.trim().toLowerCase()) ?? null
+}
+
+/**
+ * 캠페인별 매칭 요약
+ */
+export interface CampaignMatchEntry {
+  campaignId: string
+  campaignName: string
+  csvNames: string[]       // 매칭에 사용된 csvName들
+  rowCount: number
+  totalCost: number        // 해당 캠페인 소진 합계 (netAmount 기준)
 }
 
 /**
@@ -62,23 +75,42 @@ export interface ParseUnifiedCsvResult {
   rowsByMedia: Partial<Record<MediaType, RawRow[]>>
   skippedMediaCodes: string[]  // 알 수 없는 매체 코드 목록
   totalRows: number
-  skippedRows: number  // 노출+클릭+비용 모두 0인 행
+  skippedRows: number          // 노출+클릭+비용 모두 0인 행
   /** 계정명에서 추출된 광고주 힌트 목록 (Google 제외, 중복 제거) */
   detectedAdvertiserHints: string[]
+  /** 캠페인별 매칭 요약 */
+  campaignMatchSummary: CampaignMatchEntry[]
+  /** 매칭된 캠페인이 없는 CSV 캠페인명 목록 */
+  unmatchedCsvNames: string[]
 }
 
 /**
  * 통합 CSV 텍스트를 파싱하여 매체별 RawRow 배열로 반환
+ *
+ * @param csvText   CSV 원문
+ * @param campaigns 등록된 캠페인 배열 (각 캠페인의 csvNames로 역매칭)
+ *                  하위 호환: Campaign | null 도 수용 (단일 캠페인 모드)
  */
 export function parseUnifiedCsv(
   csvText: string,
-  campaign: Campaign | null,
+  campaigns: Campaign[] | Campaign | null,
 ): ParseUnifiedCsvResult {
+  // 하위 호환: 단일 캠페인 or null → 배열로 변환
+  const campaignList: Campaign[] = campaigns === null
+    ? []
+    : Array.isArray(campaigns) ? campaigns : [campaigns]
+
+  // csvNames 역매칭 맵
+  const csvLookup = buildCsvLookup(campaignList)
+
   // BOM(﻿) 제거 — UTF-8 with BOM 파일 지원
   const cleanText = csvText.replace(/^\uFEFF/, '')
   const lines = cleanText.split(/\r?\n/)
   if (lines.length < 2) {
-    return { rowsByMedia: {}, skippedMediaCodes: [], totalRows: 0, skippedRows: 0, detectedAdvertiserHints: [] }
+    return {
+      rowsByMedia: {}, skippedMediaCodes: [], totalRows: 0, skippedRows: 0,
+      detectedAdvertiserHints: [], campaignMatchSummary: [], unmatchedCsvNames: [],
+    }
   }
 
   // 헤더 파싱 (따옴표 제거)
@@ -99,6 +131,10 @@ export function parseUnifiedCsv(
 
   const rowsByMedia: Partial<Record<MediaType, RawRow[]>> = {}
   const unknownMediaCodes = new Set<string>()
+  // 캠페인별 집계
+  const campaignStats = new Map<string, CampaignMatchEntry>()
+  const unmatchedCsvNameSet = new Set<string>()
+
   let totalRows = 0
   let skippedRows = 0
 
@@ -138,18 +174,15 @@ export function parseUnifiedCsv(
       continue
     }
 
-    const dmpType: DmpType = detectDmpType(adGroup)
-    const isDmpRow = dmpType !== 'DIRECT'
+    // 캠페인 역매칭
+    const matchedCampaign = lookupCampaign(campaignName, csvLookup)
 
-    // 수수료율 계산 (미디어 마크업 + DMP 수수료 + 대행사 수수료)
-    const mediaMarkup  = getMediaMarkupDecimal(mediaType)
-    const dmpFeeRate   = isDmpRow ? DMP_FEE_RATES_DECIMAL[dmpType] ?? 0 : 0
-    const agencyFee    = getAgencyFeeDecimal(campaign, mediaType, isDmpRow)
-    // 전체 수수료율: 1 - (1 - 각 수수료율의 곱) 방식이 아닌 합산 사용 (RAW_APP 방식)
-    const totalFeeDecimal = mediaMarkup + dmpFeeRate + agencyFee
+    const dmpType: DmpType = detectDmpType(adGroup)
+
+    // markup은 파싱 단계에서 적용하지 않음 — markupService.applyMarkupToRows()에서 처리
+    const totalFeeDecimal = 0
 
     // VAT 처리: 네이버 GFA만 VAT 포함 금액 → 공급가 = 비용 ÷ 1.1
-    // 카카오·구글·메타는 이미 공급가(VAT 제외) 기준으로 청구됨
     const isNaver = mediaType === 'naver'
     const { netAmount, executionAmount } = calcCosts(supplyValue, isNaver, totalFeeDecimal)
 
@@ -178,12 +211,33 @@ export function parseUnifiedCsv(
       executionAmount,
       netAmount,
       supplyValue,
-      // 계정명 → 광고주 힌트 추출 (Google 제외)
       advertiserHint:  extractAdvertiserHint(accountName, mediaType),
+      matchedCampaignId: matchedCampaign?.id,
     }
 
     if (!rowsByMedia[mediaType]) rowsByMedia[mediaType] = []
     rowsByMedia[mediaType]!.push(row)
+
+    // 캠페인 집계
+    if (matchedCampaign) {
+      if (!campaignStats.has(matchedCampaign.id)) {
+        campaignStats.set(matchedCampaign.id, {
+          campaignId:   matchedCampaign.id,
+          campaignName: matchedCampaign.campaignName,
+          csvNames:     [],
+          rowCount:     0,
+          totalCost:    0,
+        })
+      }
+      const entry = campaignStats.get(matchedCampaign.id)!
+      entry.rowCount++
+      entry.totalCost += netAmount
+      if (campaignName && !entry.csvNames.includes(campaignName)) {
+        entry.csvNames.push(campaignName)
+      }
+    } else if (campaignName) {
+      unmatchedCsvNameSet.add(campaignName)
+    }
   }
 
   // 감지된 광고주 힌트 수집 (중복 제거)
@@ -200,6 +254,8 @@ export function parseUnifiedCsv(
     totalRows,
     skippedRows,
     detectedAdvertiserHints: [...hintSet].sort(),
+    campaignMatchSummary:    [...campaignStats.values()],
+    unmatchedCsvNames:       [...unmatchedCsvNameSet].sort(),
   }
 }
 
