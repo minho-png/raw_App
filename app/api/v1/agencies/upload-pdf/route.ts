@@ -5,6 +5,8 @@ import type { Agency } from '@/lib/campaignTypes'
 interface UploadResponse {
   ok?: true
   agencyId?: string
+  pdfBase64?: string
+  pdfName?: string
   error?: string
 }
 
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadRespons
     )
 
     return NextResponse.json(
-      { ok: true, agencyId },
+      { ok: true, agencyId, pdfBase64: base64String, pdfName: file.name },
       { status: 200 }
     )
   } catch (error) {

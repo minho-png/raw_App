@@ -79,8 +79,8 @@ export function AgencyEditTab({ agency, agencies: _agencies, onSave, onCancel }:
       createdAt: agency?.createdAt,
       updatedAt: new Date().toISOString() }
 
-    if (pdfFile && agency?.id) {
-      // 기존 대행사: PDF 업로드 후 저장
+    if (pdfFile) {
+      // PDF 선택 시: 업로드 후 저장 (신규/기존 모두)
       handlePdfUpload(saved)
     } else {
       onSave(saved)
