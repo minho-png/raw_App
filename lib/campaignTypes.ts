@@ -1,7 +1,7 @@
 export type CampaignStatus = '집행 중' | '종료'
 // CT+ 캠페인은 정산 분류상 IMC에 해당. CT(CT-CTV)는 별도 브랜치에서 관리.
-export type CampaignType = 'IMC'
-export const CAMPAIGN_TYPES: CampaignType[] = ['IMC']
+export type CampaignType = 'IMC' | 'video'
+export const CAMPAIGN_TYPES: CampaignType[] = ['IMC', 'video']
 
 export const AVAILABLE_MEDIA = ['네이버 GFA', '카카오모먼트', 'Google', 'META'] as const
 export type MediaName = typeof AVAILABLE_MEDIA[number]
@@ -37,12 +37,16 @@ export interface TargetingBudget {
 
 export interface SubCampaign {
   id: string
-  name: string           // 서브 캠페인명 (CSV 캠페인명 매칭용)
-  budget: number         // 예산
-  spend: number          // 집행액
-  cpcTarget?: number     // CPC 목표
-  cpmTarget?: number     // CPM 목표
-  ctrTarget?: number     // CTR 목표 (%)
+  name: string                 // 서브 캠페인명 (UI 표시용)
+  csvCampaignNames?: string[]  // CSV 캠페인명 매핑 목록 (raw 데이터 매칭용)
+  budget: number               // 예산
+  spend: number                // 집행액
+  totalFeeRate?: number        // 개별 수수료율 (%) — 부모 MediaBudget보다 우선
+  cpcTarget?: number           // CPC 목표
+  cpmTarget?: number           // CPM 목표
+  ctrTarget?: number           // CTR 목표 (%)
+  vtrTarget?: number           // VTR 목표 (%) — 동영상 캠페인용
+  isVideo?: boolean            // 동영상 캠페인 여부
 }
 
 export interface MediaBudget {
@@ -54,6 +58,8 @@ export interface MediaBudget {
   cpcTarget?: number         // CPC 목표
   cpmTarget?: number         // CPM 목표
   ctrTarget?: number         // CTR 목표 (%)
+  vtrTarget?: number         // VTR 목표 (%) — 동영상 캠페인용
+  isVideo?: boolean          // 동영상 캠페인 여부
   subCampaigns?: SubCampaign[]  // 매체 내 서브 캠페인 목록
 }
 
@@ -161,7 +167,6 @@ export function getCampaignProgress(startDate: string, endDate: string): number 
   const elapsedDays = (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
   return Math.round((elapsedDays / totalDays) * 1000) / 10
 }
-
 export function getDday(endDate: string) {
   const end = new Date(endDate)
   const now = new Date()

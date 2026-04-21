@@ -8,21 +8,16 @@ import type { RawRow } from "@/lib/rawDataParser"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 import { parseUnifiedCsv } from "@/lib/unifiedCsvParser"
-import type { CampaignMatchEntry } from "@/lib/unifiedCsvParser"
-import { useMasterData } from "@/lib/hooks/useMasterData"
-import type { Campaign } from "@/lib/campaignTypes"
 import { useReports } from "@/lib/hooks/useReports"
 import type { SavedReport, SaveProgress } from "@/lib/hooks/useReports"
 import { saveRawBatch } from "@/lib/rawDataStore"
 import type { RawBatch } from "@/lib/rawDataStore"
-import { applyMarkupToRows, recomputeAllCampaigns } from "@/lib/markupService"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 
 function makeLabel(
   rowsByMedia: Partial<Record<MediaType, RawRow[]>>,
   mediaTypes: MediaType[],
-  groupName: string | null,
 ): string {
   const allDates = mediaTypes.flatMap(m => (rowsByMedia[m] ?? []).map(r => r.date)).sort()
   const dateRange = allDates.length
@@ -31,7 +26,7 @@ function makeLabel(
       : `${allDates[0]} ~ ${allDates[allDates.length - 1]}`
     : ''
   const mediaStr = mediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')
-  return [dateRange, groupName, mediaStr].filter(Boolean).join(' · ')
+  return [dateRange, mediaStr].filter(Boolean).join(' · ')
 }
 
 /** 저장된 리포트에서 날짜 범위 추출 */
@@ -70,14 +65,9 @@ function CtPlusDailyContent() {
   const [mode, setMode] = useState<PageMode>('browse')
 
   const [unifiedFile, setUnifiedFile] = useState<File | null>(null)
-  const [uploadStep, setUploadStep] = useState<1 | 2>(1)
   const [loading, setLoading] = useState(false)
 
-  const { campaigns, advertisers } = useMasterData()
   const { reports: savedReports, saveReport, deleteReport, expandReport, mergeReport } = useReports()
-
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
-  const selectedCampaign: Campaign | null = campaigns.find(c => c.id === selectedCampaignId) ?? null
 
   // 결과 데이터
   const [rowsByMedia, setRowsByMedia] = useState<Partial<Record<MediaType, RawRow[]>>>({})
@@ -92,8 +82,6 @@ function CtPlusDailyContent() {
   const [mergeToast, setMergeToast] = useState<{ count: number; show: boolean }>({ count: 0, show: false })
   const [detectedHints, setDetectedHints] = useState<string[]>([])
   const [selectedCsvCampaigns, setSelectedCsvCampaigns] = useState<Set<string>>(new Set())
-  const [campaignMatchSummary, setCampaignMatchSummary] = useState<CampaignMatchEntry[]>([])
-  const [unmatchedCsvNames, setUnmatchedCsvNames] = useState<string[]>([])
 
   // ── CSV 파싱 ─────────────────────────────────────────────────
   async function handleProcess() {
@@ -102,10 +90,10 @@ function CtPlusDailyContent() {
     setParseError(null)
     try {
       const text = await readFileAsText(unifiedFile)
-      // 1단계: raw 파싱 (markup 미적용 — supplyValue 기준)
-      const result = parseUnifiedCsv(text, campaigns)
+      // raw 파싱만 (마크업 미적용 — 캠페인 배열 빈 상태로 호출)
+      const result = parseUnifiedCsv(text, [])
 
-      // 2단계: raw rows를 로컬스토리지에 원본 저장
+      // raw rows를 로컬스토리지에 저장 (마크업 미적용)
       const allRawRows = Object.values(result.rowsByMedia).flat() as typeof result.rowsByMedia[MediaType]
       const batch: RawBatch = {
         id: Date.now().toString(),
@@ -116,21 +104,11 @@ function CtPlusDailyContent() {
       }
       saveRawBatch(batch)
 
-      // 3단계: markup 적용 (캠페인별 수수료율 반영) → 화면 표시용
-      const computedRowsByMedia: Partial<Record<MediaType, typeof result.rowsByMedia[MediaType]>> = {}
-      for (const [media, rows] of Object.entries(result.rowsByMedia) as [MediaType, NonNullable<typeof result.rowsByMedia[MediaType]>][]) {
-        computedRowsByMedia[media] = applyMarkupToRows(rows ?? [], campaigns)
-      }
-
-      // 4단계: 캠페인별 computed rows 로컬스토리지에 저장 (캠페인 상세 패널에서 참조)
-      recomputeAllCampaigns(allRawRows ?? [], campaigns)
-
-      setRowsByMedia(computedRowsByMedia)
-      setLocalRowsByMedia(computedRowsByMedia)
+      // raw rows 그대로 표시 (마크업 미적용)
+      setRowsByMedia(result.rowsByMedia)
+      setLocalRowsByMedia(result.rowsByMedia)
       setDetectedHints(result.detectedAdvertiserHints ?? [])
-      setCampaignMatchSummary(result.campaignMatchSummary ?? [])
-      setUnmatchedCsvNames(result.unmatchedCsvNames ?? [])
-      const mediaKeys = Object.keys(computedRowsByMedia) as MediaType[]
+      const mediaKeys = Object.keys(result.rowsByMedia) as MediaType[]
       setActiveTab(mediaKeys[0] ?? null)
       if (result.skippedMediaCodes.length > 0) {
         console.warn('[CSV] 알 수 없는 매체 코드:', result.skippedMediaCodes)
@@ -153,8 +131,8 @@ function CtPlusDailyContent() {
     const report: SavedReport = {
       id: Date.now().toString(),
       savedAt: new Date().toISOString(),
-      label: makeLabel(dataToSave, mediaTypes, selectedCampaign?.campaignName ?? null),
-      campaignName: selectedCampaign?.campaignName ?? null,
+      label: makeLabel(dataToSave, mediaTypes),
+      campaignName: null,
       mediaTypes,
       rowsByMedia: dataToSave,
       campaign: null,
@@ -206,7 +184,6 @@ function CtPlusDailyContent() {
       setLocalRowsByMedia(r.rowsByMedia)
       setActiveTab(r.mediaTypes[0] ?? null)
     }
-    setSelectedCampaignId(null)
     setUnifiedFile(null)
     setDetectedHints(r.detectedAdvertiserHints ?? [])
     setMode('view')
@@ -250,30 +227,6 @@ function CtPlusDailyContent() {
 
   const activeMediaTypes = Object.keys(rowsByMedia) as MediaType[]
 
-  // 리포트별 매칭 캠페인 계산
-  const reportMatchMap = useMemo(() => {
-    const map = new Map<string, { matched: boolean; campaignNames: string[] }>()
-    for (const r of savedReports) {
-      const rNames = new Set<string>([
-        ...(r.detectedCampaignNames ?? []),
-        ...(r.campaignName ? [r.campaignName] : []),
-      ])
-      for (const rows of Object.values(r.rowsByMedia ?? {})) {
-        rows?.forEach((row: { campaignName?: string }) => {
-          if (row.campaignName) rNames.add(row.campaignName)
-        })
-      }
-      const matchedCampaigns = campaigns.filter(c =>
-        (c.csvNames ?? []).some(n => rNames.has(n))
-      )
-      map.set(r.id, {
-        matched: matchedCampaigns.length > 0,
-        campaignNames: matchedCampaigns.map(c => c.campaignName),
-      })
-    }
-    return map
-  }, [savedReports, campaigns])
-
   // ── 브라우즈 모드로 복귀 ─────────────────────────────────────
   function goToBrowse() {
     setMode('browse')
@@ -281,14 +234,12 @@ function CtPlusDailyContent() {
     setLocalRowsByMedia({})
     setActiveTab(null)
     setUnifiedFile(null)
-    setSelectedCampaignId(null)
     setDetectedHints([])
     setSelectedCsvCampaigns(new Set())
   }
 
   function goToUpload() {
     setMode('upload')
-    setUploadStep(1)
     setUnifiedFile(null)
     setParseError(null)
   }
@@ -316,30 +267,12 @@ function CtPlusDailyContent() {
           )}
 
           {mode === 'upload' && (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={goToBrowse}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >
-                ← 목록으로
-              </button>
-              {/* 업로드 스텝 인디케이터 */}
-              <div className="flex items-center gap-1.5">
-                {([1, 2] as const).map(s => (
-                  <div key={s} className="flex items-center gap-1.5">
-                    <div className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
-                      uploadStep === s ? 'bg-blue-600 text-white' : uploadStep > s ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400'
-                    }`}>
-                      {uploadStep > s ? '✓' : s}
-                    </div>
-                    <span className={`hidden text-xs sm:inline ${uploadStep === s ? 'font-medium text-gray-700' : 'text-gray-400'}`}>
-                      {s === 1 ? '파일 업로드' : '그룹 선택'}
-                    </span>
-                    {s < 2 && <span className="text-xs text-gray-200">›</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <button
+              onClick={goToBrowse}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              ← 목록으로
+            </button>
           )}
 
           {mode === 'view' && (
@@ -429,26 +362,10 @@ function CtPlusDailyContent() {
             ) : (
               /* 저장 리포트 선택 표 */
               <>
-                {/* 매칭 요약 */}
-                {campaigns.length > 0 && (() => {
-                  const matched = savedReports.filter(r => reportMatchMap.get(r.id)?.matched).length
-                  const unmatched = savedReports.length - matched
-                  return (
-                    <div className="flex items-center gap-3 px-1 mb-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-green-500" />
-                        <span className="text-xs text-gray-600">캠페인 연결 <strong>{matched}개</strong></span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-gray-300" />
-                        <span className="text-xs text-gray-600">미연결 <strong>{unmatched}개</strong></span>
-                      </div>
-                      {unmatched > 0 && (
-                        <span className="text-[11px] text-orange-500">미연결 데이터는 캠페인 수정에서 CSV명을 연결해주세요</span>
-                      )}
-                    </div>
-                  )
-                })()}
+                {/* 안내 메시지 */}
+                <div className="flex items-center gap-3 px-1 mb-3">
+                  <span className="text-[11px] text-orange-500">미연결 데이터는 캠페인 관리 페이지에서 CSV명을 연결해주세요</span>
+                </div>
                 <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                   <div className="border-b border-gray-100 px-5 py-3.5 flex items-center justify-between">
                   <div>
@@ -461,13 +378,12 @@ function CtPlusDailyContent() {
                 </div>
 
                 {/* 표 헤더 */}
-                <div className="grid grid-cols-[2fr_1fr_1.5fr_80px_80px_80px_90px] border-b border-gray-100 bg-gray-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                  <span>캠페인명</span>
+                <div className="grid grid-cols-[2fr_1fr_1.5fr_80px_80px_90px] border-b border-gray-100 bg-gray-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  <span>데이터명</span>
                   <span>매체</span>
                   <span>기간</span>
                   <span className="text-right">행 수</span>
                   <span className="text-right">저장일</span>
-                  <span className="text-center">연결</span>
                   <span />
                 </div>
 
@@ -478,18 +394,17 @@ function CtPlusDailyContent() {
                       ? (r.totalRows ?? 0)
                       : r.mediaTypes.reduce((s, m) => s + (r.rowsByMedia[m]?.length ?? 0), 0)
                     const dateRange = extractDateRange(r)
-                    const campaignLabel = r.campaignName ?? '(미분류)'
 
                     return (
                       <li
                         key={r.id}
-                        className="grid grid-cols-[2fr_1fr_1.5fr_80px_80px_80px_90px] items-center gap-2 px-5 py-4 hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                        className="grid grid-cols-[2fr_1fr_1.5fr_80px_80px_90px] items-center gap-2 px-5 py-4 hover:bg-blue-50/40 transition-colors cursor-pointer group"
                         onClick={() => handleLoadReport(r)}
                       >
-                        {/* 캠페인명 */}
+                        {/* 데이터명 */}
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-700">
-                            {campaignLabel}
+                            {dateRange}
                           </p>
                           {r.chunked && (
                             <span className="mt-0.5 inline-block rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
@@ -528,34 +443,6 @@ function CtPlusDailyContent() {
                         {/* 저장일 */}
                         <p className="text-xs text-gray-400 tabular-nums text-right">{fmtSavedAt(r.savedAt)}</p>
 
-                        {/* 연결 상태 */}
-                        <div className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
-                          {(() => {
-                            const match = reportMatchMap.get(r.id)
-                            if (!match) return <span className="text-[10px] text-gray-300">—</span>
-                            if (match.matched) {
-                              return (
-                                <div className="group relative">
-                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                                    연결
-                                  </span>
-                                  {match.campaignNames.length > 0 && (
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-10 bg-gray-800 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap max-w-[200px] truncate">
-                                      {match.campaignNames.join(', ')}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            }
-                            return (
-                              <span className="inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-400">
-                                미연결
-                              </span>
-                            )
-                          })()}
-                        </div>
-
                         {/* 액션 */}
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
                           <button
@@ -585,146 +472,45 @@ function CtPlusDailyContent() {
         )}
 
         {/* ══════════════════════════════════════════════════════
-            UPLOAD MODE — CSV 업로드 (Step 1 & 2)
+            UPLOAD MODE — CSV 파일 업로드 (Step 1만 존재)
             ══════════════════════════════════════════════════ */}
         {mode === 'upload' && (
-          <>
-            {/* Step 1: 파일 업로드 */}
-            {uploadStep === 1 && (
-              <div className="space-y-4">
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-800 mb-0.5">통합 CSV 파일 업로드</h2>
-                  <p className="text-xs text-gray-400 mb-4">모든 매체 성과 데이터가 포함된 통합 CSV 파일을 업로드해주세요.</p>
-                  <UnifiedCsvUploadCard
-                    fileName={unifiedFile?.name}
-                    onFileSelect={file => setUnifiedFile(file)}
-                    onRemove={() => setUnifiedFile(null)}
-                  />
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800 mb-0.5">통합 CSV 파일 업로드</h2>
+              <p className="text-xs text-gray-400 mb-4">모든 매체 성과 데이터가 포함된 통합 CSV 파일을 업로드해주세요.</p>
+              <UnifiedCsvUploadCard
+                fileName={unifiedFile?.name}
+                onFileSelect={file => setUnifiedFile(file)}
+                onRemove={() => setUnifiedFile(null)}
+              />
+            </div>
+            {unifiedFile && (
+              <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm text-blue-700">
+                    <strong>{unifiedFile.name}</strong> 업로드 준비 완료
+                  </p>
+                  <p className="text-[11px] text-blue-600">
+                    {(unifiedFile.size / 1024 / 1024).toFixed(1)}MB
+                    {unifiedFile.size > 3 * 1024 * 1024 && ' · 대용량 → 자동 청크 저장'}
+                  </p>
                 </div>
-                {unifiedFile && (
-                  <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
-                    <p className="text-sm text-blue-700">
-                      <strong>{unifiedFile.name}</strong> 업로드 완료
-                    </p>
-                    <button
-                      onClick={() => setUploadStep(2)}
-                      className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-                    >
-                      다음 →
-                    </button>
-                  </div>
-                )}
+                <div className="flex flex-col items-end gap-2">
+                  {parseError && (
+                    <p className="text-[11px] text-red-500">{parseError}</p>
+                  )}
+                  <button
+                    onClick={handleProcess}
+                    disabled={loading}
+                    className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {loading ? '처리 중...' : '업로드 및 분석 →'}
+                  </button>
+                </div>
               </div>
             )}
-
-            {/* Step 2: 캠페인 선택 */}
-            {uploadStep === 2 && (
-              <div>
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-800">캠페인 선택</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">이 데이터를 연결할 캠페인을 선택하세요. 건너뛰기도 가능합니다.</p>
-                  </div>
-                  <button onClick={() => setUploadStep(1)} className="text-xs text-gray-400 hover:text-gray-600">← 파일 다시 선택</button>
-                </div>
-
-                {campaigns.length === 0 ? (
-                  <div className="rounded-xl border border-gray-200 bg-white px-6 py-10 text-center">
-                    <p className="text-sm text-gray-500">등록된 캠페인이 없습니다.</p>
-                    <p className="mt-1 text-xs text-gray-400">캠페인 관리에서 캠페인을 먼저 생성하거나 선택 없이 진행하세요.</p>
-                    <div className="mt-4 flex items-center justify-center gap-3">
-                      <Link
-                        href="/campaign/ct-plus/status"
-                        className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
-                      >
-                        캠페인 관리 →
-                      </Link>
-                      <button
-                        onClick={handleProcess}
-                        disabled={loading}
-                        className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        {loading ? '처리 중...' : '선택 없이 진행'}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                      {campaigns.map(c => {
-                        const selected = selectedCampaignId === c.id
-                        const advertiserName = advertisers.find(a => a.id === c.advertiserId)?.name ?? ''
-                        const csvCount = c.csvNames?.length ?? 0
-                        return (
-                          <button
-                            key={c.id}
-                            onClick={() => setSelectedCampaignId(prev => prev === c.id ? null : c.id)}
-                            className={`w-full rounded-xl border px-5 py-4 text-left transition-all ${
-                              selected
-                                ? 'border-blue-300 bg-blue-50 ring-1 ring-blue-300'
-                                : 'border-gray-200 bg-white hover:border-gray-300'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-semibold ${selected ? 'text-blue-800' : 'text-gray-800'}`}>
-                                  {c.campaignName || '(이름 없음)'}
-                                </p>
-                                <p className="mt-0.5 text-xs text-gray-400">
-                                  {advertiserName && <span>{advertiserName} · </span>}
-                                  {c.startDate && c.endDate ? `${c.startDate} ~ ${c.endDate}` : '기간 미설정'}
-                                  {csvCount > 0 && ` · CSV명 ${csvCount}개`}
-                                </p>
-                                {selected && csvCount > 0 && (
-                                  <p className="mt-1 text-[11px] text-gray-400 truncate">
-                                    {c.csvNames!.join(', ')}
-                                  </p>
-                                )}
-                              </div>
-                              <div className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 transition-colors ${
-                                selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300'
-                              }`} />
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    <div className="mt-5 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <p className="text-xs text-gray-400">
-                          {selectedCampaignId
-                            ? `"${selectedCampaign?.campaignName}" 선택됨`
-                            : '캠페인을 선택하거나 선택 없이 진행할 수 있습니다.'}
-                        </p>
-                        <Link href="/campaign/ct-plus/status" className="text-xs text-blue-600 hover:underline">
-                          캠페인 관리
-                        </Link>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        {parseError && (
-                          <p className="text-[11px] text-red-500">{parseError}</p>
-                        )}
-                        {unifiedFile && (
-                          <p className="text-[11px] text-gray-400">
-                            {(unifiedFile.size / 1024 / 1024).toFixed(1)}MB
-                            {unifiedFile.size > 3 * 1024 * 1024 && ' · 대용량 → 자동 청크 저장'}
-                          </p>
-                        )}
-                        <button
-                          onClick={handleProcess}
-                          disabled={loading}
-                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          {loading ? '파싱 중...' : selectedCampaignId ? '선택 완료 →' : '선택 없이 진행 →'}
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </>
+          </div>
         )}
 
         {/* ══════════════════════════════════════════════════════
@@ -736,7 +522,6 @@ function CtPlusDailyContent() {
               <div>
                 <h2 className="text-sm font-semibold text-gray-800">추출된 데이터</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {selectedCampaign ? `${selectedCampaign.campaignName} · ` : ''}
                   {activeMediaTypes.map(m => MEDIA_CONFIG[m].label).join(', ')}
                 </p>
               </div>
@@ -770,50 +555,6 @@ function CtPlusDailyContent() {
               </div>
             )}
 
-            {/* 캠페인별 매칭 요약 */}
-            {campaignMatchSummary.length > 0 && (
-              <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-                <p className="text-xs font-semibold text-green-800 mb-2">
-                  캠페인 자동 매칭 결과 — {campaignMatchSummary.length}개 캠페인
-                </p>
-                <div className="space-y-1.5">
-                  {campaignMatchSummary.map(entry => (
-                    <div key={entry.campaignId} className="flex items-center justify-between rounded-lg bg-white border border-green-100 px-3 py-2">
-                      <div className="flex-1 min-w-0">
-                        <span className="text-xs font-semibold text-gray-800 truncate block">{entry.campaignName}</span>
-                        <span className="text-[11px] text-gray-400">{entry.csvNames.join(', ')}</span>
-                      </div>
-                      <div className="flex items-center gap-3 ml-3 text-right flex-shrink-0">
-                        <span className="text-[11px] text-gray-500">{entry.rowCount.toLocaleString()}행</span>
-                        <span className="text-xs font-semibold text-blue-700">{entry.totalCost.toLocaleString()}원</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-2 text-[11px] text-green-600">
-                  ✓ 각 행에 캠페인 설정의 마크업(미디어·DMP·대행사)이 자동 적용되었습니다.
-                </p>
-              </div>
-            )}
-
-            {/* 미매칭 캠페인 경고 */}
-            {unmatchedCsvNames.length > 0 && (
-              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-                <p className="text-xs font-semibold text-amber-700 mb-1.5">
-                  그룹에 포함되지 않은 CSV 캠페인명 ({unmatchedCsvNames.length}개)
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {unmatchedCsvNames.map(name => (
-                    <span key={name} className="rounded-full bg-amber-100 border border-amber-200 px-2.5 py-0.5 text-[11px] text-amber-700">
-                      {name}
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-2 text-[11px] text-amber-500">
-                  <Link href="/campaign/ct-plus/status" className="underline hover:text-amber-700">캠페인 관리</Link>에서 해당 캠페인명을 CSV 매칭에 추가하세요.
-                </p>
-              </div>
-            )}
 
             {/* 매체 탭 */}
             <div className="mb-0 flex gap-2 border-b border-gray-200">
@@ -881,7 +622,7 @@ function CtPlusDailyContent() {
               </div>
             )}
 
-            {/* \u355c\ud14c\uc774\ube14 */}
+            {/* 데이터 테이블 */}
             {activeTab && (
               <DailyDataTable rows={activeRows} media={activeTab} onRowUpdate={handleRowUpdate} />
             )}
@@ -892,12 +633,12 @@ function CtPlusDailyContent() {
   )
 }
 
-// \u2500\u2500 \ud5ec\ud37c: FileReader\ub85c \ud14d\uc2a4\ud2b8 \uc77d\uae30 (BOM \uc790\ub3d9 \uc81c\uac70) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Helper: FileReader로 텍스트 읽기 (BOM 자동 제거)
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = e => resolve((e.target?.result as string) || '')
-    reader.onerror = () => reject(new Error('\ud30c\uc77c \uc77d\uae30 \uc2e4\ud328'))
+    reader.onerror = () => reject(new Error('파일 읽기 실패'))
     reader.readAsText(file, 'utf-8')
   })
 }

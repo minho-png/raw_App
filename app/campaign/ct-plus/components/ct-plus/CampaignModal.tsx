@@ -74,7 +74,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, repor
     }
   }
 
-  function updateMBField(media: string, field: string, value: number | undefined) {
+  function updateMBField(media: string, field: string, value: number | boolean | undefined) {
     setMediaBudgets(mediaBudgets.map(mb =>
       mb.media !== media ? mb : { ...mb, [field]: value }
     ))
@@ -88,11 +88,16 @@ export function CampaignModal({ initial, operators, agencies, advertisers, repor
     }))
   }
 
-  function updateSubCampaign(media: string, idx: number, field: string, value: string | number) {
+  function updateSubCampaign(media: string, idx: number, field: string, value: string | number | boolean | undefined) {
     setMediaBudgets(mediaBudgets.map(mb => {
       if (mb.media !== media) return mb
       const subs = [...(mb.subCampaigns ?? [])]
-      subs[idx] = { ...subs[idx], [field]: value }
+      if (field === 'csvCampaignNames') {
+        const arr = (value as string).split('\n').map((s: string) => s.trim()).filter(Boolean)
+        subs[idx] = { ...subs[idx], csvCampaignNames: arr }
+      } else {
+        subs[idx] = { ...subs[idx], [field]: value }
+      }
       return { ...mb, subCampaigns: subs }
     }))
   }
@@ -212,6 +217,19 @@ export function CampaignModal({ initial, operators, agencies, advertisers, repor
               </MF>
             </div>
 
+            {/* 동영상 여부 */}
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={mb.isVideo ?? false}
+                  onChange={e => updateMBField(mb.media, 'isVideo', e.target.checked)}
+                  className="rounded"
+                />
+                동영상 캠페인
+              </label>
+            </div>
+
             {/* KPI 목표 */}
             <div className="grid grid-cols-3 gap-3">
               <MF label="CPC 목표">
@@ -232,16 +250,45 @@ export function CampaignModal({ initial, operators, agencies, advertisers, repor
                   placeholder="원"
                 />
               </MF>
-              <MF label="CTR 목표 (%)">
-                <input
-                  type="number" min="0" max="100" step="0.01"
-                  value={mb.ctrTarget ?? ''}
-                  onChange={e => updateMBField(mb.media, 'ctrTarget', parseFloat(e.target.value) || undefined)}
-                  className={inputCls}
-                  placeholder="%"
-                />
-              </MF>
+              {mb.isVideo ? (
+                <MF label="VTR 목표 (%)">
+                  <input
+                    type="number" min="0" max="100" step="0.01"
+                    value={mb.vtrTarget ?? ''}
+                    onChange={e => updateMBField(mb.media, 'vtrTarget', parseFloat(e.target.value) || undefined)}
+                    className={inputCls}
+                    placeholder="%"
+                  />
+                </MF>
+              ) : (
+                <MF label="CTR 목표 (%)">
+                  <input
+                    type="number" min="0" max="100" step="0.01"
+                    value={mb.ctrTarget ?? ''}
+                    onChange={e => updateMBField(mb.media, 'ctrTarget', parseFloat(e.target.value) || undefined)}
+                    className={inputCls}
+                    placeholder="%"
+                  />
+                </MF>
+              )}
             </div>
+
+            {/* 예상 노출수 계산 */}
+            {(mb.cpmTarget || mb.cpcTarget) && (
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 space-y-1">
+                <p className="text-xs font-semibold text-blue-900">예상 노출수 계산:</p>
+                {mb.cpmTarget && (
+                  <p className="text-[11px] text-blue-700">
+                    CPM 기준: ({(mb.totalBudget ?? 0).toLocaleString()} / {mb.cpmTarget}) × 1000 = {((mb.totalBudget ?? 0) / mb.cpmTarget * 1000).toLocaleString('ko-KR', { maximumFractionDigits: 0 })}회
+                  </p>
+                )}
+                {mb.cpcTarget && mb.ctrTarget && (
+                  <p className="text-[11px] text-blue-700">
+                    CPC+CTR 기준: ({(mb.totalBudget ?? 0).toLocaleString()} / {mb.cpcTarget}) / ({mb.ctrTarget} / 100) = {((mb.totalBudget ?? 0) / mb.cpcTarget / (mb.ctrTarget / 100)).toLocaleString('ko-KR', { maximumFractionDigits: 0 })}회
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* 서브 캠페인 */}
             <div>
@@ -260,28 +307,90 @@ export function CampaignModal({ initial, operators, agencies, advertisers, repor
               ) : (
                 <div className="space-y-2">
                   {(mb.subCampaigns ?? []).map((sc, idx) => (
-                    <div key={sc.id} className="flex items-center gap-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
-                      <input
-                        type="text"
-                        value={sc.name}
-                        onChange={e => updateSubCampaign(mb.media, idx, 'name', e.target.value)}
-                        placeholder="서브 캠페인명"
-                        className="flex-1 rounded border-0 bg-transparent text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 px-1"
+                    <div key={sc.id} className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <input
+                          type="text"
+                          value={sc.name}
+                          onChange={e => updateSubCampaign(mb.media, idx, 'name', e.target.value)}
+                          placeholder="서브 캠페인명"
+                          className="text-xs font-medium flex-1 rounded border border-gray-300 bg-white px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <div className="flex items-center gap-2 ml-2">
+                          <label className="flex items-center gap-1 text-[11px] text-gray-500">
+                            <input
+                              type="checkbox"
+                              checked={sc.isVideo ?? false}
+                              onChange={e => updateSubCampaign(mb.media, idx, 'isVideo', e.target.checked)}
+                              className="rounded"
+                            />
+                            동영상
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeSubCampaign(mb.media, idx)}
+                            className="text-gray-300 hover:text-red-400 transition-colors"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={sc.csvCampaignNames?.join('\n') ?? ''}
+                        onChange={e => updateSubCampaign(mb.media, idx, 'csvCampaignNames', e.target.value)}
+                        placeholder="CSV 캠페인명 (줄바꿈으로 구분)"
+                        className="w-full text-[11px] rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
                       />
-                      <input
-                        type="number"
-                        value={sc.budget || ''}
-                        onChange={e => updateSubCampaign(mb.media, idx, 'budget', parseFloat(e.target.value) || 0)}
-                        placeholder="예산"
-                        className="w-24 rounded border border-gray-200 bg-white text-xs text-right px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeSubCampaign(mb.media, idx)}
-                        className="text-gray-300 hover:text-red-400 transition-colors"
-                      >
-                        ×
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="number"
+                          value={sc.budget || ''}
+                          onChange={e => updateSubCampaign(mb.media, idx, 'budget', parseFloat(e.target.value) || 0)}
+                          placeholder="예산"
+                          className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <input
+                          type="number"
+                          value={sc.totalFeeRate ?? ''}
+                          onChange={e => updateSubCampaign(mb.media, idx, 'totalFeeRate', parseFloat(e.target.value) || undefined)}
+                          placeholder="수수료율 %"
+                          className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          type="number"
+                          value={sc.cpcTarget ?? ''}
+                          onChange={e => updateSubCampaign(mb.media, idx, 'cpcTarget', parseFloat(e.target.value) || undefined)}
+                          placeholder="CPC"
+                          className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <input
+                          type="number"
+                          value={sc.cpmTarget ?? ''}
+                          onChange={e => updateSubCampaign(mb.media, idx, 'cpmTarget', parseFloat(e.target.value) || undefined)}
+                          placeholder="CPM"
+                          className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        {sc.isVideo ? (
+                          <input
+                            type="number"
+                            value={sc.vtrTarget ?? ''}
+                            onChange={e => updateSubCampaign(mb.media, idx, 'vtrTarget', parseFloat(e.target.value) || undefined)}
+                            placeholder="VTR %"
+                            className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                        ) : (
+                          <input
+                            type="number"
+                            value={sc.ctrTarget ?? ''}
+                            onChange={e => updateSubCampaign(mb.media, idx, 'ctrTarget', parseFloat(e.target.value) || undefined)}
+                            placeholder="CTR %"
+                            className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

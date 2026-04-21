@@ -2,16 +2,13 @@
 import { CampaignModal } from "@/app/campaign/ct-plus/components/ct-plus/CampaignModal"
 import { CampaignDetailPanel } from "@/app/campaign/ct-plus/components/ct-plus/CampaignDetailPanel"
 import { AgencyEditTab } from "@/app/campaign/ct-plus/components/ct-plus/AgencyEditTab"
-import { ConfirmModal, SCard, MF } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
+import { ConfirmModal, SCard, MF, fmt, spendRateStyle, getDailySuggestion, btnPrimary, selectCls, inputCls } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
+import type { FilterStatus, ConfirmCfg } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 
 
 import React, { useState, useMemo, useRef, useEffect } from "react"
 import dynamic from "next/dynamic"
 import * as XLSX from 'xlsx'
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Legend
-} from 'recharts'
 
 // 탭으로 병합된 페이지들 (코드 스플리팅으로 로드)
 const CTPlusOverviewTab  = dynamic(() => import("../overview/page"),  { ssr: false, loading: () => <div className="p-8 text-center text-sm text-gray-500">로딩 중…</div> })
@@ -21,46 +18,15 @@ type StatusTab = "campaigns" | "agencies" | "advertisers" | "operators"
 type AgencySubTab = "list" | "edit"
 
 import {
-  Campaign, Operator, Agency, Advertiser, MediaBudget, TargetingBudget, AVAILABLE_MEDIA,
+  Campaign, Operator, Agency, Advertiser, AVAILABLE_MEDIA,
   getCampaignTotals, getCampaignProgress, getDday
 } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useReports } from "@/lib/hooks/useReports"
+import { loadAllRawRows } from "@/lib/rawDataStore"
+import { recomputeAllCampaigns } from "@/lib/markupService"
 
-// ── 유틸 ─────────────────────────────────────────────────
-function fmt(n: number) { return n.toLocaleString("ko-KR") }
 
-function spendRateStyle(rate: number): { text: string; bar: string } {
-  if (rate <= 20)  return { text: "text-blue-500",   bar: "bg-blue-400" }
-  if (rate <= 40)  return { text: "text-sky-500",    bar: "bg-sky-400" }
-  if (rate <= 60)  return { text: "text-green-600",  bar: "bg-green-500" }
-  if (rate <= 75)  return { text: "text-yellow-600", bar: "bg-yellow-400" }
-  if (rate <= 90)  return { text: "text-orange-500", bar: "bg-orange-400" }
-  if (rate <= 100) return { text: "text-red-500",    bar: "bg-red-400" }
-  return                   { text: "text-red-700",   bar: "bg-red-600" }
-}
-
-function getDailySuggestion(c: Campaign): string {
-  const { totalSettingCost, totalSpend } = getCampaignTotals(c)
-  const remaining = totalSettingCost - totalSpend
-  if (remaining <= 0) return `세팅 금액 100% 초과 소진`
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const end   = new Date(c.endDate); end.setHours(0, 0, 0, 0)
-  const days  = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  if (days <= 0) return `미소진 ${fmt(remaining)}원 (기간 만료)`
-  const daily = Math.round(remaining / days)
-  return `미소진 ${fmt(remaining)}원 · 남은 ${days}일 기준 일 예산 약 ${fmt(daily)}원으로 조정 필요`
-}
-
-function emptyTB(): TargetingBudget { return { budget: 0, spend: 0, agencyFeeRate: 10, targetings: [] } }
-function emptyMB(media: string): MediaBudget { return { media, dmp: emptyTB(), nonDmp: emptyTB() } }
-
-type FilterStatus = "전체" | "집행 중" | "종료"
-interface ConfirmCfg { title: string; message: string; onConfirm: () => void }
-
-const btnPrimary = "inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-const selectCls = "rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:border-gray-400 transition-colors"
-const inputCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
 
 // ════════════════════════════════════════════════════════
 // 외부 탭 컨테이너
@@ -133,6 +99,13 @@ function CampaignStatusPage() {
     () => campaigns.find(c => c.id === selectedDetailId) ?? null,
     [campaigns, selectedDetailId]
   )
+
+  useEffect(() => {
+    if (campaigns.length === 0) return
+    const rawRows = loadAllRawRows()
+    if (rawRows.length === 0) return
+    recomputeAllCampaigns(rawRows, campaigns)
+  }, [campaigns])
 
   const filtered = useMemo(() => campaigns.filter(c => {
     if (filterStatus !== "전체" && c.status !== filterStatus) return false
@@ -514,7 +487,7 @@ function CampaignStatusPage() {
         {/* ══ 대행사 관리 ══════════════════════════════ */}
         {statusTab === "agencies" && (
           <>
-            {agencySubTab === "list" && <AgencyListTab agencies={agencies} campaigns={campaigns} onEdit={(ag) => { setEditAg(ag); setAgencySubTab("edit") }} onDelete={handleDeleteAg} />}
+            {agencySubTab === "list" && <AgencyListTab agencies={agencies} onEdit={(ag) => { setEditAg(ag); setAgencySubTab("edit") }} onDelete={handleDeleteAg} />}
             {agencySubTab === "edit" && <AgencyEditTab agency={editAg} agencies={agencies} onSave={(ag) => {
               if (editAg) {
                 saveAgencies(agencies.map(a => a.id === ag.id ? ag : a))
@@ -641,9 +614,8 @@ function CampaignStatusPage() {
 
 // ════════════════════════════════════════════════════════
 // 대행사 관리 - 목록 탭
-function AgencyListTab({ agencies, campaigns: _campaigns, onEdit, onDelete }: {
+function AgencyListTab({ agencies, onEdit, onDelete }: {
   agencies: Agency[]
-  campaigns: Campaign[]
   onEdit: (ag: Agency) => void
   onDelete: (id: string) => void
 }) {

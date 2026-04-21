@@ -71,9 +71,26 @@ export function applyMarkupToRows(rawRows: RawRow[], campaigns: Campaign[]): Raw
     const isDmpRow = dmpType !== 'DIRECT'
 
     const mb = matched ? matched.mediaBudgets.find(m => m.media === MEDIA_TYPE_TO_LABEL[mediaType]) : null
-    const mediaMarkup    = mb?.totalFeeRate !== undefined ? 0 : getMediaMarkupDecimal(mediaType)
-    const dmpFeeRate     = mb?.totalFeeRate !== undefined ? 0 : (isDmpRow ? DMP_FEE_RATES_DECIMAL[dmpType] ?? 0 : 0)
-    const agencyFee      = matched ? getAgencyFeeDecimal(matched, mediaType, isDmpRow) : 0
+
+    // SubCampaign.csvCampaignNames 기반 세부 매칭 (우선순위 높음)
+    let matchedSubCampaign: import('./campaignTypes').SubCampaign | null = null
+    if (matched && mb) {
+      for (const sc of mb.subCampaigns ?? []) {
+        const scNames = (sc.csvCampaignNames ?? []).map(n => n.trim().toLowerCase())
+        if (scNames.includes(row.campaignName.trim().toLowerCase())) {
+          matchedSubCampaign = sc
+          break
+        }
+      }
+    }
+
+    // 수수료율 우선순위: SubCampaign.totalFeeRate > MediaBudget.totalFeeRate > 개별 계산
+    const effectiveFeeRate = matchedSubCampaign?.totalFeeRate ?? mb?.totalFeeRate
+    const mediaMarkup    = effectiveFeeRate !== undefined ? 0 : getMediaMarkupDecimal(mediaType)
+    const dmpFeeRate     = effectiveFeeRate !== undefined ? 0 : (isDmpRow ? DMP_FEE_RATES_DECIMAL[dmpType] ?? 0 : 0)
+    const agencyFee      = effectiveFeeRate !== undefined
+      ? effectiveFeeRate / 100
+      : (matched ? getAgencyFeeDecimal(matched, mediaType, isDmpRow) : 0)
     const totalFeeDecimal = mediaMarkup + dmpFeeRate + agencyFee
 
     const isNaver = mediaType === 'naver'
@@ -124,7 +141,7 @@ export function clearComputedRows(campaignId: string): void {
 }
 
 /**
- * 모든 캠페인의 computed rows를 raw + campaigns로부터 재계산하여 저장
+ * raw + campaigns -> computed rows -> localStorage
  */
 export function recomputeAllCampaigns(rawRows: RawRow[], campaigns: Campaign[]): void {
   const allComputed = applyMarkupToRows(rawRows, campaigns)
