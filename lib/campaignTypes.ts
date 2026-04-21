@@ -1,6 +1,7 @@
 export type CampaignStatus = '집행 중' | '종료'
-export type CampaignType = 'CT+' | 'IMC'
-export const CAMPAIGN_TYPES: CampaignType[] = ['CT+', 'IMC']
+// CT+ 캠페인은 정산 분류상 IMC에 해당. CT(CT-CTV)는 별도 브랜치에서 관리.
+export type CampaignType = 'IMC'
+export const CAMPAIGN_TYPES: CampaignType[] = ['IMC']
 
 export const AVAILABLE_MEDIA = ['네이버 GFA', '카카오모먼트', 'Google', 'META'] as const
 export type MediaName = typeof AVAILABLE_MEDIA[number]

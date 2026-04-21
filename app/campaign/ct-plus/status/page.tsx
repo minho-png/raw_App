@@ -426,7 +426,7 @@ function CampaignStatusPage() {
                               <div className="font-medium text-gray-900 truncate" title={c.campaignName}>{c.campaignName}</div>
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                 {c.campaignType && (
-                                  <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${c.campaignType === 'CT+' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'}`}>
+                                  <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-700">
                                     {c.campaignType}
                                   </span>
                                 )}
@@ -1427,7 +1427,7 @@ function CampaignDetailPanel({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               {campaign.campaignType && (
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${campaign.campaignType === 'CT+' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'}`}>
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-700">
                   {campaign.campaignType}
                 </span>
               )}
