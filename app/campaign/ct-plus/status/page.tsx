@@ -427,7 +427,7 @@ function CampaignStatusPage() {
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                 {c.campaignType && (
                                   <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-700">
-                                    {c.campaignType}
+                                    CT+
                                   </span>
                                 )}
                                 <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${c.status === "집행 중" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
@@ -1074,7 +1074,7 @@ function CampaignModal({ initial, operators, agencies, advertisers, reports, onS
           <MF label="캠페인 유형">
             <select value={campaignType} onChange={e => setCampaignType(e.target.value as CampaignType | "")} className={inputCls}>
               <option value="">미분류</option>
-              {CAMPAIGN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {CAMPAIGN_TYPES.map(t => <option key={t} value={t}>CT+</option>)}
             </select>
           </MF>
           <MF label="담당자 *">
@@ -1428,7 +1428,7 @@ function CampaignDetailPanel({
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               {campaign.campaignType && (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-700">
-                  {campaign.campaignType}
+                  CT+
                 </span>
               )}
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${campaign.status === "집행 중" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
