@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useState, useMemo, useRef } from "react"
-import Link from "next/link"
 import dynamic from "next/dynamic"
 import * as XLSX from 'xlsx'
 import {
@@ -19,14 +18,12 @@ type AgencySubTab = "list" | "edit"
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, TargetingBudget,
   CampaignType, CAMPAIGN_TYPES,
-  AVAILABLE_MEDIA, MEDIA_MARKUP_RATE, MEDIA_COLORS,
-  DMP_TARGETS, NON_DMP_TARGETS, DMP_FEE_RATE,
-  getTotalMarkup, calcSettingCost, calcSpendRate,
+  AVAILABLE_MEDIA,
+  DMP_TARGETS, NON_DMP_TARGETS,
   getMediaTotals, getCampaignTotals, getCampaignProgress, getDday,
 } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useReports } from "@/lib/hooks/useReports"
-import type { MediaType } from "@/lib/reportTypes"
 
 // ── 유틸 ─────────────────────────────────────────────────
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
@@ -115,7 +112,6 @@ function CampaignStatusPage() {
   const [filterOperator, setFilterOperator] = useState("")
   const [filterMedia,    setFilterMedia]    = useState("")
   const [searchQuery,    setSearchQuery]    = useState("")
-  const [expandedIds,    setExpandedIds]    = useState<Set<string>>(new Set())
   const [modalOpen,      setModalOpen]      = useState(false)
   const [editTarget,     setEditTarget]     = useState<Campaign | null>(null)
   const [opModalOpen,    setOpModalOpen]    = useState(false)
@@ -127,7 +123,6 @@ function CampaignStatusPage() {
   const [editAdv,        setEditAdv]        = useState<Advertiser | null>(null)
   const [confirmCfg,     setConfirmCfg]     = useState<ConfirmCfg | null>(null)
   const [alertOpen,      setAlertOpen]      = useState(true)
-  const [memoTarget,     setMemoTarget]     = useState<Campaign | null>(null)
   const [toast,          setToast]          = useState<{ message: string; type: "success" | "error" } | null>(null)
   const fileInputRef     = useRef<HTMLInputElement>(null)
 
@@ -427,7 +422,7 @@ function CampaignStatusPage() {
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                 {c.campaignType && (
                                   <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-700">
-                                    CT+
+                                    {c.campaignType}
                                   </span>
                                 )}
                                 <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${c.status === "집행 중" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
@@ -644,7 +639,7 @@ function CampaignStatusPage() {
 
 // ════════════════════════════════════════════════════════
 // 대행사 관리 - 목록 탭
-function AgencyListTab({ agencies, campaigns, onEdit, onDelete }: {
+function AgencyListTab({ agencies, campaigns: _campaigns, onEdit, onDelete }: {
   agencies: Agency[]
   campaigns: Campaign[]
   onEdit: (ag: Agency) => void
@@ -688,7 +683,7 @@ function AgencyListTab({ agencies, campaigns, onEdit, onDelete }: {
 }
 
 // 대행사 관리 - 수정/입력 탭
-function AgencyEditTab({ agency, agencies, onSave, onCancel }: {
+function AgencyEditTab({ agency, agencies: _agencies, onSave, onCancel }: {
   agency: Agency | null
   agencies: Agency[]
   onSave: (ag: Agency) => void
@@ -1074,7 +1069,7 @@ function CampaignModal({ initial, operators, agencies, advertisers, reports, onS
           <MF label="캠페인 유형">
             <select value={campaignType} onChange={e => setCampaignType(e.target.value as CampaignType | "")} className={inputCls}>
               <option value="">미분류</option>
-              {CAMPAIGN_TYPES.map(t => <option key={t} value={t}>CT+</option>)}
+              {CAMPAIGN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </MF>
           <MF label="담당자 *">
@@ -1428,7 +1423,7 @@ function CampaignDetailPanel({
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               {campaign.campaignType && (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-700">
-                  CT+
+                  {campaign.campaignType}
                 </span>
               )}
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${campaign.status === "집행 중" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>

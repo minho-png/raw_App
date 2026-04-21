@@ -1,16 +1,18 @@
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import localFont from "next/font/local"
 import "./globals.css"
 import SidebarWrapper from "@/components/SidebarWrapper"
 
-const geistSans = Geist({
+const geistSans = localFont({
+  src: "../public/fonts/GeistVF.woff2",
   variable: "--font-geist-sans",
-  subsets: ["latin"],
+  display: "swap",
 })
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
+  src: "../public/fonts/GeistMonoVF.woff2",
   variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 })
 
 export const metadata: Metadata = {
@@ -28,6 +30,7 @@ export default function RootLayout({
       <body className="flex h-full bg-gray-50">
         <SidebarWrapper />
         <div className="flex flex-1 flex-col overflow-auto">
+
           {children}
         </div>
       </body>
