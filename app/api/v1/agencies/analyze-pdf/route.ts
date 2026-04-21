@@ -14,47 +14,42 @@ export async function POST(req: NextRequest): Promise<NextResponse<AnalyzeRespon
     const formData = await req.formData()
     const file = formData.get('file') as File | null
 
-    // 파라미터 검증
     if (!file) {
-      return NextResponse.json(
-        { error: 'File is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'File is required' }, { status: 400 })
     }
 
-    // 파일 크기 검증
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: `File size exceeds 20MB limit. Current size: ${(file.size / 1024 / 1024).toFixed(2)}MB` },
+        { error: `File size exceeds 20MB limit. Current: ${(file.size / 1024 / 1024).toFixed(2)}MB` },
         { status: 400 }
       )
     }
 
-    // 파일 타입 검증
-    if (file.type !== 'application/pdf') {
+    // MIME 타입 관대하게 검증 (일부 브라우저/OS는 다른 타입을 반환)
+    const isPdf = file.type === 'application/pdf' ||
+                  file.type === 'application/octet-stream' ||
+                  file.name.toLowerCase().endsWith('.pdf')
+    if (!isPdf) {
       return NextResponse.json(
-        { error: `Invalid file type. Expected PDF, received: ${file.type}` },
+        { error: `PDF 파일이 아닙니다. (타입: ${file.type})` },
         { status: 400 }
       )
     }
 
-    // PDF Buffer 생성
     const arrayBuffer = await file.arrayBuffer()
     const pdfBuffer = Buffer.from(arrayBuffer)
 
-    // Python pdfplumber OCR 분석
+    // PDF 시그니처 확인
+    if (!pdfBuffer.slice(0, 5).toString('ascii').startsWith('%PDF')) {
+      return NextResponse.json({ error: '유효한 PDF 파일이 아닙니다.' }, { status: 400 })
+    }
+
     const fields = await extractBusinessRegistrationFields(pdfBuffer)
 
-    return NextResponse.json(
-      { ok: true, fields },
-      { status: 200 }
-    )
+    return NextResponse.json({ ok: true, fields }, { status: 200 })
   } catch (error) {
     console.error('PDF analyze error:', error)
     const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json(
-      { error: message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
