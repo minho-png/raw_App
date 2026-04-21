@@ -133,7 +133,7 @@ export default function CtPlusViewPage() {
       spend: number
       settingCost: number | null
       spendRate: number | null
-    }> = {} as any
+    }> = {} as Record<string, never>
 
     for (const media of availableMedia) {
       const rows = filteredRows[media] ?? []

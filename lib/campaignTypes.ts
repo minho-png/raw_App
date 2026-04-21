@@ -1,4 +1,6 @@
 export type CampaignStatus = '집행 중' | '종료'
+export type CampaignType = 'CT+' | 'IMC'
+export const CAMPAIGN_TYPES: CampaignType[] = ['CT+', 'IMC']
 
 export const AVAILABLE_MEDIA = ['네이버 GFA', '카카오모먼트', 'Google', 'META'] as const
 export type MediaName = typeof AVAILABLE_MEDIA[number]
@@ -78,6 +80,7 @@ export interface Campaign {
   id: string
   advertiserId: string   // Advertiser.id 참조
   campaignName: string
+  campaignType?: CampaignType  // 캠페인 유형: CT+ | IMC (정산 분류용)
   memo?: string          // 특이사항 메모
   mediaBudgets: MediaBudget[]
   startDate: string

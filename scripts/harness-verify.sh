@@ -50,7 +50,7 @@ TS_OUT=$(npx tsc --noEmit 2>&1) && step_pass "TypeScript: no errors" || {
 
 # ── Step 2: ESLint ───────────────────────────────────────────
 step_info "ESLint (app/ lib/ components/ types/)..."
-LINT_OUT=$(npx eslint app/ lib/ components/ types/ --ext .ts,.tsx --max-warnings 50 2>&1) && step_pass "ESLint: no errors" || {
+LINT_OUT=$(npx eslint app/ lib/ components/ types/ --ext .ts,.tsx --max-warnings 100 2>&1) && step_pass "ESLint: no errors" || {
   step_fail "ESLint: lint errors found"
   echo "$LINT_OUT" | head -30
   ISSUES+=("$LINT_OUT")

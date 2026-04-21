@@ -18,6 +18,7 @@ type AgencySubTab = "list" | "edit"
 
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, TargetingBudget,
+  CampaignType, CAMPAIGN_TYPES,
   AVAILABLE_MEDIA, MEDIA_MARKUP_RATE, MEDIA_COLORS,
   DMP_TARGETS, NON_DMP_TARGETS, DMP_FEE_RATE,
   getTotalMarkup, calcSettingCost, calcSpendRate,
@@ -423,7 +424,12 @@ function CampaignStatusPage() {
                             {/* 캠페인명 + 상태 */}
                             <td className="px-4 py-3 max-w-[200px]">
                               <div className="font-medium text-gray-900 truncate" title={c.campaignName}>{c.campaignName}</div>
-                              <div className="flex items-center gap-1.5 mt-0.5">
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                {c.campaignType && (
+                                  <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${c.campaignType === 'CT+' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'}`}>
+                                    {c.campaignType}
+                                  </span>
+                                )}
                                 <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${c.status === "집행 중" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
                                   {c.status}
                                 </span>
@@ -954,6 +960,7 @@ function CampaignModal({ initial, operators, agencies, advertisers, reports, onS
   const [agencyId,        setAgencyId]        = useState(initial?.agencyId        ?? "")
   const [advertiserId,    setAdvertiserId]    = useState(initial?.advertiserId    ?? "")
   const [campaignName,    setCampaignName]    = useState(initial?.campaignName    ?? "")
+  const [campaignType,    setCampaignType]    = useState<CampaignType | "">(initial?.campaignType ?? "")
   const [managerId,       setManagerId]       = useState(initial?.managerId       ?? "")
   const [startDate,       setStartDate]       = useState(initial?.startDate       ?? "")
   const [endDate,         setEndDate]         = useState(initial?.endDate         ?? "")
@@ -1031,7 +1038,9 @@ function CampaignModal({ initial, operators, agencies, advertisers, reports, onS
     }
     onSave({
       id: initial?.id ?? Date.now().toString(),
-      campaignName, agencyId, advertiserId, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo,
+      campaignName,
+      campaignType: campaignType || undefined,
+      agencyId, advertiserId, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo,
       csvNames,
       createdAt: initial?.createdAt ?? new Date().toISOString(),
     } as Campaign)
@@ -1061,7 +1070,13 @@ function CampaignModal({ initial, operators, agencies, advertisers, reports, onS
           <input type="text" value={campaignName} onChange={e => setCampaignName(e.target.value)} className={inputCls} />
         </MF>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
+          <MF label="캠페인 유형">
+            <select value={campaignType} onChange={e => setCampaignType(e.target.value as CampaignType | "")} className={inputCls}>
+              <option value="">미분류</option>
+              {CAMPAIGN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </MF>
           <MF label="담당자 *">
             <select value={managerId} onChange={e => setManagerId(e.target.value)} className={inputCls}>
               <option value="">선택하세요</option>
@@ -1404,13 +1419,18 @@ function CampaignDetailPanel({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/20 z-30" onClick={onClose} />
-      <div className="fixed inset-y-0 right-0 w-[480px] bg-white shadow-2xl border-l border-gray-200 z-40 flex flex-col overflow-hidden">
+      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+      <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col overflow-hidden">
 
         {/* 헤더 */}
         <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              {campaign.campaignType && (
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${campaign.campaignType === 'CT+' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'}`}>
+                  {campaign.campaignType}
+                </span>
+              )}
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${campaign.status === "집행 중" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
                 {campaign.status}
               </span>
@@ -1578,17 +1598,17 @@ function SCard({ label, value, sub, color }: {
 }) {
   const cls = color === "blue" ? "text-blue-600" : color === "gray" ? "text-gray-400" : "text-gray-900"
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-      <p className="text-xs text-gray-500 font-medium">{label}</p>
-      <p className={`text-lg font-semibold ${cls} mt-1`}>{value}{sub && <span className="text-sm ml-1">{sub}</span>}</p>
+    <div className="rounded-lg border border-gray-200 bg-white p-3 text-center">
+      <p className="text-[10px] text-gray-500 mb-0.5">{label}</p>
+      <p className={`text-sm font-bold ${cls}`}>{value} {sub && <span className="text-xs font-normal">{sub}</span>}</p>
     </div>
   )
 }
 
 function MF({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <label className="block text-xs font-semibold text-gray-700 mb-1">{label}</label>
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-gray-700">{label}</label>
       {children}
     </div>
   )
