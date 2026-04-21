@@ -22,9 +22,9 @@ import {
   getCampaignTotals, getCampaignProgress, getDday
 } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
-import { useReports } from "@/lib/hooks/useReports"
 import { loadAllRawRows } from "@/lib/rawDataStore"
-import { recomputeAllCampaigns } from "@/lib/markupService"
+import { recomputeAllCampaigns, loadComputedRows } from "@/lib/markupService"
+import type { RawRow } from "@/lib/rawDataParser"
 
 
 
@@ -72,7 +72,6 @@ function CampaignStatusPage() {
     campaigns, operators, agencies, advertisers,
     saveCampaigns, saveOperators, saveAgencies, saveAdvertisers
   } = useMasterData()
-  const { reports } = useReports()
 
   const [statusTab,      setStatusTab]      = useState<StatusTab>("campaigns")
   const [filterStatus,   setFilterStatus]   = useState<FilterStatus>("전체")
@@ -94,6 +93,12 @@ function CampaignStatusPage() {
   const [toast,          setToast]          = useState<{ message: string; type: "success" | "error" } | null>(null)
   const fileInputRef     = useRef<HTMLInputElement>(null)
 
+  const [computedSpendMap, setComputedSpendMap] = useState<Map<string, {
+    netAmount: number
+    executionAmount: number
+    rowCount: number
+  }>>(new Map())
+
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null)
   const selectedDetailCampaign = useMemo(
     () => campaigns.find(c => c.id === selectedDetailId) ?? null,
@@ -103,8 +108,20 @@ function CampaignStatusPage() {
   useEffect(() => {
     if (campaigns.length === 0) return
     const rawRows = loadAllRawRows()
-    if (rawRows.length === 0) return
-    recomputeAllCampaigns(rawRows, campaigns)
+    if (rawRows.length > 0) recomputeAllCampaigns(rawRows, campaigns)
+    // 각 캠페인의 computed rows 로드
+    const map = new Map<string, { netAmount: number; executionAmount: number; rowCount: number }>()
+    for (const c of campaigns) {
+      const rows = loadComputedRows(c.id)
+      if (rows.length > 0) {
+        map.set(c.id, {
+          netAmount: rows.reduce((s, r) => s + (r.netAmount ?? 0), 0),
+          executionAmount: rows.reduce((s, r) => s + (r.executionAmount ?? 0), 0),
+          rowCount: rows.length,
+        })
+      }
+    }
+    setComputedSpendMap(map)
   }, [campaigns])
 
   const filtered = useMemo(() => campaigns.filter(c => {
@@ -372,6 +389,7 @@ function CampaignStatusPage() {
                         <th className="px-4 py-3 text-left">기간</th>
                         <th className="px-4 py-3 text-center">진행률</th>
                         <th className="px-4 py-3 text-center">소진율</th>
+                        <th className="px-4 py-3 text-center">실제 소진액</th>
                         <th className="px-4 py-3 text-center">연결</th>
                         <th className="px-4 py-3 text-center">관리</th>
                       </tr>
@@ -439,6 +457,24 @@ function CampaignStatusPage() {
                               <div className="mt-1 h-1.5 w-16 mx-auto rounded-full bg-gray-200">
                                 <div className={`h-full rounded-full transition-all ${sc.bar}`} style={{ width: `${Math.min(totals.spendRate, 100)}%` }} />
                               </div>
+                            </td>
+                            {/* 실제 소진액 */}
+                            <td className="px-4 py-3 text-right text-xs">
+                              {(() => {
+                                const computed = computedSpendMap.get(c.id)
+                                if (computed) {
+                                  const actualSpendRate = totals.totalSettingCost > 0
+                                    ? Math.round((computed.netAmount / totals.totalSettingCost) * 1000) / 10
+                                    : 0
+                                  return (
+                                    <div>
+                                      <div className="font-medium text-blue-700">{fmt(computed.netAmount)}</div>
+                                      <div className="text-[10px] text-gray-400">{actualSpendRate.toFixed(1)}%</div>
+                                    </div>
+                                  )
+                                }
+                                return <span className="text-gray-300 text-[11px]">데이터 없음</span>
+                              })()}
                             </td>
                             {/* 연결 데이터 */}
                             <td className="px-4 py-3 text-center">
@@ -562,7 +598,7 @@ function CampaignStatusPage() {
       </main>
 
       {/* 모달들 */}
-      {modalOpen && <CampaignModal initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers} reports={reports} onSave={(c) => {
+      {modalOpen && <CampaignModal initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers} onSave={(c) => {
         if (editTarget) {
           saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))
         } else {
@@ -603,7 +639,6 @@ function CampaignStatusPage() {
           operators={operators}
           agencies={agencies}
           advertisers={advertisers}
-          reports={reports}
           onClose={() => setSelectedDetailId(null)}
           onEdit={(c) => { setEditTarget(c); setModalOpen(true); setSelectedDetailId(null) }}
         />
@@ -758,11 +793,8 @@ function AgencyModal({ initial, onSave, onClose }: {
       address: initial?.address,
       businessType: initial?.businessType,
       businessItem: initial?.businessItem,
-      defaultMarkupRate: initial?.defaultMarkupRate,
-      registrationPdfBase64: initial?.registrationPdfBase64,
-      registrationPdfName: initial?.registrationPdfName,
       createdAt: initial?.createdAt,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     } as Agency)
   }
 
@@ -779,7 +811,7 @@ function AgencyModal({ initial, onSave, onClose }: {
         <MF label="이메일">
           <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} />
         </MF>
-        <MF label="전화">
+        <MF label="전화번호">
           <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} />
         </MF>
         <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">

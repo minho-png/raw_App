@@ -20,12 +20,11 @@ function DetailKPICard({ label, value, color }: { label: string; value: string; 
 }
 
 export function CampaignDetailPanel({
-  campaign, operators, agencies, advertisers, reports, onClose, onEdit }: {
+  campaign, operators, agencies, advertisers, onClose, onEdit }: {
   campaign: Campaign
   operators: Operator[]
   agencies: Agency[]
   advertisers: Advertiser[]
-  reports: import("@/lib/hooks/useReports").SavedReport[]
   onClose: () => void
   onEdit: (c: Campaign) => void
 }) {
@@ -51,13 +50,7 @@ export function CampaignDetailPanel({
     return { name: mb.media, '부킹': t.totalBudget, '세팅': t.totalSettingCost, '집행': t.totalSpend }
   })
 
-  const linkedReports = reports.filter(r => {
-    const names = new Set<string>([...(r.detectedCampaignNames ?? []), ...(r.campaignName ? [r.campaignName] : [])])
-    for (const rows of Object.values(r.rowsByMedia ?? {})) {
-      rows?.forEach((row: { campaignName?: string }) => { if (row.campaignName) names.add(row.campaignName) })
-    }
-    return (campaign.csvNames ?? []).some(n => names.has(n))
-  })
+
 
   function fmtAbbr(n: number): string {
     if (n >= 100000000) return `${(n / 100000000).toFixed(1)}억`
@@ -269,13 +262,11 @@ export function CampaignDetailPanel({
               <div className="space-y-1.5">
                 {campaign.csvNames.map(n => (
                   <div key={n} className="flex items-center gap-2">
-                    <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${linkedReports.some(r => r.detectedCampaignNames?.includes(n) || Object.values(r.rowsByMedia ?? {}).some(rows => rows?.some((row: { campaignName?: string }) => row.campaignName === n))) ? 'bg-green-500' : 'bg-gray-300'}`} />
+                    <span className="h-1.5 w-1.5 rounded-full flex-shrink-0 bg-green-500" />
                     <span className="text-xs text-gray-700 truncate">{n}</span>
                   </div>
                 ))}
-                {linkedReports.length > 0 && (
-                  <p className="mt-1 text-[11px] text-green-600">{linkedReports.length}개 리포트와 연결됨</p>
-                )}
+                <p className="mt-1 text-[11px] text-green-600">{campaign.csvNames.length}개 CSV 캠페인명 매핑</p>
               </div>
             ) : (
               <p className="text-xs text-gray-400">연결된 데이터 없음 — 캠페인 수정에서 CSV명을 연결하세요</p>

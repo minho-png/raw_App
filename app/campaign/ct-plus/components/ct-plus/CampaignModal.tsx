@@ -1,16 +1,17 @@
 "use client"
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, SubCampaign,
   CampaignType, CAMPAIGN_TYPES, AVAILABLE_MEDIA } from "@/lib/campaignTypes"
+import { loadAllRawRows } from "@/lib/rawDataStore"
+import type { RawRow } from "@/lib/rawDataParser"
 import { inputCls, emptyMB, MF } from "./statusUtils"
 
-export function CampaignModal({ initial, operators, agencies, advertisers, reports, onSave, onClose }: {
+export function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose }: {
   initial: Campaign | null
   operators: Operator[]
   agencies: Agency[]
   advertisers: Advertiser[]
-  reports: import("@/lib/hooks/useReports").SavedReport[]
   onSave: (c: Campaign) => void
   onClose: () => void
 }) {
@@ -28,31 +29,24 @@ export function CampaignModal({ initial, operators, agencies, advertisers, repor
   const [csvNames,        setCsvNames]        = useState<string[]>(initial?.csvNames ?? [])
   const [csvSearch,       setCsvSearch]       = useState('')
   const [csvMediaFilter,  setCsvMediaFilter]  = useState('')
+  const [rawRows,         setRawRows]         = useState<RawRow[]>([])
 
-  // 각 캠페인명 → 연관 매체/레이블 메타 계산
+  // rawRows 로드
+  useEffect(() => {
+    setRawRows(loadAllRawRows())
+  }, [])
+
+  // 각 캠페인명 → 연관 매체 메타 계산
   const reportNameMeta = useMemo(() => {
-    const meta = new Map<string, { media: Set<string>; labels: string[] }>()
-    const addName = (name: string, media: string[], label: string) => {
-      if (!meta.has(name)) meta.set(name, { media: new Set(), labels: [] })
-      const m = meta.get(name)!
-      media.forEach(t => m.media.add(t))
-      if (label && !m.labels.includes(label)) m.labels.push(label)
-    }
-    for (const r of reports) {
-      const label = r.label ?? ''
-      const media = r.mediaTypes ?? []
-      if (r.campaignName) addName(r.campaignName, media, label)
-      // detectedCampaignNames (chunked 리포트도 포함)
-      r.detectedCampaignNames?.forEach(n => addName(n, media, label))
-      // row-level (non-chunked)
-      for (const rows of Object.values(r.rowsByMedia ?? {})) {
-        rows?.forEach((row: { campaignName?: string }) => {
-          if (row.campaignName) addName(row.campaignName, media, label)
-        })
-      }
+    const meta = new Map<string, { media: Set<string> }>()
+    for (const row of rawRows) {
+      const name = row.campaignName
+      if (!name) continue
+      if (!meta.has(name)) meta.set(name, { media: new Set() })
+      meta.get(name)!.media.add(row.media)
     }
     return meta
-  }, [reports])
+  }, [rawRows])
 
   const allReportCampaignNames = useMemo(
     () => Array.from(reportNameMeta.keys()).sort(),
@@ -106,6 +100,15 @@ export function CampaignModal({ initial, operators, agencies, advertisers, repor
     setMediaBudgets(mediaBudgets.map(mb => {
       if (mb.media !== media) return mb
       const subs = (mb.subCampaigns ?? []).filter((_, i) => i !== idx)
+      return { ...mb, subCampaigns: subs }
+    }))
+  }
+
+  function setSubCampaignCsvNames(media: string, idx: number, names: string[]) {
+    setMediaBudgets(mediaBudgets.map(mb => {
+      if (mb.media !== media) return mb
+      const subs = [...(mb.subCampaigns ?? [])]
+      subs[idx] = { ...subs[idx], csvCampaignNames: names }
       return { ...mb, subCampaigns: subs }
     }))
   }
@@ -303,7 +306,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, repor
                 </button>
               </div>
               {(mb.subCampaigns ?? []).length === 0 ? (
-                <p className="text-[11px] text-gray-400">서브 캠페인 없음 (매체 단일 운영)</p>
+                <p className="text-[11px] text-gray-400">서브 캠페인 없음 — 위에서 선택한 CSV 캠페인명 전체가 이 매체에 매핑됩니다</p>
               ) : (
                 <div className="space-y-2">
                   {(mb.subCampaigns ?? []).map((sc, idx) => (
@@ -335,13 +338,31 @@ export function CampaignModal({ initial, operators, agencies, advertisers, repor
                           </button>
                         </div>
                       </div>
-                      <textarea
-                        rows={2}
-                        value={sc.csvCampaignNames?.join('\n') ?? ''}
-                        onChange={e => updateSubCampaign(mb.media, idx, 'csvCampaignNames', e.target.value)}
-                        placeholder="CSV 캠페인명 (줄바꿈으로 구분)"
-                        className="w-full text-[11px] rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                      />
+                      {csvNames.length > 0 ? (
+                        <div className="rounded border border-gray-200 p-2 space-y-1 max-h-28 overflow-y-auto bg-gray-50">
+                          <p className="text-[10px] text-gray-400 mb-1">CSV 캠페인명 매핑 (복수 선택 가능)</p>
+                          {csvNames.map(name => {
+                            const checked = (sc.csvCampaignNames ?? []).includes(name)
+                            return (
+                              <label key={name} className={`flex items-center gap-2 rounded px-2 py-1 cursor-pointer text-[11px] transition-colors ${checked ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-white'}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={e => {
+                                    const cur = sc.csvCampaignNames ?? []
+                                    const next = e.target.checked ? [...cur, name] : cur.filter(n => n !== name)
+                                    setSubCampaignCsvNames(mb.media, idx, next)
+                                  }}
+                                  className="rounded flex-shrink-0"
+                                />
+                                <span className="truncate">{name}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-gray-400 italic">위 &apos;DB 데이터 연결&apos;에서 CSV 캠페인명을 먼저 선택하세요</p>
+                      )}
                       <div className="grid grid-cols-2 gap-2">
                         <input
                           type="number"
