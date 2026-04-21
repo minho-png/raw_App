@@ -20,7 +20,7 @@ interface BudgetPacingCardsProps {
   isLoading?: boolean;
 }
 
-export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, campaign, isLoading }) => {
+export const BudgetPacingCards: React.FC<BudgetPacingCardsProps> = ({ status, campaign: _campaign, isLoading }) => {
   const getBurnRateColor = (rate: number) => {
     if (rate >= 90) return "bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]";
     if (rate >= 70) return "bg-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.5)]";

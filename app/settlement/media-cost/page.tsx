@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import type { Campaign, Agency, Advertiser } from "@/lib/campaignTypes"
-import { MEDIA_MARKUP_RATE, getMediaTotals } from "@/lib/campaignTypes"
+import type { Campaign } from "@/lib/campaignTypes"
+import { MEDIA_MARKUP_RATE } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 
 const SNAPSHOTS_KEY  = "media-cost-snapshots-v1"

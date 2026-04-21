@@ -868,7 +868,7 @@ function CtPlusDailyContent() {
                           return next
                         })
                       }}
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors \${
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
                         selected
                           ? 'bg-blue-600 text-white'
                           : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'

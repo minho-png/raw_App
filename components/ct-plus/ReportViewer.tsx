@@ -253,7 +253,7 @@ export default function ReportViewer({ mediaList, sections }: Props) {
                         </tr>
                       </thead>
                       <tbody>
-                        {weeks.map((week, wi) => (
+                        {weeks.map((week) => (
                           <tr key={week}>
                             <td className={`${tdCls} font-medium`}>{week}</td>
                             {data.map((m, mi) => {
