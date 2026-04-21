@@ -16,7 +16,7 @@ type StatusTab = "campaigns" | "agencies" | "advertisers" | "operators"
 type AgencySubTab = "list" | "edit"
 
 import {
-  Campaign, Operator, Agency, Advertiser, MediaBudget, TargetingBudget,
+  Campaign, Operator, Agency, Advertiser, MediaBudget, TargetingBudget, SubCampaign,
   CampaignType, CAMPAIGN_TYPES,
   AVAILABLE_MEDIA,
   DMP_TARGETS, NON_DMP_TARGETS,
@@ -1028,6 +1028,37 @@ function CampaignModal({ initial, operators, agencies, advertisers, reports, onS
     }))
   }
 
+  function updateMBField(media: string, field: string, value: number | undefined) {
+    setMediaBudgets(mediaBudgets.map(mb =>
+      mb.media !== media ? mb : { ...mb, [field]: value }
+    ))
+  }
+
+  function addSubCampaign(media: string) {
+    setMediaBudgets(mediaBudgets.map(mb => {
+      if (mb.media !== media) return mb
+      const sub: SubCampaign = { id: Date.now().toString(), name: '', budget: 0, spend: 0 }
+      return { ...mb, subCampaigns: [...(mb.subCampaigns ?? []), sub] }
+    }))
+  }
+
+  function updateSubCampaign(media: string, idx: number, field: string, value: string | number) {
+    setMediaBudgets(mediaBudgets.map(mb => {
+      if (mb.media !== media) return mb
+      const subs = [...(mb.subCampaigns ?? [])]
+      subs[idx] = { ...subs[idx], [field]: value }
+      return { ...mb, subCampaigns: subs }
+    }))
+  }
+
+  function removeSubCampaign(media: string, idx: number) {
+    setMediaBudgets(mediaBudgets.map(mb => {
+      if (mb.media !== media) return mb
+      const subs = (mb.subCampaigns ?? []).filter((_, i) => i !== idx)
+      return { ...mb, subCampaigns: subs }
+    }))
+  }
+
   function handleSave() {
     if (!campaignName.trim() || !agencyId || !advertiserId || !managerId || !startDate || !endDate || !settlementMonth) {
       alert("필수 항목을 입력하세요.")
@@ -1112,21 +1143,104 @@ function CampaignModal({ initial, operators, agencies, advertisers, reports, onS
         </MF>
 
         {mediaBudgets.map(mb => (
-          <div key={mb.media} className="rounded-lg border border-gray-200 p-3 space-y-2">
+          <div key={mb.media} className="rounded-lg border border-gray-200 p-4 space-y-3">
             <h3 className="text-sm font-semibold text-gray-900">{mb.media}</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <MF label="DMP 예산">
-                <input type="number" value={mb.dmp.budget} onChange={e => updateTB(mb.media, "dmp", "budget", e.target.value)} className={inputCls} />
+
+            {/* 총 수수료율 + 예산 */}
+            <div className="grid grid-cols-2 gap-3">
+              <MF label="총 수수료율 (%)">
+                <input
+                  type="number" min="0" max="100" step="0.1"
+                  value={mb.totalFeeRate ?? ''}
+                  onChange={e => updateMBField(mb.media, 'totalFeeRate', parseFloat(e.target.value) || 0)}
+                  className={inputCls}
+                  placeholder="예: 15"
+                />
               </MF>
-              <MF label="DMP 집행">
-                <input type="number" value={mb.dmp.spend} onChange={e => updateTB(mb.media, "dmp", "spend", e.target.value)} className={inputCls} />
+              <MF label="총 예산">
+                <input
+                  type="number" min="0"
+                  value={mb.totalBudget ?? mb.dmp.budget + mb.nonDmp.budget}
+                  onChange={e => updateMBField(mb.media, 'totalBudget', parseFloat(e.target.value) || 0)}
+                  className={inputCls}
+                />
               </MF>
-              <MF label="비DMP 예산">
-                <input type="number" value={mb.nonDmp.budget} onChange={e => updateTB(mb.media, "nonDmp", "budget", e.target.value)} className={inputCls} />
+            </div>
+
+            {/* KPI 목표 */}
+            <div className="grid grid-cols-3 gap-3">
+              <MF label="CPC 목표">
+                <input
+                  type="number" min="0"
+                  value={mb.cpcTarget ?? ''}
+                  onChange={e => updateMBField(mb.media, 'cpcTarget', parseFloat(e.target.value) || undefined)}
+                  className={inputCls}
+                  placeholder="원"
+                />
               </MF>
-              <MF label="비DMP 집행">
-                <input type="number" value={mb.nonDmp.spend} onChange={e => updateTB(mb.media, "nonDmp", "spend", e.target.value)} className={inputCls} />
+              <MF label="CPM 목표">
+                <input
+                  type="number" min="0"
+                  value={mb.cpmTarget ?? ''}
+                  onChange={e => updateMBField(mb.media, 'cpmTarget', parseFloat(e.target.value) || undefined)}
+                  className={inputCls}
+                  placeholder="원"
+                />
               </MF>
+              <MF label="CTR 목표 (%)">
+                <input
+                  type="number" min="0" max="100" step="0.01"
+                  value={mb.ctrTarget ?? ''}
+                  onChange={e => updateMBField(mb.media, 'ctrTarget', parseFloat(e.target.value) || undefined)}
+                  className={inputCls}
+                  placeholder="%"
+                />
+              </MF>
+            </div>
+
+            {/* 서브 캠페인 */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-gray-600">서브 캠페인</span>
+                <button
+                  type="button"
+                  onClick={() => addSubCampaign(mb.media)}
+                  className="text-[11px] text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  + 추가
+                </button>
+              </div>
+              {(mb.subCampaigns ?? []).length === 0 ? (
+                <p className="text-[11px] text-gray-400">서브 캠페인 없음 (매체 단일 운영)</p>
+              ) : (
+                <div className="space-y-2">
+                  {(mb.subCampaigns ?? []).map((sc, idx) => (
+                    <div key={sc.id} className="flex items-center gap-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                      <input
+                        type="text"
+                        value={sc.name}
+                        onChange={e => updateSubCampaign(mb.media, idx, 'name', e.target.value)}
+                        placeholder="서브 캠페인명"
+                        className="flex-1 rounded border-0 bg-transparent text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 px-1"
+                      />
+                      <input
+                        type="number"
+                        value={sc.budget || ''}
+                        onChange={e => updateSubCampaign(mb.media, idx, 'budget', parseFloat(e.target.value) || 0)}
+                        placeholder="예산"
+                        className="w-24 rounded border border-gray-200 bg-white text-xs text-right px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeSubCampaign(mb.media, idx)}
+                        className="text-gray-300 hover:text-red-400 transition-colors"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -1681,5 +1795,3 @@ function MF({ label, children }: { label: string; children: React.ReactNode }) {
     </div>
   )
 }
-
-                   

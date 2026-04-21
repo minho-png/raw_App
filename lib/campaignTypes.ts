@@ -35,10 +35,26 @@ export interface TargetingBudget {
   targetings: string[]
 }
 
+export interface SubCampaign {
+  id: string
+  name: string           // 서브 캠페인명 (CSV 캠페인명 매칭용)
+  budget: number         // 예산
+  spend: number          // 집행액
+  cpcTarget?: number     // CPC 목표
+  cpmTarget?: number     // CPM 목표
+  ctrTarget?: number     // CTR 목표 (%)
+}
+
 export interface MediaBudget {
   media: string
   dmp: TargetingBudget    // DMP 활용 (fee=10%)
   nonDmp: TargetingBudget // DMP 미활용 (fee=0%)
+  totalFeeRate?: number      // 총 수수료율 (%) — DMP+대행수수료 통합
+  totalBudget?: number       // 총 부킹 예산
+  cpcTarget?: number         // CPC 목표
+  cpmTarget?: number         // CPM 목표
+  ctrTarget?: number         // CTR 목표 (%)
+  subCampaigns?: SubCampaign[]  // 매체 내 서브 캠페인 목록
 }
 
 export interface Operator {

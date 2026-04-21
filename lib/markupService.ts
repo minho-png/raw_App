@@ -43,6 +43,8 @@ function getAgencyFeeDecimal(campaign: Campaign, mediaType: MediaType, isDmp: bo
   const label = MEDIA_TYPE_TO_LABEL[mediaType]
   const mb = campaign.mediaBudgets.find(m => m.media === label)
   if (!mb) return 0
+  // 신규: totalFeeRate가 있으면 미디어 마크업과 DMP 수수료를 포함한 통합 수수료율 사용
+  if (mb.totalFeeRate !== undefined) return mb.totalFeeRate / 100
   const targeting = isDmp ? mb.dmp : mb.nonDmp
   return targeting.agencyFeeRate / 100
 }
@@ -68,8 +70,9 @@ export function applyMarkupToRows(rawRows: RawRow[], campaigns: Campaign[]): Raw
     const dmpType: DmpType = detectDmpType(row.dmpName)
     const isDmpRow = dmpType !== 'DIRECT'
 
-    const mediaMarkup    = getMediaMarkupDecimal(mediaType)
-    const dmpFeeRate     = isDmpRow ? DMP_FEE_RATES_DECIMAL[dmpType] ?? 0 : 0
+    const mb = matched ? matched.mediaBudgets.find(m => m.media === MEDIA_TYPE_TO_LABEL[mediaType]) : null
+    const mediaMarkup    = mb?.totalFeeRate !== undefined ? 0 : getMediaMarkupDecimal(mediaType)
+    const dmpFeeRate     = mb?.totalFeeRate !== undefined ? 0 : (isDmpRow ? DMP_FEE_RATES_DECIMAL[dmpType] ?? 0 : 0)
     const agencyFee      = matched ? getAgencyFeeDecimal(matched, mediaType, isDmpRow) : 0
     const totalFeeDecimal = mediaMarkup + dmpFeeRate + agencyFee
 
