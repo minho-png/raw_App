@@ -131,6 +131,18 @@ export function calcSpendRate(spend: number, settingCost: number): number {
 }
 
 export function getMediaTotals(mb: MediaBudget) {
+  // totalBudget + totalFeeRate unified setting takes priority
+  if (mb.totalBudget !== undefined && mb.totalFeeRate !== undefined) {
+    const totalSettingCost = calcSettingCost(mb.totalBudget, mb.totalFeeRate)
+    const totalSpend = mb.dmp.spend + mb.nonDmp.spend
+    return {
+      totalBudget: mb.totalBudget, totalSettingCost, totalSpend,
+      spendRate: calcSpendRate(totalSpend, totalSettingCost),
+      dmpMarkup: mb.totalFeeRate, nonDmpMarkup: mb.totalFeeRate,
+      dmpSC: totalSettingCost, nonDmpSC: 0,
+    }
+  }
+  // Fallback to separate DMP / non-DMP approach
   const mm = MEDIA_MARKUP_RATE[mb.media] ?? 0
   const dmpMarkup    = getTotalMarkup(mm, DMP_FEE_RATE, mb.dmp.agencyFeeRate)
   const nonDmpMarkup = getTotalMarkup(mm, 0,            mb.nonDmp.agencyFeeRate)
