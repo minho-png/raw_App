@@ -61,6 +61,9 @@ export interface MediaBudget {
   vtrTarget?: number         // VTR 목표 (%) — 동영상 캠페인용
   isVideo?: boolean          // 동영상 캠페인 여부
   subCampaigns?: SubCampaign[]  // 매체 내 서브 캠페인 목록
+  // ── 실 집행 데이터 (수동 입력) ───────────────────────────
+  actualSettingCost?: number  // 실 세팅금액 (직접 입력)
+  actualNetAmount?: number    // 실 소진액 (직접 입력)
 }
 
 export interface Operator {

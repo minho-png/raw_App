@@ -93,6 +93,13 @@ function CampaignStatusPage() {
   const [toast,          setToast]          = useState<{ message: string; type: "success" | "error" } | null>(null)
   const fileInputRef     = useRef<HTMLInputElement>(null)
 
+  const takenCsvNames = useMemo(() => {
+    const editingId = editTarget?.id
+    return campaigns
+      .filter(c => c.id !== editingId)
+      .flatMap(c => c.csvNames ?? [])
+  }, [campaigns, editTarget])
+
   const [computedSpendMap, setComputedSpendMap] = useState<Map<string, {
     netAmount: number
     executionAmount: number
@@ -598,7 +605,7 @@ function CampaignStatusPage() {
       </main>
 
       {/* 모달들 */}
-      {modalOpen && <CampaignModal initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers} onSave={(c) => {
+      {modalOpen && <CampaignModal initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers} takenCsvNames={takenCsvNames} onSave={(c) => {
         if (editTarget) {
           saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))
         } else {

@@ -2,18 +2,19 @@
 import React, { useState, useMemo, useEffect } from "react"
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, SubCampaign,
-  CampaignType, CAMPAIGN_TYPES, AVAILABLE_MEDIA } from "@/lib/campaignTypes"
+  CampaignType, CAMPAIGN_TYPES, AVAILABLE_MEDIA, getMediaTotals } from "@/lib/campaignTypes"
 import { loadAllRawRows } from "@/lib/rawDataStore"
 import type { RawRow } from "@/lib/rawDataParser"
 import { inputCls, emptyMB, MF } from "./statusUtils"
 
-export function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose }: {
+export function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose, takenCsvNames = [] }: {
   initial: Campaign | null
   operators: Operator[]
   agencies: Agency[]
   advertisers: Advertiser[]
   onSave: (c: Campaign) => void
   onClose: () => void
+  takenCsvNames?: string[]
 }) {
   const [agencyId,        setAgencyId]        = useState(initial?.agencyId        ?? "")
   const [advertiserId,    setAdvertiserId]    = useState(initial?.advertiserId    ?? "")
@@ -30,11 +31,18 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   const [csvSearch,       setCsvSearch]       = useState('')
   const [csvMediaFilter,  setCsvMediaFilter]  = useState('')
   const [rawRows,         setRawRows]         = useState<RawRow[]>([])
+  const [confirmMode,     setConfirmMode]     = useState<null | "save" | "close">(null)
+  const [isDirty,         setIsDirty]         = useState(false)
 
   // rawRows 로드
   useEffect(() => {
     setRawRows(loadAllRawRows())
   }, [])
+
+  // Track dirty state (any change triggers isDirty)
+  useEffect(() => {
+    setIsDirty(true)
+  }, [agencyId, advertiserId, campaignName, campaignType, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo, csvNames])
 
   // 각 캠페인명 → 연관 매체 메타 계산
   const reportNameMeta = useMemo(() => {
@@ -113,11 +121,30 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
     }))
   }
 
-  function handleSave() {
+  // Get CSV names already used in THIS media's other sub-campaigns
+  function getCsvNamesUsedInMedia(media: string, currentSubIdx: number): Set<string> {
+    const used = new Set<string>()
+    const mb = mediaBudgets.find(m => m.media === media)
+    if (!mb) return used
+    for (let i = 0; i < (mb.subCampaigns ?? []).length; i++) {
+      if (i === currentSubIdx) continue
+      const sc = mb.subCampaigns![i]
+      for (const name of sc.csvCampaignNames ?? []) {
+        used.add(name)
+      }
+    }
+    return used
+  }
+
+  function handleSaveClick() {
     if (!campaignName.trim() || !agencyId || !advertiserId || !managerId || !startDate || !endDate || !settlementMonth) {
       alert("필수 항목을 입력하세요.")
       return
     }
+    setConfirmMode("save")
+  }
+
+  function handleConfirmSave() {
     onSave({
       id: initial?.id ?? Date.now().toString(),
       campaignName,
@@ -125,6 +152,20 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
       agencyId, advertiserId, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo,
       csvNames,
       createdAt: initial?.createdAt ?? new Date().toISOString() } as Campaign)
+    setConfirmMode(null)
+  }
+
+  function handleCloseClick() {
+    if (isDirty) {
+      setConfirmMode("close")
+    } else {
+      onClose()
+    }
+  }
+
+  function handleConfirmClose() {
+    onClose()
+    setConfirmMode(null)
   }
 
   return (
@@ -220,6 +261,53 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
               </MF>
             </div>
 
+            {/* 실 소진 데이터 입력 */}
+            {mb.totalBudget && mb.totalFeeRate && (() => {
+              const totals = getMediaTotals(mb)
+              const settingCost = totals.totalSettingCost
+              const actualSettingCost = mb.actualSettingCost ?? 0
+              const actualNetAmount = mb.actualNetAmount ?? 0
+              const markupSpendRate = totals.spendRate
+              const actualSpendRate = actualSettingCost > 0 ? (actualNetAmount / actualSettingCost * 100) : 0
+              const spendRateDiff = Math.abs(actualSpendRate - markupSpendRate)
+              const showWarning = spendRateDiff > 5
+
+              return (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <MF label="실 세팅금액">
+                      <input
+                        type="number" min="0"
+                        value={actualSettingCost}
+                        onChange={e => updateMBField(mb.media, 'actualSettingCost', parseFloat(e.target.value) || undefined)}
+                        className={inputCls}
+                        placeholder="원"
+                      />
+                    </MF>
+                    <MF label="실 소진액">
+                      <input
+                        type="number" min="0"
+                        value={actualNetAmount}
+                        onChange={e => updateMBField(mb.media, 'actualNetAmount', parseFloat(e.target.value) || undefined)}
+                        className={inputCls}
+                        placeholder="원"
+                      />
+                    </MF>
+                  </div>
+                  {showWarning && (
+                    <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2 flex items-center gap-2">
+                      <span className="text-[11px] font-semibold text-yellow-700">
+                        소진율 차이 {spendRateDiff.toFixed(1)}%p
+                      </span>
+                      <span className="text-[10px] text-yellow-600">
+                        (설정: {markupSpendRate.toFixed(1)}% vs 실제: {actualSpendRate.toFixed(1)}%)
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
             {/* 동영상 여부 */}
             <div className="flex items-center gap-2">
               <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
@@ -260,7 +348,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
                     value={mb.vtrTarget ?? ''}
                     onChange={e => updateMBField(mb.media, 'vtrTarget', parseFloat(e.target.value) || undefined)}
                     className={inputCls}
-                    placeholder="%"
+                    placeholder="예: 50"
                   />
                 </MF>
               ) : (
@@ -270,7 +358,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
                     value={mb.ctrTarget ?? ''}
                     onChange={e => updateMBField(mb.media, 'ctrTarget', parseFloat(e.target.value) || undefined)}
                     className={inputCls}
-                    placeholder="%"
+                    placeholder="예: 0.05"
                   />
                 </MF>
               )}
@@ -309,111 +397,129 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
                 <p className="text-[11px] text-gray-400">서브 캠페인 없음 — 위에서 선택한 CSV 캠페인명 전체가 이 매체에 매핑됩니다</p>
               ) : (
                 <div className="space-y-2">
-                  {(mb.subCampaigns ?? []).map((sc, idx) => (
-                    <div key={sc.id} className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <input
-                          type="text"
-                          value={sc.name}
-                          onChange={e => updateSubCampaign(mb.media, idx, 'name', e.target.value)}
-                          placeholder="서브 캠페인명"
-                          className="text-xs font-medium flex-1 rounded border border-gray-300 bg-white px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                        />
-                        <div className="flex items-center gap-2 ml-2">
-                          <label className="flex items-center gap-1 text-[11px] text-gray-500">
-                            <input
-                              type="checkbox"
-                              checked={sc.isVideo ?? false}
-                              onChange={e => updateSubCampaign(mb.media, idx, 'isVideo', e.target.checked)}
-                              className="rounded"
-                            />
-                            동영상
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => removeSubCampaign(mb.media, idx)}
-                            className="text-gray-300 hover:text-red-400 transition-colors"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                      {csvNames.length > 0 ? (
-                        <div className="rounded border border-gray-200 p-2 space-y-1 max-h-28 overflow-y-auto bg-gray-50">
-                          <p className="text-[10px] text-gray-400 mb-1">CSV 캠페인명 매핑 (복수 선택 가능)</p>
-                          {csvNames.map(name => {
-                            const checked = (sc.csvCampaignNames ?? []).includes(name)
-                            return (
-                              <label key={name} className={`flex items-center gap-2 rounded px-2 py-1 cursor-pointer text-[11px] transition-colors ${checked ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-white'}`}>
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={e => {
-                                    const cur = sc.csvCampaignNames ?? []
-                                    const next = e.target.checked ? [...cur, name] : cur.filter(n => n !== name)
-                                    setSubCampaignCsvNames(mb.media, idx, next)
-                                  }}
-                                  className="rounded flex-shrink-0"
-                                />
-                                <span className="truncate">{name}</span>
-                              </label>
-                            )
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-gray-400 italic">위 &apos;DB 데이터 연결&apos;에서 CSV 캠페인명을 먼저 선택하세요</p>
-                      )}
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="number"
-                          value={sc.budget || ''}
-                          onChange={e => updateSubCampaign(mb.media, idx, 'budget', parseFloat(e.target.value) || 0)}
-                          placeholder="예산"
-                          className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                        />
-                        <input
-                          type="number"
-                          value={sc.totalFeeRate ?? ''}
-                          onChange={e => updateSubCampaign(mb.media, idx, 'totalFeeRate', parseFloat(e.target.value) || undefined)}
-                          placeholder="수수료율 %"
-                          className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                        />
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <input
-                          type="number"
-                          value={sc.cpcTarget ?? ''}
-                          onChange={e => updateSubCampaign(mb.media, idx, 'cpcTarget', parseFloat(e.target.value) || undefined)}
-                          placeholder="CPC"
-                          className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                        />
-                        <input
-                          type="number"
-                          value={sc.cpmTarget ?? ''}
-                          onChange={e => updateSubCampaign(mb.media, idx, 'cpmTarget', parseFloat(e.target.value) || undefined)}
-                          placeholder="CPM"
-                          className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                        />
-                        {sc.isVideo ? (
+                  {(mb.subCampaigns ?? []).map((sc, idx) => {
+                    const usedInMedia = getCsvNamesUsedInMedia(mb.media, idx)
+                    return (
+                      <div key={sc.id} className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+                        <div className="flex items-center justify-between">
                           <input
-                            type="number"
-                            value={sc.vtrTarget ?? ''}
-                            onChange={e => updateSubCampaign(mb.media, idx, 'vtrTarget', parseFloat(e.target.value) || undefined)}
-                            placeholder="VTR %"
-                            className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            type="text"
+                            value={sc.name}
+                            onChange={e => updateSubCampaign(mb.media, idx, 'name', e.target.value)}
+                            placeholder="서브 캠페인명"
+                            className="text-xs font-medium flex-1 rounded border border-gray-300 bg-white px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
                           />
+                          <div className="flex items-center gap-2 ml-2">
+                            <label className="flex items-center gap-1 text-[11px] text-gray-500">
+                              <input
+                                type="checkbox"
+                                checked={sc.isVideo ?? false}
+                                onChange={e => updateSubCampaign(mb.media, idx, 'isVideo', e.target.checked)}
+                                className="rounded"
+                              />
+                              동영상
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => removeSubCampaign(mb.media, idx)}
+                              className="text-gray-300 hover:text-red-400 transition-colors"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                        {csvNames.length > 0 ? (
+                          <div className="rounded border border-gray-200 p-2 space-y-1 max-h-28 overflow-y-auto bg-gray-50">
+                            <p className="text-[10px] text-gray-400 mb-1">CSV 캠페인명 매핑 (복수 선택 가능)</p>
+                            {csvNames.map(name => {
+                              const checked = (sc.csvCampaignNames ?? []).includes(name)
+                              const isTakenByOther = takenCsvNames.includes(name)
+                              const isUsedInThisMedia = usedInMedia.has(name)
+                              const isDisabled = isTakenByOther || (isUsedInThisMedia && !checked)
+
+                              return (
+                                <label key={name} className={`flex items-center gap-2 rounded px-2 py-1 cursor-${isDisabled ? 'not-allowed' : 'pointer'} text-[11px] transition-colors ${
+                                  isDisabled
+                                    ? 'bg-gray-100 text-gray-400'
+                                    : checked
+                                    ? 'bg-blue-50 text-blue-700'
+                                    : 'text-gray-600 hover:bg-white'
+                                }`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={isDisabled}
+                                    onChange={e => {
+                                      if (!isDisabled) {
+                                        const cur = sc.csvCampaignNames ?? []
+                                        const next = e.target.checked ? [...cur, name] : cur.filter(n => n !== name)
+                                        setSubCampaignCsvNames(mb.media, idx, next)
+                                      }
+                                    }}
+                                    className="rounded flex-shrink-0"
+                                  />
+                                  <span className="truncate">{name}</span>
+                                  {isTakenByOther && <span className="text-[10px] text-gray-400">(사용 중)</span>}
+                                  {isUsedInThisMedia && !checked && <span className="text-[10px] text-gray-400">(다른 서브캠에서 사용)</span>}
+                                </label>
+                              )
+                            })}
+                          </div>
                         ) : (
+                          <p className="text-[11px] text-gray-400 italic">위 &apos;DB 데이터 연결&apos;에서 CSV 캠페인명을 먼저 선택하세요</p>
+                        )}
+                        <div className="grid grid-cols-2 gap-2">
                           <input
                             type="number"
-                            value={sc.ctrTarget ?? ''}
-                            onChange={e => updateSubCampaign(mb.media, idx, 'ctrTarget', parseFloat(e.target.value) || undefined)}
-                            placeholder="CTR %"
+                            value={sc.budget || ''}
+                            onChange={e => updateSubCampaign(mb.media, idx, 'budget', parseFloat(e.target.value) || 0)}
+                            placeholder="예산"
                             className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
                           />
-                        )}
+                          <input
+                            type="number"
+                            value={sc.totalFeeRate ?? ''}
+                            onChange={e => updateSubCampaign(mb.media, idx, 'totalFeeRate', parseFloat(e.target.value) || undefined)}
+                            placeholder="수수료율 %"
+                            className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <input
+                            type="number"
+                            value={sc.cpcTarget ?? ''}
+                            onChange={e => updateSubCampaign(mb.media, idx, 'cpcTarget', parseFloat(e.target.value) || undefined)}
+                            placeholder="CPC"
+                            className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                          <input
+                            type="number"
+                            value={sc.cpmTarget ?? ''}
+                            onChange={e => updateSubCampaign(mb.media, idx, 'cpmTarget', parseFloat(e.target.value) || undefined)}
+                            placeholder="CPM"
+                            className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                          {sc.isVideo ? (
+                            <input
+                              type="number"
+                              value={sc.vtrTarget ?? ''}
+                              onChange={e => updateSubCampaign(mb.media, idx, 'vtrTarget', parseFloat(e.target.value) || undefined)}
+                              placeholder="VTR %"
+                              className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            />
+                          ) : (
+                            <input
+                              type="number"
+                              value={sc.ctrTarget ?? ''}
+                              onChange={e => updateSubCampaign(mb.media, idx, 'ctrTarget', parseFloat(e.target.value) || undefined)}
+                              placeholder="CTR %"
+                              className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            />
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -469,11 +575,20 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
                   const checked = csvNames.includes(name)
                   const meta = reportNameMeta.get(name)
                   const mediaTags = meta ? Array.from(meta.media) : []
+                  const isTaken = takenCsvNames.includes(name)
+
                   return (
-                    <label key={name} className={`flex items-start gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors ${checked ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                    <label key={name} className={`flex items-start gap-2 rounded-md px-2 py-1.5 cursor-${isTaken && !checked ? 'not-allowed' : 'pointer'} transition-colors ${
+                      isTaken && !checked
+                        ? 'bg-gray-100'
+                        : checked
+                        ? "bg-blue-50"
+                        : "hover:bg-gray-50"
+                    }`}>
                       <input
                         type="checkbox"
                         checked={checked}
+                        disabled={isTaken && !checked}
                         onChange={e => {
                           if (e.target.checked) setCsvNames(prev => [...prev, name])
                           else setCsvNames(prev => prev.filter(n => n !== name))
@@ -481,7 +596,10 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
                         className="rounded mt-0.5 flex-shrink-0"
                       />
                       <div className="min-w-0">
-                        <span className={`text-xs block truncate ${checked ? "text-blue-700 font-medium" : "text-gray-700"}`}>{name}</span>
+                        <span className={`text-xs block truncate ${isTaken && !checked ? 'text-gray-400' : checked ? "text-blue-700 font-medium" : "text-gray-700"}`}>
+                          {name}
+                          {isTaken && !checked && ' (사용 중)'}
+                        </span>
                         {mediaTags.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-0.5">
                             {mediaTags.map(t => (
@@ -505,9 +623,30 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           <textarea value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} rows={3} />
         </MF>
 
+        {/* 확인 섹션 */}
+        {confirmMode === "save" && (
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 space-y-3">
+            <p className="text-sm font-semibold text-blue-900">저장하시겠습니까?</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmMode(null)} className="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors">취소</button>
+              <button onClick={handleConfirmSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">확인</button>
+            </div>
+          </div>
+        )}
+
+        {confirmMode === "close" && (
+          <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4 space-y-3">
+            <p className="text-sm font-semibold text-yellow-900">변경사항이 있습니다. 닫으시겠습니까?</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmMode(null)} className="rounded-lg border border-yellow-300 bg-white px-4 py-2 text-sm font-medium text-yellow-700 hover:bg-yellow-50 transition-colors">계속 편집</button>
+              <button onClick={handleConfirmClose} className="rounded-lg bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 transition-colors">닫기</button>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">
-          <button onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
-          <button onClick={handleSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
+          <button onClick={handleCloseClick} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
+          <button onClick={handleSaveClick} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
         </div>
       </div>
     </div>
