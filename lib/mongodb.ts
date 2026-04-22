@@ -59,24 +59,39 @@ async function connectAndEnsureIndexes(): Promise<MongoClient> {
   return c;
 }
 
-if (process.env.NODE_ENV === 'development') {
-  if (!globalWithMongo._mongoClientPromise) {
-    client = new MongoClient(getUri());
-    globalWithMongo._mongoClientPromise = client.connect().then(connectedClient => {
-      if (!globalWithMongo._indexesEnsured) {
-        globalWithMongo._indexesEnsured = true;
-        import('@/services/repositoryService').then(({ RepositoryService }) => {
-          new RepositoryService(connectedClient).ensureIndexes()
-            .catch(e => console.warn('[MongoDB] Index creation warning:', (e as Error).message));
-        });
-        seedDefaultAdmin(connectedClient).catch(() => null);
-      }
-      return connectedClient;
-    });
+// Lazy initialization to avoid connecting at build time
+if (!globalWithMongo._mongoClientPromise) {
+  // Check if we have MONGODB_URI available (not during build time)
+  if (process.env.MONGODB_URI) {
+    if (process.env.NODE_ENV === 'development') {
+      client = new MongoClient(getUri());
+      globalWithMongo._mongoClientPromise = client.connect().then(connectedClient => {
+        if (!globalWithMongo._indexesEnsured) {
+          globalWithMongo._indexesEnsured = true;
+          import('@/services/repositoryService').then(({ RepositoryService }) => {
+            new RepositoryService(connectedClient).ensureIndexes()
+              .catch(e => console.warn('[MongoDB] Index creation warning:', (e as Error).message));
+          });
+          seedDefaultAdmin(connectedClient).catch(() => null);
+        }
+        return connectedClient;
+      });
+    } else {
+      // Production: defer connection until first use
+      globalWithMongo._mongoClientPromise = (async () => {
+        return connectAndEnsureIndexes();
+      })();
+    }
+  } else {
+    // Build time or missing MONGODB_URI: placeholder promise that fails at runtime.
+    // Attach .catch() immediately to suppress unhandled rejection during module init.
+    const _buildTimeReject = Promise.reject(
+      new Error('MONGODB_URI is not set. Please configure it in your environment variables.')
+    );
+    _buildTimeReject.catch(() => {});
+    globalWithMongo._mongoClientPromise = _buildTimeReject;
   }
-  clientPromise = globalWithMongo._mongoClientPromise!;
-} else {
-  clientPromise = connectAndEnsureIndexes();
 }
+clientPromise = globalWithMongo._mongoClientPromise!;
 
 export default clientPromise;
