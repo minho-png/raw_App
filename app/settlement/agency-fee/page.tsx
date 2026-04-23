@@ -195,7 +195,7 @@ export default function AgencyFeePage() {
   }
 
   function copyAsExcel() {
-    const header = ["광고주", "대행사", "캐페인", "매체", "구분", "집행금액", "수수료율(%)", "정산금액"].join("\t")
+    const header = ["광고주", "대행사", "캠페인", "매체", "구분", "집행금액", "수수료율(%)", "정산금액"].join("\t")
     const rows   = visibleRows.map(r =>
       [r.advertiserName, r.agencyName, r.campaignName, r.media, r.kind, r.spend, r.feeRate, r.fee].join("\t")
     )
@@ -225,7 +225,7 @@ export default function AgencyFeePage() {
   }
 
   function downloadSnapshot(snap: SettlementSnapshot) {
-    const header = "광고주\t대행사\t캐페인\t매체\t구분\t집행금액\t수수료율(%)\t정산금액\n"
+    const header = "광고주\t대행사\t캠페인\t매체\t구분\t집행금액\t수수료율(%)\t정산금액\n"
     const rows = snap.rows.map(r =>
       `${r.advertiserName}\t${r.agencyName}\t${r.campaignName}\t${r.media}\t${r.kind}\t${r.spend}\t${r.feeRate}\t${r.fee}`
     ).join("\n")
@@ -321,7 +321,7 @@ export default function AgencyFeePage() {
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button onClick={() => shiftMonth(1)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
-          <span className="text-sm text-gray-400">집행 캐페인 {filtered.length}개</span>
+          <span className="text-sm text-gray-400">집행 캠페인 {filtered.length}개</span>
           {hasSnapshot && (
             <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 border border-green-200">
               ✓ 확정 완료
@@ -448,7 +448,7 @@ export default function AgencyFeePage() {
 
         {filtered.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-sm text-gray-400">
-            해당 월에 해당하는 캐페인이 없습니다.
+            해당 월에 해당하는 캠페인이 없습니다.
           </div>
         ) : allRows.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white py-16 text-center">
@@ -465,7 +465,7 @@ export default function AgencyFeePage() {
                     ? `${agencies.find(a => a.id === selectedAgencyId)?.name} 선택됨`
                     : "전체 대행사"
                   }
-                  {" · "}광고주 · 캐페인 · 매체별 대행수수료 내역
+                  {" · "}광고주 · 캠페인 · 매체별 대행수수료 내역
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -501,7 +501,7 @@ export default function AgencyFeePage() {
                   <tr className="border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
                     <th className="px-4 py-2.5 text-left font-medium">광고주</th>
                     <th className="px-4 py-2.5 text-left font-medium">대행사</th>
-                    <th className="px-4 py-2.5 text-left font-medium">캐페인</th>
+                    <th className="px-4 py-2.5 text-left font-medium">캠페인</th>
                     <th className="px-4 py-2.5 text-left font-medium">매체</th>
                     <th className="px-4 py-2.5 text-left font-medium">구분</th>
                     <th className="px-4 py-2.5 text-right font-medium">집행 금액</th>

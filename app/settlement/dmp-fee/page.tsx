@@ -165,7 +165,7 @@ export default function DmpFeePage() {
 
   function copyTsv() {
     const dmpHeaders = DMP_COLS.map(d => `${d}수수료`)
-    const header = ["광고주", "대행사", "캐페인", "매체",
+    const header = ["광고주", "대행사", "캠페인", "매체",
       "작업(순금액)", "집행금액(VAT기준)",
       ...dmpHeaders,
       "기계비 수수료", "기계비 VAT14%",
@@ -202,7 +202,7 @@ export default function DmpFeePage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-base font-semibold text-gray-900">DMP 수수료 정산</h1>
-            <p className="text-xs text-gray-400 mt-0.5">정산 리포트 · 캐페인×매체별 DMP 수수료 내역</p>
+            <p className="text-xs text-gray-400 mt-0.5">정산 리포트 · 캠페인×매체별 DMP 수수료 내역</p>
           </div>
           <button
             onClick={copyTsv}
@@ -250,7 +250,7 @@ export default function DmpFeePage() {
                   <tr className="bg-gray-100 text-gray-600 border-b border-gray-200">
                     <th className="px-3 py-2 text-left font-medium whitespace-nowrap">광고주</th>
                     <th className="px-3 py-2 text-left font-medium whitespace-nowrap">대행사</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">캐페인</th>
+                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">캠페인</th>
                     <th className="px-3 py-2 text-left font-medium whitespace-nowrap border-r border-gray-200">매체</th>
                     <th className="px-3 py-2 text-right font-medium whitespace-nowrap">작업(순금액)</th>
                     <th className="px-3 py-2 text-right font-medium whitespace-nowrap border-r border-gray-200">VAT기준</th>

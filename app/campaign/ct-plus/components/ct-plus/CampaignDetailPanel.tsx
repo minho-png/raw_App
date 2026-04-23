@@ -1,5 +1,6 @@
 "use client"
 import React, { useMemo } from "react"
+import { useRouter } from "next/navigation"
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
@@ -49,7 +50,8 @@ export function CampaignDetailPanel({
   onClose: () => void
   onEdit: (c: Campaign) => void
 }) {
-  // 이 캐페인에 매핑된 raw rows
+  // 이 캠페인에 매핑된 raw rows
+  const router = useRouter()
   const campRows = useMemo(
     () => rawRows.filter(r => r.matchedCampaignId === campaign.id),
     [rawRows, campaign.id]
@@ -191,7 +193,7 @@ export function CampaignDetailPanel({
                   style={{ width: `${Math.min(rawSpendRate, 100)}%` }} />
               </div>
             </div>
-            {Math.abs(lag) >= 5 && (
+            {campRows.length > 0 && Math.abs(lag) >= 5 && (
               <div className={`rounded-lg px-3 py-2 text-xs font-medium ${
                 lag >= 15 ? "bg-yellow-50 text-yellow-700 border border-yellow-200"
                   : lag > 0 ? "bg-orange-50 text-orange-700"
@@ -383,10 +385,10 @@ export function CampaignDetailPanel({
                     <span className="text-xs text-gray-700 truncate">{n}</span>
                   </div>
                 ))}
-                <p className="mt-1 text-[11px] text-green-600">{campaign.csvNames.length}개 CSV 캐페인명 매핑</p>
+                <p className="mt-1 text-[11px] text-green-600">{campaign.csvNames.length}개 CSV 캠페인명 매핑</p>
               </div>
             ) : (
-              <p className="text-xs text-gray-400">연결된 데이터 없음 — 캐페인 수정에서 CSV명을 연결하세요</p>
+              <p className="text-xs text-gray-400">연결된 데이터 없음 — 캠페인 수정에서 CSV명을 연결하세요</p>
             )}
           </div>
 
@@ -400,12 +402,18 @@ export function CampaignDetailPanel({
         </div>
 
         {/* 푸터 */}
-        <div className="border-t border-gray-100 px-5 py-3 flex justify-end">
+        <div className="border-t border-gray-100 px-5 py-3 flex items-center justify-between gap-2">
+          <button
+            onClick={() => router.push(`/campaign/ct-plus/status/${campaign.id}`)}
+            className="rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors"
+          >
+            상세 분석
+          </button>
           <button
             onClick={() => onEdit(campaign)}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
           >
-            캐페인 수정
+            캠페인 수정
           </button>
         </div>
       </div>

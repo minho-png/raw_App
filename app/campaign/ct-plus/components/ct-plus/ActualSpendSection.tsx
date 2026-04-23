@@ -20,7 +20,7 @@ export function ActualSpendSection({
   // 세팅 소진율: 부킹예산 기준 (config mb.dmp.spend 기반 — 참고용)
   const configSpendRate = totals.spendRate
   const spendRateDiff = Math.abs(actualSpendRate - configSpendRate)
-  // 임계값 15%p (캐페인 현황 이상치 감지 기준과 동일)
+  // 임계값 15%p (캠페인 현황 이상치 감지 기준과 동일)
   const showWarning = actualNetAmount > 0 && spendRateDiff >= 15
 
   return (
