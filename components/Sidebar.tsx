@@ -177,17 +177,12 @@ export default function Sidebar() {
                 </button>
                 {openGroups[group.title] && (
                   <div className="ml-2 mt-0.5 space-y-0.5">
-                    {group.items.map(item => (
+                    {group.items.filter(item => !item.badge).map(item => (
                       <Link key={item.href} href={item.href} className={linkCls(item.href)}>
                         <span className="flex items-center min-w-0">
                           {dot}
                           <span className="truncate">{item.label}</span>
                         </span>
-                        {item.badge && (
-                          <span className="ml-1.5 flex-shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-400">
-                            {item.badge}
-                          </span>
-                        )}
                       </Link>
                     ))}
                   </div>
