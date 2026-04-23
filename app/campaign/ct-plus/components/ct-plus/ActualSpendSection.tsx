@@ -1,4 +1,3 @@
-
 "use client"
 import React from "react"
 import { MediaBudget, getMediaTotals } from "@/lib/campaignTypes"
@@ -14,13 +13,15 @@ export function ActualSpendSection({
   if (!mb.totalBudget || !mb.totalFeeRate) return null
 
   const totals = getMediaTotals(mb)
-  const settingCost = totals.totalSettingCost
   const actualSettingCost = mb.actualSettingCost ?? 0
   const actualNetAmount = mb.actualNetAmount ?? 0
-  const markupSpendRate = totals.spendRate
+  // 실 소진율: 직접 입력한 실세팅금액 대비 실소진액
   const actualSpendRate = actualSettingCost > 0 ? (actualNetAmount / actualSettingCost * 100) : 0
-  const spendRateDiff = Math.abs(actualSpendRate - markupSpendRate)
-  const showWarning = spendRateDiff > 5
+  // 세팅 소진율: 부킹예산 기준 (config mb.dmp.spend 기반 — 참고용)
+  const configSpendRate = totals.spendRate
+  const spendRateDiff = Math.abs(actualSpendRate - configSpendRate)
+  // 임계값 15%p (캐페인 현황 이상치 감지 기준과 동일)
+  const showWarning = actualNetAmount > 0 && spendRateDiff >= 15
 
   return (
     <div className="space-y-2">
@@ -45,12 +46,12 @@ export function ActualSpendSection({
         </MF>
       </div>
       {showWarning && (
-        <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2 flex items-center gap-2">
-          <span className="text-[11px] font-semibold text-yellow-700">
-            소진율 차이 {spendRateDiff.toFixed(1)}%p
+        <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-red-700">
+            ⚠ 소진율 차이 {spendRateDiff.toFixed(1)}%p
           </span>
-          <span className="text-[10px] text-yellow-600">
-            (설정: {markupSpendRate.toFixed(1)}% vs 실제: {actualSpendRate.toFixed(1)}%)
+          <span className="text-[10px] text-red-600">
+            (세팅 기준: {configSpendRate.toFixed(1)}% vs 실 입력: {actualSpendRate.toFixed(1)}%)
           </span>
         </div>
       )}

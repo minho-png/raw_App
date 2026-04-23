@@ -11,9 +11,9 @@ import {
 import type { RawRow } from "@/lib/rawDataParser"
 import { fmt, spendRateStyle, getDailySuggestion } from "./statusUtils"
 
-// ── 매체 색상 ─────────────────────────────────────────
+// 매체 색상
 const MEDIA_COLORS: Record<string, string> = {
-  "네이버 GFA": "#03C75A", "카카오모먼트": "#FEE500",
+  "네이버 GFA": "#03C75A", "카카오모멘트": "#FEE500",
   "Google": "#4285F4", "META": "#1877F2",
 }
 const fallbackColor = "#94a3b8"
@@ -49,13 +49,13 @@ export function CampaignDetailPanel({
   onClose: () => void
   onEdit: (c: Campaign) => void
 }) {
-  // ── 이 캠페인에 매핑된 raw rows ─────────────────────
+  // 이 캐페인에 매핑된 raw rows
   const campRows = useMemo(
     () => rawRows.filter(r => r.matchedCampaignId === campaign.id),
     [rawRows, campaign.id]
   )
 
-  // ── 매체별 집계 ──────────────────────────────────────
+  // 매체별 집계
   const byMedia = useMemo(() => {
     const map = new Map<string, { rows: number; impressions: number; clicks: number; executionAmount: number; netAmount: number }>()
     for (const r of campRows) {
@@ -70,7 +70,7 @@ export function CampaignDetailPanel({
     return map
   }, [campRows])
 
-  // ── 일자별 × 매체별 LineChart 데이터 ───────────────
+  // 일자별 × 매체별 LineChart 데이터
   const dailyTrend = useMemo(() => {
     const map = new Map<string, Record<string, number>>()
     for (const r of campRows) {
@@ -86,7 +86,7 @@ export function CampaignDetailPanel({
 
   const trendMedias = useMemo(() => [...new Set(campRows.map(r => r.media))].sort(), [campRows])
 
-  // ── 예산 차트 데이터 ──────────────────────────────
+  // 예산 차트 데이터
   const budgetChart = campaign.mediaBudgets.map(mb => {
     const t = getMediaTotals(mb)
     return { name: mb.media, "부킹": t.totalBudget, "세팅": t.totalSettingCost, "집행": t.totalSpend }
@@ -95,8 +95,23 @@ export function CampaignDetailPanel({
   const totals   = getCampaignTotals(campaign)
   const progress = getCampaignProgress(campaign.startDate, campaign.endDate)
   const dday     = getDday(campaign.endDate)
-  const sc       = spendRateStyle(totals.spendRate)
-  const lag      = progress - totals.spendRate
+
+  // 소진율: raw CSV 데이터 기반 (1차 샘조)
+  const rawNetTotal = [...byMedia.values()].reduce((s, m) => s + m.netAmount, 0)
+  const rawSpendRate = totals.totalSettingCost > 0
+    ? Math.round((rawNetTotal / totals.totalSettingCost) * 1000) / 10
+    : 0
+  const sc  = spendRateStyle(rawSpendRate)
+  const lag = progress - rawSpendRate
+
+  // 실 소진율: 대시보드 직접 입력 기반 (2차 검증)
+  const actualNetTotal     = campaign.mediaBudgets.reduce((s, mb) => s + (mb.actualNetAmount     ?? 0), 0)
+  const actualSettingTotal = campaign.mediaBudgets.reduce((s, mb) => s + (mb.actualSettingCost   ?? 0), 0)
+  const actualSpendRate    = actualSettingTotal > 0
+    ? Math.round((actualNetTotal / actualSettingTotal) * 1000) / 10
+    : 0
+  const spendRateDiff    = Math.abs(rawSpendRate - actualSpendRate)
+  const showActualWarning = actualNetTotal > 0 && spendRateDiff >= 15
 
   const opName  = operators.find(o => o.id === campaign.managerId)?.name    ?? "-"
   const agN     = agencies.find(a => a.id === campaign.agencyId)?.name      ?? "-"
@@ -144,10 +159,10 @@ export function CampaignDetailPanel({
           <div className="grid grid-cols-2 gap-2.5">
             <DetailKPICard label="부킹 금액"  value={fmt(totals.totalBudget) + "원"} />
             <DetailKPICard label="세팅 금액"  value={fmt(totals.totalSettingCost) + "원"} />
-            <DetailKPICard label="집행 금액"  value={fmt(totals.totalSpend) + "원"}
-              color={totals.spendRate > 100 ? "red" : "blue"} />
+            <DetailKPICard label="집행 금액 (CSV)"  value={fmt(rawNetTotal) + "원"}
+              color={rawSpendRate > 100 ? "red" : "blue"} />
             <DetailKPICard label="미소진 잔액"
-              value={fmt(Math.max(0, totals.totalSettingCost - totals.totalSpend)) + "원"} />
+              value={fmt(Math.max(0, totals.totalSettingCost - rawNetTotal)) + "원"} />
           </div>
 
           {/* 진행률 vs 소진율 */}
@@ -168,12 +183,12 @@ export function CampaignDetailPanel({
             </div>
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs text-gray-600">소진율</span>
-                <span className={`text-xs font-semibold ${sc.text}`}>{totals.spendRate}%</span>
+                <span className="text-xs text-gray-600">소진율 (CSV 기반)</span>
+                <span className={`text-xs font-semibold ${sc.text}`}>{rawSpendRate.toFixed(1)}%</span>
               </div>
               <div className="h-2 w-full rounded-full bg-gray-200">
                 <div className={`h-full rounded-full transition-all ${sc.bar}`}
-                  style={{ width: `${Math.min(totals.spendRate, 100)}%` }} />
+                  style={{ width: `${Math.min(rawSpendRate, 100)}%` }} />
               </div>
             </div>
             {Math.abs(lag) >= 5 && (
@@ -185,6 +200,12 @@ export function CampaignDetailPanel({
                 {lag > 0
                   ? `⚠ 집행 속도 ${lag.toFixed(1)}%p 지연`
                   : `▲ 집행 속도 ${Math.abs(lag).toFixed(1)}%p 빠름`}
+              </div>
+            )}
+            {showActualWarning && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs">
+                <span className="font-semibold text-red-700">⚠ 실 소진율 차이 {spendRateDiff.toFixed(1)}%p</span>
+                <span className="text-red-600 ml-1">(CSV: {rawSpendRate.toFixed(1)}% vs 실입력: {actualSpendRate.toFixed(1)}%)</span>
               </div>
             )}
           </div>
@@ -362,10 +383,10 @@ export function CampaignDetailPanel({
                     <span className="text-xs text-gray-700 truncate">{n}</span>
                   </div>
                 ))}
-                <p className="mt-1 text-[11px] text-green-600">{campaign.csvNames.length}개 CSV 캠페인명 매핑</p>
+                <p className="mt-1 text-[11px] text-green-600">{campaign.csvNames.length}개 CSV 캐페인명 매핑</p>
               </div>
             ) : (
-              <p className="text-xs text-gray-400">연결된 데이터 없음 — 캠페인 수정에서 CSV명을 연결하세요</p>
+              <p className="text-xs text-gray-400">연결된 데이터 없음 — 캐페인 수정에서 CSV명을 연결하세요</p>
             )}
           </div>
 
@@ -384,7 +405,7 @@ export function CampaignDetailPanel({
             onClick={() => onEdit(campaign)}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
           >
-            캠페인 수정
+            캐페인 수정
           </button>
         </div>
       </div>

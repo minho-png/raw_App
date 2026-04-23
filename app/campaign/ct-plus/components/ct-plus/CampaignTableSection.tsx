@@ -40,8 +40,8 @@ export function CampaignTableSection({
                 <th className="px-4 py-3 text-left">담당자</th>
                 <th className="px-4 py-3 text-left">기간</th>
                 <th className="px-4 py-3 text-center">진행률</th>
-                <th className="px-4 py-3 text-center">소진율</th>
-                <th className="px-4 py-3 text-center">실제 소진액</th>
+                <th className="px-4 py-3 text-center">소진율 <span className="text-[9px] font-normal text-gray-400">(raw)</span></th>
+                <th className="px-4 py-3 text-right">집행금액 <span className="text-[9px] font-normal text-gray-400">(세팅금액)</span></th>
                 <th className="px-4 py-3 text-center">연결</th>
                 <th className="px-4 py-3 text-center">관리</th>
               </tr>
@@ -51,8 +51,13 @@ export function CampaignTableSection({
                 const totals   = getCampaignTotals(c)
                 const dday     = getDday(c.endDate)
                 const progress = getCampaignProgress(c.startDate, c.endDate)
-                const isLagging = c.status === "집행 중" && (progress - totals.spendRate) >= 15
-                const sc       = spendRateStyle(totals.spendRate)
+                const computed = computedSpendMap.get(c.id)
+                // 소진율 = raw data 기반 (CSV 업로드 집행금액 ÷ 세팅금액)
+                const rawSpendRate = computed && totals.totalSettingCost > 0
+                  ? Math.round((computed.netAmount / totals.totalSettingCost) * 1000) / 10
+                  : 0
+                const isLagging = c.status === "집행 중" && computed && (progress - rawSpendRate) >= 15
+                const sc       = spendRateStyle(rawSpendRate)
                 const csvCount = c.csvNames?.length ?? 0
 
                 return (
@@ -98,27 +103,26 @@ export function CampaignTableSection({
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <div className={`text-xs font-semibold ${sc.text}`}>{totals.spendRate}%</div>
-                      <div className="mt-1 h-1.5 w-16 mx-auto rounded-full bg-gray-200">
-                        <div className={`h-full rounded-full transition-all ${sc.bar}`} style={{ width: `${Math.min(totals.spendRate, 100)}%` }} />
-                      </div>
+                      {computed ? (
+                        <>
+                          <div className={`text-xs font-semibold ${sc.text}`}>{rawSpendRate.toFixed(1)}%</div>
+                          <div className="mt-1 h-1.5 w-16 mx-auto rounded-full bg-gray-200">
+                            <div className={`h-full rounded-full transition-all ${sc.bar}`} style={{ width: `${Math.min(rawSpendRate, 100)}%` }} />
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-gray-300">데이터 없음</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right text-xs">
-                      {(() => {
-                        const computed = computedSpendMap.get(c.id)
-                        if (computed) {
-                          const actualSpendRate = totals.totalSettingCost > 0
-                            ? Math.round((computed.netAmount / totals.totalSettingCost) * 1000) / 10
-                            : 0
-                          return (
-                            <div>
-                              <div className="font-medium text-blue-700">{fmt(computed.netAmount)}</div>
-                              <div className="text-[10px] text-gray-400">{actualSpendRate.toFixed(1)}%</div>
-                            </div>
-                          )
-                        }
-                        return <span className="text-gray-300 text-[11px]">데이터 없음</span>
-                      })()}
+                      {computed ? (
+                        <div>
+                          <div className="font-medium text-blue-700">{fmt(computed.netAmount)}</div>
+                          <div className="text-[10px] text-gray-400">/ {fmt(totals.totalSettingCost)}</div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-300 text-[11px]">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {csvCount > 0 ? (

@@ -98,6 +98,7 @@ export default function CampaignStatusPage() {
   }, [filtered])
 
   // ── 이상치 감지 ───────────────────────────────────────
+  // 소진율 기준: raw data(CSV) 집행금액 ÷ 세팅금액 (config mb.dmp.spend 아님)
   const anomalies = useMemo((): CampaignAnomaly[] => {
     const result: CampaignAnomaly[] = []
     for (const c of filtered) {
@@ -106,25 +107,33 @@ export default function CampaignStatusPage() {
       const totals   = getCampaignTotals(c)
       const spend    = computedSpendMap.get(c.id)
 
-      if (progress - totals.spendRate >= 15) {
+      // raw data 기반 소진율 (CSV 집행금액 ÷ 세팅금액)
+      const rawSpendRate = spend && totals.totalSettingCost > 0
+        ? Math.round((spend.netAmount / totals.totalSettingCost) * 1000) / 10
+        : 0
+
+      // 진행률 vs raw 소진율 15%p 이상 차이 → 지연 경고
+      if (spend && progress - rawSpendRate >= 15) {
         result.push({
           campaign: c,
           type: "lagging",
           detail: getDailySuggestion(c),
           progress,
-          spendRate: totals.spendRate,
+          spendRate: rawSpendRate,
         })
       }
 
-      if (totals.spendRate > 100) {
+      // raw 소진율 100% 초과 → 예산 초과 경고
+      if (rawSpendRate > 100) {
         result.push({
           campaign: c,
           type: "overspend",
-          detail: `소진율 ${totals.spendRate.toFixed(1)}%로 세팅 금액(${fmt(totals.totalSettingCost)}원)을 초과했습니다.`,
-          spendRate: totals.spendRate,
+          detail: `소진율 ${rawSpendRate.toFixed(1)}%로 세팅 금액(${fmt(totals.totalSettingCost)}원)을 초과했습니다.`,
+          spendRate: rawSpendRate,
         })
       }
 
+      // raw data가 없는데 진행률 > 0 → 데이터 없음 경고
       if ((!spend || spend.rowCount === 0) && progress > 0) {
         result.push({
           campaign: c,
