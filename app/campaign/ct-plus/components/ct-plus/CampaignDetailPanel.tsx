@@ -289,6 +289,60 @@ export function CampaignDetailPanel({
             </div>
           )}
 
+          {/* 등록 데이터 vs raw 데이터 비교 검증 */}
+          {campRows.length > 0 && campaign.mediaBudgets.length > 0 && (
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50">
+                <h3 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+                  세팅 vs 실적 검증
+                </h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  등록 세팅금액 대비 raw 순집행 비교
+                </p>
+              </div>
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-gray-500 font-medium">매체</th>
+                    <th className="px-3 py-2 text-right text-gray-500 font-medium">세팅금액</th>
+                    <th className="px-3 py-2 text-right text-gray-500 font-medium">raw 순집행</th>
+                    <th className="px-3 py-2 text-right text-gray-500 font-medium">차이</th>
+                    <th className="px-3 py-2 text-right text-gray-500 font-medium">소진율</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {campaign.mediaBudgets.map(mb => {
+                    const t        = getMediaTotals(mb)
+                    const rows     = campRows.filter(r => r.media === mb.media)
+                    const rawNet   = Math.round(rows.reduce((s, r) => s + (r.netAmount ?? 0), 0))
+                    const diff     = rawNet - t.totalSettingCost
+                    const rate     = t.totalSettingCost > 0
+                      ? Math.round((rawNet / t.totalSettingCost) * 1000) / 10 : 0
+                    const overSpend = diff > 0
+                    const noData    = rows.length === 0
+                    return (
+                      <tr key={mb.media} className={`hover:bg-gray-50 ${overSpend ? "bg-red-50/40" : ""}`}>
+                        <td className="px-3 py-2 font-medium text-gray-700">{mb.media}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-600">{fmtAbbr(t.totalSettingCost)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-blue-700">
+                          {noData ? <span className="text-gray-300 font-normal">없음</span> : fmtAbbr(rawNet)}
+                        </td>
+                        <td className={`px-3 py-2 text-right tabular-nums text-[11px] ${overSpend ? "text-red-600 font-semibold" : noData ? "text-gray-300" : "text-green-600"}`}>
+                          {noData ? "-" : (overSpend ? "+" : "") + fmtAbbr(diff)}
+                        </td>
+                        <td className={`px-3 py-2 text-right tabular-nums font-semibold ${
+                          noData ? "text-gray-300" : overSpend ? "text-red-600" : rate >= 80 ? "text-green-600" : rate >= 50 ? "text-blue-600" : "text-gray-500"
+                        }`}>
+                          {noData ? "-" : `${rate}%`}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {/* 일일 예산 제안 */}
           {campaign.status === "집행 중" && (
             <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
