@@ -1,5 +1,6 @@
 // Extracted utilities for status page components
 "use client"
+import { ModalShell } from "@/components/atoms/ModalShell"
 import React from "react"
 import { Campaign, TargetingBudget, MediaBudget, getCampaignTotals } from "@/lib/campaignTypes"
 
@@ -41,16 +42,15 @@ export function ConfirmModal({ title, message, onConfirm, onCancel }: {
   title: string; message: string; onConfirm: () => void; onCancel: () => void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg max-w-sm mx-4 p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-2">{title}</h2>
-        <p className="text-sm text-gray-600 mb-6 whitespace-pre-wrap">{message}</p>
-        <div className="flex gap-2 justify-end">
+    <ModalShell open={true} onClose={onCancel} title={title}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600 whitespace-pre-wrap">{message}</p>
+        <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
           <button onClick={onCancel} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
           <button onClick={onConfirm} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors">확인</button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   )
 }
 

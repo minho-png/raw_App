@@ -4,8 +4,9 @@ import React, { useState, useMemo, useEffect } from "react"
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, SubCampaign,
   CampaignType, CAMPAIGN_TYPES, AVAILABLE_MEDIA, getMediaTotals } from "@/lib/campaignTypes"
-import { loadAllRawRows } from "@/lib/rawDataStore"
+import { useRawData } from "@/lib/hooks/useRawData"
 import type { RawRow } from "@/lib/rawDataParser"
+import { ModalShell } from "@/components/atoms/ModalShell"
 import { inputCls, emptyMB, MF } from "./statusUtils"
 import { MediaBudgetCard } from "./MediaBudgetCard"
 import { CsvMappingPanel } from "./CsvMappingPanel"
@@ -33,14 +34,9 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   const [csvNames,        setCsvNames]        = useState<string[]>(initial?.csvNames ?? [])
   const [csvSearch,       setCsvSearch]       = useState('')
   const [csvMediaFilter,  setCsvMediaFilter]  = useState('')
-  const [rawRows,         setRawRows]         = useState<RawRow[]>([])
+  const { allRows: rawRows } = useRawData()
   const [confirmMode,     setConfirmMode]     = useState<null | "save" | "close">(null)
   const [isDirty,         setIsDirty]         = useState(false)
-
-  // rawRows 로드
-  useEffect(() => {
-    setRawRows(loadAllRawRows())
-  }, [])
 
   // Track dirty state (any change triggers isDirty)
   useEffect(() => {
@@ -155,9 +151,14 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-gray-900">{initial ? "캠페인 수정" : "캠페인 추가"}</h2>
+    <ModalShell
+      open={true}
+      onClose={handleCloseClick}
+      title={initial ? "캠페인 수정" : "캠페인 추가"}
+      maxWidth="2xl"
+      scrollable
+    >
+      <div className="space-y-4">
 
         <div className="grid grid-cols-2 gap-4">
           <MF label="대행사 *">
@@ -281,6 +282,6 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           <button onClick={handleSaveClick} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   )
 }
