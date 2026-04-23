@@ -7,89 +7,105 @@ import { usePathname, useRouter } from "next/navigation"
 interface SubItem {
   label: string
   href: string
+  badge?: string  // optional "준비중" 배지
 }
 
-interface SectionGroup {
-  section: string          // 섹션 헤더 (공통 / CT+ / CTV)
-  title: string            // 그룹 제목
+interface MenuGroup {
+  title: string
   items: SubItem[]
 }
 
-// ── 공통 ───────────────────────────────────────────────
-const COMMON_PREP: SubItem[] = [
-  { label: "소재 규격 확인", href: "/campaign/ct-plus/creative-check" },
-  { label: "통합 관리",      href: "/management" },
-]
-
-const COMMON_SETTLEMENT: SubItem[] = [
-  { label: "정산 확인",        href: "/campaign/ct-plus/final" },
-  { label: "대행사별 수수료",  href: "/settlement/agency-fee" },
-  { label: "DMP 수수료",       href: "/settlement/dmp-fee" },
-  { label: "매체 비용",        href: "/settlement/media-cost" },
-]
-
-const COMMON_TOOLS: SubItem[] = [
-  { label: "목업 이미지 생성", href: "/mockup" },
-]
+interface Section {
+  key: string
+  label: string
+  color: string   // tailwind text color class
+  groups: MenuGroup[]
+}
 
 // ── CT+ ────────────────────────────────────────────────
-const CT_PLUS_ITEMS: SubItem[] = [
-  { label: "캠페인 현황",   href: "/campaign/ct-plus/status" },
-  { label: "데이터 업로드", href: "/campaign/ct-plus/daily" },
-  { label: "데이터 조회",   href: "/campaign/ct-plus/view" },
+const CT_PLUS_SECTIONS: MenuGroup[] = [
+  {
+    title: "CT+",
+    items: [
+      { label: "캠페인 세팅 내역 검수", href: "/campaign/ct-plus/creative-check" },
+      { label: "게재 목업 데이터 생성",  href: "/mockup" },
+      { label: "리포트 데이터 업로드",   href: "/campaign/ct-plus/daily" },
+      { label: "캠페인 현황",            href: "/campaign/ct-plus/status" },
+      { label: "데일리 리포트",          href: "/campaign/ct-plus/daily-report", badge: "준비중" },
+    ],
+  },
 ]
 
-// ── CTV ────────────────────────────────────────────────
-const CTV_ITEMS: SubItem[] = [
-  { label: "CTV 분석",      href: "/campaign/ct-ctv/analysis" },
-  { label: "CTV 종료 리포트", href: "/campaign/ct-ctv/final" },
-  { label: "CTV 데일리",    href: "/campaign/ct-ctv/daily" },
+// ── CT ────────────────────────────────────────────────
+const CT_SECTIONS: MenuGroup[] = [
+  {
+    title: "CT",
+    items: [
+      { label: "캠페인 세팅 내역 검수", href: "/campaign/ct/check",  badge: "준비중" },
+      { label: "캠페인 현황",           href: "/campaign/ct/status", badge: "준비중" },
+    ],
+  },
 ]
 
-const SECTION_GROUPS: SectionGroup[] = [
-  { section: "공통", title: "캠페인 준비", items: COMMON_PREP },
-  { section: "공통", title: "정산",        items: COMMON_SETTLEMENT },
-  { section: "공통", title: "도구",        items: COMMON_TOOLS },
-  { section: "CT+",  title: "CT+ 집행",   items: CT_PLUS_ITEMS },
-  { section: "CTV",  title: "CTV",        items: CTV_ITEMS },
+// ── CT TV ─────────────────────────────────────────────
+const CTTV_SECTIONS: MenuGroup[] = [
+  {
+    title: "CT TV",
+    items: [
+      { label: "캠페인 세팅 내역 검수", href: "/campaign/ct-ctv/check",    badge: "준비중" },
+      { label: "캠페인 현황",           href: "/campaign/ct-ctv/analysis" },
+    ],
+  },
 ]
 
-// 섹션별로 그룹핑
-const SECTIONS = ["공통", "CT+", "CTV"] as const
-type SectionKey = typeof SECTIONS[number]
+// ── 정산/수익분석 ──────────────────────────────────────
+const SETTLEMENT_SECTIONS: MenuGroup[] = [
+  {
+    title: "정산/수익분석",
+    items: [
+      { label: "정산 확인",       href: "/campaign/ct-plus/final" },
+      { label: "대행사별 수수료", href: "/settlement/agency-fee" },
+      { label: "DMP 수수료",      href: "/settlement/dmp-fee" },
+      { label: "매체 비용",       href: "/settlement/media-cost" },
+    ],
+  },
+]
 
-const SECTION_COLOR: Record<SectionKey, string> = {
-  "공통": "text-gray-400",
-  "CT+":  "text-orange-400",
-  "CTV":  "text-indigo-400",
-}
+const ALL_SECTIONS: Section[] = [
+  { key: "ctplus",     label: "CT+",         color: "text-orange-500", groups: CT_PLUS_SECTIONS },
+  { key: "ct",         label: "CT",          color: "text-blue-500",   groups: CT_SECTIONS },
+  { key: "cttv",       label: "CT TV",       color: "text-indigo-500", groups: CTTV_SECTIONS },
+  { key: "settlement", label: "정산/수익분석", color: "text-green-600",  groups: SETTLEMENT_SECTIONS },
+]
+
+// 관리 메뉴 (최하단 공통)
+const MGMT_ITEM: SubItem = { label: "광고주·대행사·운영자 관리", href: "/management" }
 
 export default function Sidebar() {
   const pathname = usePathname()
-  const router = useRouter()
+  const router   = useRouter()
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
-  const [username, setUsername] = useState<string | null>(null)
+  const [username,   setUsername]   = useState<string | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
 
-  // 현재 경로에 따라 메뉴 자동 열기
+  // 현재 경로에 따라 해당 그룹 자동 열기
   useEffect(() => {
-    const newOpen: Record<string, boolean> = {}
-    SECTION_GROUPS.forEach(g => {
-      if (g.items.some(item => pathname.startsWith(item.href.split("/").slice(0, 3).join("/")))) {
-        newOpen[g.title] = true
-      }
-    })
-    setOpenGroups(newOpen)
+    const next: Record<string, boolean> = {}
+    ALL_SECTIONS.forEach(sec =>
+      sec.groups.forEach(g => {
+        if (g.items.some(item => pathname.startsWith(item.href.split("/").slice(0, 3).join("/")))) {
+          next[g.title] = true
+        }
+      })
+    )
+    setOpenGroups(next)
   }, [pathname])
 
-  // 세션 사용자명 조회
   useEffect(() => {
     fetch("/api/auth/me")
       .then(r => r.ok ? r.json() : null)
-      .then((data: { username?: string } | null) => {
-        if (data?.username) setUsername(data.username)
-      })
+      .then((data: { username?: string } | null) => { if (data?.username) setUsername(data.username) })
       .catch(() => null)
   }, [])
 
@@ -104,23 +120,22 @@ export default function Sidebar() {
     }
   }
 
-  const toggleGroup = (title: string) => {
+  const toggleGroup = (title: string) =>
     setOpenGroups(prev => ({ ...prev, [title]: !prev[title] }))
-  }
 
   const linkCls = (href: string) =>
-    `flex items-center rounded-lg px-3 py-2 text-sm transition-colors ${
+    `flex items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${
       pathname === href
         ? "bg-blue-50 font-medium text-blue-700"
         : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
     }`
 
-  const dot = <span className="mr-2 text-gray-400">·</span>
+  const dot = <span className="mr-2 text-gray-300 flex-shrink-0">·</span>
 
   return (
     <aside className="flex h-full w-56 flex-col border-r border-gray-200 bg-white">
       {/* 로고 */}
-      <div className="border-b border-gray-100 px-5 py-4 space-y-2">
+      <div className="border-b border-gray-100 px-5 py-4 space-y-2 flex-shrink-0">
         <Link href="/">
           <svg viewBox="0 0 112 26" xmlns="http://www.w3.org/2000/svg" className="h-7 w-auto">
             <g>
@@ -141,50 +156,72 @@ export default function Sidebar() {
       </div>
 
       {/* 메뉴 */}
-      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-4">
-        {SECTIONS.map(section => {
-          const groups = SECTION_GROUPS.filter(g => g.section === section)
-          return (
-            <div key={section}>
-              {/* 섹션 헤더 */}
-              <p className={`px-3 pb-1 text-[10px] font-bold uppercase tracking-widest ${SECTION_COLOR[section]}`}>
-                {section}
-              </p>
-              <div className="space-y-0.5">
-                {groups.map(group => (
-                  <div key={group.title}>
-                    <button
-                      onClick={() => toggleGroup(group.title)}
-                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <span>{group.title}</span>
-                      <svg
-                        className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
-                          openGroups[group.title] ? "rotate-180" : ""
-                        }`}
-                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    {openGroups[group.title] && (
-                      <div className="ml-2 mt-0.5 space-y-0.5">
-                        {group.items.map(item => (
-                          <Link key={item.href} href={item.href} className={linkCls(item.href)}>
-                            {dot}{item.label}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
+      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        {ALL_SECTIONS.map(sec => (
+          <div key={sec.key}>
+            {/* 섹션 레이블 */}
+            <p className={`px-3 pb-1 text-[10px] font-bold uppercase tracking-widest ${sec.color}`}>
+              {sec.label}
+            </p>
+
+            {sec.groups.map(group => (
+              <div key={group.title}>
+                <button
+                  onClick={() => toggleGroup(group.title)}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <span>{group.title}</span>
+                  <svg
+                    className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                      openGroups[group.title] ? "rotate-180" : ""
+                    }`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {openGroups[group.title] && (
+                  <div className="ml-2 mt-0.5 space-y-0.5">
+                    {group.items.map(item => (
+                      <Link key={item.href} href={item.href} className={linkCls(item.href)}>
+                        <span className="flex items-center min-w-0">
+                          {dot}
+                          <span className="truncate">{item.label}</span>
+                        </span>
+                        {item.badge && (
+                          <span className="ml-1.5 flex-shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-400">
+                            {item.badge}
+                          </span>
+                        )}
+                      </Link>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-          )
-        })}
+            ))}
+          </div>
+        ))}
       </nav>
 
-      {/* 하단 사용자 영역 */}
+      {/* 최하단 공통 관리 */}
+      <div className="border-t border-gray-100 px-3 py-2">
+        <Link
+          href={MGMT_ITEM.href}
+          className={`flex items-center rounded-lg px-3 py-2 text-xs transition-colors ${
+            pathname === MGMT_ITEM.href
+              ? "bg-blue-50 font-medium text-blue-700"
+              : "text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+          }`}
+        >
+          <svg className="mr-2 h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          {MGMT_ITEM.label}
+        </Link>
+      </div>
+
+      {/* 사용자 영역 */}
       <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-between">
         <div className="text-xs text-gray-500 truncate">
           {username ? (
