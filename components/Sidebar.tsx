@@ -31,6 +31,7 @@ const CT_PLUS_SECTIONS: MenuGroup[] = [
       { label: "캠페인 세팅 내역 검수", href: "/campaign/ct-plus/creative-check" },
       { label: "게재 목업 데이터 생성",  href: "/mockup" },
       { label: "리포트 데이터 업로드",   href: "/campaign/ct-plus/daily" },
+      { label: "캠페인 현황",            href: "/campaign/ct-plus/status" },
       { label: "데일리 리포트",          href: "/campaign/ct-plus/daily-report", badge: "준비중" },
     ],
   },
@@ -78,6 +79,8 @@ const ALL_SECTIONS: Section[] = [
   { key: "settlement", label: "정산/수익분석", color: "text-green-600",  groups: SETTLEMENT_SECTIONS },
 ]
 
+// 관리 메뉴 (최하단 공통)
+const MGMT_ITEM: SubItem = { label: "광고주·대행사·운영자 관리", href: "/management" }
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -195,6 +198,23 @@ export default function Sidebar() {
         ))}
       </nav>
 
+      {/* 최하단 공통 관리 */}
+      <div className="border-t border-gray-100 px-3 py-2">
+        <Link
+          href={MGMT_ITEM.href}
+          className={`flex items-center rounded-lg px-3 py-2 text-xs transition-colors ${
+            pathname === MGMT_ITEM.href
+              ? "bg-blue-50 font-medium text-blue-700"
+              : "text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+          }`}
+        >
+          <svg className="mr-2 h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          {MGMT_ITEM.label}
+        </Link>
+      </div>
 
       {/* 사용자 영역 */}
       <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-between">
