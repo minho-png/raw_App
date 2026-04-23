@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useMemo, useEffect } from "react"
 import type { Campaign, Agency } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
+import { useRawData } from "@/lib/hooks/useRawData"
+import { applyMarkupToRows } from "@/lib/markupService"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
 
@@ -56,6 +58,8 @@ const AGENCY_PALETTE = [
 export default function AgencyFeePage() {
   const today = new Date()
   const { campaigns, agencies, advertisers } = useMasterData()
+  const { allRows: rawRows } = useRawData()
+
   const [month, setMonth]             = useState(toMonthStr(today))
   const [snapshots, setSnapshots]     = useState<SettlementSnapshot[]>([])
   const [showSnapshots, setShowSnapshots] = useState(false)
@@ -88,43 +92,66 @@ export default function AgencyFeePage() {
 
   const filtered = campaigns.filter(c => overlapsMonth(c, month))
 
-  // 전체 결과 행 생성
+  // raw data 기반 실제 집행금액 계산
+  const computedRows = useMemo(
+    () => applyMarkupToRows(rawRows, campaigns),
+    [rawRows, campaigns]
+  )
+
+  // campaign × media 별 DMP/비DMP netAmount 합산
+  const spendMap = useMemo(() => {
+    const [y, m] = month.split("-").map(Number)
+    const mStart = new Date(y, m - 1, 1)
+    const mEnd   = new Date(y, m, 0, 23, 59, 59)
+    const map = new Map<string, { dmp: number; nonDmp: number }>()
+    for (const row of computedRows) {
+      if (!row.matchedCampaignId) continue
+      const dt = new Date(row.date)
+      if (dt < mStart || dt > mEnd) continue
+      const key  = `${row.matchedCampaignId}:${row.media}`
+      const prev = map.get(key) ?? { dmp: 0, nonDmp: 0 }
+      const isDmpRow = row.dmpType !== "DIRECT" && row.dmpType !== "MEDIA_TARGETING"
+      if (isDmpRow) prev.dmp    += row.netAmount ?? 0
+      else          prev.nonDmp += row.netAmount ?? 0
+      map.set(key, prev)
+    }
+    return map
+  }, [computedRows, month])
+
+  // 전체 결과 행 생성 (raw data 기반)
   const allRows: ResultRow[] = []
   for (const c of filtered) {
     const agencyId   = resolveAgencyId(c)
     const agencyName = getAgencyName(agencyId)
     const advName    = getAdvertiserName(c)
     for (const mb of c.mediaBudgets) {
-      if (mb.dmp.spend > 0 && mb.dmp.agencyFeeRate > 0) {
+      const spend   = spendMap.get(`${c.id}:${mb.media}`) ?? { dmp: 0, nonDmp: 0 }
+      const dmpRate = mb.dmp.agencyFeeRate > 0 ? mb.dmp.agencyFeeRate : (c.agencyFeeRate ?? 0)
+      const nonRate = mb.nonDmp.agencyFeeRate > 0 ? mb.nonDmp.agencyFeeRate : (c.agencyFeeRate ?? 0)
+
+      if (spend.dmp > 0 && dmpRate > 0) {
         allRows.push({
-          advertiserName: advName,
-          agencyName,
-          agencyId,
-          campaignName: c.campaignName,
-          media: mb.media,
+          advertiserName: advName, agencyName, agencyId,
+          campaignName: c.campaignName, media: mb.media,
           kind: "DMP",
-          spend: mb.dmp.spend,
-          feeRate: mb.dmp.agencyFeeRate,
-          fee: Math.round(mb.dmp.spend * mb.dmp.agencyFeeRate / 100),
+          spend: Math.round(spend.dmp),
+          feeRate: dmpRate,
+          fee: Math.round(spend.dmp * dmpRate / 100),
         })
       }
-      if (mb.nonDmp.spend > 0 && mb.nonDmp.agencyFeeRate > 0) {
+      if (spend.nonDmp > 0 && nonRate > 0) {
         allRows.push({
-          advertiserName: advName,
-          agencyName,
-          agencyId,
-          campaignName: c.campaignName,
-          media: mb.media,
+          advertiserName: advName, agencyName, agencyId,
+          campaignName: c.campaignName, media: mb.media,
           kind: "비DMP",
-          spend: mb.nonDmp.spend,
-          feeRate: mb.nonDmp.agencyFeeRate,
-          fee: Math.round(mb.nonDmp.spend * mb.nonDmp.agencyFeeRate / 100),
+          spend: Math.round(spend.nonDmp),
+          feeRate: nonRate,
+          fee: Math.round(spend.nonDmp * nonRate / 100),
         })
       }
     }
   }
 
-  // 대행사별 집계
   const agencyStats: Record<string, { spend: number; fee: number; count: number }> = {}
   for (const r of allRows) {
     if (!agencyStats[r.agencyId]) agencyStats[r.agencyId] = { spend: 0, fee: 0, count: 0 }
@@ -147,12 +174,11 @@ export default function AgencyFeePage() {
   const totalFee   = visibleRows.reduce((s, r) => s + r.fee, 0)
   const hasSnapshot = snapshots.some(s => s.month === month)
 
-  // 세금계산서 정보 (선택된 대행사)
   const selectedAgency = agencies.find(a => a.id === selectedAgencyId) ?? null
   const selectedFee    = selectedAgencyId ? (agencyStats[selectedAgencyId]?.fee ?? 0) : 0
-  const taxBase        = selectedFee                          // 공급가액 (VAT 별도)
-  const taxAmount      = Math.round(taxBase * 0.1)           // 세액 10%
-  const taxTotal       = taxBase + taxAmount                  // 합계금액
+  const taxBase        = selectedFee
+  const taxAmount      = Math.round(taxBase * 0.1)
+  const taxTotal       = taxBase + taxAmount
 
   function downloadRegistrationPdf(ag: Agency) {
     if (!ag.registrationPdfBase64) return
@@ -169,7 +195,7 @@ export default function AgencyFeePage() {
   }
 
   function copyAsExcel() {
-    const header = ["광고주", "대행사", "캠페인", "매체", "구분", "집행금액", "수수료율(%)", "정산금액"].join("\t")
+    const header = ["광고주", "대행사", "캐페인", "매체", "구분", "집행금액", "수수료율(%)", "정산금액"].join("\t")
     const rows   = visibleRows.map(r =>
       [r.advertiserName, r.agencyName, r.campaignName, r.media, r.kind, r.spend, r.feeRate, r.fee].join("\t")
     )
@@ -199,7 +225,7 @@ export default function AgencyFeePage() {
   }
 
   function downloadSnapshot(snap: SettlementSnapshot) {
-    const header = "광고주\t대행사\t캠페인\t매체\t구분\t집행금액\t수수료율(%)\t정산금액\n"
+    const header = "광고주\t대행사\t캐페인\t매체\t구분\t집행금액\t수수료율(%)\t정산금액\n"
     const rows = snap.rows.map(r =>
       `${r.advertiserName}\t${r.agencyName}\t${r.campaignName}\t${r.media}\t${r.kind}\t${r.spend}\t${r.feeRate}\t${r.fee}`
     ).join("\n")
@@ -215,7 +241,6 @@ export default function AgencyFeePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 헤더 */}
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
@@ -242,8 +267,6 @@ export default function AgencyFeePage() {
       </header>
 
       <main className="p-6 space-y-6">
-
-        {/* 알림 배너 */}
         {notice && (
           <div className={`rounded-lg border px-4 py-3 text-sm font-medium ${
             notice.startsWith("✓")
@@ -254,7 +277,6 @@ export default function AgencyFeePage() {
           </div>
         )}
 
-        {/* 확정 내역 패널 */}
         {showSnapshots && (
           <div className="rounded-xl border border-gray-200 bg-white">
             <div className="border-b border-gray-100 px-5 py-3.5 flex items-center justify-between">
@@ -290,7 +312,6 @@ export default function AgencyFeePage() {
           </div>
         )}
 
-        {/* 정산 월 선택 */}
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={() => shiftMonth(-1)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">‹</button>
           <input
@@ -300,15 +321,19 @@ export default function AgencyFeePage() {
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button onClick={() => shiftMonth(1)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
-          <span className="text-sm text-gray-400">집행 캠페인 {filtered.length}개</span>
+          <span className="text-sm text-gray-400">집행 캐페인 {filtered.length}개</span>
           {hasSnapshot && (
             <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 border border-green-200">
               ✓ 확정 완료
             </span>
           )}
+          {allRows.length === 0 && filtered.length > 0 && (
+            <span className="rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-700 border border-yellow-200">
+              raw 데이터 없음
+            </span>
+          )}
         </div>
 
-        {/* 대행사별 요약 카드 */}
         {agencyList.length > 0 && (
           <div>
             <div className="mb-2 flex items-center gap-2">
@@ -354,7 +379,6 @@ export default function AgencyFeePage() {
           </div>
         )}
 
-        {/* 세금계산서 정보 패널 */}
         {selectedAgency && (
           <div className="rounded-xl border border-blue-200 bg-blue-50 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between border-b border-blue-100 px-5 py-3.5">
@@ -378,17 +402,16 @@ export default function AgencyFeePage() {
               )}
             </div>
             <div className="p-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
-              {/* 사업자 정보 */}
               <div>
                 <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">공급받는자 정보</p>
                 <dl className="space-y-2">
                   {[
-                    { label: "상호(법인명)",       value: selectedAgency.corporateName   || selectedAgency.name },
-                    { label: "사업자등록번호",     value: selectedAgency.businessNumber  || "-" },
-                    { label: "대표자명",           value: selectedAgency.representative  || "-" },
-                    { label: "주소",               value: selectedAgency.address         || "-" },
-                    { label: "업태",               value: selectedAgency.businessType    || "-" },
-                    { label: "종목",               value: selectedAgency.businessItem    || "-" },
+                    { label: "상호(법인명)",   value: selectedAgency.corporateName  || selectedAgency.name },
+                    { label: "사업자등록번호", value: selectedAgency.businessNumber || "-" },
+                    { label: "대표자명",         value: selectedAgency.representative || "-" },
+                    { label: "주소",             value: selectedAgency.address        || "-" },
+                    { label: "업태",             value: selectedAgency.businessType   || "-" },
+                    { label: "종목",             value: selectedAgency.businessItem   || "-" },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex items-baseline gap-2">
                       <dt className="w-28 shrink-0 text-xs text-blue-500 font-medium">{label}</dt>
@@ -397,7 +420,6 @@ export default function AgencyFeePage() {
                   ))}
                 </dl>
               </div>
-              {/* 공급가액 / 세액 / 합계 */}
               <div>
                 <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">금액 정보 ({month})</p>
                 <dl className="space-y-2">
@@ -416,7 +438,7 @@ export default function AgencyFeePage() {
                 </dl>
                 {!selectedAgency.businessNumber && (
                   <p className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
-                    ⚠ 사업자 정보가 등록되지 않았습니다. 대행사 관리 메뉴에서 세금계산서 발행 정보를 입력해주세요.
+                    ⚠ 사업자 정보가 등록되지 않았습니다. 대행사 관리에서 세금계산서 등록 정보를 입력해주세요.
                   </p>
                 )}
               </div>
@@ -424,15 +446,14 @@ export default function AgencyFeePage() {
           </div>
         )}
 
-        {/* 결과 없음 */}
         {filtered.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-sm text-gray-400">
-            해당 월에 해당하는 캠페인이 없습니다.
+            해당 월에 해당하는 캐페인이 없습니다.
           </div>
         ) : allRows.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white py-16 text-center">
-            <p className="text-sm text-gray-400">해당 월 캠페인의 집행 금액 또는 대행수수료율이 없습니다.</p>
-            <p className="mt-1 text-xs text-gray-500">캠페인 집행 현황에서 집행 금액과 수수료율을 입력해주세요.</p>
+            <p className="text-sm text-gray-400">해당 월 raw 데이터가 없거나 수수료율이 설정되지 않았습니다.</p>
+            <p className="mt-1 text-xs text-gray-500">CSV를 업로드하고, 캀페인 설정에서 대행수수료율을 입력해주세요.</p>
           </div>
         ) : (
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -444,7 +465,7 @@ export default function AgencyFeePage() {
                     ? `${agencies.find(a => a.id === selectedAgencyId)?.name} 선택됨`
                     : "전체 대행사"
                   }
-                  {" · "}광고주 · 캠페인 · 매체별 대행수수료 내역
+                  {" · "}광고주 · 캐페인 · 매체별 대행수수료 내역
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -462,7 +483,7 @@ export default function AgencyFeePage() {
                     copied ? "border-green-200 bg-green-50 text-green-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                   }`}
                 >
-                  {copied ? "✓ 복사됨" : "📋 엑셀 복사"}
+                  {copied ? "✓ 복사됨" : "엑셀 복사"}
                 </button>
                 <button
                   onClick={confirmSettlement}
@@ -480,7 +501,7 @@ export default function AgencyFeePage() {
                   <tr className="border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
                     <th className="px-4 py-2.5 text-left font-medium">광고주</th>
                     <th className="px-4 py-2.5 text-left font-medium">대행사</th>
-                    <th className="px-4 py-2.5 text-left font-medium">캠페인</th>
+                    <th className="px-4 py-2.5 text-left font-medium">캐페인</th>
                     <th className="px-4 py-2.5 text-left font-medium">매체</th>
                     <th className="px-4 py-2.5 text-left font-medium">구분</th>
                     <th className="px-4 py-2.5 text-right font-medium">집행 금액</th>
