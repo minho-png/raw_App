@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import type { Campaign, Agency, Advertiser } from "@/lib/campaignTypes"
+import type { Campaign, Agency } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
@@ -146,6 +146,27 @@ export default function AgencyFeePage() {
   const totalSpend = visibleRows.reduce((s, r) => s + r.spend, 0)
   const totalFee   = visibleRows.reduce((s, r) => s + r.fee, 0)
   const hasSnapshot = snapshots.some(s => s.month === month)
+
+  // 세금계산서 정보 (선택된 대행사)
+  const selectedAgency = agencies.find(a => a.id === selectedAgencyId) ?? null
+  const selectedFee    = selectedAgencyId ? (agencyStats[selectedAgencyId]?.fee ?? 0) : 0
+  const taxBase        = selectedFee                          // 공급가액 (VAT 별도)
+  const taxAmount      = Math.round(taxBase * 0.1)           // 세액 10%
+  const taxTotal       = taxBase + taxAmount                  // 합계금액
+
+  function downloadRegistrationPdf(ag: Agency) {
+    if (!ag.registrationPdfBase64) return
+    const binary = atob(ag.registrationPdfBase64)
+    const bytes  = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    const blob = new Blob([bytes], { type: "application/pdf" })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement("a")
+    a.href     = url
+    a.download = ag.registrationPdfName ?? `사업자등록증_${ag.name}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   function copyAsExcel() {
     const header = ["광고주", "대행사", "캠페인", "매체", "구분", "집행금액", "수수료율(%)", "정산금액"].join("\t")
@@ -329,6 +350,76 @@ export default function AgencyFeePage() {
                   </button>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {/* 세금계산서 정보 패널 */}
+        {selectedAgency && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-blue-100 px-5 py-3.5">
+              <div className="flex items-center gap-2">
+                <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-sm font-semibold text-blue-800">세금계산서 발행 정보</p>
+                <span className="rounded-full bg-blue-100 border border-blue-200 px-2 py-0.5 text-xs font-semibold text-blue-700">{selectedAgency.name}</span>
+              </div>
+              {selectedAgency.registrationPdfBase64 && (
+                <button
+                  onClick={() => downloadRegistrationPdf(selectedAgency)}
+                  className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50 transition-colors"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  사업자등록증 PDF
+                </button>
+              )}
+            </div>
+            <div className="p-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {/* 사업자 정보 */}
+              <div>
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">공급받는자 정보</p>
+                <dl className="space-y-2">
+                  {[
+                    { label: "상호(법인명)",       value: selectedAgency.corporateName   || selectedAgency.name },
+                    { label: "사업자등록번호",     value: selectedAgency.businessNumber  || "-" },
+                    { label: "대표자명",           value: selectedAgency.representative  || "-" },
+                    { label: "주소",               value: selectedAgency.address         || "-" },
+                    { label: "업태",               value: selectedAgency.businessType    || "-" },
+                    { label: "종목",               value: selectedAgency.businessItem    || "-" },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex items-baseline gap-2">
+                      <dt className="w-28 shrink-0 text-xs text-blue-500 font-medium">{label}</dt>
+                      <dd className="text-xs text-gray-800 font-medium">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+              {/* 공급가액 / 세액 / 합계 */}
+              <div>
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">금액 정보 ({month})</p>
+                <dl className="space-y-2">
+                  <div className="flex items-baseline justify-between border-b border-blue-100 pb-2">
+                    <dt className="text-xs text-blue-500 font-medium">공급가액 (수수료 합계)</dt>
+                    <dd className="text-sm font-semibold text-gray-800">{fmt(taxBase)}원</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between border-b border-blue-100 pb-2">
+                    <dt className="text-xs text-blue-500 font-medium">세액 (10%)</dt>
+                    <dd className="text-sm font-semibold text-gray-800">{fmt(taxAmount)}원</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between pt-1">
+                    <dt className="text-sm font-bold text-blue-700">합계금액</dt>
+                    <dd className="text-base font-bold text-blue-700">{fmt(taxTotal)}원</dd>
+                  </div>
+                </dl>
+                {!selectedAgency.businessNumber && (
+                  <p className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
+                    ⚠ 사업자 정보가 등록되지 않았습니다. 대행사 관리 메뉴에서 세금계산서 발행 정보를 입력해주세요.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         )}
