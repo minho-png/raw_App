@@ -91,7 +91,6 @@ function CampaignStatusPage() {
   const [advModalOpen, setAdvModalOpen] = useState(false)
   const [editAdv,      setEditAdv]      = useState<Advertiser | null>(null)
   const [confirmCfg,   setConfirmCfg]   = useState<ConfirmCfg | null>(null)
-  const [anomalyOpen,  setAnomalyOpen]  = useState(true)
   const [toast,        setToast]        = useState<{ message: string; type: "success" | "error" } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -365,7 +364,7 @@ function CampaignStatusPage() {
               </p>
             )}
             <CampaignSummaryBanner summary={summary} />
-            <AnomalyBanner anomalies={anomalies} open={anomalyOpen} setOpen={setAnomalyOpen} />
+            <AnomalyBanner anomalies={anomalies} />
             <CampaignFilterBar
               filterStatus={filterStatus} setFilterStatus={setFilterStatus}
               filterMonth={filterMonth}   setFilterMonth={setFilterMonth}
@@ -490,6 +489,7 @@ function CampaignStatusPage() {
         <CampaignDetailPanel
           campaign={selectedDetailCampaign}
           operators={operators} agencies={agencies} advertisers={advertisers}
+          rawRows={rawRows}
           onClose={() => setSelectedDetailId(null)}
           onEdit={(c) => { setEditTarget(c); setModalOpen(true); setSelectedDetailId(null) }}
         />

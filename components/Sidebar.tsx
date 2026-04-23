@@ -37,7 +37,6 @@ const CT_PLUS_ITEMS: SubItem[] = [
   { label: "캠페인 현황",   href: "/campaign/ct-plus/status" },
   { label: "데이터 업로드", href: "/campaign/ct-plus/daily" },
   { label: "데이터 조회",   href: "/campaign/ct-plus/view" },
-  { label: "데이터 시각화", href: "/campaign/ct-plus/visualize" },
 ]
 
 // ── CTV ────────────────────────────────────────────────

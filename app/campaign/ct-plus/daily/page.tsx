@@ -8,8 +8,15 @@ import type { MediaType } from "@/lib/reportTypes"
 import { parseUnifiedCsv } from "@/lib/unifiedCsvParser"
 import type { RawBatch } from "@/lib/rawDataStore"
 import { useRawData } from "@/lib/hooks/useRawData"
+import { useMasterData } from "@/lib/hooks/useMasterData"
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
+
+function fmtDelta(n: number) {
+  const sign = n > 0 ? "+" : n < 0 ? "" : ""
+  const cls  = n > 0 ? "text-blue-600" : n < 0 ? "text-red-500" : "text-gray-400"
+  return { text: `${sign}${fmt(Math.round(n))}`, cls }
+}
 
 const MEDIA_LABEL_TO_TYPE: Record<string, MediaType> = {
   "네이버 GFA": "naver",
@@ -18,7 +25,6 @@ const MEDIA_LABEL_TO_TYPE: Record<string, MediaType> = {
   "META": "meta",
 }
 
-// ── 파일 읽기 헬퍼 ──────────────────────────────────────────
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -28,11 +34,23 @@ function readFileAsText(file: File): Promise<string> {
   })
 }
 
-// ── 업로드 프리뷰 타입 ──────────────────────────────────────
 interface Preview {
   totalRows: number
   byMedia: { label: string; count: number }[]
   campaignNames: string[]
+}
+
+// ── 전일/당일 비교 Row 타입 ─────────────────────────────
+interface DayCompRow {
+  key: string
+  label: string   // 캠페인명 (or raw campaignName)
+  prevDate: string
+  todayDate: string
+  prev: number
+  today: number
+  delta: number
+  deltaRate: number
+  medias: string[]
 }
 
 export default function CtPlusDailyPage() {
@@ -41,6 +59,8 @@ export default function CtPlusDailyPage() {
 
 function CtPlusDailyContent() {
   const { allRows, loading: rawLoading, addBatch, clearAll } = useRawData()
+  const { campaigns } = useMasterData()
+
   const [activeTab,    setActiveTab]    = useState<MediaType | null>(null)
   const [loading,      setLoading]      = useState(false)
   const [parseError,   setParseError]   = useState<string | null>(null)
@@ -48,14 +68,24 @@ function CtPlusDailyContent() {
   const [preview,      setPreview]      = useState<Preview | null>(null)
   const [toast,        setToast]        = useState<string | null>(null)
   const [clearConfirm, setClearConfirm] = useState(false)
+  const [compareDate,  setCompareDate]  = useState<string>("")
 
-  // MongoDB 로드 완료 후 첫 탭 자동 선택
+  // MongoDB 로드 후 첫 탭 자동 선택
   useEffect(() => {
     if (rawLoading || allRows.length === 0 || activeTab) return
     const medias = [...new Set(allRows.map(r => r.media))]
     const firstMediaType = MEDIA_LABEL_TO_TYPE[medias[0]]
     if (firstMediaType) setActiveTab(firstMediaType)
   }, [rawLoading, allRows, activeTab])
+
+  // 최신 날짜로 비교 날짜 자동 세팅
+  useEffect(() => {
+    if (allRows.length === 0 || compareDate) return
+    const dates = allRows.map(r => r.date).filter(Boolean)
+    if (dates.length === 0) return
+    const latest = dates.reduce((a, b) => a > b ? a : b)
+    setCompareDate(latest)
+  }, [allRows, compareDate])
 
   // 토스트 자동 소멸
   useEffect(() => {
@@ -99,9 +129,7 @@ function CtPlusDailyContent() {
         rowCount: newRows.length,
         rows: newRows,
       }
-      // localStorage + MongoDB 동시 저장
       await addBatch(batch)
-      // 첫 탭 세팅
       if (!activeTab) {
         const firstLabel = preview.byMedia[0]?.label
         const firstType  = firstLabel ? MEDIA_LABEL_TO_TYPE[firstLabel] : null
@@ -121,8 +149,57 @@ function CtPlusDailyContent() {
     await clearAll()
     setActiveTab(null)
     setClearConfirm(false)
+    setCompareDate("")
     setToast("전체 데이터가 초기화되었습니다")
   }
+
+  // ── 전일/당일 비교 계산 ───────────────────────────────
+  const comparisonRows = useMemo((): DayCompRow[] => {
+    if (!compareDate || allRows.length === 0) return []
+
+    const prevD = new Date(compareDate)
+    prevD.setDate(prevD.getDate() - 1)
+    const prevDate = prevD.toISOString().slice(0, 10)
+
+    const todayRows = allRows.filter(r => r.date === compareDate)
+    const prevRows  = allRows.filter(r => r.date === prevDate)
+
+    if (todayRows.length === 0 && prevRows.length === 0) return []
+
+    // 캠페인별 집계
+    const map = new Map<string, { label: string; prev: number; today: number; medias: Set<string> }>()
+
+    function addRows(rows: RawRow[], isToday: boolean) {
+      for (const r of rows) {
+        const key   = r.matchedCampaignId ?? r.campaignName
+        const label = r.matchedCampaignId
+          ? (campaigns.find(c => c.id === r.matchedCampaignId)?.campaignName ?? r.campaignName)
+          : r.campaignName
+        const cur = map.get(key) ?? { label, prev: 0, today: 0, medias: new Set() }
+        if (isToday) cur.today += r.netCost ?? 0
+        else         cur.prev  += r.netCost ?? 0
+        cur.medias.add(r.media)
+        map.set(key, cur)
+      }
+    }
+
+    addRows(prevRows, false)
+    addRows(todayRows, true)
+
+    return [...map.entries()]
+      .map(([key, v]) => {
+        const delta     = v.today - v.prev
+        const deltaRate = v.prev > 0 ? (delta / v.prev) * 100 : v.today > 0 ? 100 : 0
+        return {
+          key, label: v.label,
+          prevDate, todayDate: compareDate,
+          prev: Math.round(v.prev), today: Math.round(v.today),
+          delta, deltaRate,
+          medias: [...v.medias],
+        }
+      })
+      .sort((a, b) => b.today - a.today)
+  }, [compareDate, allRows, campaigns])
 
   // rowsByMedia 계산
   const rowsByMedia = useMemo(() => {
@@ -140,11 +217,21 @@ function CtPlusDailyContent() {
   const activeRows = activeTab ? (rowsByMedia[activeTab] ?? []) : []
   const totalCount = allRows.length
 
+  // 비교 날짜 범위 계산
+  const dateRange = useMemo(() => {
+    if (allRows.length === 0) return { min: "", max: "" }
+    const dates = allRows.map(r => r.date).filter(Boolean)
+    return {
+      min: dates.reduce((a, b) => a < b ? a : b),
+      max: dates.reduce((a, b) => a > b ? a : b),
+    }
+  }, [allRows])
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 토스트 */}
       {toast && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm text-white shadow-lg animate-fade-in">
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm text-white shadow-lg">
           {toast}
         </div>
       )}
@@ -180,8 +267,14 @@ function CtPlusDailyContent() {
             <span className="ml-2 text-red-600">{fmt(totalCount)}행이 모두 삭제됩니다. 되돌릴 수 없습니다.</span>
           </p>
           <div className="flex items-center gap-2">
-            <button onClick={() => setClearConfirm(false)} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">취소</button>
-            <button onClick={handleClearAll} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">삭제 확인</button>
+            <button onClick={() => setClearConfirm(false)}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+              취소
+            </button>
+            <button onClick={handleClearAll}
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+              삭제 확인
+            </button>
           </div>
         </div>
       )}
@@ -194,32 +287,26 @@ function CtPlusDailyContent() {
             네이버 GFA / 카카오모먼트 / Google / META 통합 CSV를 선택하세요. 기존 데이터에 누적 추가됩니다.
           </p>
 
-          {/* 파일 선택 드롭존 */}
           <label className="flex flex-col items-center justify-center w-full rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-6 py-8 cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-colors">
             <svg className="h-8 w-8 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
             </svg>
             {uploadFile ? (
               <span className="text-sm font-medium text-blue-700">{uploadFile.name}</span>
             ) : (
               <span className="text-sm text-gray-400">클릭하여 CSV 파일 선택</span>
             )}
-            <input
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={e => handleFileChange(e.target.files?.[0] ?? null)}
-            />
+            <input type="file" accept=".csv" className="hidden"
+              onChange={e => handleFileChange(e.target.files?.[0] ?? null)} />
           </label>
 
-          {/* 파싱 오류 */}
           {parseError && (
             <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2.5 text-xs text-red-700">
               <span className="font-semibold">파싱 오류:</span> {parseError}
             </div>
           )}
 
-          {/* 프리뷰 */}
           {preview && !parseError && (
             <div className="mt-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -242,14 +329,10 @@ function CtPlusDailyContent() {
             </div>
           )}
 
-          {/* 업로드 확정 버튼 */}
           {preview && !parseError && (
             <div className="mt-3 flex items-center gap-2">
-              <button
-                onClick={handleUpload}
-                disabled={loading}
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
+              <button onClick={handleUpload} disabled={loading}
+                className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                 {loading ? (
                   <>
                     <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -262,22 +345,115 @@ function CtPlusDailyContent() {
                   <>데이터 추가 ({fmt(preview.totalRows)}행)</>
                 )}
               </button>
-              <button
-                onClick={() => { setUploadFile(null); setPreview(null); setParseError(null) }}
-                className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-              >
+              <button onClick={() => { setUploadFile(null); setPreview(null); setParseError(null) }}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
                 취소
               </button>
             </div>
           )}
         </div>
 
+        {/* ── 전일/당일 비교 ─────────────────────────────── */}
+        {allRows.length > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">전일 / 당일 비교</h2>
+                <p className="text-xs text-gray-500 mt-0.5">날짜를 선택하면 전날 대비 캠페인별 순금액 변화를 확인합니다</p>
+              </div>
+              <input
+                type="date"
+                value={compareDate}
+                min={dateRange.min}
+                max={dateRange.max}
+                onChange={e => setCompareDate(e.target.value)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+
+            {comparisonRows.length === 0 ? (
+              <p className="text-xs text-gray-400 py-4 text-center">
+                {compareDate ? "선택한 날짜에 데이터가 없습니다" : "날짜를 선택하세요"}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">캠페인</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">매체</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-500">
+                        전일 <span className="text-gray-300">({comparisonRows[0]?.prevDate.slice(5)})</span>
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-500">
+                        당일 <span className="text-gray-300">({compareDate.slice(5)})</span>
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-500">증감액</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-500">증감율</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {comparisonRows.map(row => {
+                      const d = fmtDelta(row.delta)
+                      const r = fmtDelta(row.deltaRate)
+                      return (
+                        <tr key={row.key} className="hover:bg-gray-50">
+                          <td className="px-3 py-2.5 font-medium text-gray-800 max-w-[180px] truncate" title={row.label}>
+                            {row.label}
+                          </td>
+                          <td className="px-3 py-2.5 text-gray-500">
+                            <div className="flex flex-wrap gap-1">
+                              {row.medias.map(m => (
+                                <span key={m} className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">{m}</span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
+                            {row.prev > 0 ? fmt(row.prev) : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums font-medium text-blue-700">
+                            {row.today > 0 ? fmt(row.today) : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${d.cls}`}>{d.text}</td>
+                          <td className={`px-3 py-2.5 text-right tabular-nums ${r.cls}`}>
+                            {row.prev > 0 || row.today > 0 ? `${r.text}%` : <span className="text-gray-300">—</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                    <tr>
+                      <td className="px-3 py-2.5 font-semibold text-gray-900" colSpan={2}>합계</td>
+                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-gray-700">
+                        {fmt(comparisonRows.reduce((s, r) => s + r.prev, 0))}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-blue-700">
+                        {fmt(comparisonRows.reduce((s, r) => s + r.today, 0))}
+                      </td>
+                      {(() => {
+                        const totalDelta = comparisonRows.reduce((s, r) => s + r.delta, 0)
+                        const d = fmtDelta(totalDelta)
+                        return (
+                          <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${d.cls}`}>{d.text}</td>
+                        )
+                      })()}
+                      <td className="px-3 py-2.5 text-right text-gray-400">—</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 데이터 테이블 */}
         {allRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="rounded-full bg-gray-100 p-6 mb-4">
               <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
             <p className="text-sm font-medium text-gray-500">아직 업로드된 데이터가 없습니다</p>
