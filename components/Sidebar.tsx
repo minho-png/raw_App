@@ -44,6 +44,7 @@ const CT_SECTIONS: MenuGroup[] = [
     items: [
       { label: "캠페인 세팅 내역 검수", href: "/campaign/ct/check",  badge: "준비중" },
       { label: "캠페인 현황",           href: "/campaign/ct/status", badge: "준비중" },
+      { label: "Motiv 캠페인 리스트",   href: "/campaign/ct/motiv-campaigns" },
     ],
   },
 ]
