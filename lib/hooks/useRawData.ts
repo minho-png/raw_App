@@ -8,7 +8,7 @@
  *   2) MongoDB fetch 후 덮어쓰기 (소스 오브 트루스)
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import type { RawRow } from '@/lib/rawDataParser'
 import type { RawBatch } from '@/lib/rawDataStore'
 
@@ -106,7 +106,9 @@ export function useRawData(): RawDataHook {
     await deleteAllBatches()
   }, [])
 
-  const allRows: RawRow[] = batches.flatMap(b => b.rows)
+  // useMemo: batches가 실제로 바뀔 때만 새 배열 참조 생성
+  // 없으면 매 렌더마다 새 참조 → useEffect 의존성 무한 트리거 (React #185)
+  const allRows = useMemo(() => batches.flatMap(b => b.rows), [batches])
 
   return { batches, allRows, loading, addBatch, clearAll, refresh: loadAll }
 }

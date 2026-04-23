@@ -9,48 +9,75 @@ interface SubItem {
   href: string
 }
 
-// ── CT+ 전용 네비게이션 (7 → 4개로 통합) ────────────────────
-// 현황·집행관리·그룹관리 → /status 한 페이지 (탭 전환)
-// 리포트 생성·종료 리포트  → /report 한 페이지 (탭 전환)
+interface MenuGroup {
+  title: string
+  items: SubItem[]
+}
+
+// 그룹 1: 캠페인 준비
+const CAMPAIGN_PREP: SubItem[] = [
+  { label: "소재 규격 확인", href: "/campaign/ct-plus/creative-check" },
+  { label: "통합 관리", href: "/management" },
+]
+
+// 그룹 2: CT+ 집행 관리
 const CT_PLUS_ITEMS: SubItem[] = [
-  { label: "캠페인 현황",    href: "/campaign/ct-plus/status" },
-  { label: "데이터 업로드",  href: "/campaign/ct-plus/daily" },
-  { label: "데이터 조회",    href: "/campaign/ct-plus/view" },
-  { label: "정산 확인",      href: "/campaign/ct-plus/final" },
+  { label: "캠페인 현황", href: "/campaign/ct-plus/status" },
+  { label: "데이터 업로드", href: "/campaign/ct-plus/daily" },
+  { label: "데이터 조회", href: "/campaign/ct-plus/view" },
 ]
 
-// ── 그 외 메뉴 ────────────────────────────────────────────
+// 그룹 3: 정산
 const SETTLEMENT_ITEMS: SubItem[] = [
-  { label: "대행사별 대행수수료", href: "/settlement/agency-fee" },
-  { label: "DMP 수수료",          href: "/settlement/dmp-fee" },
-  { label: "매체 비용",           href: "/settlement/media-cost" },
+  { label: "정산 확인", href: "/campaign/ct-plus/final" },
+  { label: "대행사별 수수료", href: "/settlement/agency-fee" },
+  { label: "DMP 수수료", href: "/settlement/dmp-fee" },
+  { label: "매체 비용", href: "/settlement/media-cost" },
 ]
 
-const CT_CTV_ITEMS: SubItem[] = [
-  { label: "종료 리포트",       href: "/campaign/ct-ctv/final" },
-  { label: "CTV 데일리 리포트", href: "/campaign/ct-ctv/daily" },
+// 그룹 4: 분석·리포트
+const ANALYSIS_ITEMS: SubItem[] = [
+  { label: "CT+ 현황", href: "/campaign/ct-plus/overview" },
+  { label: "CTV 분석", href: "/campaign/ct-ctv/analysis" },
+  { label: "CTV 종료 리포트", href: "/campaign/ct-ctv/final" },
+  { label: "CTV 데일리", href: "/campaign/ct-ctv/daily" },
+]
+
+// 그룹 5: 도구
+const TOOLS_ITEMS: SubItem[] = [
+  { label: "목업 이미지 생성", href: "/mockup" },
+]
+
+const MENU_GROUPS: MenuGroup[] = [
+  { title: "캠페인 준비", items: CAMPAIGN_PREP },
+  { title: "CT+ 집행 관리", items: CT_PLUS_ITEMS },
+  { title: "정산", items: SETTLEMENT_ITEMS },
+  { title: "분석·리포트", items: ANALYSIS_ITEMS },
+  { title: "도구", items: TOOLS_ITEMS },
 ]
 
 export default function Sidebar() {
-  const pathname  = usePathname()
-  const router    = useRouter()
+  const pathname = usePathname()
+  const router = useRouter()
 
-  const [ctPlusOpen,    setCtPlusOpen]    = useState(false)
-  const [settlementOpen, setSettlementOpen] = useState(false)
-  const [ctCtvOpen,     setCtCtvOpen]     = useState(false)
-  const [username,      setUsername]      = useState<string | null>(null)
-  const [loggingOut,    setLoggingOut]    = useState(false)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  const [username, setUsername] = useState<string | null>(null)
+  const [loggingOut, setLoggingOut] = useState(false)
 
   // 현재 경로에 따라 메뉴 자동 열기
   useEffect(() => {
-    if (pathname.startsWith('/campaign/ct-plus')) setCtPlusOpen(true)
-    if (pathname.startsWith('/settlement'))       setSettlementOpen(true)
-    if (pathname.startsWith('/campaign/ct-ctv'))  setCtCtvOpen(true)
+    const newOpenGroups: Record<string, boolean> = {}
+    MENU_GROUPS.forEach(group => {
+      if (group.items.some(item => pathname.startsWith(item.href.split("/").slice(0, 3).join("/")))) {
+        newOpenGroups[group.title] = true
+      }
+    })
+    setOpenGroups(newOpenGroups)
   }, [pathname])
 
   // 세션 사용자명 조회
   useEffect(() => {
-    fetch('/api/auth/me')
+    fetch("/api/auth/me")
       .then(r => r.ok ? r.json() : null)
       .then((data: { username?: string } | null) => {
         if (data?.username) setUsername(data.username)
@@ -61,12 +88,16 @@ export default function Sidebar() {
   async function handleLogout() {
     setLoggingOut(true)
     try {
-      await fetch('/api/auth/logout', { method: 'POST' })
-      router.replace('/login')
+      await fetch("/api/auth/logout", { method: "POST" })
+      router.replace("/login")
       router.refresh()
     } finally {
       setLoggingOut(false)
     }
+  }
+
+  const toggleGroup = (title: string) => {
+    setOpenGroups(prev => ({ ...prev, [title]: !prev[title] }))
   }
 
   const linkCls = (href: string) =>
@@ -76,7 +107,7 @@ export default function Sidebar() {
         : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
     }`
 
-  const dot = <span className="mr-2 text-gray-500">·</span>
+  const dot = <span className="mr-2 text-gray-400">·</span>
 
   return (
     <aside className="flex h-full w-56 flex-col border-r border-gray-200 bg-white">
@@ -101,117 +132,35 @@ export default function Sidebar() {
         <p className="text-xs font-semibold text-gray-700">광고 운영 대시보드</p>
       </div>
 
-      {/* 단독 링크 */}
-      <div className="px-3 pt-3 space-y-0.5">
-        <Link href="/campaign/ct-ctv/analysis" className={linkCls("/campaign/ct-ctv/analysis")}>
-          데이터 분석 대시보드
-        </Link>
-        <Link href="/mockup" className={
-          `flex items-center rounded-lg px-3 py-2 text-sm transition-colors ${
-            pathname.startsWith("/mockup")
-              ? "bg-blue-50 font-medium text-blue-700"
-              : "text-gray-600 hover:bg-gray-50"
-          }`
-        }>
-          목업 게재 이미지 생성
-        </Link>
-      </div>
-
-      {/* ── CT+ 섹션 (시각적 구분) ──────────────────────── */}
-      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
-        {/* CT+ 블록 */}
-        <div className="rounded-xl overflow-hidden border border-orange-100 bg-orange-50/40">
-          <button
-            onClick={() => setCtPlusOpen(v => !v)}
-            className="flex w-full items-center justify-between px-3 py-2.5"
-          >
-            <span className="flex items-center gap-1.5">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-orange-500 text-[10px] font-bold text-white">C+</span>
-              <span className="text-sm font-semibold text-orange-700">CT+</span>
-            </span>
-            <svg
-              className={`h-4 w-4 text-orange-400 transition-transform duration-200 ${ctPlusOpen ? "rotate-180" : ""}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
+      {/* 메뉴 그룹 */}
+      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+        {MENU_GROUPS.map(group => (
+          <div key={group.title}>
+            <button
+              onClick={() => toggleGroup(group.title)}
+              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {ctPlusOpen && (
-            <div className="px-1 pb-1.5 space-y-0.5">
-              {CT_PLUS_ITEMS.map(item => {
-                // 병합된 페이지들도 활성으로 처리
-                const isActive =
-                  pathname === item.href ||
-                  (item.href === "/campaign/ct-plus/status" &&
-                    ["/campaign/ct-plus/overview", "/campaign/ct-plus/manage"].some(p => pathname === p)) ||
-                  (item.href === "/campaign/ct-plus/report" &&
-                    pathname === "/campaign/ct-plus/final")
-                return (
-                  <Link key={item.href} href={item.href}
-                    className={`flex items-center rounded-lg px-3 py-2 text-sm transition-colors ${
-                      isActive
-                        ? "bg-orange-100 font-medium text-orange-700"
-                        : "text-orange-600/80 hover:bg-orange-100/60 hover:text-orange-700"
-                    }`}
-                  >
+              <span>{group.title}</span>
+              <svg
+                className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                  openGroups[group.title] ? "rotate-180" : ""
+                }`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {openGroups[group.title] && (
+              <div className="ml-2 mt-1 space-y-0.5">
+                {group.items.map(item => (
+                  <Link key={item.href} href={item.href} className={linkCls(item.href)}>
                     {dot}{item.label}
                   </Link>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* 정산 리포트 */}
-        <div>
-          <button
-            onClick={() => setSettlementOpen(v => !v)}
-            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <span>정산 리포트</span>
-            <svg
-              className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${settlementOpen ? "rotate-180" : ""}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {settlementOpen && (
-            <div className="ml-2 mt-1 space-y-0.5">
-              {SETTLEMENT_ITEMS.map(item => (
-                <Link key={item.href} href={item.href} className={linkCls(item.href)}>
-                  {dot}{item.label}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* CT/CTV */}
-        <div>
-          <button
-            onClick={() => setCtCtvOpen(v => !v)}
-            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <span>캠페인 리포트 (CT/CTV)</span>
-            <svg
-              className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${ctCtvOpen ? "rotate-180" : ""}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {ctCtvOpen && (
-            <div className="ml-2 mt-1 space-y-0.5">
-              {CT_CTV_ITEMS.map(item => (
-                <Link key={item.href} href={item.href} className={linkCls(item.href)}>
-                  {dot}{item.label}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
       </nav>
 
       {/* 하단 사용자 영역 */}
