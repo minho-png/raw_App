@@ -10,7 +10,7 @@ interface CoverRect { xR: number; yR: number; wR: number; hR: number; fill: stri
 type Layer = { id: string; label: string; visible: boolean } & (
   | { type: "image";  img: HTMLImageElement; xR: number; yR: number; wR: number; hR: number; radiusPct: number }
   | { type: "text";   text: string; xR: number; yR: number; sizeR: number; color: string; weight: string; align: CanvasTextAlign; cover?: CoverRect }
-  | { type: "button"; text: string; xR: number; yR: number; wR: number; hR: number; rR: number; bg: string; fg: string; sizeR: number; cover?: CoverRect }
+  | { type: "button"; text: string; xR: number; yR: number; wR: number; hR: number; rR: number; bg: string; fg: string; sizeR: number; borderColor?: string; cover?: CoverRect }
   | { type: "logo";   img: HTMLImageElement | null; cxR: number; cyR: number; rR: number; coverFill: string }
 )
 
@@ -18,7 +18,7 @@ interface PresetTextDef {
   label: string; default: string; cover: CoverRect
   draw:
     | { type: "text";   xR: number; yR: number; sizeR: number; fill: string; weight?: string; align?: CanvasTextAlign }
-    | { type: "button"; xR: number; yR: number; wR: number; hR: number; rR: number; bg: string; fg: string; sizeR: number }
+    | { type: "button"; xR: number; yR: number; wR: number; hR: number; rR: number; bg: string; fg: string; sizeR: number; borderColor?: string }
 }
 interface PresetLogoDef { label: string; coverFill: string; cxR: number; cyR: number; rR: number }
 interface Preset {
@@ -36,44 +36,46 @@ const PRESETS: Preset[] = [
     imagePos: { xR: 0.030, yR: 0.155, wR: 0.925, hR: 0.100, radiusPct: 0.032 },
   },
   {
+    // 실측: 배경 323×720, 텍스트 스트립 y=539~576 (yR 0.748~0.800)
     id: "native-1200x600", label: "카카오 네이티브 1200×600 (더보기탭)",
     src: "/%EC%B9%B4%EC%B9%B4%EC%98%A4%20%EB%84%A4%EC%9D%B4%ED%8B%B0%EB%B8%8C%201200X600.png",
-    imagePos: { xR: 0.040, yR: 0.540, wR: 0.925, hR: 0.210, radiusPct: 0.016 },
+    imagePos: { xR: 0.040, yR: 0.540, wR: 0.925, hR: 0.195, radiusPct: 0.016 },
     textDefs: [
       {
         label: "광고 제목", default: "광고 제목",
-        cover: { xR: 0.020, yR: 0.922, wR: 0.640, hR: 0.062, fill: "#FFFFFF" },
-        draw: { type: "text", xR: 0.040, yR: 0.954, sizeR: 0.046, fill: "#111111", weight: "500" },
+        cover: { xR: 0.010, yR: 0.746, wR: 0.722, hR: 0.056, fill: "#FFFFFF" },
+        draw: { type: "text", xR: 0.035, yR: 0.774, sizeR: 0.038, fill: "#222222", weight: "500" },
       },
       {
         label: "버튼", default: "바로가기",
-        cover: { xR: 0.662, yR: 0.922, wR: 0.316, hR: 0.062, fill: "#FFFFFF" },
-        draw: { type: "button", xR: 0.664, yR: 0.924, wR: 0.312, hR: 0.058, rR: 0.008, bg: "#191919", fg: "#FFFFFF", sizeR: 0.034 },
+        cover: { xR: 0.732, yR: 0.748, wR: 0.248, hR: 0.052, fill: "#FFFFFF" },
+        draw: { type: "button", xR: 0.736, yR: 0.752, wR: 0.240, hR: 0.044, rR: 0.012, bg: "#FFFFFF", fg: "#222222", sizeR: 0.033, borderColor: "#CCCCCC" },
       },
     ],
   },
   {
+    // 실측: 배경 323×720, 광고이미지 y=78~428, 문구 y=475~505, 버튼 y=508~545
     id: "native-1000x800", label: "카카오 네이티브 1000×800 (피드탭)",
     src: "/%EC%B9%B4%EC%B9%B4%EC%98%A4%20%EB%84%A4%EC%9D%B4%ED%8B%B0%EB%B8%8C1000x800.jpg",
-    imagePos: { xR: 0.150, yR: 0.200, wR: 0.810, hR: 0.455, radiusPct: 0.030 },
+    imagePos: { xR: 0.031, yR: 0.108, wR: 0.938, hR: 0.486, radiusPct: 0.020 },
     textDefs: [
       {
         label: "브랜드명", default: "브랜드",
-        cover: { xR: 0.120, yR: 0.228, wR: 0.230, hR: 0.042, fill: "#FFFFFF" },
-        draw: { type: "text", xR: 0.125, yR: 0.250, sizeR: 0.046, fill: "#111111", weight: "700" },
+        cover: { xR: 0.150, yR: 0.063, wR: 0.250, hR: 0.040, fill: "#FFFFFF" },
+        draw: { type: "text", xR: 0.161, yR: 0.083, sizeR: 0.040, fill: "#111111", weight: "700" },
       },
       {
         label: "광고 문구", default: "광고 문구를 입력하세요",
-        cover: { xR: 0.020, yR: 0.653, wR: 0.960, hR: 0.052, fill: "#FFFFFF" },
-        draw: { type: "text", xR: 0.040, yR: 0.679, sizeR: 0.037, fill: "#444444" },
+        cover: { xR: 0.020, yR: 0.658, wR: 0.960, hR: 0.048, fill: "#FFFFFF" },
+        draw: { type: "text", xR: 0.040, yR: 0.682, sizeR: 0.037, fill: "#444444" },
       },
       {
         label: "버튼", default: "바로가기",
-        cover: { xR: 0.020, yR: 0.712, wR: 0.960, hR: 0.068, fill: "#FFFFFF" },
-        draw: { type: "button", xR: 0.020, yR: 0.712, wR: 0.960, hR: 0.068, rR: 0.012, bg: "#6600CC", fg: "#FFFFFF", sizeR: 0.040 },
+        cover: { xR: 0.020, yR: 0.702, wR: 0.960, hR: 0.058, fill: "#FFFFFF" },
+        draw: { type: "button", xR: 0.020, yR: 0.704, wR: 0.960, hR: 0.054, rR: 0.014, bg: "#6600CC", fg: "#FFFFFF", sizeR: 0.040 },
       },
     ],
-    logoDef: { label: "브랜드 로고", coverFill: "#DDDDDD", cxR: 0.066, cyR: 0.249, rR: 0.038 },
+    logoDef: { label: "브랜드 로고", coverFill: "#DDDDDD", cxR: 0.099, cyR: 0.081, rR: 0.037 },
   },
   {
     id: "native-view", label: "카카오 네이티브 (카카오뷰)",
@@ -254,6 +256,7 @@ export default function MockupPage() {
         if (layer.cover) { ctx.fillStyle=layer.cover.fill; ctx.fillRect(layer.cover.xR*iw,layer.cover.yR*ih,layer.cover.wR*iw,layer.cover.hR*ih) }
         const bx=layer.xR*iw, by=layer.yR*ih, bw=layer.wR*iw, bh=layer.hR*ih
         rr(ctx,bx,by,bw,bh,layer.rR*iw); ctx.fillStyle=layer.bg; ctx.fill()
+        if (layer.borderColor) { ctx.save(); ctx.strokeStyle=layer.borderColor; ctx.lineWidth=Math.max(1,iw*0.004); rr(ctx,bx,by,bw,bh,layer.rR*iw); ctx.stroke(); ctx.restore() }
         ctx.font=`600 ${Math.round(layer.sizeR*iw)}px ${FONT}`
         ctx.fillStyle=layer.fg; ctx.textAlign="center"; ctx.textBaseline="middle"
         ctx.fillText(layer.text, bx+bw/2, by+bh/2)
@@ -472,7 +475,7 @@ export default function MockupPage() {
             align:d.align??"left", cover:td.cover })
         } else {
           next.push({ id:uid(), type:"button", label:td.label, visible:true, text:td.default,
-            xR:d.xR, yR:d.yR, wR:d.wR, hR:d.hR, rR:d.rR, bg:d.bg, fg:d.fg, sizeR:d.sizeR, cover:td.cover })
+            xR:d.xR, yR:d.yR, wR:d.wR, hR:d.hR, rR:d.rR, bg:d.bg, fg:d.fg, sizeR:d.sizeR, ...(d.borderColor ? { borderColor: d.borderColor } : {}), cover:td.cover })
         }
       }
       if (preset.logoDef) {
