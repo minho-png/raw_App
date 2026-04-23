@@ -83,7 +83,7 @@ const PRESETS: Preset[] = [
 ]
 
 const KAKAO_BG = "rgb(235,235,235)"
-const FONT = `-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif`
+const FONT = `"KakaoSmallSans", "Apple SD Gothic Neo", sans-serif`
 
 // ── Utils ─────────────────────────────────────────────────────
 let _uid = 0
@@ -189,6 +189,26 @@ export default function MockupPage() {
   const [compositGenerating, setCompositGenerating]   = useState(false)
   const [compositError, setCompositError]             = useState<string | null>(null)
   const compositInputRef                              = useRef<HTMLInputElement>(null)
+
+  // ── KakaoSmallSans 폰트 로드 (Canvas용 FontFace API) ─────────
+  useEffect(() => {
+    async function loadKakaoFonts() {
+      try {
+        const fonts = [
+          new FontFace("KakaoSmallSans", "url(/fonts/kakao/KakaoSmallSans-Regular.ttf)", { weight: "400" }),
+          new FontFace("KakaoSmallSans", "url(/fonts/kakao/KakaoSmallSans-Light.ttf)",   { weight: "300" }),
+          new FontFace("KakaoSmallSans", "url(/fonts/kakao/KakaoSmallSans-Bold.ttf)",    { weight: "700" }),
+        ]
+        await Promise.all(fonts.map(async (f) => {
+          await f.load()
+          document.fonts.add(f)
+        }))
+      } catch (e) {
+        console.warn("KakaoSmallSans 로드 실패, 시스템 폰트로 대체:", e)
+      }
+    }
+    loadKakaoFonts()
+  }, [])
 
   useEffect(() => { layersRef.current = layers }, [layers])
 
