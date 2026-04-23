@@ -22,8 +22,8 @@ import {
   getCampaignTotals, getCampaignProgress, getDday
 } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
-import { loadAllRawRows } from "@/lib/rawDataStore"
-import { recomputeAllCampaigns, loadComputedRows } from "@/lib/markupService"
+import { useRawData } from "@/lib/hooks/useRawData"
+import { applyMarkupToRows } from "@/lib/markupService"
 import type { RawRow } from "@/lib/rawDataParser"
 
 
@@ -72,6 +72,7 @@ function CampaignStatusPage() {
     campaigns, operators, agencies, advertisers,
     saveCampaigns, saveOperators, saveAgencies, saveAdvertisers
   } = useMasterData()
+  const { allRows: rawRows } = useRawData()
 
   const [statusTab,      setStatusTab]      = useState<StatusTab>("campaigns")
   const [filterStatus,   setFilterStatus]   = useState<FilterStatus>("전체")
@@ -112,24 +113,22 @@ function CampaignStatusPage() {
     [campaigns, selectedDetailId]
   )
 
+  // MongoDB raw rows + campaign 설정 → markup 적용 → 소진 맵 계산
   useEffect(() => {
-    if (campaigns.length === 0) return
-    const rawRows = loadAllRawRows()
-    if (rawRows.length > 0) recomputeAllCampaigns(rawRows, campaigns)
-    // 각 캠페인의 computed rows 로드
+    if (campaigns.length === 0 || rawRows.length === 0) return
+    const computed = applyMarkupToRows(rawRows, campaigns)
     const map = new Map<string, { netAmount: number; executionAmount: number; rowCount: number }>()
-    for (const c of campaigns) {
-      const rows = loadComputedRows(c.id)
-      if (rows.length > 0) {
-        map.set(c.id, {
-          netAmount: rows.reduce((s, r) => s + (r.netAmount ?? 0), 0),
-          executionAmount: rows.reduce((s, r) => s + (r.executionAmount ?? 0), 0),
-          rowCount: rows.length,
-        })
-      }
+    for (const row of computed) {
+      if (!row.matchedCampaignId) continue
+      const prev = map.get(row.matchedCampaignId) ?? { netAmount: 0, executionAmount: 0, rowCount: 0 }
+      map.set(row.matchedCampaignId, {
+        netAmount:       prev.netAmount       + (row.netAmount       ?? 0),
+        executionAmount: prev.executionAmount + (row.executionAmount ?? 0),
+        rowCount:        prev.rowCount        + 1,
+      })
     }
     setComputedSpendMap(map)
-  }, [campaigns])
+  }, [campaigns, rawRows])
 
   const filtered = useMemo(() => campaigns.filter(c => {
     if (filterStatus !== "전체" && c.status !== filterStatus) return false

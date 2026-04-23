@@ -1,7 +1,8 @@
 "use client"
 import { useState, useMemo } from "react"
 import { useMasterData } from "@/lib/hooks/useMasterData"
-import { loadComputedRows } from "@/lib/markupService"
+import { useRawData } from "@/lib/hooks/useRawData"
+import { computeCampaignRows } from "@/lib/markupService"
 import { getMediaTotals, getCampaignTotals } from "@/lib/campaignTypes"
 import type { Campaign } from "@/lib/campaignTypes"
 
@@ -10,16 +11,18 @@ function fmtRate(n: number) { return n.toFixed(1) + '%' }
 
 export default function CtPlusFinalPage() {
   const { campaigns, agencies, advertisers, loading: masterLoading } = useMasterData()
+  const { allRows: rawRows, loading: rawLoading } = useRawData()
   const [selectedId, setSelectedId] = useState<string>("")
 
   const campaign = useMemo(() => campaigns.find(c => c.id === selectedId) ?? null, [campaigns, selectedId])
   const agency = useMemo(() => agencies.find(a => a.id === campaign?.agencyId) ?? null, [agencies, campaign])
   const advertiser = useMemo(() => advertisers.find(a => a.id === campaign?.advertiserId) ?? null, [advertisers, campaign])
 
+  // MongoDB raw rows + 캠페인 수수료율 → 실시간 markup 계산 (localStorage 불필요)
   const computedRows = useMemo(() => {
-    if (!selectedId) return []
-    return loadComputedRows(selectedId)
-  }, [selectedId])
+    if (!selectedId || rawRows.length === 0) return []
+    return computeCampaignRows(rawRows, campaigns, selectedId)
+  }, [selectedId, rawRows, campaigns])
 
   const settlementRows = useMemo(() => {
     if (!campaign) return []
@@ -73,7 +76,7 @@ export default function CtPlusFinalPage() {
       <main className="p-6 space-y-6">
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm print:hidden">
           <label className="block text-xs font-semibold text-gray-700 mb-2">Select Campaign</label>
-          {masterLoading ? (
+          {(masterLoading || rawLoading) ? (
             <p className="text-xs text-gray-400">Loading...</p>
           ) : (
             <select

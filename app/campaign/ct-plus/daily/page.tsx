@@ -6,8 +6,8 @@ import type { RawRow } from "@/lib/rawDataParser"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 import { parseUnifiedCsv } from "@/lib/unifiedCsvParser"
-import { saveRawBatch, loadAllRawRows, clearAllRawData } from "@/lib/rawDataStore"
 import type { RawBatch } from "@/lib/rawDataStore"
+import { useRawData } from "@/lib/hooks/useRawData"
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
 
@@ -40,7 +40,7 @@ export default function CtPlusDailyPage() {
 }
 
 function CtPlusDailyContent() {
-  const [allRows,      setAllRows]      = useState<RawRow[]>([])
+  const { allRows, loading: rawLoading, addBatch, clearAll } = useRawData()
   const [activeTab,    setActiveTab]    = useState<MediaType | null>(null)
   const [loading,      setLoading]      = useState(false)
   const [parseError,   setParseError]   = useState<string | null>(null)
@@ -49,16 +49,13 @@ function CtPlusDailyContent() {
   const [toast,        setToast]        = useState<string | null>(null)
   const [clearConfirm, setClearConfirm] = useState(false)
 
-  // 초기 로드
+  // MongoDB 로드 완료 후 첫 탭 자동 선택
   useEffect(() => {
-    const rows = loadAllRawRows()
-    setAllRows(rows)
-    if (rows.length > 0) {
-      const medias = [...new Set(rows.map(r => r.media))]
-      const firstMediaType = MEDIA_LABEL_TO_TYPE[medias[0]]
-      if (firstMediaType) setActiveTab(firstMediaType)
-    }
-  }, [])
+    if (rawLoading || allRows.length === 0 || activeTab) return
+    const medias = [...new Set(allRows.map(r => r.media))]
+    const firstMediaType = MEDIA_LABEL_TO_TYPE[medias[0]]
+    if (firstMediaType) setActiveTab(firstMediaType)
+  }, [rawLoading, allRows, activeTab])
 
   // 토스트 자동 소멸
   useEffect(() => {
@@ -92,8 +89,8 @@ function CtPlusDailyContent() {
     if (!uploadFile || !preview) return
     setLoading(true)
     try {
-      const text   = await readFileAsText(uploadFile)
-      const result = parseUnifiedCsv(text, [])
+      const text    = await readFileAsText(uploadFile)
+      const result  = parseUnifiedCsv(text, [])
       const newRows = Object.values(result.rowsByMedia).flat() as RawRow[]
       const batch: RawBatch = {
         id: Date.now().toString(),
@@ -102,9 +99,8 @@ function CtPlusDailyContent() {
         rowCount: newRows.length,
         rows: newRows,
       }
-      saveRawBatch(batch)
-      const updated = loadAllRawRows()
-      setAllRows(updated)
+      // localStorage + MongoDB 동시 저장
+      await addBatch(batch)
       // 첫 탭 세팅
       if (!activeTab) {
         const firstLabel = preview.byMedia[0]?.label
@@ -121,9 +117,8 @@ function CtPlusDailyContent() {
     }
   }
 
-  function handleClearAll() {
-    clearAllRawData()
-    setAllRows([])
+  async function handleClearAll() {
+    await clearAll()
     setActiveTab(null)
     setClearConfirm(false)
     setToast("전체 데이터가 초기화되었습니다")
