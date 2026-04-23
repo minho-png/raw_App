@@ -1,6 +1,5 @@
 "use client"
 import React, { useState, useEffect } from "react"
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import {
   Campaign, Operator, Agency, Advertiser, getMediaTotals, getCampaignTotals, 
   getCampaignProgress, getDday
@@ -20,16 +19,20 @@ function DetailKPICard({ label, value, color }: { label: string; value: string; 
 }
 
 export function CampaignDetailPanel({
-  campaign, operators, agencies, advertisers, onClose, onEdit }: {
+  campaign, operators, agencies, advertisers, onClose, onEdit, onUpdate }: {
   campaign: Campaign
   operators: Operator[]
   agencies: Agency[]
   advertisers: Advertiser[]
   onClose: () => void
   onEdit: (c: Campaign) => void
+  onUpdate?: (c: Campaign) => void
 }) {
   // 업로드된 실적 데이터 (raw → computed)
   const [computedRows, setComputedRows] = useState<RawRow[]>([])
+  const [dashboardInput, setDashboardInput] = useState<string>(
+    campaign.dashboardNetAmount != null ? String(campaign.dashboardNetAmount) : ""
+  )
   useEffect(() => {
     const rows = loadComputedRows(campaign.id)
     setComputedRows(rows)
@@ -45,13 +48,6 @@ export function CampaignDetailPanel({
   const agN     = agencies.find(a => a.id === campaign.agencyId)?.name    ?? '-'
   const advN    = advertisers.find(a => a.id === campaign.advertiserId)?.name ?? '-'
 
-  const chartData = campaign.mediaBudgets.map(mb => {
-    const t = getMediaTotals(mb)
-    return { name: mb.media, '부킹': t.totalBudget, '세팅': t.totalSettingCost, '집행': t.totalSpend }
-  })
-
-
-
   function fmtAbbr(n: number): string {
     if (n >= 100000000) return `${(n / 100000000).toFixed(1)}억`
     if (n >= 10000)     return `${(n / 10000).toFixed(0)}만`
@@ -60,8 +56,9 @@ export function CampaignDetailPanel({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col overflow-hidden">
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
 
         {/* 헤더 */}
         <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
@@ -103,8 +100,10 @@ export function CampaignDetailPanel({
           </div>
 
           {/* 진행률 vs 소진율 */}
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
             <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">진행률 vs 소진율</h3>
+
+            {/* 진행률 */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs text-gray-600">진행률</span>
@@ -118,39 +117,84 @@ export function CampaignDetailPanel({
                 <span>{campaign.endDate.slice(5)}</span>
               </div>
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs text-gray-600">소진율</span>
-                <span className={`text-xs font-semibold ${sc.text}`}>{totals.spendRate}%</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-gray-200">
-                <div className={`h-full rounded-full transition-all ${sc.bar}`} style={{ width: `${Math.min(totals.spendRate, 100)}%` }} />
-              </div>
-            </div>
-            {Math.abs(lag) >= 5 && (
-              <div className={`rounded-lg px-3 py-2 text-xs font-medium ${lag >= 15 ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' : lag > 0 ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'}`}>
-                {lag > 0 ? `⚠ 집행 속도 ${lag.toFixed(1)}%p 지연` : `▲ 집행 속도 ${Math.abs(lag).toFixed(1)}%p 빠름`}
-              </div>
-            )}
-          </div>
 
-          {/* 매체별 예산 차트 */}
-          {chartData.length > 0 && (
-            <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">매체별 예산 현황</h3>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={chartData} barCategoryGap="35%" barGap={2} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={v => fmtAbbr(v as number)} tick={{ fontSize: 9 }} axisLine={false} tickLine={false} width={36} />
-                  <Tooltip formatter={(value: unknown) => [fmt(value as number) + '원', '']} />
-                  <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10 }} />
-                  <Bar dataKey="부킹" fill="#e2e8f0" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="세팅" fill="#93c5fd" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="집행" fill="#3b82f6" radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+            {/* 리포트 소진율 */}
+            {(() => {
+              const reportLag = progress - totals.spendRate
+              const barW = Math.min(totals.spendRate, 100)
+              const bubbleLeft = Math.min(Math.max(barW, 8), 92)
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-gray-600">리포트 소진율</span>
+                    <span className={`text-xs font-semibold ${sc.text}`}>{totals.spendRate}%</span>
+                  </div>
+                  <div className="relative pt-7">
+                    {Math.abs(reportLag) >= 5 && (
+                      <div className="absolute top-0" style={{ left: `${bubbleLeft}%`, transform: 'translateX(-50%)' }}>
+                        <div className={`relative px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap
+                          ${reportLag > 0 ? 'bg-orange-500 text-white' : 'bg-green-500 text-white'}`}>
+                          {reportLag > 0 ? `${reportLag.toFixed(1)}% 지연` : `${Math.abs(reportLag).toFixed(1)}% 빠름`}
+                          <div className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent
+                            ${reportLag > 0 ? 'border-t-orange-500' : 'border-t-green-500'}`} />
+                        </div>
+                      </div>
+                    )}
+                    <div className="h-2 w-full rounded-full bg-gray-200">
+                      <div className={`h-full rounded-full transition-all ${sc.bar}`} style={{ width: `${barW}%` }} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* 대시보드 소진율 */}
+            {(() => {
+              const dashAmt = parseFloat(dashboardInput) || 0
+              const settingCost = totals.totalSettingCost
+              const dashRate = settingCost > 0 ? Math.round((dashAmt / settingCost) * 1000) / 10 : 0
+              const dashSc = spendRateStyle(dashRate)
+              const dashLag = progress - dashRate
+              const barW = Math.min(dashRate, 100)
+              const bubbleLeft = Math.min(Math.max(barW, 8), 92)
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-gray-600">대시보드 소진율</span>
+                    <span className={`text-xs font-semibold ${dashSc.text}`}>{dashRate}%</span>
+                  </div>
+                  <div className="relative pt-7">
+                    {Math.abs(dashLag) >= 5 && dashAmt > 0 && (
+                      <div className="absolute top-0" style={{ left: `${bubbleLeft}%`, transform: 'translateX(-50%)' }}>
+                        <div className={`relative px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap
+                          ${dashLag > 0 ? 'bg-orange-500 text-white' : 'bg-green-500 text-white'}`}>
+                          {dashLag > 0 ? `${dashLag.toFixed(1)}% 지연` : `${Math.abs(dashLag).toFixed(1)}% 빠름`}
+                          <div className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent
+                            ${dashLag > 0 ? 'border-t-orange-500' : 'border-t-green-500'}`} />
+                        </div>
+                      </div>
+                    )}
+                    <div className="h-2 w-full rounded-full bg-gray-200">
+                      <div className={`h-full rounded-full transition-all ${dashSc.bar}`} style={{ width: `${barW}%` }} />
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-gray-600 whitespace-nowrap">대시보드 소진액 :</span>
+                    <input
+                      type="number" min="0"
+                      value={dashboardInput}
+                      onChange={e => {
+                        setDashboardInput(e.target.value)
+                        onUpdate?.({ ...campaign, dashboardNetAmount: parseFloat(e.target.value) || 0 })
+                      }}
+                      placeholder="금액 입력 (원)"
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
 
           {/* 매체별 상세 테이블 */}
           {campaign.mediaBudgets.length > 0 && (
@@ -291,6 +335,7 @@ export function CampaignDetailPanel({
             캠페인 수정
           </button>
         </div>
+      </div>
       </div>
     </>
   )

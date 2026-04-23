@@ -10,8 +10,7 @@ import React, { useState, useMemo, useRef, useEffect } from "react"
 import dynamic from "next/dynamic"
 import * as XLSX from 'xlsx'
 
-// 탭으로 병합된 페이지들 (코드 스플리팅으로 로드)
-const CTPlusOverviewTab  = dynamic(() => import("../overview/page"),  { ssr: false, loading: () => <div className="p-8 text-center text-sm text-gray-500">로딩 중…</div> })
+const CTPlusOverviewTab = dynamic(() => import("../overview/page"), { ssr: false, loading: () => <div className="p-8 text-center text-sm text-gray-500">로딩 중…</div> })
 
 type OuterTab = "overview" | "status"
 type StatusTab = "campaigns" | "agencies" | "advertisers" | "operators"
@@ -34,13 +33,12 @@ export default function CampaignStatusOuter() {
   const [outerTab, setOuterTab] = useState<OuterTab>("status")
 
   const outerTabs: { key: OuterTab; label: string; emoji: string }[] = [
-    { key: "overview", label: "CT+ 현황",   emoji: "📊" },
-    { key: "status",   label: "집행 관리",  emoji: "📋" },
+    { key: "overview", label: "CT+ 현황",  emoji: "📊" },
+    { key: "status",   label: "집행 관리", emoji: "📋" },
   ]
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      {/* 외부 탭 바 */}
       <div className="border-b border-gray-200 bg-white px-6 pt-3 flex gap-1">
         {outerTabs.map(({ key, label, emoji }) => (
           <button
@@ -56,8 +54,6 @@ export default function CampaignStatusOuter() {
           </button>
         ))}
       </div>
-
-      {/* 탭 패널 */}
       <div className="flex-1">
         {outerTab === "overview" && <CTPlusOverviewTab />}
         {outerTab === "status"   && <CampaignStatusPage />}
@@ -67,13 +63,13 @@ export default function CampaignStatusOuter() {
 }
 
 // ── 집행 관리 페이지 (내부 4개 탭) ────────────
-function CampaignStatusPage() {
+export function CampaignStatusPage({ managementOnly = false }: { managementOnly?: boolean } = {}) {
   const {
     campaigns, operators, agencies, advertisers,
     saveCampaigns, saveOperators, saveAgencies, saveAdvertisers
   } = useMasterData()
 
-  const [statusTab,      setStatusTab]      = useState<StatusTab>("campaigns")
+  const [statusTab,      setStatusTab]      = useState<StatusTab>(managementOnly ? "agencies" : "campaigns")
   const [filterStatus,   setFilterStatus]   = useState<FilterStatus>("전체")
   const [filterMonth,    setFilterMonth]    = useState("")
   const [filterOperator, setFilterOperator] = useState("")
@@ -244,21 +240,25 @@ function CampaignStatusPage() {
 
   const isFiltered = filterStatus !== "전체" || filterMonth || filterOperator || filterMedia || searchQuery
 
+  const statusTabs: [StatusTab, string][] = managementOnly
+    ? [["agencies", "대행사"], ["advertisers", "광고주"], ["operators", "운영자"]]
+    : [["campaigns", "캠페인 관리"]]
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 헤더 */}
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">집행 관리</h1>
-            <p className="text-xs text-gray-400 mt-0.5">캠페인 · 대행사 · 광고주 · 운영자 관리</p>
+            <h1 className="text-base font-semibold text-gray-900">{managementOnly ? "거래처 관리" : "집행 관리"}</h1>
+            <p className="text-xs text-gray-400 mt-0.5">{managementOnly ? "대행사 · 광고주 · 운영자" : "캠페인 관리"}</p>
           </div>
           <div className="flex gap-2">
             {statusTab === "campaigns"   && <button onClick={() => { setEditTarget(null); setModalOpen(true) }}  className={btnPrimary}>+ 캠페인 추가</button>}
             {statusTab === "operators"   && <button onClick={() => { setEditOp(null);     setOpModalOpen(true) }} className={btnPrimary}>+ 운영자 추가</button>}
             {statusTab === "agencies"    && agencySubTab === "list" && (
               <div className="flex gap-2">
-                <button onClick={() => { setEditAg(null); setAgencySubTab("edit") }} className={btnPrimary}>+ 새 대행사</button>
+                <button onClick={() => { setEditAg(null); setAgencySubTab("edit") }} className={btnPrimary}>+ 대행사 추가</button>
                 <button onClick={() => fileInputRef.current?.click()} className={btnPrimary}>📊 Excel 일괄 등록</button>
                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleAgencyExcelUpload} className="hidden" />
               </div>
@@ -266,19 +266,20 @@ function CampaignStatusPage() {
             {statusTab === "advertisers" && <button onClick={() => { setEditAdv(null);    setAdvModalOpen(true) }} className={btnPrimary}>+ 광고주 추가</button>}
           </div>
         </div>
-        <div className="mt-3 flex gap-1">
-          {([
-            ["campaigns",   "캠페인 관리"],
-            ["agencies",    "대행사 관리"],
-            ["advertisers", "광고주 관리"],
-            ["operators",   "운영자 관리"],
-          ] as [StatusTab, string][]).map(([tab, label]) => (
-            <button key={tab} onClick={() => { setStatusTab(tab); if (tab === "agencies") setAgencySubTab("list") }}
-              className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${statusTab === tab ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-100"}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+        {managementOnly && (
+          <div className="mt-3 flex gap-1">
+            {statusTabs.map(([tab, label]) => (
+              <button key={tab} onClick={() => { setStatusTab(tab); if (tab === "agencies") setAgencySubTab("list") }}
+                className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all duration-100 select-none
+                  ${statusTab === tab
+                    ? "bg-blue-600 text-white shadow-[0_4px_0_0_#1d4ed8] translate-y-0 active:shadow-none active:translate-y-[4px]"
+                    : "bg-white text-gray-600 border border-gray-200 shadow-[0_4px_0_0_#d1d5db] hover:-translate-y-0.5 hover:shadow-[0_6px_0_0_#d1d5db] active:shadow-none active:translate-y-[4px]"
+                  }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       {/* 토스트 알림 */}
@@ -605,7 +606,7 @@ function CampaignStatusPage() {
       </main>
 
       {/* 모달들 */}
-      {modalOpen && <CampaignModal initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers} takenCsvNames={takenCsvNames} onSave={(c) => {
+      {modalOpen && <CampaignModal initial={editTarget} operators={operators} agencies={agencies} advertisers={advertisers} takenCsvNames={takenCsvNames} onOperatorsChange={saveOperators} onSave={(c) => {
         if (editTarget) {
           saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))
         } else {
@@ -648,6 +649,7 @@ function CampaignStatusPage() {
           advertisers={advertisers}
           onClose={() => setSelectedDetailId(null)}
           onEdit={(c) => { setEditTarget(c); setModalOpen(true); setSelectedDetailId(null) }}
+          onUpdate={(c) => saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))}
         />
       )}
     </div>
@@ -744,33 +746,207 @@ function AdvertiserModal({ initial, agencies, onSave, onClose }: {
   onSave: (adv: Advertiser) => void
   onClose: () => void
 }) {
-  const [name, setName] = useState(initial?.name ?? "")
-  const [agencyId, setAgencyId] = useState(initial?.agencyId ?? "")
+  const [name,              setName]              = useState(initial?.name ?? "")
+  const [agencyId,          setAgencyId]          = useState(initial?.agencyId ?? "")
+  const [contactName,       setContactName]       = useState(initial?.contactName ?? "")
+  const [email,             setEmail]             = useState(initial?.email ?? "")
+  const [phone,             setPhone]             = useState(initial?.phone ?? "")
+  const [corporateName,     setCorporateName]     = useState(initial?.corporateName ?? "")
+  const [businessNumber,    setBusinessNumber]    = useState(initial?.businessNumber ?? "")
+  const [representative,    setRepresentative]    = useState(initial?.representative ?? "")
+  const [address,           setAddress]           = useState(initial?.address ?? "")
+  const [businessType,      setBusinessType]      = useState(initial?.businessType ?? "")
+  const [businessItem,      setBusinessItem]      = useState(initial?.businessItem ?? "")
+  const [defaultMarkupRate, setDefaultMarkupRate] = useState(initial?.defaultMarkupRate?.toString() ?? "")
+  const [pdfFile,           setPdfFile]           = useState<File | null>(null)
+  const [uploading,         setUploading]         = useState(false)
+  const [analyzing,         setAnalyzing]         = useState(false)
+  const [analyzeToast,      setAnalyzeToast]      = useState<string | null>(null)
+
+  async function analyzePdf(file: File) {
+    setAnalyzing(true)
+    setAnalyzeToast(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/v1/agencies/analyze-pdf', { method: 'POST', body: formData })
+      if (!res.ok) throw new Error('분석 실패')
+      const { fields } = await res.json()
+      if (fields) {
+        if (fields.corporateName)  setCorporateName(fields.corporateName)
+        if (fields.businessNumber) setBusinessNumber(fields.businessNumber)
+        if (fields.representative) setRepresentative(fields.representative)
+        if (fields.address)        setAddress(fields.address)
+        if (fields.businessType)   setBusinessType(fields.businessType)
+        if (fields.businessItem)   setBusinessItem(fields.businessItem)
+        setAnalyzeToast('자동 분석 완료 — 내용을 확인하고 저장하세요')
+      } else {
+        setAnalyzeToast('추출된 필드가 없습니다. 직접 입력해주세요.')
+      }
+    } catch {
+      setAnalyzeToast('분석 중 오류가 발생했습니다')
+    } finally {
+      setAnalyzing(false)
+      setTimeout(() => setAnalyzeToast(null), 5000)
+    }
+  }
 
   function handleSave() {
-    if (!name.trim() || !agencyId) {
-      alert("모든 항목을 입력하세요.")
+    if (!name.trim()) {
+      alert("광고주명은 필수입니다.")
       return
     }
-    onSave({ id: initial?.id ?? Date.now().toString(), name, agencyId } as Advertiser)
+    const saved: Advertiser = {
+      id: initial?.id ?? Date.now().toString(),
+      name, agencyId,
+      contactName: contactName || undefined,
+      email: email || undefined,
+      phone: phone || undefined,
+      corporateName: corporateName || undefined,
+      businessNumber: businessNumber || undefined,
+      representative: representative || undefined,
+      address: address || undefined,
+      businessType: businessType || undefined,
+      businessItem: businessItem || undefined,
+      defaultMarkupRate: defaultMarkupRate ? parseFloat(defaultMarkupRate) : undefined,
+      registrationPdfBase64: initial?.registrationPdfBase64,
+      registrationPdfName: initial?.registrationPdfName,
+      createdAt: initial?.createdAt,
+      updatedAt: new Date().toISOString(),
+    }
+    if (pdfFile) {
+      handlePdfUpload(saved)
+    } else {
+      onSave(saved)
+    }
+  }
+
+  async function handlePdfUpload(adv: Advertiser) {
+    if (!pdfFile) return
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", pdfFile)
+      formData.append("agencyId", adv.id)
+      const res = await fetch("/api/v1/agencies/upload-pdf", { method: "POST", body: formData })
+      if (!res.ok) throw new Error("업로드 실패")
+      const { pdfBase64, pdfName } = await res.json()
+      onSave({ ...adv, registrationPdfBase64: pdfBase64, registrationPdfName: pdfName })
+    } catch {
+      alert("PDF 업로드 중 오류가 발생했습니다.")
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg max-w-sm w-full p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-gray-900">{initial ? "광고주 수정" : "광고주 추가"}</h2>
-        <MF label="광고주명 *">
-          <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputCls} />
-        </MF>
-        <MF label="대행사 *">
-          <select value={agencyId} onChange={e => setAgencyId(e.target.value)} className={inputCls}>
-            <option value="">선택하세요</option>
-            {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </MF>
+      <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-6">
+        <h2 className="text-lg font-semibold text-gray-900">{initial ? "광고주 정보 수정" : "새 광고주 추가"}</h2>
+
+        {/* 기본 정보 */}
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">기본 정보</h3>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <MF label="광고주명 *">
+                <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputCls} placeholder="ex) OO 브랜드" />
+              </MF>
+              <MF label="대행사 *">
+                <select value={agencyId} onChange={e => setAgencyId(e.target.value)} className={inputCls}>
+                  <option value="">선택하세요</option>
+                  {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </MF>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <MF label="담당자명">
+                <input type="text" value={contactName} onChange={e => setContactName(e.target.value)} className={inputCls} placeholder="담당자 이름" />
+              </MF>
+              <MF label="전화번호">
+                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} placeholder="010-0000-0000" />
+              </MF>
+            </div>
+            <MF label="이메일">
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} placeholder="email@example.com" />
+            </MF>
+          </div>
+        </section>
+
+        {/* 세금계산서 정보 */}
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">세금계산서 정보</h3>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <MF label="법인명">
+                <input type="text" value={corporateName} onChange={e => setCorporateName(e.target.value)} className={inputCls} />
+              </MF>
+              <MF label="사업자등록번호">
+                <input type="text" value={businessNumber} onChange={e => setBusinessNumber(e.target.value)} className={inputCls} placeholder="000-00-00000" />
+              </MF>
+            </div>
+            <MF label="대표자명">
+              <input type="text" value={representative} onChange={e => setRepresentative(e.target.value)} className={inputCls} />
+            </MF>
+            <MF label="주소">
+              <input type="text" value={address} onChange={e => setAddress(e.target.value)} className={inputCls} />
+            </MF>
+            <div className="grid grid-cols-2 gap-4">
+              <MF label="업태">
+                <input type="text" value={businessType} onChange={e => setBusinessType(e.target.value)} className={inputCls} />
+              </MF>
+              <MF label="종목">
+                <input type="text" value={businessItem} onChange={e => setBusinessItem(e.target.value)} className={inputCls} />
+              </MF>
+            </div>
+          </div>
+        </section>
+
+        {/* 정산 정책 */}
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">정산 정책</h3>
+          <MF label="기본 대행수수료율 (%)">
+            <input type="number" value={defaultMarkupRate} onChange={e => setDefaultMarkupRate(e.target.value)} className={inputCls} placeholder="10" min="0" step="0.1" />
+          </MF>
+        </section>
+
+        {/* 사업자등록증 */}
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">사업자등록증</h3>
+          <div className="space-y-3">
+            {initial?.registrationPdfBase64 && initial?.registrationPdfName && (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                <p className="text-sm text-green-700"><span className="font-medium">현재 파일:</span> {initial.registrationPdfName}</p>
+                <a href={`data:application/pdf;base64,${initial.registrationPdfBase64}`} download={initial.registrationPdfName}
+                  className="text-xs text-green-600 hover:text-green-700 mt-1 block">다운로드</a>
+              </div>
+            )}
+            <MF label="PDF 파일">
+              <input type="file" accept=".pdf" onChange={e => {
+                const file = e.target.files?.[0] ?? null
+                setPdfFile(file)
+                if (file) analyzePdf(file)
+              }} className={inputCls} />
+            </MF>
+            {pdfFile && (
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => pdfFile && analyzePdf(pdfFile)} disabled={analyzing}
+                  className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 transition-colors disabled:opacity-50">
+                  {analyzing ? "분석 중..." : "PDF 자동 분석"}
+                </button>
+                {analyzeToast && (
+                  <span className={`text-sm font-medium ${analyzeToast.includes('오류') ? 'text-red-600' : 'text-purple-700'}`}>
+                    {analyzeToast}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
         <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">
           <button onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
-          <button onClick={handleSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
+          <button onClick={handleSave} disabled={uploading} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:bg-gray-400">{uploading ? "업로드 중..." : "저장"}</button>
         </div>
       </div>
     </div>

@@ -66,7 +66,7 @@ export function SCard({ label, value, sub, color }: {
   )
 }
 
-export function MF({ label, children }: { label: string; children: React.ReactNode }) {
+export function MF({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs font-medium text-gray-700">{label}</label>

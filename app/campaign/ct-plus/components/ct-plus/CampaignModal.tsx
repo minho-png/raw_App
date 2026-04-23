@@ -7,13 +7,14 @@ import { loadAllRawRows } from "@/lib/rawDataStore"
 import type { RawRow } from "@/lib/rawDataParser"
 import { inputCls, emptyMB, MF } from "./statusUtils"
 
-export function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose, takenCsvNames = [] }: {
+export function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose, onOperatorsChange, takenCsvNames = [] }: {
   initial: Campaign | null
   operators: Operator[]
   agencies: Agency[]
   advertisers: Advertiser[]
   onSave: (c: Campaign) => void
   onClose: () => void
+  onOperatorsChange?: (ops: Operator[]) => void
   takenCsvNames?: string[]
 }) {
   const [agencyId,        setAgencyId]        = useState(initial?.agencyId        ?? "")
@@ -33,6 +34,23 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   const [rawRows,         setRawRows]         = useState<RawRow[]>([])
   const [confirmMode,     setConfirmMode]     = useState<null | "save" | "close">(null)
   const [isDirty,         setIsDirty]         = useState(false)
+  const [opDropOpen,      setOpDropOpen]      = useState(false)
+  const [newOpName,       setNewOpName]       = useState("")
+
+  function handleAddOperator() {
+    const name = newOpName.trim()
+    if (!name) return
+    const newOp: Operator = { id: Date.now().toString(), name, email: "", phone: "" }
+    onOperatorsChange?.([...operators, newOp])
+    setManagerId(newOp.id)
+    setNewOpName("")
+    setOpDropOpen(false)
+  }
+
+  function handleDeleteOperator(id: string) {
+    onOperatorsChange?.(operators.filter(o => o.id !== id))
+    if (managerId === id) setManagerId("")
+  }
 
   // rawRows 로드
   useEffect(() => {
@@ -77,9 +95,20 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   }
 
   function updateMBField(media: string, field: string, value: number | boolean | undefined) {
-    setMediaBudgets(mediaBudgets.map(mb =>
-      mb.media !== media ? mb : { ...mb, [field]: value }
-    ))
+    setMediaBudgets(mediaBudgets.map(mb => {
+      if (mb.media !== media) return mb
+      const updated = { ...mb, [field]: value }
+      if (field === 'totalBudget' || field === 'totalFeeRate') {
+        const budget = field === 'totalBudget' ? (value as number) : (mb.totalBudget ?? 0)
+        const rate   = field === 'totalFeeRate' ? (value as number) : (mb.totalFeeRate ?? 0)
+        if (budget > 0 && rate >= 0) {
+          const base = budget * (1 - rate / 100)
+          const vatMedia = ['네이버 GFA', '카카오모먼트']
+          updated.actualSettingCost = Math.round(vatMedia.includes(media) ? base * 1.1 : base)
+        }
+      }
+      return updated
+    }))
   }
 
   function addSubCampaign(media: string) {
@@ -170,7 +199,8 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
+      <div className="relative bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[90vh] flex flex-col">
+        <div className="overflow-y-auto flex-1 p-6 space-y-4">
         <h2 className="text-lg font-semibold text-gray-900">{initial ? "캠페인 수정" : "캠페인 추가"}</h2>
 
         <div className="grid grid-cols-2 gap-4">
@@ -200,10 +230,60 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
             </select>
           </MF>
           <MF label="담당자 *">
-            <select value={managerId} onChange={e => setManagerId(e.target.value)} className={inputCls}>
-              <option value="">선택하세요</option>
-              {operators.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-            </select>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setOpDropOpen(v => !v)}
+                className={`${inputCls} w-full text-left flex items-center justify-between`}
+              >
+                <span className={managerId ? "text-gray-900" : "text-gray-400"}>
+                  {operators.find(o => o.id === managerId)?.name ?? "선택하세요"}
+                </span>
+                <svg className="h-4 w-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {opDropOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
+                  <ul className="max-h-48 overflow-y-auto py-1">
+                    {operators.length === 0 && (
+                      <li className="px-3 py-2 text-xs text-gray-400">담당자가 없습니다</li>
+                    )}
+                    {operators.map(o => (
+                      <li key={o.id}
+                        className={`flex items-center justify-between px-3 py-2 cursor-pointer text-sm hover:bg-gray-50 ${managerId === o.id ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}
+                      >
+                        <span onClick={() => { setManagerId(o.id); setOpDropOpen(false) }} className="flex-1">
+                          {o.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); handleDeleteOperator(o.id) }}
+                          className="ml-2 text-gray-300 hover:text-red-400 transition-colors text-base leading-none"
+                        >×</button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="border-t border-gray-100 p-2">
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={newOpName}
+                        onChange={e => setNewOpName(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddOperator() } }}
+                        placeholder="새 담당자 이름"
+                        className="flex-1 min-w-0 rounded border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddOperator}
+                        className="flex-shrink-0 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+                      >추가</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </MF>
           <MF label="상태">
             <select value={status} onChange={e => setStatus(e.target.value as "집행 중" | "종료")} className={inputCls}>
@@ -240,8 +320,8 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           <div key={mb.media} className="rounded-lg border border-gray-200 p-4 space-y-3">
             <h3 className="text-sm font-semibold text-gray-900">{mb.media}</h3>
 
-            {/* 총 수수료율 + 예산 */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* 총 수수료율 + 거래처 수수료율 + 예산 */}
+            <div className="grid grid-cols-3 gap-3">
               <MF label="총 수수료율 (%)">
                 <input
                   type="number" min="0" max="100" step="0.1"
@@ -249,6 +329,15 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
                   onChange={e => updateMBField(mb.media, 'totalFeeRate', parseFloat(e.target.value) || 0)}
                   className={inputCls}
                   placeholder="예: 15"
+                />
+              </MF>
+              <MF label="거래처 수수료율 (%)">
+                <input
+                  type="number" min="0" max="100" step="0.1"
+                  value={mb.clientFeeRate ?? ''}
+                  onChange={e => updateMBField(mb.media, 'clientFeeRate', parseFloat(e.target.value) || undefined)}
+                  className={inputCls}
+                  placeholder="예: 10"
                 />
               </MF>
               <MF label="총 예산">
@@ -274,36 +363,19 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
 
               return (
                 <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-3">
-                    <MF label="실 세팅금액">
-                      <input
-                        type="number" min="0"
-                        value={actualSettingCost}
-                        onChange={e => updateMBField(mb.media, 'actualSettingCost', parseFloat(e.target.value) || undefined)}
-                        className={inputCls}
-                        placeholder="원"
-                      />
-                    </MF>
-                    <MF label="실 소진액">
-                      <input
-                        type="number" min="0"
-                        value={actualNetAmount}
-                        onChange={e => updateMBField(mb.media, 'actualNetAmount', parseFloat(e.target.value) || undefined)}
-                        className={inputCls}
-                        placeholder="원"
-                      />
-                    </MF>
-                  </div>
-                  {showWarning && (
-                    <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2 flex items-center gap-2">
-                      <span className="text-[11px] font-semibold text-yellow-700">
-                        소진율 차이 {spendRateDiff.toFixed(1)}%p
-                      </span>
-                      <span className="text-[10px] text-yellow-600">
-                        (설정: {markupSpendRate.toFixed(1)}% vs 실제: {actualSpendRate.toFixed(1)}%)
-                      </span>
-                    </div>
-                  )}
+                  <MF label={
+                    ['네이버 GFA', '카카오모먼트'].includes(mb.media)
+                      ? <span>실 세팅금액 <span className="font-bold text-red-500">(VAT포함)</span></span>
+                      : <span>실 세팅금액 <span className="text-gray-400 font-normal">(VAT별도)</span></span>
+                  }>
+                    <input
+                      type="number" min="0"
+                      value={actualSettingCost}
+                      onChange={e => updateMBField(mb.media, 'actualSettingCost', parseFloat(e.target.value) || undefined)}
+                      className={inputCls}
+                      placeholder="원"
+                    />
+                  </MF>
                 </div>
               )
             })()}
@@ -623,28 +695,32 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           <textarea value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} rows={3} />
         </MF>
 
-        {/* 확인 섹션 */}
-        {confirmMode === "save" && (
-          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 space-y-3">
-            <p className="text-sm font-semibold text-blue-900">저장하시겠습니까?</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmMode(null)} className="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors">취소</button>
-              <button onClick={handleConfirmSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">확인</button>
+        </div>{/* end scrollable */}
+
+        {/* 확인 팝업 — 오버레이 */}
+        {confirmMode && (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 rounded-lg">
+            <div className={`mx-6 w-full max-w-sm rounded-xl shadow-xl p-5 space-y-4 ${confirmMode === "save" ? "bg-white border border-blue-200" : "bg-white border border-yellow-200"}`}>
+              <p className={`text-sm font-semibold ${confirmMode === "save" ? "text-blue-900" : "text-yellow-900"}`}>
+                {confirmMode === "save" ? "저장하시겠습니까?" : "변경사항이 있습니다. 닫으시겠습니까?"}
+              </p>
+              <div className="flex gap-2 justify-end">
+                {confirmMode === "save" ? (
+                  <>
+                    <button onClick={() => setConfirmMode(null)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
+                    <button onClick={handleConfirmSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">확인</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => setConfirmMode(null)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">계속 편집</button>
+                    <button onClick={handleConfirmClose} className="rounded-lg bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 transition-colors">닫기</button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}
-
-        {confirmMode === "close" && (
-          <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4 space-y-3">
-            <p className="text-sm font-semibold text-yellow-900">변경사항이 있습니다. 닫으시겠습니까?</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmMode(null)} className="rounded-lg border border-yellow-300 bg-white px-4 py-2 text-sm font-medium text-yellow-700 hover:bg-yellow-50 transition-colors">계속 편집</button>
-              <button onClick={handleConfirmClose} className="rounded-lg bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 transition-colors">닫기</button>
-            </div>
-          </div>
-        )}
-
-        <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">
+        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-200 bg-white rounded-b-lg flex-shrink-0">
           <button onClick={handleCloseClick} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
           <button onClick={handleSaveClick} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
         </div>

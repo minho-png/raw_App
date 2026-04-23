@@ -54,6 +54,7 @@ export interface MediaBudget {
   dmp: TargetingBudget    // DMP 활용 (fee=10%)
   nonDmp: TargetingBudget // DMP 미활용 (fee=0%)
   totalFeeRate?: number      // 총 수수료율 (%) — DMP+대행수수료 통합
+  clientFeeRate?: number     // 거래처 수수료율 (%) — 거래처 청구 기준
   totalBudget?: number       // 총 부킹 예산
   cpcTarget?: number         // CPC 목표
   cpmTarget?: number         // CPM 목표
@@ -99,7 +100,21 @@ export interface Agency {
 export interface Advertiser {
   id: string
   name: string
-  agencyId: string       // Agency.id 참조
+  agencyId: string
+  contactName?: string
+  email?: string
+  phone?: string
+  corporateName?: string
+  businessNumber?: string
+  representative?: string
+  address?: string
+  businessType?: string
+  businessItem?: string
+  defaultMarkupRate?: number
+  registrationPdfBase64?: string
+  registrationPdfName?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface Campaign {
@@ -116,8 +131,9 @@ export interface Campaign {
   managerId: string
   status: CampaignStatus
   createdAt: string
-  agencyFeeRate?: number  // 대행수수료율 (%) — 정산 페이지 기본값으로 활용
-  csvNames?: string[]    // CSV 캠페인명 연결 목록 (데이터 입력 시 매칭용)
+  agencyFeeRate?: number
+  csvNames?: string[]
+  dashboardNetAmount?: number  // 대시보드 소진율 계산용 직접 입력 금액
 }
 
 export function getTotalMarkup(mediaMarkup: number, dmpFeeRate: number, agencyFeeRate: number): number {

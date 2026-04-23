@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 interface SubItem {
   label: string
@@ -31,9 +31,12 @@ const CT_CTV_ITEMS: SubItem[] = [
   { label: "CTV 데일리 리포트", href: "/campaign/ct-ctv/daily" },
 ]
 
+
 export default function Sidebar() {
-  const pathname  = usePathname()
-  const router    = useRouter()
+  const pathname     = usePathname()
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+  const currentTab   = searchParams.get("tab")
 
   const [ctPlusOpen,    setCtPlusOpen]    = useState(false)
   const [settlementOpen, setSettlementOpen] = useState(false)
@@ -119,6 +122,19 @@ export default function Sidebar() {
 
       {/* ── CT+ 섹션 (시각적 구분) ──────────────────────── */}
       <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+        {/* 거래처 관리 단독 링크 */}
+        <Link
+          href="/manage"
+          className={`flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${
+            pathname === "/manage"
+              ? "border-gray-300 bg-gray-100 text-gray-900"
+              : "border-gray-200 bg-gray-50/60 text-gray-700 hover:bg-gray-100"
+          }`}
+        >
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-gray-500 text-[10px] font-bold text-white">거</span>
+          거래처 관리
+        </Link>
+
         {/* CT+ 블록 */}
         <div className="rounded-xl overflow-hidden border border-orange-100 bg-orange-50/40">
           <button
