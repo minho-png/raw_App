@@ -37,8 +37,8 @@ export function MediaBudgetCard({
     <div className="rounded-lg border border-gray-200 p-4 space-y-3">
       <h3 className="text-sm font-semibold text-gray-900">{mb.media}</h3>
 
-      {/* 총 수수료율 + 예산 */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* 총 수수료율 + 거래처 수수료율 + 예산 */}
+      <div className="grid grid-cols-3 gap-3">
         <MF label="총 수수료율 (%)">
           <input
             type="number" min="0" max="100" step="0.1"
@@ -46,6 +46,15 @@ export function MediaBudgetCard({
             onChange={e => onUpdateMBField(mb.media, 'totalFeeRate', parseFloat(e.target.value) || 0)}
             className={inputCls}
             placeholder="예: 15"
+          />
+        </MF>
+        <MF label="거래처 수수료율 (%)">
+          <input
+            type="number" min="0" max="100" step="0.1"
+            value={mb.clientFeeRate ?? ''}
+            onChange={e => onUpdateMBField(mb.media, 'clientFeeRate', parseFloat(e.target.value) || undefined)}
+            className={inputCls}
+            placeholder="예: 10"
           />
         </MF>
         <MF label="총 예산">

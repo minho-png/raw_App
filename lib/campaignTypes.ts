@@ -54,6 +54,7 @@ export interface MediaBudget {
   dmp: TargetingBudget    // DMP 활용 (fee=10%)
   nonDmp: TargetingBudget // DMP 미활용 (fee=0%)
   totalFeeRate?: number      // 총 수수료율 (%) — DMP+대행수수료 통합
+  clientFeeRate?: number     // 거래처 수수료율 (%) — 거래처 청구 기준
   totalBudget?: number       // 총 부킹 예산
   cpcTarget?: number         // CPC 목표
   cpmTarget?: number         // CPM 목표
@@ -100,6 +101,25 @@ export interface Advertiser {
   id: string
   name: string
   agencyId: string       // Agency.id 참조
+  // ── 담당자 정보 ────────────────────────────────────────
+  contactName?: string
+  email?: string
+  phone?: string
+  // ── 세금계산서 발행 정보 ──────────────────────────────────
+  corporateName?: string         // 법인명 (계산서 수신처)
+  businessNumber?: string        // 사업자등록번호
+  representative?: string        // 대표자명
+  address?: string               // 주소
+  businessType?: string          // 업태
+  businessItem?: string          // 종목
+  // ── 정산 정책 ──────────────────────────────────────────
+  defaultMarkupRate?: number     // 기본 대행수수료율 (%)
+  // ── 첨부 파일 ──────────────────────────────────────────
+  registrationPdfBase64?: string // 사업자등록증 PDF (base64)
+  registrationPdfName?: string   // 원본 파일명
+  // ── 메타 ───────────────────────────────────────────────
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface Campaign {
@@ -118,6 +138,7 @@ export interface Campaign {
   createdAt: string
   agencyFeeRate?: number  // 대행수수료율 (%) — 정산 페이지 기본값으로 활용
   csvNames?: string[]    // CSV 캠페인명 연결 목록 (데이터 입력 시 매칭용)
+  dashboardNetAmount?: number  // 대시보드 소진율 계산용 직접 입력 금액
 }
 
 export function getTotalMarkup(mediaMarkup: number, dmpFeeRate: number, agencyFeeRate: number): number {

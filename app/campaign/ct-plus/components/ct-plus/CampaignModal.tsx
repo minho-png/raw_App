@@ -1,15 +1,18 @@
 
 "use client"
-import React, { useState, useMemo, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import {
   Campaign, Operator, Agency, Advertiser, MediaBudget, SubCampaign,
-  CampaignType, CAMPAIGN_TYPES, AVAILABLE_MEDIA, getMediaTotals } from "@/lib/campaignTypes"
+  CampaignType, CAMPAIGN_TYPES, AVAILABLE_MEDIA } from "@/lib/campaignTypes"
 import { useRawData } from "@/lib/hooks/useRawData"
-import type { RawRow } from "@/lib/rawDataParser"
+import { useMasterData } from "@/lib/hooks/useMasterData"
 import { ModalShell } from "@/components/atoms/ModalShell"
 import { inputCls, emptyMB, MF } from "./statusUtils"
 import { MediaBudgetCard } from "./MediaBudgetCard"
 import { CsvMappingPanel } from "./CsvMappingPanel"
+
+// VAT 포함 표시 매체 (실 세팅금액 자동계산 시 ×1.1)
+const VAT_INCLUDED_MEDIA = ['네이버 GFA', '카카오모먼트']
 
 export function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose, takenCsvNames = [] }: {
   initial: Campaign | null
@@ -32,16 +35,48 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   const [mediaBudgets,    setMediaBudgets]    = useState<MediaBudget[]>(initial?.mediaBudgets ?? [])
   const [memo,            setMemo]            = useState(initial?.memo ?? "")
   const [csvNames,        setCsvNames]        = useState<string[]>(initial?.csvNames ?? [])
+  const [dashboardNetAmount, setDashboardNetAmount] = useState<number | "">(initial?.dashboardNetAmount ?? "")
   const [csvSearch,       setCsvSearch]       = useState('')
   const [csvMediaFilter,  setCsvMediaFilter]  = useState('')
   const { allRows: rawRows } = useRawData()
+  const { saveOperators } = useMasterData()
   const [confirmMode,     setConfirmMode]     = useState<null | "save" | "close">(null)
   const [isDirty,         setIsDirty]         = useState(false)
+  const [opDropOpen,      setOpDropOpen]      = useState(false)
+  const [newOpName,       setNewOpName]       = useState("")
+  const opDropRef = useRef<HTMLDivElement>(null)
+
+  // Close operator dropdown when clicking outside
+  useEffect(() => {
+    if (!opDropOpen) return
+    function onClick(e: MouseEvent) {
+      if (opDropRef.current && !opDropRef.current.contains(e.target as Node)) {
+        setOpDropOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", onClick)
+    return () => document.removeEventListener("mousedown", onClick)
+  }, [opDropOpen])
+
+  async function handleAddOperator() {
+    const name = newOpName.trim()
+    if (!name) return
+    const newOp: Operator = { id: Date.now().toString(), name, email: "", phone: "" }
+    await saveOperators([...operators, newOp])
+    setManagerId(newOp.id)
+    setNewOpName("")
+    setOpDropOpen(false)
+  }
+
+  async function handleDeleteOperator(id: string) {
+    await saveOperators(operators.filter(o => o.id !== id))
+    if (managerId === id) setManagerId("")
+  }
 
   // Track dirty state (any change triggers isDirty)
   useEffect(() => {
     setIsDirty(true)
-  }, [agencyId, advertiserId, campaignName, campaignType, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo, csvNames])
+  }, [agencyId, advertiserId, campaignName, campaignType, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo, csvNames, dashboardNetAmount])
 
   const filteredAdvertisers = agencyId ? advertisers.filter(a => a.agencyId === agencyId) : advertisers
 
@@ -59,9 +94,20 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   }
 
   function updateMBField(media: string, field: string, value: number | boolean | undefined) {
-    setMediaBudgets(mediaBudgets.map(mb =>
-      mb.media !== media ? mb : { ...mb, [field]: value }
-    ))
+    setMediaBudgets(mediaBudgets.map(mb => {
+      if (mb.media !== media) return mb
+      const updated: MediaBudget = { ...mb, [field]: value }
+      // 총예산/총수수료율 변경 시 실 세팅금액 자동계산 (VAT 매체는 ×1.1)
+      if (field === 'totalBudget' || field === 'totalFeeRate') {
+        const budget = field === 'totalBudget' ? (value as number) : (mb.totalBudget ?? 0)
+        const rate   = field === 'totalFeeRate' ? (value as number) : (mb.totalFeeRate ?? 0)
+        if (budget > 0 && rate >= 0) {
+          const base = budget * (1 - rate / 100)
+          updated.actualSettingCost = Math.round(VAT_INCLUDED_MEDIA.includes(media) ? base * 1.1 : base)
+        }
+      }
+      return updated
+    }))
   }
 
   function addSubCampaign(media: string) {
@@ -133,6 +179,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
       campaignType: campaignType || undefined,
       agencyId, advertiserId, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo,
       csvNames,
+      dashboardNetAmount: dashboardNetAmount === "" ? undefined : dashboardNetAmount,
       createdAt: initial?.createdAt ?? new Date().toISOString() } as Campaign)
     setConfirmMode(null)
   }
@@ -187,10 +234,62 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
             </select>
           </MF>
           <MF label="담당자 *">
-            <select value={managerId} onChange={e => setManagerId(e.target.value)} className={inputCls}>
-              <option value="">선택하세요</option>
-              {operators.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-            </select>
+            <div ref={opDropRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setOpDropOpen(v => !v)}
+                className={`${inputCls} flex items-center justify-between text-left`}
+              >
+                <span className={managerId ? "text-gray-900" : "text-gray-400"}>
+                  {operators.find(o => o.id === managerId)?.name ?? "선택하세요"}
+                </span>
+                <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {opDropOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-gray-200 bg-white shadow-lg z-20 max-h-64 overflow-hidden flex flex-col">
+                  <ul className="flex-1 overflow-y-auto">
+                    {operators.length === 0 && (
+                      <li className="px-3 py-2 text-xs text-gray-400">담당자가 없습니다</li>
+                    )}
+                    {operators.map(o => (
+                      <li
+                        key={o.id}
+                        className={`flex items-center justify-between px-3 py-2 cursor-pointer text-sm hover:bg-gray-50 ${managerId === o.id ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}
+                      >
+                        <span onClick={() => { setManagerId(o.id); setOpDropOpen(false) }} className="flex-1">
+                          {o.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); handleDeleteOperator(o.id) }}
+                          className="ml-2 text-gray-300 hover:text-red-400 transition-colors text-base leading-none"
+                          aria-label="담당자 삭제"
+                        >×</button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="border-t border-gray-100 p-2">
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={newOpName}
+                        onChange={e => setNewOpName(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddOperator() } }}
+                        placeholder="새 담당자 이름"
+                        className="flex-1 min-w-0 rounded border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddOperator}
+                        className="flex-shrink-0 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+                      >추가</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </MF>
           <MF label="상태">
             <select value={status} onChange={e => setStatus(e.target.value as "집행 중" | "종료")} className={inputCls}>
@@ -251,6 +350,16 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
             onCsvNamesChange={setCsvNames}
           />
         )}
+
+        <MF label={<span>대시보드 소진액 <span className="text-[11px] text-gray-400 font-normal">(대시보드 소진율 계산용 — 직접 입력)</span></span>}>
+          <input
+            type="number" min="0"
+            value={dashboardNetAmount}
+            onChange={e => setDashboardNetAmount(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
+            placeholder="원 (비워두면 raw 데이터 기준)"
+            className={inputCls}
+          />
+        </MF>
 
         <MF label="특이사항">
           <textarea value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} rows={3} />
