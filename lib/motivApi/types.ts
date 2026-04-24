@@ -94,3 +94,45 @@ export interface MotivCampaignQuery {
   end_date?: string;
   exchange_rate?: number;
 }
+
+// ─── Ad Group (광고 그룹) ─────────────────────────────────────────────
+// 참조: https://desk-ct.motiv-i.com/docs/api#/operations/adgroups.index
+// campaigns.index 와 동일한 Laravel 리소스 컬렉션 패턴으로 가정.
+// 필드명·타입은 campaigns 스키마 기반 보수적 추정 — 실제 응답 맞추며 정제 가능.
+
+export interface MotivAdGroup {
+  id: number;
+  campaign_id: number;         // 부모 캠페인
+  adaccount_id?: number;
+  title: string | null;
+  status: string;              // 'Y' | 'N'
+  start_date: string | null;
+  end_date: string | null;
+  is_free?: boolean;
+  total_budget?: number | null;
+  total_spent?: number | null;
+  daily_budget?: number | null;
+  daily_spent?: number | null;
+  created_at?: string | null;
+  stats?: MotivCampaignStats;  // 동일 스키마 추정
+}
+
+export interface MotivAdGroupListResponse {
+  data: MotivAdGroup[];
+  links?: { first: string | null; last: string | null; prev: string | null; next: string | null };
+  meta?: PaginationMeta;
+  totals?: MotivCampaignStats;
+  exchange_rate?: number;
+}
+
+export interface MotivAdGroupQuery {
+  q?: string;
+  status?: MotivStatus;
+  campaign_id?: number;        // 특정 캠페인의 광고 그룹만
+  adaccount_id?: number;
+  per_page?: number;
+  page?: number;
+  sort?: string;
+  start_date?: string;
+  end_date?: string;
+}

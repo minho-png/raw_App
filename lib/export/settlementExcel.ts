@@ -95,6 +95,8 @@ export function buildSalesRows(params: {
   for (const c of motivCampaigns) {
     const product = motivTypeToProduct(c.campaign_type)
     if (product !== 'CT' && product !== 'CTV') continue
+    // 무료 캠페인은 매출 정산 대상 아님 (사용자 정책)
+    if (c.is_free) continue
     const a = asgById.get(c.id)
     const ag = a?.agencyId ? agById.get(a.agencyId) : undefined
     const adv = a?.advertiserId ? advById.get(a.advertiserId) : undefined
