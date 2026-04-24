@@ -8,6 +8,7 @@ import { MEDIA_MARKUP_RATE, DMP_FEE_RATES } from "@/lib/campaignTypes"
 import { DMP_FEE_RATES_DECIMAL } from "@/lib/calculationService"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
+import { ZeroSpendAlertBanner } from "@/components/settlement/ZeroSpendAlertBanner"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
@@ -231,6 +232,8 @@ export default function DmpFeePage() {
       </header>
 
       <main className="p-6 space-y-4">
+        <ZeroSpendAlertBanner />
+
         <SettlementFilterBar
           month={month}
           onMonthChange={setMonth}
