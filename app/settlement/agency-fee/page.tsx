@@ -6,7 +6,7 @@ import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
-import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
+import { MotivAgencyAggregation } from "@/components/settlement/MotivAgencyAggregation"
 import { ZeroSpendAlertBanner } from "@/components/settlement/ZeroSpendAlertBanner"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
@@ -63,7 +63,7 @@ const AGENCY_PALETTE = [
 
 export default function AgencyFeePage() {
   const today = new Date()
-  const { campaigns, agencies, advertisers, operators } = useMasterData()
+  const { campaigns, agencies, advertisers } = useMasterData()
   const { allRows: rawRows } = useRawData()
 
   const [month, setMonth]             = useState(toMonthStr(today))
@@ -82,7 +82,7 @@ export default function AgencyFeePage() {
   const motivFetch = useMotivSettlementCampaignsByProduct(
     motivProduct ?? 'CT', month, motivProduct !== null,
   )
-  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
+  const { data: assignments } = useMotivAssignments()
 
   useEffect(() => {
     try {
@@ -572,23 +572,20 @@ export default function AgencyFeePage() {
           </div>
         ))}
 
-        {/* Motiv 기반 CT/CTV 섹션 */}
+        {/* Motiv 기반 CT/CTV — 대행사별 집계 (읽기 전용).
+            대행사 지정은 '정산 확인' 페이지에서 관리됩니다. */}
         {motivProduct && (
-          <MotivSettlementTable
+          <MotivAgencyAggregation
             title={
-              motivProduct === 'CT_CTV_BOTH' ? 'CT · CTV 캠페인 (Motiv)'
-              : motivProduct === 'CTV' ? 'CTV 캠페인 (Motiv)'
-              : 'CT 캠페인 (Motiv)'
+              motivProduct === 'CT_CTV_BOTH' ? 'CT · CTV 대행사별 집계 (Motiv)'
+              : motivProduct === 'CTV' ? 'CTV 대행사별 집계 (Motiv)'
+              : 'CT 대행사별 집계 (Motiv)'
             }
             loading={motivFetch.loading}
             error={motivFetch.error}
             campaigns={motivFetch.data}
-            exchangeRate={motivFetch.exchangeRate}
             agencies={agencies}
-            advertisers={advertisers}
-            operators={operators}
             assignments={assignments}
-            onUpsertAssignment={upsertAssignment}
           />
         )}
 

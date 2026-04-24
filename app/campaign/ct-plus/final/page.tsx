@@ -7,6 +7,10 @@ import { applyMarkupToRows } from "@/lib/markupService"
 import { getMediaTotals, getCampaignTotals } from "@/lib/campaignTypes"
 import type { Campaign } from "@/lib/campaignTypes"
 import type { RawRow } from "@/lib/rawDataParser"
+import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
+import { ZeroSpendAlertBanner } from "@/components/settlement/ZeroSpendAlertBanner"
+import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
+import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
 function fmtRate(n: number) { return n.toFixed(1) + "%" }
@@ -81,9 +85,12 @@ function buildSettlement(
 }
 
 export default function CtPlusFinalPage() {
-  const { campaigns, agencies, advertisers, loading: masterLoading } = useMasterData()
+  const { campaigns, agencies, advertisers, operators, loading: masterLoading } = useMasterData()
   const { allRows: rawRows, loading: rawLoading } = useRawData()
   const loading = masterLoading || rawLoading
+
+  // Motiv CT/CTV 데이터 + assignments — 대행사 지정 편집 UI
+  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
 
   // ── 월 선택 ───────────────────────────────────────
   const availableMonths = useMemo(() => {
@@ -130,6 +137,9 @@ export default function CtPlusFinalPage() {
   const monthSpendRate = monthTotals.settingCost > 0
     ? Math.round((monthTotals.netAmount / monthTotals.settingCost) * 1000) / 10 : 0
 
+  // Motiv CT/CTV fetch — 정산 월 기준
+  const motivFetch = useMotivSettlementCampaignsByProduct('CT_CTV_BOTH', activeMonth, !!activeMonth)
+
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const toggleExpand = (id: string) =>
     setExpandedIds(prev => {
@@ -159,6 +169,8 @@ export default function CtPlusFinalPage() {
       </header>
 
       <main className="p-6 space-y-5">
+        <ZeroSpendAlertBanner />
+
         {/* 월 선택 */}
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm print:hidden">
           <div className="flex items-end gap-4 flex-wrap">
@@ -215,7 +227,21 @@ export default function CtPlusFinalPage() {
           </div>
         )}
 
-        {/* 정산 테이블 */}
+        {/* CT · CTV 정산 리스트 (Motiv) — 대행사·광고주·운영자 지정 */}
+        <MotivSettlementTable
+          title="CT · CTV 캠페인 (Motiv) — 대행사 지정"
+          loading={motivFetch.loading}
+          error={motivFetch.error}
+          campaigns={motivFetch.data}
+          exchangeRate={motivFetch.exchangeRate}
+          agencies={agencies}
+          advertisers={advertisers}
+          operators={operators}
+          assignments={assignments}
+          onUpsertAssignment={upsertAssignment}
+        />
+
+        {/* CT+ 정산 테이블 */}
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
