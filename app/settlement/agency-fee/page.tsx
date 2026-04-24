@@ -5,6 +5,11 @@ import type { Campaign, Agency } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
+import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
+import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
+import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
+import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
+import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
 
@@ -57,15 +62,26 @@ const AGENCY_PALETTE = [
 
 export default function AgencyFeePage() {
   const today = new Date()
-  const { campaigns, agencies, advertisers } = useMasterData()
+  const { campaigns, agencies, advertisers, operators } = useMasterData()
   const { allRows: rawRows } = useRawData()
 
   const [month, setMonth]             = useState(toMonthStr(today))
+  const [product, setProduct]         = useState<MediaProductFilter>('ALL')
   const [snapshots, setSnapshots]     = useState<SettlementSnapshot[]>([])
   const [showSnapshots, setShowSnapshots] = useState(false)
   const [selectedAgencyId, setSelectedAgencyId] = useState<string | null>(null)
   const [copied, setCopied]           = useState(false)
   const [notice, setNotice]           = useState<string | null>(null)
+
+  // Motiv 기반 CT/CTV 데이터
+  const showCtPlus = product === 'ALL' || product === 'CT_PLUS'
+  const showCt     = product === 'ALL' || product === 'CT'
+  const showCtv    = product === 'ALL' || product === 'CTV'
+  const motivProduct = showCt && showCtv ? 'CT_CTV_BOTH' : showCtv ? 'CTV' : showCt ? 'CT' : null
+  const motivFetch = useMotivSettlementCampaignsByProduct(
+    motivProduct ?? 'CT', month, motivProduct !== null,
+  )
+  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
 
   useEffect(() => {
     try {
@@ -73,11 +89,6 @@ export default function AgencyFeePage() {
       if (sn) setSnapshots(JSON.parse(sn))
     } catch {}
   }, [])
-
-  function shiftMonth(dir: -1 | 1) {
-    const [y, m] = month.split("-").map(Number)
-    setMonth(toMonthStr(new Date(y, m - 1 + dir, 1)))
-  }
 
   function getAdvertiserName(c: Campaign): string {
     return advertisers.find(a => a.id === c.advertiserId)?.name ?? "-"
@@ -312,29 +323,32 @@ export default function AgencyFeePage() {
           </div>
         )}
 
-        <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={() => shiftMonth(-1)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">‹</button>
-          <input
-            type="month"
-            value={month}
-            onChange={e => setMonth(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button onClick={() => shiftMonth(1)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
-          <span className="text-sm text-gray-400">집행 캠페인 {filtered.length}개</span>
-          {hasSnapshot && (
-            <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 border border-green-200">
-              ✓ 확정 완료
-            </span>
-          )}
-          {allRows.length === 0 && filtered.length > 0 && (
-            <span className="rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-700 border border-yellow-200">
-              raw 데이터 없음
-            </span>
-          )}
-        </div>
+        <SettlementFilterBar
+          month={month}
+          onMonthChange={setMonth}
+          product={product}
+          onProductChange={setProduct}
+          rightSlot={
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              {showCtPlus && <span>CT+ {filtered.length}개</span>}
+              {motivProduct && <span>Motiv {motivFetch.data.length}개</span>}
+              {hasSnapshot && (
+                <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 border border-green-200">
+                  ✓ 확정 완료
+                </span>
+              )}
+            </div>
+          }
+        />
 
-        {agencyList.length > 0 && (
+        {allRows.length === 0 && showCtPlus && filtered.length > 0 && (
+          <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
+            CT+ raw 데이터가 없습니다. 데이터 업로드 후 정산 수치가 표시됩니다.
+          </div>
+        )}
+
+        {/* CT+ 섹션 (기존) */}
+        {showCtPlus && agencyList.length > 0 && (
           <div>
             <div className="mb-2 flex items-center gap-2">
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">대행사 선택</span>
@@ -379,7 +393,7 @@ export default function AgencyFeePage() {
           </div>
         )}
 
-        {selectedAgency && (
+        {showCtPlus && selectedAgency && (
           <div className="rounded-xl border border-blue-200 bg-blue-50 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between border-b border-blue-100 px-5 py-3.5">
               <div className="flex items-center gap-2">
@@ -446,9 +460,9 @@ export default function AgencyFeePage() {
           </div>
         )}
 
-        {filtered.length === 0 ? (
+        {showCtPlus && (filtered.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-sm text-gray-400">
-            해당 월에 해당하는 캠페인이 없습니다.
+            해당 월에 해당하는 CT+ 캠페인이 없습니다.
           </div>
         ) : allRows.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white py-16 text-center">
@@ -553,6 +567,26 @@ export default function AgencyFeePage() {
               </table>
             </div>
           </div>
+        ))}
+
+        {/* Motiv 기반 CT/CTV 섹션 */}
+        {motivProduct && (
+          <MotivSettlementTable
+            title={
+              motivProduct === 'CT_CTV_BOTH' ? 'CT · CTV 캠페인 (Motiv)'
+              : motivProduct === 'CTV' ? 'CTV 캠페인 (Motiv)'
+              : 'CT 캠페인 (Motiv)'
+            }
+            loading={motivFetch.loading}
+            error={motivFetch.error}
+            campaigns={motivFetch.data}
+            exchangeRate={motivFetch.exchangeRate}
+            agencies={agencies}
+            advertisers={advertisers}
+            operators={operators}
+            assignments={assignments}
+            onUpsertAssignment={upsertAssignment}
+          />
         )}
 
       </main>

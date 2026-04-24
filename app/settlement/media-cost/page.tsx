@@ -4,6 +4,11 @@ import { useState, useEffect } from "react"
 import type { Campaign } from "@/lib/campaignTypes"
 import { MEDIA_MARKUP_RATE } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
+import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
+import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
+import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
+import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
+import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 
 const SNAPSHOTS_KEY  = "media-cost-snapshots-v1"
 
@@ -55,12 +60,22 @@ const AGENCY_PALETTE = [
 
 export default function MediaCostPage() {
   const today = new Date()
-  const { campaigns, advertisers, agencies } = useMasterData()
+  const { campaigns, advertisers, agencies, operators } = useMasterData()
   const [month, setMonth] = useState(toMonthStr(today))
+  const [product, setProduct] = useState<MediaProductFilter>('ALL')
   const [snapshots, setSnapshots]       = useState<Snapshot[]>([])
   const [showHistory, setShowHistory]   = useState(false)
   const [confirmedToast, setConfirmedToast] = useState(false)
   const [noteInput, setNoteInput]       = useState('')
+
+  const showCtPlus = product === 'ALL' || product === 'CT_PLUS'
+  const showCt     = product === 'ALL' || product === 'CT'
+  const showCtv    = product === 'ALL' || product === 'CTV'
+  const motivProduct = showCt && showCtv ? 'CT_CTV_BOTH' : showCtv ? 'CTV' : showCt ? 'CT' : null
+  const motivFetch = useMotivSettlementCampaignsByProduct(
+    motivProduct ?? 'CT', month, motivProduct !== null,
+  )
+  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
 
   useEffect(() => {
     try {
@@ -187,22 +202,20 @@ export default function MediaCostPage() {
                 </span>
               )}
             </button>
-            {/* 월 선택 */}
-            <div className="flex items-center gap-1">
-              <button onClick={() => shiftMonth(-1)} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors">‹</button>
-              <input
-                type="month"
-                value={month}
-                onChange={e => e.target.value && setMonth(e.target.value)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-              />
-              <button onClick={() => shiftMonth(1)} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors">›</button>
-            </div>
           </div>
         </div>
       </header>
 
       <main className="p-6 space-y-6">
+        <SettlementFilterBar
+          month={month}
+          onMonthChange={setMonth}
+          product={product}
+          onProductChange={setProduct}
+          rightSlot={
+            motivProduct ? <span className="text-xs text-gray-500">Motiv {motivFetch.data.length}개</span> : null
+          }
+        />
 
         {/* 정산 이력 패널 */}
         {showHistory && (
@@ -251,8 +264,8 @@ export default function MediaCostPage() {
           </div>
         )}
 
-        {/* 요약 카드 */}
-        <div className="grid grid-cols-3 gap-4">
+        {/* 요약 카드 (CT+) */}
+        {showCtPlus && <div className="grid grid-cols-3 gap-4">
           {[
             { label: '총 예산', value: '₩' + fmt(totalBudget), sub: `${rows.length}개 집행 항목` },
             { label: '총 집행금액', value: '₩' + fmt(totalSpend), sub: totalBudget > 0 ? `예산 대비 ${((totalSpend / totalBudget) * 100).toFixed(1)}%` : '—' },
@@ -264,10 +277,10 @@ export default function MediaCostPage() {
               <p className="mt-0.5 text-[11px] text-gray-400">{sub}</p>
             </div>
           ))}
-        </div>
+        </div>}
 
-        {/* 매체별 요약 */}
-        {mediaMap.size > 0 && (
+        {/* 매체별 요약 (CT+) */}
+        {showCtPlus && mediaMap.size > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white">
             <div className="border-b border-gray-100 px-5 py-3.5">
               <p className="text-xs font-semibold text-gray-700">매체별 집계</p>
@@ -328,8 +341,8 @@ export default function MediaCostPage() {
           </div>
         )}
 
-        {/* 상세 테이블 */}
-        {rows.length === 0 ? (
+        {/* 상세 테이블 (CT+) */}
+        {showCtPlus && (rows.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white px-6 py-16 text-center">
             <p className="text-sm text-gray-400">해당 월에 집행된 캠페인이 없습니다.</p>
             <p className="mt-1 text-xs text-gray-500">캠페인 집행 현황에서 캠페인의 집행금액을 입력해주세요.</p>
@@ -411,10 +424,30 @@ export default function MediaCostPage() {
               </table>
             </div>
           </div>
+        ))}
+
+        {/* Motiv 기반 CT/CTV 섹션 */}
+        {motivProduct && (
+          <MotivSettlementTable
+            title={
+              motivProduct === 'CT_CTV_BOTH' ? 'CT · CTV 캠페인 (Motiv)'
+              : motivProduct === 'CTV' ? 'CTV 캠페인 (Motiv)'
+              : 'CT 캠페인 (Motiv)'
+            }
+            loading={motivFetch.loading}
+            error={motivFetch.error}
+            campaigns={motivFetch.data}
+            exchangeRate={motivFetch.exchangeRate}
+            agencies={agencies}
+            advertisers={advertisers}
+            operators={operators}
+            assignments={assignments}
+            onUpsertAssignment={upsertAssignment}
+          />
         )}
 
-        {/* 정산 확정 */}
-        {rows.length > 0 && (
+        {/* 정산 확정 (CT+) */}
+        {showCtPlus && rows.length > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white px-5 py-4">
             <p className="text-xs font-semibold text-gray-700 mb-3">정산 확정</p>
             <div className="flex items-center gap-3">
