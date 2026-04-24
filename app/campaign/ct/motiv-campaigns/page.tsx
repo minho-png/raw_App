@@ -5,6 +5,7 @@ import type { MotivCampaignListResponse } from '@/lib/motivApi/types';
 import { FilterBar, type Filters } from './components/FilterBar';
 import { CampaignTable } from './components/CampaignTable';
 import { Pagination } from './components/Pagination';
+import { ZeroSpendAlertBanner } from '@/components/settlement/ZeroSpendAlertBanner';
 
 const INITIAL_FILTERS: Filters = {
   q: '',
@@ -78,6 +79,8 @@ export default function MotivCampaignsPage() {
           크로스타겟 운영데스크 API에서 캠페인 목록을 조회합니다.
         </p>
       </header>
+
+      <ZeroSpendAlertBanner />
 
       <FilterBar
         value={filters}
