@@ -4,15 +4,16 @@ import { useZeroSpendMotivCampaigns } from "@/lib/hooks/useZeroSpendMotivCampaig
 import { MEDIA_PRODUCT_LABEL } from "@/lib/motivApi/productMapping"
 
 /**
- * CT · CTV 캠페인 중 "오늘 기준 집행 0원" 활성 캠페인 알림 배너.
+ * CT · CTV 캠페인 중 "미노출(win + v_impression = 0)" 활성 캠페인 알림 배너.
+ *
+ * 판정 조건:
+ *   - status=Y (활성), 오늘이 [start_date, end_date] 기간 내
+ *   - 노출(win + v_impression) === 0
+ *   - 무료 캠페인(is_free) 도 포함 — 과금과 무관한 실제 노출 여부 판단
  *
  * 표시 조건:
  *   - 오전 9시 이후 (ready=false 이면 렌더 안 함)
  *   - 감지 대상 캠페인 ≥ 1
- *
- * UX:
- *   - 기본 접힘, 상세 보기 클릭 시 목록 펼침
- *   - dismiss 버튼은 이번 페이지 진입 세션 한정 (새로고침 시 재표시)
  */
 export function ZeroSpendAlertBanner() {
   const { items, loading, error, ready } = useZeroSpendMotivCampaigns()
@@ -36,10 +37,10 @@ export function ZeroSpendAlertBanner() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-amber-900">
-              오전 9시 기준 집행 0원 캠페인 {items.length}건
+              미노출 CT · CTV 캠페인 {items.length}건
             </p>
             <p className="text-[11px] text-amber-700 mt-0.5">
-              활성 상태이며 기간 내이지만 오늘 집행액이 0원인 CT · CTV 캠페인입니다.
+              활성 · 기간 내지만 오늘 노출(win + v_impression) = 0. 무료 캠페인도 포함.
             </p>
           </div>
         </div>
@@ -64,13 +65,18 @@ export function ZeroSpendAlertBanner() {
 
       {expanded && (
         <ul className="border-t border-amber-200 divide-y divide-amber-100">
-          {items.map(({ campaign, product }) => (
+          {items.map(({ campaign, product, impressions }) => (
             <li key={campaign.id} className="flex items-center gap-3 px-4 py-2 text-xs">
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                 product === 'CTV' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'
               }`}>
                 {MEDIA_PRODUCT_LABEL[product]}
               </span>
+              {campaign.is_free && (
+                <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">
+                  무료
+                </span>
+              )}
               <span className="font-medium text-gray-800 truncate flex-1" title={campaign.title ?? ''}>
                 {campaign.title ?? `#${campaign.id}`}
               </span>
@@ -78,7 +84,7 @@ export function ZeroSpendAlertBanner() {
                 {campaign.start_date ?? '—'} ~ {campaign.end_date ?? '—'}
               </span>
               <span className="text-[10px] text-gray-500 flex-shrink-0">
-                일예산 {(campaign.daily_budget ?? 0).toLocaleString()}
+                노출 {impressions.toLocaleString()}
               </span>
             </li>
           ))}

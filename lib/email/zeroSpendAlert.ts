@@ -8,6 +8,7 @@ const ALERT_TYPES: MotivCampaignType[] = ['DISPLAY', 'VIDEO', 'PARTNERS', 'TV']
 export interface ZeroSpendEntry {
   campaign: MotivCampaign
   product: MediaProductType  // 'CT' | 'CTV' (CT_PLUS 는 Motiv 에 없음)
+  impressions: number
 }
 
 function isTodayInRange(c: MotivCampaign, now: Date): boolean {
@@ -20,10 +21,18 @@ function isTodayInRange(c: MotivCampaign, now: Date): boolean {
   return now >= cs && now <= ce
 }
 
+function totalImpressions(c: MotivCampaign): number {
+  const win  = Number(c.stats?.win ?? 0)
+  const vImp = Number(c.stats?.v_impression ?? 0)
+  return (Number.isFinite(win) ? win : 0) + (Number.isFinite(vImp) ? vImp : 0)
+}
+
 /**
- * CT/CTV 활성 캠페인 중 오늘(기준일) 집행 0원인 항목을 조회.
- * 조건: status=Y + 기간 내 + daily_spent === 0.
+ * CT/CTV 활성 캠페인 중 **노출 0** 항목을 조회 (실제 미노출 여부).
+ * 조건: status=Y + 기간 내 + win + v_impression === 0.
  *
+ * daily_spent 기반에서 전환 — 무료 캠페인(is_free) 오탐 방지 및
+ * 과금 구조와 무관한 실노출 여부로 판단.
  * 서버사이드 전용 (process.env.MOTIV_API_TOKEN 직접 사용).
  */
 export async function collectZeroSpendCampaigns(now: Date = new Date()): Promise<ZeroSpendEntry[]> {
@@ -43,11 +52,11 @@ export async function collectZeroSpendCampaigns(now: Date = new Date()): Promise
       if (isExcludedCampaign(c.title)) continue
       if (c.status !== 'Y') continue
       if (!isTodayInRange(c, now)) continue
-      const dailySpent = Number(c.daily_spent ?? 0)
-      if (dailySpent !== 0) continue
+      const impressions = totalImpressions(c)
+      if (impressions > 0) continue
       const product = motivTypeToProduct(c.campaign_type)
       if (product !== 'CT' && product !== 'CTV') continue
-      out.push({ campaign: c, product })
+      out.push({ campaign: c, product, impressions })
     }
   }
   return out
@@ -63,10 +72,10 @@ export function formatZeroSpendEmail(entries: ZeroSpendEntry[], now: Date): {
   html: string
 } {
   const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  const subject = `[${dateStr} 09:00] 집행 0원 캠페인 ${entries.length}건`
+  const subject = `[${dateStr} 09:00] 미노출 CT/CTV 캠페인 ${entries.length}건`
 
   if (entries.length === 0) {
-    const text = `${dateStr} 오전 9시 기준 — 집행 0원인 활성 CT/CTV 캠페인이 없습니다.`
+    const text = `${dateStr} 오전 9시 기준 — 미노출(노출 0) 활성 CT/CTV 캠페인이 없습니다.`
     const html = `<p>${text}</p>`
     return { subject, text, html }
   }
@@ -83,7 +92,8 @@ export function formatZeroSpendEmail(entries: ZeroSpendEntry[], now: Date): {
   })
 
   const text = [
-    `${dateStr} 오전 9시 기준 집행 0원 캠페인 ${entries.length}건`,
+    `${dateStr} 오전 9시 기준 미노출 CT/CTV 캠페인 ${entries.length}건`,
+    '(활성 · 기간 내 · win+v_impression = 0)',
     '',
     ...lines,
   ].join('\n')
@@ -97,8 +107,8 @@ export function formatZeroSpendEmail(entries: ZeroSpendEntry[], now: Date): {
   }).join('')
 
   const html = `<div style="font-family:system-ui,-apple-system,sans-serif;color:#111">
-  <h2 style="font-size:16px;margin:0 0 8px">${dateStr} 09:00 기준 집행 0원 캠페인 ${entries.length}건</h2>
-  <p style="font-size:12px;color:#666;margin:0 0 16px">활성 상태이며 기간 내이지만 오늘 집행액(daily_spent)이 0원인 CT · CTV 캠페인입니다.</p>
+  <h2 style="font-size:16px;margin:0 0 8px">${dateStr} 09:00 기준 미노출 CT/CTV 캠페인 ${entries.length}건</h2>
+  <p style="font-size:12px;color:#666;margin:0 0 16px">활성 상태이며 기간 내이지만 오늘 노출(win + v_impression)이 0인 캠페인입니다. 무료 캠페인(is_free)도 포함 — 노출 여부는 과금과 무관.</p>
   <table style="border-collapse:separate;border-spacing:0 4px"><tbody>${rows}</tbody></table>
 </div>`
 
