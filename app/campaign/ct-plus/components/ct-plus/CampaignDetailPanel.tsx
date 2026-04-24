@@ -40,7 +40,7 @@ function DetailKPICard({ label, value, color }: {
 }
 
 export function CampaignDetailPanel({
-  campaign, operators, agencies, advertisers, rawRows, onClose, onEdit,
+  campaign, operators, agencies, advertisers, rawRows, onClose, onEdit, onUpdate,
 }: {
   campaign: Campaign
   operators: Operator[]
@@ -49,7 +49,11 @@ export function CampaignDetailPanel({
   rawRows: RawRow[]
   onClose: () => void
   onEdit: (c: Campaign) => void
+  onUpdate?: (c: Campaign) => void
 }) {
+  const [dashboardInput, setDashboardInput] = React.useState<string>(
+    campaign.dashboardNetAmount != null ? String(campaign.dashboardNetAmount) : ""
+  )
   // 이 캠페인에 매핑된 raw rows
   const router = useRouter()
   const campRows = useMemo(
@@ -123,8 +127,9 @@ export function CampaignDetailPanel({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed inset-y-0 right-0 w-[520px] bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col overflow-hidden">
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden pointer-events-auto">
 
         {/* 헤더 */}
         <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
@@ -183,27 +188,90 @@ export function CampaignDetailPanel({
                 <span>{campaign.endDate.slice(5)}</span>
               </div>
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs text-gray-600">소진율 (CSV 기반)</span>
-                <span className={`text-xs font-semibold ${sc.text}`}>{rawSpendRate.toFixed(1)}%</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-gray-200">
-                <div className={`h-full rounded-full transition-all ${sc.bar}`}
-                  style={{ width: `${Math.min(rawSpendRate, 100)}%` }} />
-              </div>
-            </div>
-            {campRows.length > 0 && Math.abs(lag) >= 5 && (
-              <div className={`rounded-lg px-3 py-2 text-xs font-medium ${
-                lag >= 15 ? "bg-yellow-50 text-yellow-700 border border-yellow-200"
-                  : lag > 0 ? "bg-orange-50 text-orange-700"
-                  : "bg-green-50 text-green-700"
-              }`}>
-                {lag > 0
-                  ? `⚠ 집행 속도 ${lag.toFixed(1)}%p 지연`
-                  : `▲ 집행 속도 ${Math.abs(lag).toFixed(1)}%p 빠름`}
-              </div>
-            )}
+            {/* 리포트 소진율 (CSV 기반) — 바 위 말풍선으로 지연/빠름 */}
+            {(() => {
+              const barW = Math.min(rawSpendRate, 100)
+              const bubbleLeft = Math.min(Math.max(barW, 8), 92)
+              const showBubble = campRows.length > 0 && Math.abs(lag) >= 5
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-gray-600">리포트 소진율</span>
+                    <span className={`text-xs font-semibold ${sc.text}`}>{rawSpendRate.toFixed(1)}%</span>
+                  </div>
+                  <div className="relative pt-7">
+                    {showBubble && (
+                      <div className="absolute top-0" style={{ left: `${bubbleLeft}%`, transform: "translateX(-50%)" }}>
+                        <div className={`relative px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${
+                          lag > 0 ? "bg-orange-500 text-white" : "bg-green-500 text-white"
+                        }`}>
+                          {lag > 0 ? `${lag.toFixed(1)}%p 지연` : `${Math.abs(lag).toFixed(1)}%p 빠름`}
+                          <div className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent ${
+                            lag > 0 ? "border-t-orange-500" : "border-t-green-500"
+                          }`} />
+                        </div>
+                      </div>
+                    )}
+                    <div className="h-2 w-full rounded-full bg-gray-200">
+                      <div className={`h-full rounded-full transition-all ${sc.bar}`} style={{ width: `${barW}%` }} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* 대시보드 소진율 — 직접 입력된 금액 기반, DB 저장 */}
+            {(() => {
+              const dashAmt = parseFloat(dashboardInput) || 0
+              const dashRate = totals.totalSettingCost > 0
+                ? Math.round((dashAmt / totals.totalSettingCost) * 1000) / 10
+                : 0
+              const dashSc = spendRateStyle(dashRate)
+              const dashLag = progress - dashRate
+              const barW = Math.min(dashRate, 100)
+              const bubbleLeft = Math.min(Math.max(barW, 8), 92)
+              const showBubble = dashAmt > 0 && Math.abs(dashLag) >= 5
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-gray-600">대시보드 소진율</span>
+                    <span className={`text-xs font-semibold ${dashSc.text}`}>{dashRate}%</span>
+                  </div>
+                  <div className="relative pt-7">
+                    {showBubble && (
+                      <div className="absolute top-0" style={{ left: `${bubbleLeft}%`, transform: "translateX(-50%)" }}>
+                        <div className={`relative px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${
+                          dashLag > 0 ? "bg-orange-500 text-white" : "bg-green-500 text-white"
+                        }`}>
+                          {dashLag > 0 ? `${dashLag.toFixed(1)}%p 지연` : `${Math.abs(dashLag).toFixed(1)}%p 빠름`}
+                          <div className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent ${
+                            dashLag > 0 ? "border-t-orange-500" : "border-t-green-500"
+                          }`} />
+                        </div>
+                      </div>
+                    )}
+                    <div className="h-2 w-full rounded-full bg-gray-200">
+                      <div className={`h-full rounded-full transition-all ${dashSc.bar}`} style={{ width: `${barW}%` }} />
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-gray-600 whitespace-nowrap">대시보드 소진액:</span>
+                    <input
+                      type="number" min="0"
+                      value={dashboardInput}
+                      onChange={e => {
+                        const v = e.target.value
+                        setDashboardInput(v)
+                        const num = parseFloat(v)
+                        onUpdate?.({ ...campaign, dashboardNetAmount: Number.isFinite(num) && num > 0 ? num : undefined })
+                      }}
+                      placeholder="금액 입력 (원)"
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                </div>
+              )
+            })()}
             {showActualWarning && (
               <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs">
                 <span className="font-semibold text-red-700">⚠ 실 소진율 차이 {spendRateDiff.toFixed(1)}%p</span>
@@ -416,6 +484,7 @@ export function CampaignDetailPanel({
             캠페인 수정
           </button>
         </div>
+      </div>
       </div>
     </>
   )

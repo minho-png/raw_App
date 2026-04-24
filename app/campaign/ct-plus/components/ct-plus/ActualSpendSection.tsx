@@ -3,6 +3,9 @@ import React from "react"
 import { MediaBudget, getMediaTotals } from "@/lib/campaignTypes"
 import { inputCls, MF } from "./statusUtils"
 
+// 실 세팅금액이 VAT 포함으로 계산되는 매체 (CampaignModal.updateMBField 자동계산 기준과 일치)
+const VAT_INCLUDED_MEDIA = ['네이버 GFA', '카카오모먼트']
+
 export function ActualSpendSection({
   mb,
   onUpdateMBField,
@@ -26,7 +29,11 @@ export function ActualSpendSection({
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-2 gap-3">
-        <MF label="실 세팅금액">
+        <MF label={
+          VAT_INCLUDED_MEDIA.includes(mb.media)
+            ? <span>실 세팅금액 <span className="font-bold text-red-500">(VAT포함)</span></span>
+            : <span>실 세팅금액 <span className="text-gray-400 font-normal">(VAT별도)</span></span>
+        }>
           <input
             type="number" min="0"
             value={actualSettingCost}
