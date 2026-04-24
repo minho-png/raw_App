@@ -6,6 +6,11 @@ import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
 import { MEDIA_MARKUP_RATE, DMP_FEE_RATES } from "@/lib/campaignTypes"
 import { DMP_FEE_RATES_DECIMAL } from "@/lib/calculationService"
+import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
+import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
+import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
+import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
+import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 
 // DMP 컬럼 순서 (표에 표시할 유형만)
 const DMP_COLS = ["SKP", "TG360", "LOTTE", "KB", "WIFI"] as const
@@ -43,10 +48,20 @@ function fmt(n: number) {
 function fmtNum(n: number) { return Math.round(n).toLocaleString("ko-KR") }
 
 export default function DmpFeePage() {
-  const { campaigns, agencies, advertisers } = useMasterData()
+  const { campaigns, agencies, advertisers, operators } = useMasterData()
   const { allRows: rawRows } = useRawData()
   const [month, setMonth] = useState(() => toMonthStr(new Date()))
+  const [product, setProduct] = useState<MediaProductFilter>('ALL')
   const [copied, setCopied] = useState(false)
+
+  const showCtPlus = product === 'ALL' || product === 'CT_PLUS'
+  const showCt     = product === 'ALL' || product === 'CT'
+  const showCtv    = product === 'ALL' || product === 'CTV'
+  const motivProduct = showCt && showCtv ? 'CT_CTV_BOTH' : showCtv ? 'CTV' : showCt ? 'CT' : null
+  const motivFetch = useMotivSettlementCampaignsByProduct(
+    motivProduct ?? 'CT', month, motivProduct !== null,
+  )
+  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
 
   // 월 필터 + markup 적용
   const computedRows = useMemo(
@@ -216,20 +231,22 @@ export default function DmpFeePage() {
       </header>
 
       <main className="p-6 space-y-4">
-        {/* 월 선택 */}
-        <div className="flex items-center gap-3">
-          <button onClick={() => setMonth(m => shiftMonth(m, -1))} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">‹</button>
-          <input
-            type="month" value={month} onChange={e => setMonth(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button onClick={() => setMonth(m => shiftMonth(m, 1))} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">›</button>
-          <span className="text-sm text-gray-400">{rows.length}줄</span>
-        </div>
+        <SettlementFilterBar
+          month={month}
+          onMonthChange={setMonth}
+          product={product}
+          onProductChange={setProduct}
+          rightSlot={
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              {showCtPlus && <span>CT+ {rows.length}줄</span>}
+              {motivProduct && <span>Motiv {motivFetch.data.length}개</span>}
+            </div>
+          }
+        />
 
-        {rows.length === 0 ? (
+        {showCtPlus && (rows.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-sm text-gray-400">
-            해당 월 raw 데이터가 없습니다.
+            해당 월 CT+ raw 데이터가 없습니다.
           </div>
         ) : (
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -318,6 +335,26 @@ export default function DmpFeePage() {
               </table>
             </div>
           </div>
+        ))}
+
+        {/* Motiv 기반 CT/CTV 섹션 */}
+        {motivProduct && (
+          <MotivSettlementTable
+            title={
+              motivProduct === 'CT_CTV_BOTH' ? 'CT · CTV 캠페인 (Motiv)'
+              : motivProduct === 'CTV' ? 'CTV 캠페인 (Motiv)'
+              : 'CT 캠페인 (Motiv)'
+            }
+            loading={motivFetch.loading}
+            error={motivFetch.error}
+            campaigns={motivFetch.data}
+            exchangeRate={motivFetch.exchangeRate}
+            agencies={agencies}
+            advertisers={advertisers}
+            operators={operators}
+            assignments={assignments}
+            onUpsertAssignment={upsertAssignment}
+          />
         )}
       </main>
     </div>
