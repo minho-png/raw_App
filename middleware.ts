@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifySessionToken, COOKIE_NAME } from '@/lib/auth/session'
 
-// 인증이 필요 없는 공개 경로
-const PUBLIC_PREFIXES = ['/login', '/api/auth/login', '/api/auth/init-admin']
+// 인증이 필요 없는 공개 경로 (/api/cron/ 은 CRON_SECRET 헤더로 자체 인증)
+const PUBLIC_PREFIXES = ['/login', '/api/auth/login', '/api/auth/init-admin', '/api/cron/']
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
