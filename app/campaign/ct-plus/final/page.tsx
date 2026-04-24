@@ -10,6 +10,7 @@ import type { RawRow } from "@/lib/rawDataParser"
 import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
+import { buildSalesRows, buildPurchaseRows, downloadSalesExcel, downloadPurchaseExcel } from "@/lib/export/settlementExcel"
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
 function fmtRate(n: number) { return n.toFixed(1) + "%" }
@@ -150,6 +151,30 @@ export default function CtPlusFinalPage() {
   const expandAll  = () => setExpandedIds(new Set(settlements.map(s => s.campaign.id)))
   const collapseAll = () => setExpandedIds(new Set())
 
+  // Excel 다운로드 핸들러
+  function handleDownloadSales() {
+    const rows = buildSalesRows({
+      month: activeMonth,
+      ctPlus: settlements,
+      motivCampaigns: motivFetch.data,
+      assignments,
+      agencies,
+      advertisers,
+      operators,
+    })
+    downloadSalesExcel(rows, activeMonth)
+  }
+  function handleDownloadPurchase() {
+    const rows = buildPurchaseRows({
+      month: activeMonth,
+      ctPlus: settlements,
+      motivCampaigns: motivFetch.data,
+      assignments,
+      operators,
+    })
+    downloadPurchaseExcel(rows, activeMonth)
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white px-6 py-4 print:hidden">
@@ -158,12 +183,28 @@ export default function CtPlusFinalPage() {
             <h1 className="text-base font-semibold text-gray-900">정산 확인</h1>
             <p className="text-xs text-gray-400 mt-0.5">월별 캠페인 정산 현황 · CSV 실적 자동 집계</p>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadSales}
+              disabled={loading}
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+            >
+              매출 Excel
+            </button>
+            <button
+              onClick={handleDownloadPurchase}
+              disabled={loading}
+              className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+            >
+              매입 Excel
+            </button>
           <button
             onClick={() => window.print()}
             className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700 transition-colors"
           >
             인쇄 / PDF
           </button>
+          </div>
         </div>
       </header>
 
