@@ -5,8 +5,7 @@ import type { Campaign } from "@/lib/campaignTypes"
 import { MEDIA_MARKUP_RATE } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
-import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
-import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
+import { ZeroSpendAlertBanner } from "@/components/settlement/ZeroSpendAlertBanner"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 
@@ -60,9 +59,9 @@ const AGENCY_PALETTE = [
 
 export default function MediaCostPage() {
   const today = new Date()
-  const { campaigns, advertisers, agencies, operators } = useMasterData()
+  const { campaigns, advertisers, agencies } = useMasterData()
   const [month, setMonth] = useState(toMonthStr(today))
-  const [product, setProduct] = useState<MediaProductFilter>('ALL')
+  const [product, setProduct] = useState<MediaProductFilter>('CT_PLUS')
   const [snapshots, setSnapshots]       = useState<Snapshot[]>([])
   const [showHistory, setShowHistory]   = useState(false)
   const [confirmedToast, setConfirmedToast] = useState(false)
@@ -72,10 +71,10 @@ export default function MediaCostPage() {
   const showCt     = product === 'ALL' || product === 'CT'
   const showCtv    = product === 'ALL' || product === 'CTV'
   const motivProduct = showCt && showCtv ? 'CT_CTV_BOTH' : showCtv ? 'CTV' : showCt ? 'CT' : null
+  // 매체 비용은 CT+ 전용 — CT/CTV 건수만 참고 표시
   const motivFetch = useMotivSettlementCampaignsByProduct(
     motivProduct ?? 'CT', month, motivProduct !== null,
   )
-  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
 
   useEffect(() => {
     try {
@@ -207,6 +206,8 @@ export default function MediaCostPage() {
       </header>
 
       <main className="p-6 space-y-6">
+        <ZeroSpendAlertBanner />
+
         <SettlementFilterBar
           month={month}
           onMonthChange={setMonth}
@@ -426,24 +427,14 @@ export default function MediaCostPage() {
           </div>
         ))}
 
-        {/* Motiv 기반 CT/CTV 섹션 */}
+        {/* 매체 비용은 CT+ 전용 — CT/CTV 선택 시 안내만 표시 */}
         {motivProduct && (
-          <MotivSettlementTable
-            title={
-              motivProduct === 'CT_CTV_BOTH' ? 'CT · CTV 캠페인 (Motiv)'
-              : motivProduct === 'CTV' ? 'CTV 캠페인 (Motiv)'
-              : 'CT 캠페인 (Motiv)'
-            }
-            loading={motivFetch.loading}
-            error={motivFetch.error}
-            campaigns={motivFetch.data}
-            exchangeRate={motivFetch.exchangeRate}
-            agencies={agencies}
-            advertisers={advertisers}
-            operators={operators}
-            assignments={assignments}
-            onUpsertAssignment={upsertAssignment}
-          />
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
+            매체 비용은 CT+ 정산 전용입니다. CT · CTV 대행사 지정은{" "}
+            <a href="/campaign/ct-plus/final" className="font-semibold underline">정산 확인</a> 에서,
+            대행사별 집계는{" "}
+            <a href="/settlement/agency-fee" className="font-semibold underline">대행사별 수수료</a> 페이지에서 확인하세요.
+          </div>
         )}
 
         {/* 정산 확정 (CT+) */}
