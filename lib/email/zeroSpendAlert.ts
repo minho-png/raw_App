@@ -1,6 +1,6 @@
 import { fetchCampaigns } from '@/lib/motivApi/campaignService'
 import type { MotivCampaign, MotivCampaignType } from '@/lib/motivApi/types'
-import { motivTypeToProduct, type MediaProductType } from '@/lib/motivApi/productMapping'
+import { motivTypeToProduct, isExcludedCampaign, type MediaProductType } from '@/lib/motivApi/productMapping'
 
 // 알림 대상 campaign_type (CT + CTV)
 const ALERT_TYPES: MotivCampaignType[] = ['DISPLAY', 'VIDEO', 'PARTNERS', 'TV']
@@ -40,6 +40,7 @@ export async function collectZeroSpendCampaigns(now: Date = new Date()): Promise
   const out: ZeroSpendEntry[] = []
   for (const r of results) {
     for (const c of r.data) {
+      if (isExcludedCampaign(c.title)) continue
       if (c.status !== 'Y') continue
       if (!isTodayInRange(c, now)) continue
       const dailySpent = Number(c.daily_spent ?? 0)

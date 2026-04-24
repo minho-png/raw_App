@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import type { MotivCampaign, MotivCampaignListResponse, MotivCampaignType } from "@/lib/motivApi/types"
-import { motivTypeToProduct, type MediaProductType } from "@/lib/motivApi/productMapping"
+import { motivTypeToProduct, isExcludedCampaign, type MediaProductType } from "@/lib/motivApi/productMapping"
 
 // CT + CTV 전체 campaign_type (일 0원 알림 대상)
 const ALERT_TYPES: MotivCampaignType[] = ['DISPLAY', 'VIDEO', 'PARTNERS', 'TV']
@@ -74,6 +74,7 @@ export function useZeroSpendMotivCampaigns(enabled = true) {
         const items: ZeroSpendAlertItem[] = []
         for (const r of results) {
           for (const c of r.data) {
+            if (isExcludedCampaign(c.title)) continue
             if (c.status !== 'Y') continue
             if (!todayInRange(c, now)) continue
             // Motiv 스키마: daily_spent 은 MotivCampaign 루트 필드 (stats 가 아님)
