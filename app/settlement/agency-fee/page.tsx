@@ -7,7 +7,6 @@ import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { MotivAgencyAggregation } from "@/components/settlement/MotivAgencyAggregation"
-import { ZeroSpendAlertBanner } from "@/components/settlement/ZeroSpendAlertBanner"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
@@ -323,8 +322,6 @@ export default function AgencyFeePage() {
             )}
           </div>
         )}
-
-        <ZeroSpendAlertBanner />
 
         <SettlementFilterBar
           month={month}

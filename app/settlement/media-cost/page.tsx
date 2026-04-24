@@ -5,7 +5,6 @@ import type { Campaign } from "@/lib/campaignTypes"
 import { MEDIA_MARKUP_RATE } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
-import { ZeroSpendAlertBanner } from "@/components/settlement/ZeroSpendAlertBanner"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 
@@ -206,8 +205,6 @@ export default function MediaCostPage() {
       </header>
 
       <main className="p-6 space-y-6">
-        <ZeroSpendAlertBanner />
-
         <SettlementFilterBar
           month={month}
           onMonthChange={setMonth}

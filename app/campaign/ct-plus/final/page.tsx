@@ -8,7 +8,6 @@ import { getMediaTotals, getCampaignTotals } from "@/lib/campaignTypes"
 import type { Campaign } from "@/lib/campaignTypes"
 import type { RawRow } from "@/lib/rawDataParser"
 import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
-import { ZeroSpendAlertBanner } from "@/components/settlement/ZeroSpendAlertBanner"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 
@@ -169,8 +168,6 @@ export default function CtPlusFinalPage() {
       </header>
 
       <main className="p-6 space-y-5">
-        <ZeroSpendAlertBanner />
-
         {/* 월 선택 */}
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm print:hidden">
           <div className="flex items-end gap-4 flex-wrap">
