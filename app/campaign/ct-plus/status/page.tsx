@@ -258,6 +258,7 @@ export default function CampaignStatusPage() {
           rawRows={rawRows}
           onClose={() => setSelectedDetailId(null)}
           onEdit={(c) => { setEditTarget(c); setModalOpen(true); setSelectedDetailId(null) }}
+          onUpdate={(c) => saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))}
         />
       )}
     </div>

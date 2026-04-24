@@ -153,6 +153,24 @@ export default function Sidebar() {
 
       {/* 메뉴 */}
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        {/* 거래처 관리 — 모든 섹션 상단 단독 링크 (입체 호버 효과) */}
+        <Link
+          href="/manage"
+          className={`group mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 ${
+            pathname === "/manage" || pathname === "/management"
+              ? "bg-gradient-to-r from-indigo-500 to-blue-600 text-white"
+              : "bg-white text-gray-700 border border-gray-200 hover:border-indigo-300 hover:text-indigo-700"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round"
+                d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zm0 0V5a2 2 0 00-2-2H6a2 2 0 00-2 2v2" />
+            </svg>
+            거래처 관리
+          </span>
+        </Link>
+
         {ALL_SECTIONS.map(sec => (
           <div key={sec.key}>
             {/* 섹션 레이블 */}
