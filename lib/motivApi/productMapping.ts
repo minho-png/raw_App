@@ -57,3 +57,28 @@ export interface MotivAssignment {
   memo?: string
   updatedAt?: string
 }
+
+// ─── 제외 캠페인 (정산·미노출 알림 모두 무시) ─────────────────────────────
+// 테스트용 / 내부용 캠페인으로 실제 정산 대상 아님.
+// 추가/삭제 필요 시 이 배열만 수정.
+export const EXCLUDED_MOTIV_CAMPAIGN_NAMES: readonly string[] = [
+  'LG전자 LG채널 테스트 캠페인',
+  'publica광고 테스트(삼성+뉴아이디)_250411',
+  '엑셀비드 VOD 테스트 캠페인_230509 (CTV광고사업본부)',
+  '엑셀비드_테스트',
+  '영상 게재면 캠페인',
+] as const
+
+// 정규화된 비교 (앞뒤 공백 제거)
+const EXCLUDED_SET = new Set(
+  EXCLUDED_MOTIV_CAMPAIGN_NAMES.map(n => n.trim())
+)
+
+/**
+ * Motiv 캠페인이 정산·알림 대상에서 제외돼야 하는지 판정.
+ * 이름(title) 기준 정확 일치 (trim 후 비교).
+ */
+export function isExcludedCampaign(titleOrNull: string | null | undefined): boolean {
+  if (!titleOrNull) return false
+  return EXCLUDED_SET.has(titleOrNull.trim())
+}

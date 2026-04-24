@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import type { MotivCampaign, MotivCampaignListResponse, MotivCampaignType } from "@/lib/motivApi/types"
-import { motivTypeToProduct, type MediaProductType } from "@/lib/motivApi/productMapping"
+import { motivTypeToProduct, isExcludedCampaign, type MediaProductType } from "@/lib/motivApi/productMapping"
 
 interface Options {
   // 가져올 Motiv campaign_type 집합 (예: ['TV'] for CTV, ['DISPLAY','VIDEO','PARTNERS'] for CT)
@@ -76,12 +76,15 @@ export function useMotivSettlementCampaigns({ types, month, perPage = 200, enabl
           return (await res.json()) as MotivCampaignListResponse
         }))
 
-        // 병합
+        // 병합 + 제외 리스트 필터
         let data: MotivCampaign[] = []
         let total = 0
         let exchangeRate = 0
         for (const r of results) {
-          data = data.concat(r.data)
+          for (const c of r.data) {
+            if (isExcludedCampaign(c.title)) continue
+            data.push(c)
+          }
           total += r.meta?.total ?? r.data.length
           if (r.exchange_rate) exchangeRate = r.exchange_rate
         }
