@@ -9,6 +9,7 @@ import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTab
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
+import { useMotivAgencies } from "@/lib/hooks/useMotivAgencies"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 
 // ── 타입 ────────────────────────────────────────────────────
@@ -379,6 +380,7 @@ export default function CtCtvAnalysisPage() {
   const motivCtv = useMotivSettlementCampaignsByProduct('CTV', undefined, true)
   const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
   const { byId: adAccountById } = useMotivAdAccounts()
+  const { byId: motivAgencyById } = useMotivAgencies()
 
   const campaigns = useMemo(() => mockCampaigns(currentHour), [currentHour])
   const filtered  = useMemo(() =>
@@ -837,6 +839,7 @@ export default function CtCtvAnalysisPage() {
             assignments={assignments}
             onUpsertAssignment={upsertAssignment}
             adAccountById={adAccountById}
+            motivAgencyById={motivAgencyById}
           />
         </section>
 

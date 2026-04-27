@@ -174,3 +174,33 @@ export interface MotivAdAccountQuery {
   page?: number;
   sort?: string;
 }
+
+// ─── Agency (대행사) — agencies.index ─────────────────────────────
+// 확정 스키마 (사용자 제공): https://desk-ct.motiv-i.com/docs/api#/operations/agencies.index
+// 응답: Paginated set of AgencyListResource
+//   data[]: { id, name, status, is_active, created_at }
+//   links/meta: 표준 Laravel paginator
+// AgencyListResource 는 최소 필드 (id·name 만 실용) — 상세는 별도 .show 호출 필요할 수 있음.
+
+export interface MotivAgency {
+  id: number;
+  name: string;
+  status: string;        // 'Y' | 'N' (보장은 안 됨, string 으로 받음)
+  is_active: boolean;
+  created_at: string;    // ISO date-time
+}
+
+export interface MotivAgencyListResponse {
+  data: MotivAgency[];
+  links: { first: string | null; last: string | null; prev: string | null; next: string | null };
+  meta: PaginationMeta & {
+    links?: { url: string | null; label: string; active: boolean }[];
+  };
+}
+
+export interface MotivAgencyQuery {
+  per_page?: number;     // 1~200
+  q?: string;            // ≤100 chars
+  sort?: string;
+  status?: MotivStatus;
+}

@@ -1,8 +1,9 @@
 "use client"
 import React, { useMemo, useState } from "react"
-import type { MotivCampaign, MotivAdAccount } from "@/lib/motivApi/types"
+import type { MotivCampaign, MotivAdAccount, MotivAgency } from "@/lib/motivApi/types"
 import type { Agency, Advertiser, Operator } from "@/lib/campaignTypes"
 import { motivTypeToProduct, MEDIA_PRODUCT_LABEL, type MotivAssignment } from "@/lib/motivApi/productMapping"
+import { normalizeAgencyName } from "@/lib/hooks/useMotivAgencies"
 
 interface Props {
   title: string
@@ -17,6 +18,8 @@ interface Props {
   onUpsertAssignment: (a: MotivAssignment) => void
   /** Motiv adaccount.id → adaccount 정보 (기본값 자동 채우기용). 없으면 fallback. */
   adAccountById?: Map<number, MotivAdAccount>
+  /** Motiv agency.id → MotivAgency (adaccount.agency_id 역참조용). 없으면 fallback. */
+  motivAgencyById?: Map<number, MotivAgency>
 }
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
@@ -32,7 +35,42 @@ export function MotivSettlementTable({
   agencies, advertisers, operators,
   assignments, onUpsertAssignment,
   adAccountById,
+  motivAgencyById,
 }: Props) {
+  // 내부 Agency 정규화 이름 → Agency.id  (Motiv 자동 매칭에 사용)
+  const internalAgencyByNormalized = useMemo(() => {
+    const m = new Map<string, Agency>()
+    for (const a of agencies) {
+      const k = normalizeAgencyName(a.name)
+      if (k) m.set(k, a)
+    }
+    return m
+  }, [agencies])
+
+  /**
+   * 캠페인 1건의 "Motiv 추천 대행사" 추적:
+   *   1) adAccountById 에서 adaccount 의 agency_id 확보
+   *   2) motivAgencyById 에서 Motiv 대행사 객체 (이름 포함) 조회
+   *   3) 정규화 이름으로 내부 agencies 매칭 → 내부 Agency.id 반환
+   */
+  function suggestedInternalAgencyId(c: MotivCampaign): { agencyId?: string; motivName?: string } {
+    const adAcc = adAccountById?.get(c.adaccount_id)
+    if (!adAcc) return {}
+    // 1) adaccount 가 motiv agency_id 를 직접 포함하는 경우
+    let motivAgencyId: number | undefined =
+      typeof adAcc.agency_id === 'number' ? adAcc.agency_id :
+      typeof adAcc.agency?.id === 'number' ? adAcc.agency.id : undefined
+    let motivName: string | undefined =
+      adAcc.agency_name ?? adAcc.agency?.name ?? undefined
+    // 2) motiv agency 객체가 있으면 그 이름 우선
+    if (motivAgencyId && motivAgencyById?.has(motivAgencyId)) {
+      motivName = motivAgencyById.get(motivAgencyId)!.name
+    }
+    if (!motivName) return {}
+    // 3) 내부 정규화 매칭
+    const internal = internalAgencyByNormalized.get(normalizeAgencyName(motivName))
+    return { agencyId: internal?.id, motivName }
+  }
   const byId = React.useMemo(() => {
     const m = new Map<number, MotivAssignment>()
     for (const a of assignments) m.set(a.motivCampaignId, a)
@@ -104,6 +142,51 @@ export function MotivSettlementTable({
     }
     clearSelection()
     setBulkAgencyId(''); setBulkAdvertiserId(''); setBulkOperatorId('')
+  }
+
+  /**
+   * 선택된(혹은 미선택 시 전체) 캠페인에 대해
+   * Motiv adaccount.agency_id → 내부 Agency.id 자동 매칭 후 일괄 적용.
+   * - 매칭 성공한 캠페인만 upsert
+   * - 매칭 실패는 콘솔로 경고 + 결과 토스트
+   */
+  function applyMotivAutoMatch() {
+    const targets = selected.size > 0
+      ? filteredCampaigns.filter(c => selected.has(c.id))
+      : filteredCampaigns
+    let matched = 0
+    let unmatched = 0
+    const unmatchedNames: string[] = []
+    for (const c of targets) {
+      const existing = byId.get(c.id)
+      if (existing?.agencyId) continue // 이미 지정된 행은 건드리지 않음
+      const { agencyId, motivName } = suggestedInternalAgencyId(c)
+      if (agencyId) {
+        onUpsertAssignment({
+          ...(existing ?? {}),
+          motivCampaignId: c.id,
+          agencyId,
+        })
+        matched++
+      } else if (motivName) {
+        unmatched++
+        if (unmatchedNames.length < 5) unmatchedNames.push(motivName)
+      }
+    }
+    if (matched + unmatched === 0) {
+      alert('자동 매칭할 캠페인이 없습니다. (Motiv 광고계정 정보가 비어있거나 이미 모두 지정됨)')
+      return
+    }
+    let msg = `자동 매칭: ${matched}건 적용`
+    if (unmatched > 0) {
+      msg += ` · ${unmatched}건은 내부 대행사 미발견`
+      if (unmatchedNames.length > 0) {
+        msg += `\n매칭 실패 예: ${unmatchedNames.slice(0, 5).join(', ')}${unmatched > 5 ? ' …' : ''}`
+        msg += `\n→ 관리 페이지에서 동일 이름의 대행사 추가 시 다음 매칭 가능.`
+      }
+    }
+    alert(msg)
+    if (matched > 0) clearSelection()
   }
 
   // 합계 (집행금액·수수료)
@@ -193,6 +276,14 @@ export function MotivSettlementTable({
             className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             선택 {selected.size}건에 적용
+          </button>
+          <button
+            onClick={applyMotivAutoMatch}
+            disabled={!motivAgencyById || motivAgencyById.size === 0}
+            title="Motiv 광고계정에 등록된 대행사명을 내부 대행사 목록과 자동 매칭하여 일괄 지정합니다 (이미 지정된 행은 건드리지 않음)"
+            className="rounded bg-purple-600 px-3 py-1 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            ✨ Motiv 자동 매칭
           </button>
           {selected.size > 0 && (
             <button
