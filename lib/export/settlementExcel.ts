@@ -55,6 +55,49 @@ function paymentBasisOf(agency: Agency | undefined): string {
   return agency.paymentBasis
 }
 
+/**
+ * 캠페인명 단순화 — Excel 출력 전용.
+ *
+ * 정리 규칙:
+ *   1) 마지막의 날짜 코드 제거: `_250411`, `-230509`, ` 250411` 등 (6~8자리 숫자)
+ *   2) 마지막의 괄호/대괄호 부가설명 제거: `(CTV광고사업본부)`, `[테스트]`
+ *   3) trim 후 41자 이상이면 38자 + `…` 으로 단축
+ * 플랫폼 UI 는 영향 없음 (build*Rows 는 원본 유지, 다운로드 함수에서만 적용).
+ */
+export function simplifyCampaignName(name: string | null | undefined): string {
+  if (!name) return ''
+  const original = String(name)
+  let s = original.trim()
+  // _YYMMDD / -YYYYMMDD 형태의 날짜 코드와 그 뒤를 통째로 제거 (단, 의미있는 본문은 보존)
+  s = s.replace(/[_\-\s]\d{6,8}\b.*$/, '')
+  // 끝부분의 (...) 또는 [...] 메타 제거
+  s = s.replace(/\s*[(\[][^()\[\]]*[)\]]\s*$/, '')
+  s = s.trim()
+  if (s.length === 0) return original
+  if (s.length > 40) s = s.slice(0, 38) + '…'
+  return s
+}
+
+/**
+ * 거래처(대행사) 단위로 정렬:
+ *  - 미지정(_agencyId 없음) 행은 마지막
+ *  - 거래처명 가나다순 → 같은 거래처 내 캠페인명 가나다순
+ */
+function sortByAgency<T extends { _agencyId?: string }>(
+  rows: T[],
+  agencyKey: (r: T) => string,
+  campaignKey: (r: T) => string,
+): T[] {
+  return [...rows].sort((a, b) => {
+    const aOrphan = !a._agencyId
+    const bOrphan = !b._agencyId
+    if (aOrphan !== bOrphan) return aOrphan ? 1 : -1
+    const c = agencyKey(a).localeCompare(agencyKey(b))
+    if (c !== 0) return c
+    return campaignKey(a).localeCompare(campaignKey(b))
+  })
+}
+
 // ─── 매출 (Sales) ─────────────────────────────────────────────────
 // 1 row = 1 캠페인. 사용자 요구 컬럼 전체 (비고/참고/업데이트/수금여부/실수금일 포함).
 
@@ -308,14 +351,26 @@ function rowsToSheet<T>(rows: T[], headers: (keyof T)[]): XLSX.WorkSheet {
 // ─── 매출/매입 통합 시트 다운로드 ────────────────────────────────
 
 export function downloadSalesExcel(rows: SalesRow[], month: string): void {
-  const ws = rowsToSheet(rows, SALES_HEADERS)
+  const sorted = sortByAgency(
+    rows,
+    r => r['거래처명 (사업자등록증 기준)'] ?? '',
+    r => r.캠페인명 ?? '',
+  )
+  const ready = sorted.map(r => ({ ...r, 캠페인명: simplifyCampaignName(r.캠페인명) }))
+  const ws = rowsToSheet(ready, SALES_HEADERS)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '매출')
   XLSX.writeFile(wb, `매출_${month}.xlsx`)
 }
 
 export function downloadPurchaseExcel(rows: PurchaseRow[], month: string): void {
-  const ws = rowsToSheet(rows, PURCHASE_HEADERS)
+  const sorted = sortByAgency(
+    rows,
+    r => r['거래처명 (세금계산서 기준)'] ?? '',
+    r => r.캠페인명 ?? '',
+  )
+  const ready = sorted.map(r => ({ ...r, 캠페인명: simplifyCampaignName(r.캠페인명) }))
+  const ws = rowsToSheet(ready, PURCHASE_HEADERS)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '매입')
   XLSX.writeFile(wb, `매입_${month}.xlsx`)

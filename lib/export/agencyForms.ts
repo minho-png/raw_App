@@ -5,7 +5,7 @@
 import * as XLSX from 'xlsx'
 import type { Agency } from '@/lib/campaignTypes'
 import type { SalesRow, PurchaseRow } from './settlementExcel'
-import { sumSales, sumPurchase } from './settlementExcel'
+import { sumSales, sumPurchase, simplifyCampaignName } from './settlementExcel'
 
 // ─── 공통 ─────────────────────────────────────────────────────────
 
@@ -78,14 +78,14 @@ export function downloadTaxInvoiceRequestForm(
   ]
   aoa.push(detailHeader)
 
-  // 디테일 행
+  // 디테일 행 (캠페인명 단순화)
   for (const r of rows) {
     aoa.push([
       r.해당월 || monthShort,
       r.담당자,
       r['세금계산서 작성일자'] || today,
       r['거래처명 (사업자등록증 기준)'] || agency.name,
-      r.캠페인명,
+      simplifyCampaignName(r.캠페인명),
       r.공급가액,
       r.세액,
       r.합계금액,
@@ -220,7 +220,7 @@ export function downloadPaymentRequestForm(
       r.구분,
       r.일자 || today,
       r['거래처명 (세금계산서 기준)'] || agency.name,
-      r.캠페인명,
+      simplifyCampaignName(r.캠페인명),
       r.공급가액,
       r.세액,
       r.합계금액,
