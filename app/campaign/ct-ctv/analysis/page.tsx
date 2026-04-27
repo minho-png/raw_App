@@ -5,6 +5,11 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from "recharts"
+import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
+import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
+import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
+import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
+import { useMasterData } from "@/lib/hooks/useMasterData"
 
 // ── 타입 ────────────────────────────────────────────────────
 type Category = 'total' | 'display' | 'video' | 'ctv'
@@ -368,6 +373,12 @@ export default function CtCtvAnalysisPage() {
   const today = new Date()
   const currentHour = today.getHours()
   const showVTR = category === 'video' || category === 'ctv'
+
+  // ─── CTV 정산 지정 (Motiv API) ─────────────────────────────────
+  const { agencies, advertisers, operators } = useMasterData()
+  const motivCtv = useMotivSettlementCampaignsByProduct('CTV', undefined, true)
+  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
+  const { byId: adAccountById } = useMotivAdAccounts()
 
   const campaigns = useMemo(() => mockCampaigns(currentHour), [currentHour])
   const filtered  = useMemo(() =>
@@ -805,6 +816,28 @@ export default function CtCtvAnalysisPage() {
               </tfoot>
             </table>
           </div>
+        </section>
+
+        {/* ─── CTV 정산 지정 ─────────────────────────────────── */}
+        <section className="space-y-2 mt-8">
+          <h2 className="text-base font-bold text-gray-900">CTV 정산 지정</h2>
+          <p className="text-xs text-gray-500">
+            여기서 지정한 대행사·광고주·운영자 정보가 계산서 발급 / 매출·매입 정산에 자동 반영됩니다.
+            기본값(보라색 API: 라벨)은 Motiv 광고계정 등록 정보 기준 — 비어 있으면 직접 선택하세요.
+          </p>
+          <MotivSettlementTable
+            title="CTV 캠페인 (TV)"
+            loading={motivCtv.loading}
+            error={motivCtv.error}
+            campaigns={motivCtv.data}
+            exchangeRate={motivCtv.exchangeRate}
+            agencies={agencies}
+            advertisers={advertisers}
+            operators={operators}
+            assignments={assignments}
+            onUpsertAssignment={upsertAssignment}
+            adAccountById={adAccountById}
+          />
         </section>
 
       </main>

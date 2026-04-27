@@ -7,7 +7,6 @@ import { applyMarkupToRows } from "@/lib/markupService"
 import { getMediaTotals, getCampaignTotals } from "@/lib/campaignTypes"
 import type { Campaign } from "@/lib/campaignTypes"
 import type { RawRow } from "@/lib/rawDataParser"
-import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import {
@@ -204,8 +203,8 @@ export default function CtPlusFinalPage() {
       <header className="border-b border-gray-200 bg-white px-6 py-4 print:hidden">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">정산 확인</h1>
-            <p className="text-xs text-gray-400 mt-0.5">월별 캠페인 정산 현황 · CSV 실적 자동 집계</p>
+            <h1 className="text-base font-semibold text-gray-900">계산서 발급</h1>
+            <p className="text-xs text-gray-400 mt-0.5">대행사별 세금계산서 발행 · 대금 지급 요청서 출력</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -298,19 +297,13 @@ export default function CtPlusFinalPage() {
           onDownloadPayment={handleDownloadPaymentForm}
         />
 
-        {/* CT · CTV 정산 리스트 (Motiv) — 대행사·광고주·운영자 지정 */}
-        <MotivSettlementTable
-          title="CT · CTV 캠페인 (Motiv) — 대행사 지정"
-          loading={motivFetch.loading}
-          error={motivFetch.error}
-          campaigns={motivFetch.data}
-          exchangeRate={motivFetch.exchangeRate}
-          agencies={agencies}
-          advertisers={advertisers}
-          operators={operators}
-          assignments={assignments}
-          onUpsertAssignment={upsertAssignment}
-        />
+        {/* CT/CTV 캠페인의 대행사 지정은 CT/CTV 페이지에서 관리합니다 */}
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
+          ℹ CT/CTV 캠페인의 대행사·광고주·운영자 지정은
+          {" "}<a className="underline font-medium text-blue-700" href="/campaign/ct/motiv-campaigns">CT 페이지</a> /
+          {" "}<a className="underline font-medium text-blue-700" href="/campaign/ct-ctv/analysis">CTV 페이지</a> 에서 관리하세요.
+          이 페이지는 지정된 정보를 그대로 불러와 계산서 발급용으로 표시합니다.
+        </div>
 
         {/* CT+ 정산 테이블 */}
         {loading ? (
@@ -541,7 +534,7 @@ function AgencySettlementGroups({
             <li className="px-4 py-2.5 bg-orange-50">
               <p className="text-xs text-orange-800">
                 <span className="font-semibold">미지정 {unassignedSales.length}건</span>
-                {" "}— 정산 확인의 CT/CTV 테이블에서 대행사 지정 후 양식 출력 가능
+                {" "}— CT 페이지/CTV 페이지에서 대행사 지정 후 양식 출력 가능
               </p>
             </li>
           )}
@@ -584,7 +577,7 @@ function AgencySettlementGroups({
             <li className="px-4 py-2.5 bg-orange-50">
               <p className="text-xs text-orange-800">
                 <span className="font-semibold">미지정 {unassignedPurchase.length}건</span>
-                {" "}— 정산 확인의 CT/CTV 테이블에서 대행사 지정 후 양식 출력 가능
+                {" "}— CT 페이지/CTV 페이지에서 대행사 지정 후 양식 출력 가능
               </p>
             </li>
           )}
