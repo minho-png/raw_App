@@ -136,3 +136,41 @@ export interface MotivAdGroupQuery {
   start_date?: string;
   end_date?: string;
 }
+
+// ─── Ad Account (광고 계정) ─────────────────────────────────────
+// 참조: https://desk-ct.motiv-i.com/docs/api 의 adaccounts 리소스 (가정)
+// MotivCampaign.adaccount_id 의 부모. 대행사·운영자 default 제공자 역할.
+// 필드명은 일반적인 DSP 패턴 + 한국 운영데스크 관행 기반 추정 (실제 응답 맞추며 정제).
+
+export interface MotivAdAccount {
+  id: number;
+  name?: string | null;
+  // 대행사 정보 (있는 경우 — 최상단 필드 또는 nested 형태 모두 대비)
+  agency_id?: number | null;
+  agency_name?: string | null;
+  agency?: { id?: number; name?: string | null; corporate_name?: string | null } | null;
+  // 운영자/매니저 (있는 경우)
+  manager_id?: number | null;
+  manager_name?: string | null;
+  manager?: { id?: number; name?: string | null; email?: string | null } | null;
+  // 광고주 (있는 경우)
+  advertiser_id?: number | null;
+  advertiser_name?: string | null;
+  advertiser?: { id?: number; name?: string | null } | null;
+  status?: string;
+  created_at?: string | null;
+}
+
+export interface MotivAdAccountListResponse {
+  data: MotivAdAccount[];
+  links?: { first: string | null; last: string | null; prev: string | null; next: string | null };
+  meta?: PaginationMeta;
+}
+
+export interface MotivAdAccountQuery {
+  q?: string;
+  status?: MotivStatus;
+  per_page?: number;
+  page?: number;
+  sort?: string;
+}

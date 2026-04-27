@@ -1,6 +1,6 @@
 "use client"
 import React from "react"
-import type { MotivCampaign } from "@/lib/motivApi/types"
+import type { MotivCampaign, MotivAdAccount } from "@/lib/motivApi/types"
 import type { Agency, Advertiser, Operator } from "@/lib/campaignTypes"
 import { motivTypeToProduct, MEDIA_PRODUCT_LABEL, type MotivAssignment } from "@/lib/motivApi/productMapping"
 
@@ -15,6 +15,8 @@ interface Props {
   operators: Operator[]
   assignments: MotivAssignment[]
   onUpsertAssignment: (a: MotivAssignment) => void
+  /** Motiv adaccount.id → adaccount 정보 (기본값 자동 채우기용). 없으면 fallback. */
+  adAccountById?: Map<number, MotivAdAccount>
 }
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
@@ -29,6 +31,7 @@ export function MotivSettlementTable({
   title, loading, error, campaigns, exchangeRate,
   agencies, advertisers, operators,
   assignments, onUpsertAssignment,
+  adAccountById,
 }: Props) {
   const byId = React.useMemo(() => {
     const m = new Map<number, MotivAssignment>()
@@ -81,16 +84,20 @@ export function MotivSettlementTable({
                 <th className="px-3 py-2 text-left text-gray-500 font-medium">대행사</th>
                 <th className="px-3 py-2 text-left text-gray-500 font-medium">광고주</th>
                 <th className="px-3 py-2 text-left text-gray-500 font-medium">운영자</th>
-                <th className="px-3 py-2 text-right text-gray-500 font-medium">집행금액</th>
-                <th className="px-3 py-2 text-right text-gray-500 font-medium">대행수수료</th>
-                <th className="px-3 py-2 text-right text-gray-500 font-medium">데이터비</th>
-                <th className="px-3 py-2 text-right text-gray-500 font-medium">매출</th>
+                <th className="px-3 py-2 text-right text-gray-500 font-medium">집행금액<br/><span className="text-[9px] font-normal text-gray-400">(cost)</span></th>
+                <th className="px-3 py-2 text-right text-gray-500 font-medium">수수료<br/><span className="text-[9px] font-normal text-gray-400">(agency_fee)</span></th>
+                <th className="px-3 py-2 text-right text-gray-500 font-medium">DMP 비용<br/><span className="text-[9px] font-normal text-gray-400">(data_fee)</span></th>
+                <th className="px-3 py-2 text-right text-gray-500 font-medium">매출<br/><span className="text-[9px] font-normal text-gray-400">(revenue)</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {campaigns.map(c => {
                 const a = byId.get(c.id)
                 const product = motivTypeToProduct(c.campaign_type)
+                const adAcc = adAccountById?.get(c.adaccount_id)
+                const apiAgencyName    = adAcc?.agency_name    ?? adAcc?.agency?.name    ?? null
+                const apiAdvName       = adAcc?.advertiser_name ?? adAcc?.advertiser?.name ?? null
+                const apiOperatorName  = adAcc?.manager_name   ?? adAcc?.manager?.name   ?? null
                 return (
                   <tr key={c.id} className="hover:bg-gray-50 align-middle">
                     <td className="px-3 py-2">
@@ -99,6 +106,7 @@ export function MotivSettlementTable({
                       </p>
                       <p className="text-[10px] text-gray-400">
                         {c.campaign_type} · {c.delivery_type} · {c.status === 'Y' ? '활성' : '종료'}
+                        {adAcc?.name && <> · 계정 <span className="text-gray-500">{adAcc.name}</span></>}
                       </p>
                     </td>
                     <td className="px-3 py-2">
@@ -119,6 +127,11 @@ export function MotivSettlementTable({
                         <option value="">미지정</option>
                         {agencies.map(ag => <option key={ag.id} value={ag.id}>{ag.name}</option>)}
                       </select>
+                      {!a?.agencyId && apiAgencyName && (
+                        <p className="mt-0.5 text-[9px] text-purple-600 truncate" title={`Motiv 기본값: ${apiAgencyName}`}>
+                          API: {apiAgencyName}
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <select
@@ -131,6 +144,11 @@ export function MotivSettlementTable({
                           .filter(ad => !a?.agencyId || ad.agencyId === a.agencyId)
                           .map(ad => <option key={ad.id} value={ad.id}>{ad.name}</option>)}
                       </select>
+                      {!a?.advertiserId && apiAdvName && (
+                        <p className="mt-0.5 text-[9px] text-purple-600 truncate" title={`Motiv 기본값: ${apiAdvName}`}>
+                          API: {apiAdvName}
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <select
@@ -141,6 +159,11 @@ export function MotivSettlementTable({
                         <option value="">미지정</option>
                         {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
                       </select>
+                      {!a?.operatorId && apiOperatorName && (
+                        <p className="mt-0.5 text-[9px] text-purple-600 truncate" title={`Motiv 기본값: ${apiOperatorName}`}>
+                          API: {apiOperatorName}
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(Math.round(n(c.stats?.cost)))}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(Math.round(n(c.stats?.agency_fee)))}</td>

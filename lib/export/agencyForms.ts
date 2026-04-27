@@ -68,12 +68,11 @@ export function downloadTaxInvoiceRequestForm(
   aoa.push(['', '건(합계)',       `${rows.length}건`,           '', '', '', '', ''])
   aoa.push([])
 
-  // 디테일 헤더
+  // 디테일 헤더 (제품 분류 컬럼은 매출/매입 시트에만 — 발행 요청서에서는 생략)
   const detailHeader = [
     '해당월', '담당자', '세금계산서 작성일자', '거래처명 (사업자등록증 기준)',
     '캠페인명', '공급가액', '세액', '합계금액',
     '수취이메일', '수수료 (VAT포함)', '수금일 기준', '수금 기한',
-    'CT 해당금액 (vat 제외)', 'IMC 해당금액 (vat 제외)', 'TV 해당금액 (vat 제외)',
     '비고',
   ]
   aoa.push(detailHeader)
@@ -93,9 +92,6 @@ export function downloadTaxInvoiceRequestForm(
       r['수수료 (VAT포함)'],
       r['수금일 기준'],
       r['수금 기한'],
-      r['CT 해당금액 (vat 제외)'],
-      r['IMC 해당금액 (vat 제외)'],
-      r['TV 해당금액 (vat 제외)'],
       r.비고,
     ])
   }
@@ -105,9 +101,6 @@ export function downloadTaxInvoiceRequestForm(
     '', '', '', '합계',
     '', totals.net, totals.vat, totals.total,
     '', totals.fee, '', '',
-    rows.reduce((s, r) => s + Number(r['CT 해당금액 (vat 제외)'] ?? 0), 0),
-    rows.reduce((s, r) => s + Number(r['IMC 해당금액 (vat 제외)'] ?? 0), 0),
-    rows.reduce((s, r) => s + Number(r['TV 해당금액 (vat 제외)'] ?? 0), 0),
     '',
   ])
   aoa.push([])
@@ -123,12 +116,12 @@ export function downloadTaxInvoiceRequestForm(
 
   // Merges (간소화: 제목, 내역만 병합)
   const merges: XLSX.Range[] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 15 } }, // title
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 15 } }, // 내역
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } }, // title
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 12 } }, // 내역
   ]
 
   const ws = aoaToSheetWithMerges(aoa, merges)
-  setColumnWidths(ws, [10, 10, 14, 22, 30, 14, 12, 14, 22, 14, 14, 12, 14, 14, 14, 14])
+  setColumnWidths(ws, [10, 10, 14, 22, 30, 14, 12, 14, 22, 14, 14, 12, 14])
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '세금계산서 발행 요청서')
@@ -205,11 +198,11 @@ export function downloadPaymentRequestForm(
   ])
   aoa.push([])
 
-  // 디테일 헤더
+  // 디테일 헤더 (IMC/TV/CT 컬럼은 매출/매입 시트에만)
   const detailHeader = [
     '년월', '담당자', '구분', '일자', '거래처명 (사업자등록증 기준)',
     '캠페인명', '공급가액', '세액', '합계금액',
-    'IMC', 'TV', 'CT', '송금일 기준', '송금기한',
+    '송금일 기준', '송금기한',
   ]
   aoa.push(detailHeader)
 
@@ -224,7 +217,6 @@ export function downloadPaymentRequestForm(
       r.공급가액,
       r.세액,
       r.합계금액,
-      r.IMC, r.TV, r.CT,
       r['송금일 기준'],
       r.송금기한,
     ])
@@ -234,9 +226,6 @@ export function downloadPaymentRequestForm(
   aoa.push([
     '', '', '', '', '합계',
     '', totals.net, totals.vat, totals.total,
-    rows.reduce((s, r) => s + Number(r.IMC ?? 0), 0),
-    rows.reduce((s, r) => s + Number(r.TV ?? 0), 0),
-    rows.reduce((s, r) => s + Number(r.CT ?? 0), 0),
     '', '',
   ])
   aoa.push([])
@@ -252,12 +241,12 @@ export function downloadPaymentRequestForm(
   aoa.push(['※결재라인, 금액 등 내용의 수정이 필요할 경우 부득이하게 반려 될 수도 있으며, 작성중 문의사항이 있으시면 언제든지 인사기획팀으로 연락 부탁드립니다.'])
 
   const merges: XLSX.Range[] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 13 } }, // title
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 13 } }, // 내역
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }, // title
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 10 } }, // 내역
   ]
 
   const ws = aoaToSheetWithMerges(aoa, merges)
-  setColumnWidths(ws, [10, 10, 14, 12, 26, 28, 14, 12, 14, 12, 12, 12, 14, 14])
+  setColumnWidths(ws, [10, 10, 14, 12, 26, 28, 14, 12, 14, 14, 14])
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '대금 지급 요청서')

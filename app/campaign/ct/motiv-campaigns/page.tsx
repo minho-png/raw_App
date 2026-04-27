@@ -6,6 +6,11 @@ import { FilterBar, type Filters } from './components/FilterBar';
 import { CampaignTable } from './components/CampaignTable';
 import { Pagination } from './components/Pagination';
 import { ZeroSpendAlertBanner } from '@/components/settlement/ZeroSpendAlertBanner';
+import { MotivSettlementTable } from '@/components/settlement/MotivSettlementTable';
+import { useMotivAssignments } from '@/lib/hooks/useMotivAssignments';
+import { useMotivSettlementCampaignsByProduct } from '@/lib/hooks/useMotivSettlementCampaigns';
+import { useMotivAdAccounts } from '@/lib/hooks/useMotivAdAccounts';
+import { useMasterData } from '@/lib/hooks/useMasterData';
 
 const INITIAL_FILTERS: Filters = {
   q: '',
@@ -24,6 +29,12 @@ export default function MotivCampaignsPage() {
   const [data, setData] = useState<MotivCampaignListResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ─── 정산 지정 (CT 전용) ───────────────────────────────────────
+  const { agencies, advertisers, operators } = useMasterData();
+  const motivCt = useMotivSettlementCampaignsByProduct('CT', undefined, true);
+  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments();
+  const { byId: adAccountById } = useMotivAdAccounts();
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -115,6 +126,28 @@ export default function MotivCampaignsPage() {
           }}
         />
       )}
+
+      {/* ─── CT 정산 지정 (대행사·광고주·운영자) ─────────────────────── */}
+      <section className="space-y-2">
+        <h2 className="text-lg font-bold text-gray-900">CT 정산 지정</h2>
+        <p className="text-xs text-gray-500">
+          여기서 지정한 대행사·광고주·운영자 정보가 계산서 발급 / 매출·매입 정산에 자동 반영됩니다.
+          기본값(보라색 API: 라벨)은 Motiv 광고계정 등록 정보 기준 — 비어 있으면 직접 선택하세요.
+        </p>
+        <MotivSettlementTable
+          title="CT 캠페인 (DISPLAY · VIDEO · PARTNERS)"
+          loading={motivCt.loading}
+          error={motivCt.error}
+          campaigns={motivCt.data}
+          exchangeRate={motivCt.exchangeRate}
+          agencies={agencies}
+          advertisers={advertisers}
+          operators={operators}
+          assignments={assignments}
+          onUpsertAssignment={upsertAssignment}
+          adAccountById={adAccountById}
+        />
+      </section>
     </div>
   );
 }

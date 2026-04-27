@@ -65,10 +65,11 @@ const SETTLEMENT_SECTIONS: MenuGroup[] = [
   {
     title: "정산/수익분석",
     items: [
-      { label: "정산 확인",       href: "/campaign/ct-plus/final" },
-      { label: "대행사별 수수료", href: "/settlement/agency-fee" },
-      { label: "DMP 수수료",      href: "/settlement/dmp-fee" },
-      { label: "매체 비용",       href: "/settlement/media-cost" },
+      { label: "계산서 발급",      href: "/campaign/ct-plus/final" },
+      { label: "매입/매출 확인",   href: "/settlement/sales-purchase" },
+      { label: "대행사별 수수료",  href: "/settlement/agency-fee" },
+      { label: "DMP 수수료",       href: "/settlement/dmp-fee" },
+      { label: "매체 비용",        href: "/settlement/media-cost" },
     ],
   },
 ]
