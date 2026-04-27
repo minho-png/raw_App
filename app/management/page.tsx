@@ -8,6 +8,7 @@ import { AdvertiserListTab } from "@/app/campaign/ct-plus/components/ct-plus/Adv
 import { AdvertiserModal } from "@/app/campaign/ct-plus/components/ct-plus/AdvertiserModal"
 import { OperatorListTab } from "@/app/campaign/ct-plus/components/ct-plus/OperatorListTab"
 import { OperatorModal } from "@/app/campaign/ct-plus/components/ct-plus/OperatorModal"
+import { mergeMockAgencies } from "@/lib/seed/mockAgencies"
 
 type TabName = "agency" | "advertiser" | "operator"
 
@@ -107,12 +108,24 @@ export default function ManagementPage() {
             />
           ) : (
             <div className="space-y-4">
-              <button
-                onClick={() => setEditAgency(null)}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-              >
-                새 대행사 추가
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEditAgency(null)}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                >
+                  새 대행사 추가
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!confirm("목업 대행사 8건을 추가/병합합니다. 계속하시겠습니까?")) return
+                    await saveAgencies(mergeMockAgencies(agencies))
+                  }}
+                  className="rounded-lg border border-purple-300 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors"
+                  title="기존 대행사는 유지, 동일 ID(mock-ag-*) 만 갱신"
+                >
+                  목업 대행사 시드 (8건)
+                </button>
+              </div>
               <div className="space-y-3">
                 {agencies.map(ag => (
                   <div key={ag.id} className="rounded-lg border border-gray-200 bg-white p-4 hover:border-gray-300">

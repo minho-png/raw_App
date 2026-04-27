@@ -10,7 +10,13 @@ import type { RawRow } from "@/lib/rawDataParser"
 import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
-import { buildSalesRows, buildPurchaseRows, downloadSalesExcel, downloadPurchaseExcel } from "@/lib/export/settlementExcel"
+import {
+  buildSalesRows, buildPurchaseRows,
+  downloadSalesExcel, downloadPurchaseExcel,
+  groupSalesByAgency, groupPurchaseByAgency,
+  sumSales, sumPurchase,
+} from "@/lib/export/settlementExcel"
+import { downloadTaxInvoiceRequestForm, downloadPaymentRequestForm } from "@/lib/export/agencyForms"
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
 function fmtRate(n: number) { return n.toFixed(1) + "%" }
@@ -152,27 +158,45 @@ export default function CtPlusFinalPage() {
   const collapseAll = () => setExpandedIds(new Set())
 
   // Excel 다운로드 핸들러
+  // 매출/매입 행을 한 번 계산 (다운로드·대행사별 그룹핑 양쪽에서 재사용)
+  const salesRows = useMemo(() => buildSalesRows({
+    month: activeMonth,
+    ctPlus: settlements,
+    motivCampaigns: motivFetch.data,
+    assignments,
+    agencies, advertisers, operators,
+  }), [activeMonth, settlements, motivFetch.data, assignments, agencies, advertisers, operators])
+
+  const purchaseRows = useMemo(() => buildPurchaseRows({
+    month: activeMonth,
+    ctPlus: settlements,
+    motivCampaigns: motivFetch.data,
+    assignments,
+    agencies, operators,
+  }), [activeMonth, settlements, motivFetch.data, assignments, agencies, operators])
+
+  const salesByAg     = useMemo(() => groupSalesByAgency(salesRows), [salesRows])
+  const purchaseByAg  = useMemo(() => groupPurchaseByAgency(purchaseRows), [purchaseRows])
+
   function handleDownloadSales() {
-    const rows = buildSalesRows({
-      month: activeMonth,
-      ctPlus: settlements,
-      motivCampaigns: motivFetch.data,
-      assignments,
-      agencies,
-      advertisers,
-      operators,
-    })
-    downloadSalesExcel(rows, activeMonth)
+    downloadSalesExcel(salesRows, activeMonth)
   }
   function handleDownloadPurchase() {
-    const rows = buildPurchaseRows({
-      month: activeMonth,
-      ctPlus: settlements,
-      motivCampaigns: motivFetch.data,
-      assignments,
-      operators,
-    })
-    downloadPurchaseExcel(rows, activeMonth)
+    downloadPurchaseExcel(purchaseRows, activeMonth)
+  }
+  function handleDownloadTaxInvoiceForm(agencyId: string) {
+    const ag = agencies.find(a => a.id === agencyId)
+    if (!ag) return
+    const rows = salesByAg.get(agencyId) ?? []
+    if (rows.length === 0) { alert("해당 거래처 매출 데이터가 없습니다."); return }
+    downloadTaxInvoiceRequestForm(ag, rows, activeMonth)
+  }
+  function handleDownloadPaymentForm(agencyId: string) {
+    const ag = agencies.find(a => a.id === agencyId)
+    if (!ag) return
+    const rows = purchaseByAg.get(agencyId) ?? []
+    if (rows.length === 0) { alert("해당 거래처 매입 데이터가 없습니다."); return }
+    downloadPaymentRequestForm(ag, rows, activeMonth)
   }
 
   return (
@@ -264,6 +288,15 @@ export default function CtPlusFinalPage() {
             ))}
           </div>
         )}
+
+        {/* 거래처(대행사)별 정산 그룹 — 세금계산서 / 대금지급 분리 */}
+        <AgencySettlementGroups
+          agencies={agencies}
+          salesByAg={salesByAg}
+          purchaseByAg={purchaseByAg}
+          onDownloadTaxInvoice={handleDownloadTaxInvoiceForm}
+          onDownloadPayment={handleDownloadPaymentForm}
+        />
 
         {/* CT · CTV 정산 리스트 (Motiv) — 대행사·광고주·운영자 지정 */}
         <MotivSettlementTable
@@ -438,6 +471,125 @@ export default function CtPlusFinalPage() {
           </div>
         )}
       </main>
+    </div>
+  )
+}
+
+// ─── 거래처(대행사)별 정산 그룹 컴포넌트 ───────────────────────────────
+// 세금계산서 발행 요청서 (매출) / 대금 지급 요청서 (매입) 두 섹션으로 분리.
+// 각 거래처 행에서 해당 양식 Excel 다운로드.
+
+import type { Agency } from "@/lib/campaignTypes"
+import type { SalesRow, PurchaseRow } from "@/lib/export/settlementExcel"
+
+function AgencySettlementGroups({
+  agencies, salesByAg, purchaseByAg,
+  onDownloadTaxInvoice, onDownloadPayment,
+}: {
+  agencies: Agency[]
+  salesByAg: Map<string, SalesRow[]>
+  purchaseByAg: Map<string, PurchaseRow[]>
+  onDownloadTaxInvoice: (agencyId: string) => void
+  onDownloadPayment: (agencyId: string) => void
+}) {
+  const agById = new Map(agencies.map(a => [a.id, a]))
+  // 매출/매입 모두 등장한 agencyId 합집합
+  const ids = new Set<string>([...salesByAg.keys(), ...purchaseByAg.keys()])
+  ids.delete('__unassigned__')
+  const sortedIds = [...ids].sort((a, b) => {
+    const an = agById.get(a)?.name ?? ''
+    const bn = agById.get(b)?.name ?? ''
+    return an.localeCompare(bn)
+  })
+  const unassignedSales    = salesByAg.get('__unassigned__')    ?? []
+  const unassignedPurchase = purchaseByAg.get('__unassigned__') ?? []
+
+  if (sortedIds.length === 0 && unassignedSales.length === 0 && unassignedPurchase.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* 매출 (세금계산서 발행 요청서) */}
+      <section className="rounded-xl border border-emerald-200 bg-white">
+        <header className="border-b border-emerald-100 px-4 py-3 bg-emerald-50">
+          <h3 className="text-sm font-semibold text-emerald-900">세금계산서 발행 요청서 (매출)</h3>
+          <p className="text-[11px] text-emerald-700 mt-0.5">거래처별 청구 → 우리 발행</p>
+        </header>
+        <ul className="divide-y divide-gray-100">
+          {sortedIds.map(id => {
+            const ag = agById.get(id)
+            const rows = salesByAg.get(id) ?? []
+            if (rows.length === 0) return null
+            const total = rows.reduce((s, r) => s + Number(r.합계금액 ?? 0), 0)
+            return (
+              <li key={id} className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">{ag?.name ?? id}</p>
+                  <p className="text-[11px] text-gray-500">{rows.length}건 · 합계 ₩{total.toLocaleString()}</p>
+                </div>
+                <button
+                  onClick={() => onDownloadTaxInvoice(id)}
+                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                >
+                  요청서 Excel
+                </button>
+              </li>
+            )
+          })}
+          {unassignedSales.length > 0 && (
+            <li className="px-4 py-2.5 bg-orange-50">
+              <p className="text-xs text-orange-800">
+                <span className="font-semibold">미지정 {unassignedSales.length}건</span>
+                {" "}— 정산 확인의 CT/CTV 테이블에서 대행사 지정 후 양식 출력 가능
+              </p>
+            </li>
+          )}
+        </ul>
+      </section>
+
+      {/* 매입 (대금 지급 요청서) */}
+      <section className="rounded-xl border border-blue-200 bg-white">
+        <header className="border-b border-blue-100 px-4 py-3 bg-blue-50">
+          <h3 className="text-sm font-semibold text-blue-900">대금 지급 요청서 (매입)</h3>
+          <p className="text-[11px] text-blue-700 mt-0.5">거래처별 수수료/매체비 지급</p>
+        </header>
+        <ul className="divide-y divide-gray-100">
+          {sortedIds.map(id => {
+            const ag = agById.get(id)
+            const rows = purchaseByAg.get(id) ?? []
+            if (rows.length === 0) return null
+            const total = rows.reduce((s, r) => s + Number(r.합계금액 ?? 0), 0)
+            return (
+              <li key={id} className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">{ag?.name ?? id}</p>
+                  <p className="text-[11px] text-gray-500">
+                    {rows.length}건 · 합계 ₩{total.toLocaleString()}
+                    {ag?.bankName && (
+                      <> · {ag.bankName} {ag.bankAccountNumber}</>
+                    )}
+                  </p>
+                </div>
+                <button
+                  onClick={() => onDownloadPayment(id)}
+                  className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                >
+                  요청서 Excel
+                </button>
+              </li>
+            )
+          })}
+          {unassignedPurchase.length > 0 && (
+            <li className="px-4 py-2.5 bg-orange-50">
+              <p className="text-xs text-orange-800">
+                <span className="font-semibold">미지정 {unassignedPurchase.length}건</span>
+                {" "}— 정산 확인의 CT/CTV 테이블에서 대행사 지정 후 양식 출력 가능
+              </p>
+            </li>
+          )}
+        </ul>
+      </section>
     </div>
   )
 }

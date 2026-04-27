@@ -89,6 +89,12 @@ export interface Agency {
   businessItem?: string          // 종목
   // ── 정산 정책 ──────────────────────────────────────────
   defaultMarkupRate?: number     // 기본 대행수수료율 (%)
+  paymentDueDays?: number        // 수금/송금 기한 (일) — 예: 30 = 익월 말일
+  paymentBasis?: string          // 수금일/송금일 기준 — 예: "선입금" / "월말 마감 익월 30일"
+  // ── 입금 계좌 (대금 지급 요청서용) ────────────────────────
+  bankName?: string              // 은행명 (예: 기업은행)
+  bankAccountNumber?: string     // 계좌번호
+  bankAccountHolder?: string     // 예금주
   // ── 첨부 파일 ──────────────────────────────────────────
   registrationPdfBase64?: string // 사업자등록증 PDF (base64)
   registrationPdfName?: string   // 원본 파일명
