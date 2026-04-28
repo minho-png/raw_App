@@ -4,9 +4,25 @@ import { useState, useMemo } from "react"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
-import { getMediaTotals, getCampaignTotals } from "@/lib/campaignTypes"
-import type { Campaign } from "@/lib/campaignTypes"
+import {
+  getMediaTotals, getCampaignTotals,
+  MEDIA_MARKUP_RATE, DMP_FEE_RATE,
+} from "@/lib/campaignTypes"
+import type { Campaign, MediaBudget } from "@/lib/campaignTypes"
 import type { RawRow } from "@/lib/rawDataParser"
+
+// CT+ 한 매체 예산의 마크업 합계 (VAT 제외) — 수수료(VAT포함) = markup × 1.1
+function calcMediaMarkup(mb: MediaBudget): number {
+  // unified totalFeeRate 가 설정된 경우 우선
+  if (mb.totalBudget !== undefined && mb.totalFeeRate !== undefined) {
+    return mb.totalBudget * (mb.totalFeeRate / 100)
+  }
+  // 분리 fallback: dmp 부분 (mediaMarkup + DMP_FEE + agencyFee), nonDmp 부분 (mediaMarkup + agencyFee)
+  const mm = MEDIA_MARKUP_RATE[mb.media] ?? 0
+  const dmpRate = mm + DMP_FEE_RATE + (mb.dmp?.agencyFeeRate ?? 0)
+  const nonDmpRate = mm + (mb.nonDmp?.agencyFeeRate ?? 0)
+  return (mb.dmp?.budget ?? 0) * (dmpRate / 100) + (mb.nonDmp?.budget ?? 0) * (nonDmpRate / 100)
+}
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import {
@@ -36,10 +52,9 @@ interface CampSettlement {
     budget: number              // 부킹 금액 (매출 기준)
     feeRate: number
     settingCost: number
-    netAmount: number           // CSV 순집행 (참고)
+    netAmount: number           // RAW CSV 순집행 (매입 기준)
     executionAmount: number
-    actualSettingCost: number   // 실 세팅금액 (매입 기준, 네이버/카카오는 VAT 포함값)
-    isVatIncluded: boolean
+    markup: number              // VAT 제외 마크업 (수수료 산정)
     spendRate: number
     rowCount: number
     isNaver: boolean
@@ -47,15 +62,13 @@ interface CampSettlement {
   totals: {
     budget: number
     settingCost: number
-    netAmount: number
+    netAmount: number           // 매입 합계
     executionAmount: number
-    actualSettingCost: number
+    markup: number              // 수수료(VAT제외) 합계
     spendRate: number
   }
   hasData: boolean
 }
-
-const CT_PLUS_VAT_INCLUDED_MEDIA = ['네이버 GFA', '카카오모먼트']
 
 function buildSettlement(
   campaign: Campaign,
@@ -77,8 +90,7 @@ function buildSettlement(
       settingCost: t.totalSettingCost,
       netAmount: Math.round(net),
       executionAmount: Math.round(exec),
-      actualSettingCost: Math.round(mb.actualSettingCost ?? 0),
-      isVatIncluded: CT_PLUS_VAT_INCLUDED_MEDIA.includes(mb.media),
+      markup: Math.round(calcMediaMarkup(mb)),
       spendRate: rate,
       rowCount: rows.length,
       isNaver: mb.media === "naver",
@@ -87,18 +99,18 @@ function buildSettlement(
   const tot = getCampaignTotals(campaign)
   const totalNet  = mediaRows.reduce((s, r) => s + r.netAmount, 0)
   const totalExec = mediaRows.reduce((s, r) => s + r.executionAmount, 0)
-  const totalActualSetting = mediaRows.reduce((s, r) => s + r.actualSettingCost, 0)
+  const totalMarkup = mediaRows.reduce((s, r) => s + r.markup, 0)
   const totalRate = tot.totalSettingCost > 0
     ? Math.round((totalNet / tot.totalSettingCost) * 1000) / 10 : 0
   return {
     campaign, advName, agName, mediaRows,
     totals: {
-      budget:            tot.totalBudget,
-      settingCost:       tot.totalSettingCost,
-      netAmount:         totalNet,
-      executionAmount:   totalExec,
-      actualSettingCost: totalActualSetting,
-      spendRate:         totalRate,
+      budget:          tot.totalBudget,
+      settingCost:     tot.totalSettingCost,
+      netAmount:       totalNet,
+      executionAmount: totalExec,
+      markup:          totalMarkup,
+      spendRate:       totalRate,
     },
     hasData: campRows.length > 0,
   }
