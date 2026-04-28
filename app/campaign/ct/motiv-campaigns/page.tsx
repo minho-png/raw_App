@@ -10,6 +10,7 @@ import { MotivSettlementTable } from '@/components/settlement/MotivSettlementTab
 import { useMotivAssignments } from '@/lib/hooks/useMotivAssignments';
 import { useMotivSettlementCampaignsByProduct } from '@/lib/hooks/useMotivSettlementCampaigns';
 import { useMotivAdAccounts } from '@/lib/hooks/useMotivAdAccounts';
+import { useMotivAgencies } from '@/lib/hooks/useMotivAgencies';
 import { useMasterData } from '@/lib/hooks/useMasterData';
 
 const INITIAL_FILTERS: Filters = {
@@ -35,6 +36,7 @@ export default function MotivCampaignsPage() {
   const motivCt = useMotivSettlementCampaignsByProduct('CT', undefined, true);
   const { data: assignments, upsert: upsertAssignment } = useMotivAssignments();
   const { byId: adAccountById } = useMotivAdAccounts();
+  const { byId: motivAgencyById } = useMotivAgencies();
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -146,6 +148,7 @@ export default function MotivCampaignsPage() {
           assignments={assignments}
           onUpsertAssignment={upsertAssignment}
           adAccountById={adAccountById}
+          motivAgencyById={motivAgencyById}
         />
       </section>
     </div>

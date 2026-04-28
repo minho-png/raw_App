@@ -33,18 +33,29 @@ interface CampSettlement {
   agName: string
   mediaRows: {
     media: string
-    budget: number
+    budget: number              // 부킹 금액 (매출 기준)
     feeRate: number
     settingCost: number
-    netAmount: number
+    netAmount: number           // CSV 순집행 (참고)
     executionAmount: number
+    actualSettingCost: number   // 실 세팅금액 (매입 기준, 네이버/카카오는 VAT 포함값)
+    isVatIncluded: boolean
     spendRate: number
     rowCount: number
     isNaver: boolean
   }[]
-  totals: { budget: number; settingCost: number; netAmount: number; executionAmount: number; spendRate: number }
+  totals: {
+    budget: number
+    settingCost: number
+    netAmount: number
+    executionAmount: number
+    actualSettingCost: number
+    spendRate: number
+  }
   hasData: boolean
 }
+
+const CT_PLUS_VAT_INCLUDED_MEDIA = ['네이버 GFA', '카카오모먼트']
 
 function buildSettlement(
   campaign: Campaign,
@@ -66,6 +77,8 @@ function buildSettlement(
       settingCost: t.totalSettingCost,
       netAmount: Math.round(net),
       executionAmount: Math.round(exec),
+      actualSettingCost: Math.round(mb.actualSettingCost ?? 0),
+      isVatIncluded: CT_PLUS_VAT_INCLUDED_MEDIA.includes(mb.media),
       spendRate: rate,
       rowCount: rows.length,
       isNaver: mb.media === "naver",
@@ -74,16 +87,18 @@ function buildSettlement(
   const tot = getCampaignTotals(campaign)
   const totalNet  = mediaRows.reduce((s, r) => s + r.netAmount, 0)
   const totalExec = mediaRows.reduce((s, r) => s + r.executionAmount, 0)
+  const totalActualSetting = mediaRows.reduce((s, r) => s + r.actualSettingCost, 0)
   const totalRate = tot.totalSettingCost > 0
     ? Math.round((totalNet / tot.totalSettingCost) * 1000) / 10 : 0
   return {
     campaign, advName, agName, mediaRows,
     totals: {
-      budget:          tot.totalBudget,
-      settingCost:     tot.totalSettingCost,
-      netAmount:       totalNet,
-      executionAmount: totalExec,
-      spendRate:       totalRate,
+      budget:            tot.totalBudget,
+      settingCost:       tot.totalSettingCost,
+      netAmount:         totalNet,
+      executionAmount:   totalExec,
+      actualSettingCost: totalActualSetting,
+      spendRate:         totalRate,
     },
     hasData: campRows.length > 0,
   }

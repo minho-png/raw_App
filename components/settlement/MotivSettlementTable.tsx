@@ -1,8 +1,9 @@
 "use client"
-import React from "react"
-import type { MotivCampaign, MotivAdAccount } from "@/lib/motivApi/types"
+import React, { useMemo, useState } from "react"
+import type { MotivCampaign, MotivAdAccount, MotivAgency } from "@/lib/motivApi/types"
 import type { Agency, Advertiser, Operator } from "@/lib/campaignTypes"
 import { motivTypeToProduct, MEDIA_PRODUCT_LABEL, type MotivAssignment } from "@/lib/motivApi/productMapping"
+import { normalizeAgencyName } from "@/lib/hooks/useMotivAgencies"
 
 interface Props {
   title: string
@@ -17,6 +18,8 @@ interface Props {
   onUpsertAssignment: (a: MotivAssignment) => void
   /** Motiv adaccount.id → adaccount 정보 (기본값 자동 채우기용). 없으면 fallback. */
   adAccountById?: Map<number, MotivAdAccount>
+  /** Motiv agency.id → MotivAgency (adaccount.agency_id 역참조용). 없으면 fallback. */
+  motivAgencyById?: Map<number, MotivAgency>
 }
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
@@ -32,35 +35,265 @@ export function MotivSettlementTable({
   agencies, advertisers, operators,
   assignments, onUpsertAssignment,
   adAccountById,
+  motivAgencyById,
 }: Props) {
+  // 내부 Agency 정규화 이름 → Agency.id  (Motiv 자동 매칭에 사용)
+  const internalAgencyByNormalized = useMemo(() => {
+    const m = new Map<string, Agency>()
+    for (const a of agencies) {
+      const k = normalizeAgencyName(a.name)
+      if (k) m.set(k, a)
+    }
+    return m
+  }, [agencies])
+
+  /**
+   * 캠페인 1건의 "Motiv 추천 대행사" 추적:
+   *   1) adAccountById 에서 adaccount 의 agency_id 확보
+   *   2) motivAgencyById 에서 Motiv 대행사 객체 (이름 포함) 조회
+   *   3) 정규화 이름으로 내부 agencies 매칭 → 내부 Agency.id 반환
+   */
+  function suggestedInternalAgencyId(c: MotivCampaign): { agencyId?: string; motivName?: string } {
+    const adAcc = adAccountById?.get(c.adaccount_id)
+    if (!adAcc) return {}
+    // 1) adaccount 가 motiv agency_id 를 직접 포함하는 경우
+    let motivAgencyId: number | undefined =
+      typeof adAcc.agency_id === 'number' ? adAcc.agency_id :
+      typeof adAcc.agency?.id === 'number' ? adAcc.agency.id : undefined
+    let motivName: string | undefined =
+      adAcc.agency_name ?? adAcc.agency?.name ?? undefined
+    // 2) motiv agency 객체가 있으면 그 이름 우선
+    if (motivAgencyId && motivAgencyById?.has(motivAgencyId)) {
+      motivName = motivAgencyById.get(motivAgencyId)!.name
+    }
+    if (!motivName) return {}
+    // 3) 내부 정규화 매칭
+    const internal = internalAgencyByNormalized.get(normalizeAgencyName(motivName))
+    return { agencyId: internal?.id, motivName }
+  }
   const byId = React.useMemo(() => {
     const m = new Map<number, MotivAssignment>()
     for (const a of assignments) m.set(a.motivCampaignId, a)
     return m
   }, [assignments])
 
+  // ─── 필터 + 일괄 지정 상태 ─────────────────────────────────────
+  const [search, setSearch] = useState('')
+  const [unassignedOnly, setUnassignedOnly] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkAgencyId, setBulkAgencyId] = useState('')
+  const [bulkAdvertiserId, setBulkAdvertiserId] = useState('')
+  const [bulkOperatorId, setBulkOperatorId] = useState('')
+
+  const filteredCampaigns = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return campaigns.filter(c => {
+      if (unassignedOnly) {
+        const a = byId.get(c.id)
+        if (a?.agencyId) return false
+      }
+      if (q && !(c.title ?? '').toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [campaigns, search, unassignedOnly, byId])
+
+  const unassignedCount = useMemo(
+    () => campaigns.filter(c => !byId.get(c.id)?.agencyId).length,
+    [campaigns, byId],
+  )
+
+  function toggleOne(id: number) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  function toggleAllVisible() {
+    setSelected(prev => {
+      const allVisibleSelected = filteredCampaigns.every(c => prev.has(c.id))
+      if (allVisibleSelected) {
+        const next = new Set(prev)
+        for (const c of filteredCampaigns) next.delete(c.id)
+        return next
+      }
+      const next = new Set(prev)
+      for (const c of filteredCampaigns) next.add(c.id)
+      return next
+    })
+  }
+  function clearSelection() { setSelected(new Set()) }
+
+  function applyBulk() {
+    if (selected.size === 0) return
+    if (!bulkAgencyId && !bulkAdvertiserId && !bulkOperatorId) {
+      alert('적용할 대행사 / 광고주 / 운영자 중 하나는 선택해야 합니다.')
+      return
+    }
+    for (const id of selected) {
+      const existing = byId.get(id)
+      onUpsertAssignment({
+        ...(existing ?? {}),
+        motivCampaignId: id,
+        agencyId:     bulkAgencyId     || existing?.agencyId,
+        advertiserId: bulkAdvertiserId || existing?.advertiserId,
+        operatorId:   bulkOperatorId   || existing?.operatorId,
+      })
+    }
+    clearSelection()
+    setBulkAgencyId(''); setBulkAdvertiserId(''); setBulkOperatorId('')
+  }
+
+  /**
+   * 선택된(혹은 미선택 시 전체) 캠페인에 대해
+   * Motiv adaccount.agency_id → 내부 Agency.id 자동 매칭 후 일괄 적용.
+   * - 매칭 성공한 캠페인만 upsert
+   * - 매칭 실패는 콘솔로 경고 + 결과 토스트
+   */
+  function applyMotivAutoMatch() {
+    const targets = selected.size > 0
+      ? filteredCampaigns.filter(c => selected.has(c.id))
+      : filteredCampaigns
+    let matched = 0
+    let unmatched = 0
+    const unmatchedNames: string[] = []
+    for (const c of targets) {
+      const existing = byId.get(c.id)
+      if (existing?.agencyId) continue // 이미 지정된 행은 건드리지 않음
+      const { agencyId, motivName } = suggestedInternalAgencyId(c)
+      if (agencyId) {
+        onUpsertAssignment({
+          ...(existing ?? {}),
+          motivCampaignId: c.id,
+          agencyId,
+        })
+        matched++
+      } else if (motivName) {
+        unmatched++
+        if (unmatchedNames.length < 5) unmatchedNames.push(motivName)
+      }
+    }
+    if (matched + unmatched === 0) {
+      alert('자동 매칭할 캠페인이 없습니다. (Motiv 광고계정 정보가 비어있거나 이미 모두 지정됨)')
+      return
+    }
+    let msg = `자동 매칭: ${matched}건 적용`
+    if (unmatched > 0) {
+      msg += ` · ${unmatched}건은 내부 대행사 미발견`
+      if (unmatchedNames.length > 0) {
+        msg += `\n매칭 실패 예: ${unmatchedNames.slice(0, 5).join(', ')}${unmatched > 5 ? ' …' : ''}`
+        msg += `\n→ 관리 페이지에서 동일 이름의 대행사 추가 시 다음 매칭 가능.`
+      }
+    }
+    alert(msg)
+    if (matched > 0) clearSelection()
+  }
+
   // 합계 (집행금액·수수료)
   const totals = React.useMemo(() => {
     let spend = 0, agencyFee = 0, dataFee = 0, revenue = 0
-    for (const c of campaigns) {
+    for (const c of filteredCampaigns) {
       spend     += n(c.stats?.cost)
       agencyFee += n(c.stats?.agency_fee)
       dataFee   += n(c.stats?.data_fee)
       revenue   += n(c.stats?.revenue)
     }
     return { spend, agencyFee, dataFee, revenue }
-  }, [campaigns])
+  }, [filteredCampaigns])
 
   return (
     <section className="rounded-lg border border-gray-200 bg-white">
-      <header className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-          {exchangeRate > 0 && (
-            <span className="text-[10px] text-gray-400">환율 {exchangeRate.toLocaleString()}</span>
+      <header className="border-b border-gray-100 px-4 py-2.5 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+            {exchangeRate > 0 && (
+              <span className="text-[10px] text-gray-400">환율 {exchangeRate.toLocaleString()}</span>
+            )}
+          </div>
+          <div className="text-xs text-gray-500">
+            전체 <strong className="text-gray-800">{campaigns.length}</strong>건
+            {unassignedCount > 0 && (
+              <> · 미지정 <strong className="text-orange-600">{unassignedCount}</strong>건</>
+            )}
+            {filteredCampaigns.length !== campaigns.length && (
+              <> · <span className="text-blue-600">필터 결과 {filteredCampaigns.length}건</span></>
+            )}
+          </div>
+        </div>
+
+        {/* 필터 줄 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="🔍 캠페인명 검색"
+            className="min-w-[200px] rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+          <label className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={unassignedOnly}
+              onChange={e => setUnassignedOnly(e.target.checked)}
+              className="rounded"
+            />
+            미지정만 보기
+          </label>
+        </div>
+
+        {/* 일괄 적용 줄 */}
+        <div className={`flex items-center gap-2 flex-wrap rounded-lg border px-2 py-1.5 ${
+          selected.size > 0 ? 'border-blue-300 bg-blue-50' : 'border-dashed border-gray-200 bg-gray-50/40'
+        }`}>
+          <span className="text-xs font-medium text-gray-700">
+            선택 <strong className={selected.size > 0 ? 'text-blue-700' : 'text-gray-400'}>{selected.size}</strong>건
+          </span>
+          <span className="text-gray-300">·</span>
+          <span className="text-[11px] text-gray-500">대행사:</span>
+          <select value={bulkAgencyId} onChange={e => setBulkAgencyId(e.target.value)}
+            className="rounded border border-gray-200 px-2 py-1 text-xs">
+            <option value="">— 변경 안 함 —</option>
+            {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <span className="text-[11px] text-gray-500">광고주:</span>
+          <select value={bulkAdvertiserId} onChange={e => setBulkAdvertiserId(e.target.value)}
+            className="rounded border border-gray-200 px-2 py-1 text-xs">
+            <option value="">— 변경 안 함 —</option>
+            {advertisers
+              .filter(ad => !bulkAgencyId || ad.agencyId === bulkAgencyId)
+              .map(ad => <option key={ad.id} value={ad.id}>{ad.name}</option>)}
+          </select>
+          <span className="text-[11px] text-gray-500">운영자:</span>
+          <select value={bulkOperatorId} onChange={e => setBulkOperatorId(e.target.value)}
+            className="rounded border border-gray-200 px-2 py-1 text-xs">
+            <option value="">— 변경 안 함 —</option>
+            {operators.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          <button
+            onClick={applyBulk}
+            disabled={selected.size === 0 || (!bulkAgencyId && !bulkAdvertiserId && !bulkOperatorId)}
+            className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            선택 {selected.size}건에 적용
+          </button>
+          <button
+            onClick={applyMotivAutoMatch}
+            disabled={!motivAgencyById || motivAgencyById.size === 0}
+            title="Motiv 광고계정에 등록된 대행사명을 내부 대행사 목록과 자동 매칭하여 일괄 지정합니다 (이미 지정된 행은 건드리지 않음)"
+            className="rounded bg-purple-600 px-3 py-1 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            ✨ Motiv 자동 매칭
+          </button>
+          {selected.size > 0 && (
+            <button
+              onClick={clearSelection}
+              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+            >
+              선택 해제
+            </button>
           )}
         </div>
-        <span className="text-xs text-gray-500">{campaigns.length}건</span>
       </header>
 
       {loading && <p className="px-4 py-6 text-center text-xs text-gray-400">불러오는 중...</p>}
@@ -74,11 +307,29 @@ export function MotivSettlementTable({
         <p className="px-4 py-6 text-center text-xs text-gray-400">해당 월에 집행된 캠페인이 없습니다.</p>
       )}
 
-      {!loading && !error && campaigns.length > 0 && (
+      {!loading && !error && campaigns.length > 0 && filteredCampaigns.length === 0 && (
+        <p className="px-4 py-6 text-center text-xs text-gray-400">필터 조건에 맞는 캠페인이 없습니다.</p>
+      )}
+
+      {!loading && !error && filteredCampaigns.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-2 py-2 w-8">
+                  <input
+                    type="checkbox"
+                    checked={filteredCampaigns.length > 0 && filteredCampaigns.every(c => selected.has(c.id))}
+                    ref={el => {
+                      if (!el) return
+                      const some = filteredCampaigns.some(c => selected.has(c.id))
+                      const all  = filteredCampaigns.every(c => selected.has(c.id))
+                      el.indeterminate = some && !all
+                    }}
+                    onChange={toggleAllVisible}
+                    className="rounded"
+                  />
+                </th>
                 <th className="px-3 py-2 text-left text-gray-500 font-medium">캠페인</th>
                 <th className="px-3 py-2 text-left text-gray-500 font-medium">분류</th>
                 <th className="px-3 py-2 text-left text-gray-500 font-medium">대행사</th>
@@ -91,15 +342,24 @@ export function MotivSettlementTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {campaigns.map(c => {
+              {filteredCampaigns.map(c => {
                 const a = byId.get(c.id)
                 const product = motivTypeToProduct(c.campaign_type)
                 const adAcc = adAccountById?.get(c.adaccount_id)
                 const apiAgencyName    = adAcc?.agency_name    ?? adAcc?.agency?.name    ?? null
                 const apiAdvName       = adAcc?.advertiser_name ?? adAcc?.advertiser?.name ?? null
                 const apiOperatorName  = adAcc?.manager_name   ?? adAcc?.manager?.name   ?? null
+                const isSelected = selected.has(c.id)
                 return (
-                  <tr key={c.id} className="hover:bg-gray-50 align-middle">
+                  <tr key={c.id} className={`align-middle ${isSelected ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`}>
+                    <td className="px-2 py-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleOne(c.id)}
+                        className="rounded"
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <p className="font-medium text-gray-800 truncate max-w-[220px]" title={c.title ?? ''}>
                         {c.title ?? `#${c.id}`}
@@ -175,7 +435,7 @@ export function MotivSettlementTable({
             </tbody>
             <tfoot className="bg-gray-50">
               <tr>
-                <td className="px-3 py-2 font-semibold text-gray-700" colSpan={5}>합계</td>
+                <td className="px-3 py-2 font-semibold text-gray-700" colSpan={6}>합계</td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900">{fmt(Math.round(totals.spend))}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900">{fmt(Math.round(totals.agencyFee))}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900">{fmt(Math.round(totals.dataFee))}</td>
