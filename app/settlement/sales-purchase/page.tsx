@@ -24,7 +24,10 @@ function toMonthStr(d: Date) {
 }
 
 // ── CT+ settlement 가공 ───────────────────────────────────────
-// 매출 = 부킹 금액 (totalBudget), 매입 = 실 소진액 (actualNetAmount)
+// 매출 = 부킹 금액 (totalBudget)
+// 매입 = 실 세팅금액 (actualSettingCost) — 네이버/카카오는 VAT 포함값, 그 외는 VAT 별도
+const CT_PLUS_VAT_INCLUDED_MEDIA = ['네이버 GFA', '카카오모먼트']
+
 function buildCtPlusSettlement(
   campaign: Campaign,
   computedRows: RawRow[],
@@ -42,22 +45,19 @@ function buildCtPlusSettlement(
       netAmount: net || t.totalSettingCost,
       executionAmount: exec || t.totalSettingCost,
       budget: Math.round(t.totalBudget),
-      actualNetAmount: Math.round(mb.actualNetAmount ?? 0),
+      actualSettingCost: Math.round(mb.actualSettingCost ?? 0),
+      isVatIncluded: CT_PLUS_VAT_INCLUDED_MEDIA.includes(mb.media),
     }
   })
   const totalNet  = mediaRows.reduce((s, r) => s + r.netAmount, 0)
   const totalExec = mediaRows.reduce((s, r) => s + r.executionAmount, 0)
   const totalBudget = mediaRows.reduce((s, r) => s + r.budget, 0)
-  const totalActualNet = mediaRows.reduce((s, r) => s + r.actualNetAmount, 0)
   return {
     campaign,
     agName:  agencies.find(a => a.id === campaign.agencyId)?.name      ?? "",
     advName: advertisers.find(a => a.id === campaign.advertiserId)?.name ?? "",
     mediaRows,
-    totals: {
-      netAmount: totalNet, executionAmount: totalExec,
-      budget: totalBudget, actualNetAmount: totalActualNet,
-    },
+    totals: { netAmount: totalNet, executionAmount: totalExec, budget: totalBudget },
   }
 }
 
