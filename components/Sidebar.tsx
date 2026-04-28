@@ -28,11 +28,12 @@ const CT_PLUS_SECTIONS: MenuGroup[] = [
   {
     title: "CT+",
     items: [
-      { label: "캠페인 세팅 내역 검수", href: "/campaign/ct-plus/creative-check" },
-      { label: "게재 목업 데이터 생성",  href: "/mockup" },
-      { label: "리포트 데이터 업로드",   href: "/campaign/ct-plus/daily" },
-      { label: "캠페인 현황",            href: "/campaign/ct-plus/status" },
-      { label: "데일리 리포트",          href: "/campaign/ct-plus/daily-report", badge: "준비중" },
+      { label: "소재 검수",            href: "/campaign/ct-plus/creative-check" },
+      { label: "게재 목업",            href: "/mockup" },
+      { label: "캠페인 제안",          href: "/campaign/ct-plus/proposal" },
+      { label: "리포트 데이터 업로드", href: "/campaign/ct-plus/daily" },
+      { label: "캠페인 현황",          href: "/campaign/ct-plus/status" },
+      { label: "데일리 리포트",        href: "/campaign/ct-plus/daily-report", badge: "준비중" },
     ],
   },
 ]
@@ -42,9 +43,9 @@ const CT_SECTIONS: MenuGroup[] = [
   {
     title: "CT",
     items: [
-      { label: "캠페인 세팅 내역 검수", href: "/campaign/ct/check",  badge: "준비중" },
-      { label: "캠페인 현황",           href: "/campaign/ct/status", badge: "준비중" },
-      { label: "Motiv 캠페인 리스트",   href: "/campaign/ct/motiv-campaigns" },
+      { label: "소재 검수",          href: "/campaign/ct/creative-check" },
+      { label: "캠페인 현황",        href: "/campaign/ct/status" },
+      { label: "Motiv 캠페인 리스트", href: "/campaign/ct/motiv-campaigns" },
     ],
   },
 ]
@@ -60,25 +61,25 @@ const CTTV_SECTIONS: MenuGroup[] = [
   },
 ]
 
-// ── 정산/수익분석 ──────────────────────────────────────
+// ── 캠페인 정산 ──────────────────────────────────────
 const SETTLEMENT_SECTIONS: MenuGroup[] = [
   {
-    title: "정산/수익분석",
+    title: "캠페인 정산",
     items: [
-      { label: "계산서 발급",      href: "/campaign/ct-plus/final" },
-      { label: "매입/매출 확인",   href: "/settlement/sales-purchase" },
-      { label: "대행사별 수수료",  href: "/settlement/agency-fee" },
-      { label: "DMP 수수료",       href: "/settlement/dmp-fee" },
-      { label: "매체 비용",        href: "/settlement/media-cost" },
+      { label: "매입/매출 현황",    href: "/settlement/sales-purchase" },
+      { label: "대행사별 수수료",   href: "/settlement/agency-fee" },
+      { label: "DMP 수수료",        href: "/settlement/dmp-fee" },
+      { label: "매체 비용",         href: "/settlement/media-cost" },
+      { label: "계산서 발급",       href: "/campaign/ct-plus/final" },
     ],
   },
 ]
 
 const ALL_SECTIONS: Section[] = [
-  { key: "ctplus",     label: "CT+",         color: "text-orange-500", groups: CT_PLUS_SECTIONS },
-  { key: "ct",         label: "CT",          color: "text-blue-500",   groups: CT_SECTIONS },
-  { key: "cttv",       label: "CT TV",       color: "text-indigo-500", groups: CTTV_SECTIONS },
-  { key: "settlement", label: "정산/수익분석", color: "text-green-600",  groups: SETTLEMENT_SECTIONS },
+  { key: "ctplus",     label: "CT+",        color: "text-orange-500", groups: CT_PLUS_SECTIONS },
+  { key: "ct",         label: "CT",         color: "text-blue-500",   groups: CT_SECTIONS },
+  { key: "cttv",       label: "CT TV",      color: "text-indigo-500", groups: CTTV_SECTIONS },
+  { key: "settlement", label: "캠페인 정산", color: "text-green-600",  groups: SETTLEMENT_SECTIONS },
 ]
 
 // 관리 메뉴 (최하단 공통)
@@ -138,40 +139,21 @@ export default function Sidebar() {
   return (
     <aside className="flex h-full w-56 flex-col border-r border-gray-200 bg-white">
       {/* 로고 */}
-      <div className="border-b border-gray-100 px-5 py-4 space-y-2 flex-shrink-0">
+      <div className="border-b border-gray-100 px-5 py-4 flex-shrink-0">
         <Link href="/">
           <Image
             src="/CrossTarget_BI.png"
-            alt="CrossTarget"
+            alt="광고 운영 대시보드"
             width={140}
             height={36}
             className="h-8 w-auto object-contain"
             priority
           />
         </Link>
-        <p className="text-xs font-semibold text-gray-700">광고 운영 대시보드</p>
       </div>
 
       {/* 메뉴 */}
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {/* 거래처 관리 — 모든 섹션 상단 단독 링크 (입체 호버 효과) */}
-        <Link
-          href="/manage"
-          className={`group mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 ${
-            pathname === "/manage" || pathname === "/management"
-              ? "bg-gradient-to-r from-indigo-500 to-blue-600 text-white"
-              : "bg-white text-gray-700 border border-gray-200 hover:border-indigo-300 hover:text-indigo-700"
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zm0 0V5a2 2 0 00-2-2H6a2 2 0 00-2 2v2" />
-            </svg>
-            거래처 관리
-          </span>
-        </Link>
-
         {ALL_SECTIONS.map(sec => (
           <div key={sec.key}>
             {/* 섹션 레이블 */}

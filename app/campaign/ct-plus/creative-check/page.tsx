@@ -180,8 +180,8 @@ export default function CreativeCheckPage() {
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">소재 및 랜딩URL 확인</h1>
-            <p className="text-xs text-gray-400 mt-0.5">CT+ · 소재 검수 · 매체×상품별 규격 자동 검증</p>
+            <h1 className="text-base font-semibold text-gray-900">소재 검수</h1>
+            <p className="text-xs text-gray-400 mt-0.5">CT+ · 소재 및 랜딩URL · 매체×상품별 규격 자동 검증</p>
           </div>
           <div className="flex items-center gap-2 text-xs">
             {images.length > 0 && (

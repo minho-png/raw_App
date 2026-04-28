@@ -114,7 +114,7 @@ export default function SalesPurchasePage() {
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">매입/매출 확인</h1>
+            <h1 className="text-base font-semibold text-gray-900">매입/매출 현황</h1>
             <p className="text-xs text-gray-400 mt-0.5">Motiv API + CT+ 데이터를 기반으로 한 정산 시트 미리보기 · Excel 다운로드</p>
           </div>
           <div className="flex items-center gap-2">

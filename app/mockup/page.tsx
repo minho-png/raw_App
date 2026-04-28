@@ -504,7 +504,7 @@ export default function MockupPage() {
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">목업 게재 이미지 생성</h1>
+            <h1 className="text-base font-semibold text-gray-900">게재 목업</h1>
             <p className="text-xs text-gray-400 mt-0.5">레이어를 추가하고 캔버스에서 드래그로 위치를 조정하세요</p>
           </div>
           {campaigns.length > 0 && (
