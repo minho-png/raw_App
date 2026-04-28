@@ -23,7 +23,8 @@ function toMonthStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
 }
 
-// ── CT+ settlement 가공 (필요한 최소 필드만) ───────────────────
+// ── CT+ settlement 가공 ───────────────────────────────────────
+// 매출 = 부킹 금액 (totalBudget), 매입 = 실 소진액 (actualNetAmount)
 function buildCtPlusSettlement(
   campaign: Campaign,
   computedRows: RawRow[],
@@ -36,16 +37,27 @@ function buildCtPlusSettlement(
     const rows = campRows.filter(r => r.media === mb.media)
     const net  = rows.reduce((s, r) => s + (r.netAmount       ?? 0), 0)
     const exec = rows.reduce((s, r) => s + (r.executionAmount ?? 0), 0)
-    return { media: mb.media, netAmount: net || t.totalSettingCost, executionAmount: exec || t.totalSettingCost }
+    return {
+      media: mb.media,
+      netAmount: net || t.totalSettingCost,
+      executionAmount: exec || t.totalSettingCost,
+      budget: Math.round(t.totalBudget),
+      actualNetAmount: Math.round(mb.actualNetAmount ?? 0),
+    }
   })
   const totalNet  = mediaRows.reduce((s, r) => s + r.netAmount, 0)
   const totalExec = mediaRows.reduce((s, r) => s + r.executionAmount, 0)
+  const totalBudget = mediaRows.reduce((s, r) => s + r.budget, 0)
+  const totalActualNet = mediaRows.reduce((s, r) => s + r.actualNetAmount, 0)
   return {
     campaign,
     agName:  agencies.find(a => a.id === campaign.agencyId)?.name      ?? "",
     advName: advertisers.find(a => a.id === campaign.advertiserId)?.name ?? "",
     mediaRows,
-    totals: { netAmount: totalNet, executionAmount: totalExec },
+    totals: {
+      netAmount: totalNet, executionAmount: totalExec,
+      budget: totalBudget, actualNetAmount: totalActualNet,
+    },
   }
 }
 

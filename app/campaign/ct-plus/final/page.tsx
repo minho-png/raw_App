@@ -33,16 +33,24 @@ interface CampSettlement {
   agName: string
   mediaRows: {
     media: string
-    budget: number
+    budget: number              // 부킹 금액 (매출 기준)
     feeRate: number
     settingCost: number
-    netAmount: number
+    netAmount: number           // CSV 순집행 (참고)
     executionAmount: number
+    actualNetAmount: number     // 실 소진액 (매입 기준)
     spendRate: number
     rowCount: number
     isNaver: boolean
   }[]
-  totals: { budget: number; settingCost: number; netAmount: number; executionAmount: number; spendRate: number }
+  totals: {
+    budget: number
+    settingCost: number
+    netAmount: number
+    executionAmount: number
+    actualNetAmount: number
+    spendRate: number
+  }
   hasData: boolean
 }
 
@@ -66,6 +74,7 @@ function buildSettlement(
       settingCost: t.totalSettingCost,
       netAmount: Math.round(net),
       executionAmount: Math.round(exec),
+      actualNetAmount: Math.round(mb.actualNetAmount ?? 0),
       spendRate: rate,
       rowCount: rows.length,
       isNaver: mb.media === "naver",
@@ -74,6 +83,7 @@ function buildSettlement(
   const tot = getCampaignTotals(campaign)
   const totalNet  = mediaRows.reduce((s, r) => s + r.netAmount, 0)
   const totalExec = mediaRows.reduce((s, r) => s + r.executionAmount, 0)
+  const totalActualNet = mediaRows.reduce((s, r) => s + r.actualNetAmount, 0)
   const totalRate = tot.totalSettingCost > 0
     ? Math.round((totalNet / tot.totalSettingCost) * 1000) / 10 : 0
   return {
@@ -83,6 +93,7 @@ function buildSettlement(
       settingCost:     tot.totalSettingCost,
       netAmount:       totalNet,
       executionAmount: totalExec,
+      actualNetAmount: totalActualNet,
       spendRate:       totalRate,
     },
     hasData: campRows.length > 0,

@@ -15,12 +15,16 @@ export interface CtPlusSettlementLike {
   advName: string
   mediaRows: {
     media: string
-    netAmount: number       // VAT 제외 순매체비
-    executionAmount: number // VAT 포함 집행금액 (청구 기준)
+    netAmount: number         // CSV 순집행 (참고용)
+    executionAmount: number   // CSV 집행 (VAT 포함 가능)
+    budget: number            // 부킹 금액 (totalBudget 또는 dmp+nonDmp 합) — 매출 산정 기준
+    actualNetAmount: number   // 실 소진액 (수동 입력) — 매입 산정 기준
   }[]
   totals: {
     netAmount: number
     executionAmount: number
+    budget: number             // 부킹 합계 — 매출 공급가액
+    actualNetAmount: number    // 실 소진 합계 — 매입 공급가액 (참고)
   }
 }
 
@@ -150,7 +154,8 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
     const ag = agById.get(s.campaign.agencyId)
     const adv = advById.get(s.campaign.advertiserId)
     const op = opById.get(s.campaign.managerId)
-    const net = Math.round(s.totals.netAmount)
+    // CT+ 매출 공급가액 = 부킹 금액 (광고주 청구 기준)
+    const net = Math.round(s.totals.budget)
     const vat = Math.round(net * 0.1)
     rows.push({
       해당월: s.campaign.settlementMonth || month,
@@ -260,7 +265,9 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
     const ag = agById.get(s.campaign.agencyId)
     const op = opById.get(s.campaign.managerId)
     for (const mb of s.mediaRows) {
-      const net = Math.round(mb.netAmount)
+      // CT+ 매입 공급가액 = 실 소진액 (매체사 지급 기준)
+      // 네이버 GFA · 카카오모먼트 · Google · META 모두 actualNetAmount 사용
+      const net = Math.round(mb.actualNetAmount)
       if (net <= 0) continue
       const vat = Math.round(net * 0.1)
       rows.push({
