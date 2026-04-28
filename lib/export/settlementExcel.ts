@@ -128,8 +128,9 @@ export interface SalesRow {
   업데이트: string
   '수금 여부': string
   '실 수금일': string
-  // 내부 메타 (Excel 출력 시 헤더에서 제외 — 페이지에서 그룹핑용)
+  // 내부 메타 (Excel 출력 시 헤더에서 제외 — 페이지에서 그룹핑/수정 식별용)
   _agencyId?: string
+  _rowKey: string  // 'sales:{month}:{campaignId}' (override 식별)
 }
 
 export interface SalesRowsParams {
@@ -184,6 +185,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       '수금 여부': '',
       '실 수금일': '',
       _agencyId: ag?.id,
+      _rowKey: `sales:${s.campaign.settlementMonth || month}:${s.campaign.id}`,
     })
   }
 
@@ -223,6 +225,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       '수금 여부': '',
       '실 수금일': '',
       _agencyId: ag?.id,
+      _rowKey: `sales:${month}:motiv-${c.id}`,
     })
   }
 
@@ -249,6 +252,7 @@ export interface PurchaseRow {
   송금기한: string
   // 내부 메타
   _agencyId?: string
+  _rowKey: string  // 'purchase:{month}:{campaignId}[:media]' (override 식별)
 }
 
 export interface PurchaseRowsParams {
@@ -295,6 +299,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
         '송금일 기준': paymentBasisOf(ag),
         송금기한: computePaymentDueDate(month, ag),
         _agencyId: ag?.id,
+        _rowKey: `purchase:${s.campaign.settlementMonth || month}:${s.campaign.id}:${mb.media}`,
       })
     }
   }
@@ -330,6 +335,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
       '송금일 기준': paymentBasisOf(ag),
       송금기한: computePaymentDueDate(month, ag),
       _agencyId: ag?.id,
+      _rowKey: `purchase:${month}:motiv-${c.id}`,
     })
   }
 
