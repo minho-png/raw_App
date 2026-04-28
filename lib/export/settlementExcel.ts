@@ -110,6 +110,7 @@ export interface SalesRow {
   담당자: string
   '세금계산서 작성일자': string
   '거래처명 (사업자등록증 기준)': string
+  광고주명: string
   캠페인명: string
   공급가액: number
   세액: number
@@ -127,8 +128,9 @@ export interface SalesRow {
   업데이트: string
   '수금 여부': string
   '실 수금일': string
-  // 내부 메타 (Excel 출력 시 헤더에서 제외 — 페이지에서 그룹핑용)
+  // 내부 메타 (Excel 출력 시 헤더에서 제외 — 페이지에서 그룹핑/수정 식별용)
   _agencyId?: string
+  _rowKey: string  // 'sales:{month}:{campaignId}' (override 식별)
 }
 
 export interface SalesRowsParams {
@@ -164,6 +166,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       담당자: op?.name ?? '',
       '세금계산서 작성일자': '',
       '거래처명 (사업자등록증 기준)': ag?.corporateName || ag?.name || s.agName || '',
+      광고주명: adv?.name || s.advName || '',
       캠페인명: s.campaign.campaignName,
       공급가액: net,
       세액: vat,
@@ -182,6 +185,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       '수금 여부': '',
       '실 수금일': '',
       _agencyId: ag?.id,
+      _rowKey: `sales:${s.campaign.settlementMonth || month}:${s.campaign.id}`,
     })
   }
 
@@ -202,6 +206,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       담당자: op?.name ?? '',
       '세금계산서 작성일자': '',
       '거래처명 (사업자등록증 기준)': ag?.corporateName || ag?.name || '',
+      광고주명: adv?.name || '',
       캠페인명: c.title ?? `#${c.id}`,
       공급가액: net,
       세액: vat,
@@ -220,6 +225,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       '수금 여부': '',
       '실 수금일': '',
       _agencyId: ag?.id,
+      _rowKey: `sales:${month}:motiv-${c.id}`,
     })
   }
 
@@ -234,6 +240,7 @@ export interface PurchaseRow {
   구분: string
   일자: string
   '거래처명 (세금계산서 기준)': string
+  광고주명: string
   캠페인명: string
   공급가액: number
   세액: number
@@ -245,6 +252,7 @@ export interface PurchaseRow {
   송금기한: string
   // 내부 메타
   _agencyId?: string
+  _rowKey: string  // 'purchase:{month}:{campaignId}[:media]' (override 식별)
 }
 
 export interface PurchaseRowsParams {
@@ -253,11 +261,13 @@ export interface PurchaseRowsParams {
   motivCampaigns: MotivCampaign[]
   assignments: MotivAssignment[]
   agencies: Agency[]
+  advertisers: Advertiser[]
   operators: Operator[]
 }
 
 export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
-  const { month, ctPlus, motivCampaigns, assignments, agencies, operators } = params
+  const { month, ctPlus, motivCampaigns, assignments, agencies, advertisers, operators } = params
+  const advById = new Map(advertisers.map(a => [a.id, a]))
   const agById = new Map(agencies.map(a => [a.id, a]))
   const opById = new Map(operators.map(o => [o.id, o]))
   const asgById = new Map(assignments.map(a => [a.motivCampaignId, a]))
@@ -265,6 +275,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
 
   for (const s of ctPlus) {
     const ag = agById.get(s.campaign.agencyId)
+    const adv = advById.get(s.campaign.advertiserId)
     const op = opById.get(s.campaign.managerId)
     for (const mb of s.mediaRows) {
       // CT+ 매입 공급가액 = RAW CSV netAmount (VAT 별도) — 매체사 실 집행 기준
@@ -277,6 +288,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
         구분: 'CT+ (IMC)',
         일자: '',
         '거래처명 (세금계산서 기준)': mb.media,
+        광고주명: adv?.name || s.advName || '',
         캠페인명: s.campaign.campaignName,
         공급가액: net,
         세액: vat,
@@ -287,6 +299,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
         '송금일 기준': paymentBasisOf(ag),
         송금기한: computePaymentDueDate(month, ag),
         _agencyId: ag?.id,
+        _rowKey: `purchase:${s.campaign.settlementMonth || month}:${s.campaign.id}:${mb.media}`,
       })
     }
   }
@@ -296,6 +309,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
     if (product !== 'CT' && product !== 'CTV') continue
     const a = asgById.get(c.id)
     const ag = a?.agencyId ? agById.get(a.agencyId) : undefined
+    const adv = a?.advertiserId ? advById.get(a.advertiserId) : undefined
     const op = a?.operatorId ? opById.get(a.operatorId) : undefined
     const cost = Math.round(Number(c.stats?.cost ?? 0))
     const agencyFee = Math.round(Number(c.stats?.agency_fee ?? 0))
@@ -310,6 +324,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
       구분: label,
       일자: '',
       '거래처명 (세금계산서 기준)': ag?.corporateName || ag?.name || 'Motiv',
+      광고주명: adv?.name || '',
       캠페인명: c.title ?? `#${c.id}`,
       공급가액: net,
       세액: vat,
@@ -320,6 +335,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
       '송금일 기준': paymentBasisOf(ag),
       송금기한: computePaymentDueDate(month, ag),
       _agencyId: ag?.id,
+      _rowKey: `purchase:${month}:motiv-${c.id}`,
     })
   }
 
@@ -329,7 +345,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
 // ─── Excel 시트 헬퍼 ──────────────────────────────────────────────
 
 const SALES_HEADERS: (keyof SalesRow)[] = [
-  '해당월', '담당자', '세금계산서 작성일자', '거래처명 (사업자등록증 기준)',
+  '해당월', '담당자', '세금계산서 작성일자', '거래처명 (사업자등록증 기준)', '광고주명',
   '캠페인명', '공급가액', '세액', '합계금액',
   '수금일 기준', '수금 기한', '수수료 (VAT포함)', '수취이메일',
   '수수료 세금계산서 발행여부',
@@ -339,7 +355,7 @@ const SALES_HEADERS: (keyof SalesRow)[] = [
 
 const PURCHASE_HEADERS: (keyof PurchaseRow)[] = [
   '년월', '담당자', '구분', '일자',
-  '거래처명 (세금계산서 기준)',
+  '거래처명 (세금계산서 기준)', '광고주명',
   '캠페인명', '공급가액', '세액', '합계금액',
   'IMC', 'TV', 'CT',
   '송금일 기준', '송금기한',

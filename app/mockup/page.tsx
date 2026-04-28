@@ -160,7 +160,7 @@ function AdjRow({ label, value, onUp, onDown, onChange }: {
 }
 
 // ── Main ──────────────────────────────────────────────────────
-export default function MockupPage() {
+function MockupCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const layersRef = useRef<Layer[]>([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -504,7 +504,7 @@ export default function MockupPage() {
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">목업 게재 이미지 생성</h1>
+            <h1 className="text-base font-semibold text-gray-900">게재 목업</h1>
             <p className="text-xs text-gray-400 mt-0.5">레이어를 추가하고 캔버스에서 드래그로 위치를 조정하세요</p>
           </div>
           {campaigns.length > 0 && (
@@ -950,6 +950,126 @@ export default function MockupPage() {
           )}
         </div>
       </main>
+    </div>
+  )
+}
+
+// ─── 다중 탭 래퍼 ──────────────────────────────────────────────
+// 사용자 정책 (Q3): LocalStorage 영속화
+// 각 탭은 작업명만 보관 — 캔버스 내부 상태(레이어/이미지) 는 React key 로 격리
+// → 탭 전환 시 컴포넌트 unmount 되어 메모리 상태는 초기화됨 (MVP)
+// → 향후 캔버스 상태도 탭 ID 별 LocalStorage 영속화 가능
+
+const TABS_KEY = 'mockup-tabs-v1'
+const ACTIVE_KEY = 'mockup-active-tab-v1'
+
+interface MockupTab { id: string; name: string }
+
+export default function MockupPage() {
+  const [tabs, setTabs] = useState<MockupTab[]>([])
+  const [activeId, setActiveId] = useState<string>('')
+  const [hydrated, setHydrated] = useState(false)
+
+  // 초기 로드 (LocalStorage)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(TABS_KEY)
+      const list: MockupTab[] = raw ? JSON.parse(raw) : []
+      if (list.length === 0) {
+        const seed: MockupTab = { id: `tab-${Date.now()}`, name: '작업 1' }
+        setTabs([seed])
+        setActiveId(seed.id)
+      } else {
+        setTabs(list)
+        const stored = localStorage.getItem(ACTIVE_KEY)
+        setActiveId(stored && list.some(t => t.id === stored) ? stored : list[0].id)
+      }
+    } catch {
+      const seed: MockupTab = { id: `tab-${Date.now()}`, name: '작업 1' }
+      setTabs([seed])
+      setActiveId(seed.id)
+    }
+    setHydrated(true)
+  }, [])
+
+  // 변경 시 저장
+  useEffect(() => {
+    if (!hydrated) return
+    try { localStorage.setItem(TABS_KEY, JSON.stringify(tabs)) } catch {}
+  }, [tabs, hydrated])
+  useEffect(() => {
+    if (!hydrated) return
+    try { localStorage.setItem(ACTIVE_KEY, activeId) } catch {}
+  }, [activeId, hydrated])
+
+  function addTab() {
+    const id = `tab-${Date.now()}`
+    const next: MockupTab = { id, name: `작업 ${tabs.length + 1}` }
+    setTabs(arr => [...arr, next])
+    setActiveId(id)
+  }
+  function closeTab(id: string) {
+    if (tabs.length === 1) {
+      alert('최소 1개의 탭이 필요합니다.')
+      return
+    }
+    if (!confirm('이 탭을 닫으시겠습니까? 작업 내용이 유실될 수 있습니다.')) return
+    setTabs(arr => {
+      const next = arr.filter(t => t.id !== id)
+      if (id === activeId) setActiveId(next[0]?.id ?? '')
+      return next
+    })
+  }
+  function renameTab(id: string) {
+    const cur = tabs.find(t => t.id === id)
+    if (!cur) return
+    const newName = prompt('탭 이름을 입력하세요', cur.name)
+    if (!newName?.trim()) return
+    setTabs(arr => arr.map(t => (t.id === id ? { ...t, name: newName.trim() } : t)))
+  }
+
+  if (!hydrated) {
+    return <div className="p-6 text-sm text-gray-400">불러오는 중...</div>
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* 탭 바 */}
+      <div className="flex items-center gap-1 border-b border-gray-200 bg-white px-4 py-2 overflow-x-auto">
+        {tabs.map(t => {
+          const isActive = t.id === activeId
+          return (
+            <div
+              key={t.id}
+              className={`group flex items-center gap-1 rounded-t-md border border-b-0 px-3 py-1.5 text-xs cursor-pointer transition-colors ${
+                isActive ? 'border-gray-300 bg-gray-50 text-gray-900 font-medium' : 'border-transparent text-gray-500 hover:bg-gray-50'
+              }`}
+              onClick={() => setActiveId(t.id)}
+              onDoubleClick={() => renameTab(t.id)}
+              title="더블클릭: 이름 변경"
+            >
+              <span className="max-w-[140px] truncate">{t.name}</span>
+              {tabs.length > 1 && (
+                <button
+                  onClick={e => { e.stopPropagation(); closeTab(t.id) }}
+                  className="opacity-0 group-hover:opacity-100 ml-1 rounded text-gray-400 hover:text-red-500 px-1"
+                  aria-label="탭 닫기"
+                >×</button>
+              )}
+            </div>
+          )
+        })}
+        <button
+          onClick={addTab}
+          className="ml-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300"
+          title="새 작업 탭"
+        >＋ 새 탭</button>
+      </div>
+
+      {/* 캔버스 (탭 ID 로 React key — 탭 전환 시 완전 격리) */}
+      <div className="flex-1 overflow-auto">
+        <MockupCanvas key={activeId} />
+      </div>
     </div>
   )
 }

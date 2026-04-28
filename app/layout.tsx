@@ -16,8 +16,9 @@ const geistMono = localFont({
 })
 
 export const metadata: Metadata = {
-  title: "광고 정산 대시보드",
-  description: "크로스타겟 캠페인 정산 대시보드",
+  title: "광고 운영 대시보드",
+  description: "크로스타겟 광고 운영 대시보드",
+  applicationName: "광고 운영 대시보드",
 }
 
 export default function RootLayout({

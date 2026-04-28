@@ -198,8 +198,8 @@ export default function CtPlusFinalPage() {
     ctPlus: settlements,
     motivCampaigns: motivFetch.data,
     assignments,
-    agencies, operators,
-  }), [activeMonth, settlements, motivFetch.data, assignments, agencies, operators])
+    agencies, advertisers, operators,
+  }), [activeMonth, settlements, motivFetch.data, assignments, agencies, advertisers, operators])
 
   const salesByAg     = useMemo(() => groupSalesByAgency(salesRows), [salesRows])
   const purchaseByAg  = useMemo(() => groupPurchaseByAgency(purchaseRows), [purchaseRows])

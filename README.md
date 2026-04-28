@@ -1,3 +1,7 @@
+# 광고 운영 대시보드
+
+크로스타겟 광고 운영 대시보드 — Next.js 16 기반.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
