@@ -15,16 +15,16 @@ export interface CtPlusSettlementLike {
   advName: string
   mediaRows: {
     media: string
-    netAmount: number          // CSV 순집행 (참고용)
-    executionAmount: number    // CSV 집행 (참고용)
-    budget: number             // 부킹 금액 (totalBudget) — 매출 산정 기준
-    actualSettingCost: number  // 실 세팅금액 (자동/수동) — 매입 산정 기준
-    isVatIncluded: boolean     // 네이버 GFA · 카카오모먼트 = VAT 포함, 그 외 = VAT 별도
+    netAmount: number          // RAW CSV 순집행 — 매입 공급가액
+    executionAmount: number    // CSV 집행 (참고)
+    budget: number             // 부킹 금액 — 매출 공급가액 산정 기준
+    markup: number             // VAT 제외 마크업 합 (DMP비용 + 대행수수료 등) — 수수료(VAT포함) 산정 기준
   }[]
   totals: {
-    netAmount: number
+    netAmount: number          // 매입 합계 (VAT 제외)
     executionAmount: number
-    budget: number             // 부킹 합계 — 매출 공급가액
+    budget: number             // 매출 공급가액 (VAT 제외)
+    markup: number             // 수수료 합계 (VAT 제외) — × 1.1 하면 수수료(VAT포함)
   }
 }
 
@@ -157,6 +157,8 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
     // CT+ 매출 공급가액 = 부킹 금액 (광고주 청구 기준)
     const net = Math.round(s.totals.budget)
     const vat = Math.round(net * 0.1)
+    // CT+ 수수료 (VAT포함) = (DMP사 비용 + 대행수수료) × 1.1
+    const fee = Math.round(s.totals.markup * 1.1)
     rows.push({
       해당월: s.campaign.settlementMonth || month,
       담당자: op?.name ?? '',
@@ -168,7 +170,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       합계금액: net + vat,
       '수금일 기준': paymentBasisOf(ag),
       '수금 기한': computePaymentDueDate(month, ag),
-      '수수료 (VAT포함)': 0,
+      '수수료 (VAT포함)': fee,
       수취이메일: adv?.email || ag?.email || '',
       '수수료 세금계산서 발행여부': '',
       'CT 해당금액 (vat 제외)': 0,
@@ -265,13 +267,10 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
     const ag = agById.get(s.campaign.agencyId)
     const op = opById.get(s.campaign.managerId)
     for (const mb of s.mediaRows) {
-      // CT+ 매입 공급가액 = 실 세팅금액 (actualSettingCost) — 매체사 지급 기준
-      // 네이버 GFA · 카카오모먼트 : actualSettingCost 가 VAT 포함값 → 공급가액 = / 1.1
-      // Google · META           : actualSettingCost 는 VAT 별도값 → 공급가액 = 그대로
-      const settingCost = Math.round(mb.actualSettingCost)
-      if (settingCost <= 0) continue
-      const net = mb.isVatIncluded ? Math.round(settingCost / 1.1) : settingCost
-      const vat = mb.isVatIncluded ? settingCost - net : Math.round(net * 0.1)
+      // CT+ 매입 공급가액 = RAW CSV netAmount (VAT 별도) — 매체사 실 집행 기준
+      const net = Math.round(mb.netAmount)
+      if (net <= 0) continue
+      const vat = Math.round(net * 0.1)
       rows.push({
         년월: s.campaign.settlementMonth || month,
         담당자: op?.name ?? '',

@@ -4,9 +4,19 @@ import { useState, useMemo } from "react"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
-import { getMediaTotals } from "@/lib/campaignTypes"
-import type { Campaign } from "@/lib/campaignTypes"
+import { getMediaTotals, MEDIA_MARKUP_RATE, DMP_FEE_RATE } from "@/lib/campaignTypes"
+import type { Campaign, MediaBudget } from "@/lib/campaignTypes"
 import type { RawRow } from "@/lib/rawDataParser"
+
+function calcMediaMarkup(mb: MediaBudget): number {
+  if (mb.totalBudget !== undefined && mb.totalFeeRate !== undefined) {
+    return mb.totalBudget * (mb.totalFeeRate / 100)
+  }
+  const mm = MEDIA_MARKUP_RATE[mb.media] ?? 0
+  const dmpRate = mm + DMP_FEE_RATE + (mb.dmp?.agencyFeeRate ?? 0)
+  const nonDmpRate = mm + (mb.nonDmp?.agencyFeeRate ?? 0)
+  return (mb.dmp?.budget ?? 0) * (dmpRate / 100) + (mb.nonDmp?.budget ?? 0) * (nonDmpRate / 100)
+}
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import {
   buildSalesRows, buildPurchaseRows,
@@ -24,10 +34,9 @@ function toMonthStr(d: Date) {
 }
 
 // ── CT+ settlement 가공 ───────────────────────────────────────
-// 매출 = 부킹 금액 (totalBudget)
-// 매입 = 실 세팅금액 (actualSettingCost) — 네이버/카카오는 VAT 포함값, 그 외는 VAT 별도
-const CT_PLUS_VAT_INCLUDED_MEDIA = ['네이버 GFA', '카카오모먼트']
-
+// 매출 = 부킹 금액 (totalBudget) → 광고주 청구
+// 매입 = RAW CSV netAmount (실집행 순매체비) → 매체사 지급
+// 수수료(VAT포함) = (DMP사 비용 + 대행수수료) × 1.1 = markup × 1.1
 function buildCtPlusSettlement(
   campaign: Campaign,
   computedRows: RawRow[],
@@ -42,22 +51,22 @@ function buildCtPlusSettlement(
     const exec = rows.reduce((s, r) => s + (r.executionAmount ?? 0), 0)
     return {
       media: mb.media,
-      netAmount: net || t.totalSettingCost,
-      executionAmount: exec || t.totalSettingCost,
+      netAmount: Math.round(net),
+      executionAmount: Math.round(exec),
       budget: Math.round(t.totalBudget),
-      actualSettingCost: Math.round(mb.actualSettingCost ?? 0),
-      isVatIncluded: CT_PLUS_VAT_INCLUDED_MEDIA.includes(mb.media),
+      markup: Math.round(calcMediaMarkup(mb)),
     }
   })
-  const totalNet  = mediaRows.reduce((s, r) => s + r.netAmount, 0)
-  const totalExec = mediaRows.reduce((s, r) => s + r.executionAmount, 0)
+  const totalNet    = mediaRows.reduce((s, r) => s + r.netAmount, 0)
+  const totalExec   = mediaRows.reduce((s, r) => s + r.executionAmount, 0)
   const totalBudget = mediaRows.reduce((s, r) => s + r.budget, 0)
+  const totalMarkup = mediaRows.reduce((s, r) => s + r.markup, 0)
   return {
     campaign,
     agName:  agencies.find(a => a.id === campaign.agencyId)?.name      ?? "",
     advName: advertisers.find(a => a.id === campaign.advertiserId)?.name ?? "",
     mediaRows,
-    totals: { netAmount: totalNet, executionAmount: totalExec, budget: totalBudget },
+    totals: { netAmount: totalNet, executionAmount: totalExec, budget: totalBudget, markup: totalMarkup },
   }
 }
 
