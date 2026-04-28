@@ -70,6 +70,7 @@ export default function AgencyFeePage() {
   const [snapshots, setSnapshots]     = useState<SettlementSnapshot[]>([])
   const [showSnapshots, setShowSnapshots] = useState(false)
   const [selectedAgencyId, setSelectedAgencyId] = useState<string | null>(null)
+  const [agencySearch, setAgencySearch] = useState('')
   const [copied, setCopied]           = useState(false)
   const [notice, setNotice]           = useState<string | null>(null)
 
@@ -350,8 +351,21 @@ export default function AgencyFeePage() {
         {/* CT+ 섹션 (기존) */}
         {showCtPlus && agencyList.length > 0 && (
           <div>
-            <div className="mb-2 flex items-center gap-2">
+            <div className="mb-2 flex items-center gap-2 flex-wrap">
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">대행사 선택</span>
+              <input
+                type="text"
+                value={agencySearch}
+                onChange={e => setAgencySearch(e.target.value)}
+                placeholder="🔍 거래처 검색"
+                className="rounded-md border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 min-w-[160px]"
+              />
+              {agencySearch && (
+                <button
+                  onClick={() => setAgencySearch('')}
+                  className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-gray-100"
+                >지우기</button>
+              )}
               {selectedAgencyId && (
                 <button
                   onClick={() => setSelectedAgencyId(null)}
@@ -360,9 +374,13 @@ export default function AgencyFeePage() {
                   전체 보기
                 </button>
               )}
+              <span className="ml-auto text-[11px] text-gray-400">
+                {agencyList.filter(ag => !agencySearch || (ag.corporateName ?? ag.name).toLowerCase().includes(agencySearch.toLowerCase())).length}
+                /{agencyList.length}
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {agencyList.map(ag => {
+              {agencyList.filter(ag => !agencySearch || (ag.corporateName ?? ag.name).toLowerCase().includes(agencySearch.toLowerCase())).map(ag => {
                 const stats   = agencyStats[ag.id]
                 const clr     = agencyColorMap[ag.id]
                 const isOn    = selectedAgencyId === ag.id

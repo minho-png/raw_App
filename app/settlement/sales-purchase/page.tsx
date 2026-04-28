@@ -106,8 +106,8 @@ export default function SalesPurchasePage() {
 
   const purchaseRows: PurchaseRow[] = useMemo(() => buildPurchaseRows({
     month, ctPlus: ctPlusSettlements, motivCampaigns: motivFetch.data,
-    assignments, agencies, operators,
-  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, operators])
+    assignments, agencies, advertisers, operators,
+  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -187,6 +187,7 @@ function SalesTable({ rows }: { rows: SalesRow[] }) {
             <th className="px-2 py-2 text-left font-semibold">해당월</th>
             <th className="px-2 py-2 text-left font-semibold">담당자</th>
             <th className="px-2 py-2 text-left font-semibold">거래처명</th>
+            <th className="px-2 py-2 text-left font-semibold">광고주명</th>
             <th className="px-2 py-2 text-left font-semibold">캠페인명</th>
             <th className="px-2 py-2 text-right font-semibold">공급가액</th>
             <th className="px-2 py-2 text-right font-semibold">세액</th>
@@ -208,6 +209,7 @@ function SalesTable({ rows }: { rows: SalesRow[] }) {
               <td className="px-2 py-1.5 text-gray-800 font-medium truncate max-w-[200px]" title={r['거래처명 (사업자등록증 기준)']}>
                 {r['거래처명 (사업자등록증 기준)']}
               </td>
+              <td className="px-2 py-1.5 text-gray-600 truncate max-w-[160px]" title={r.광고주명}>{r.광고주명 || '-'}</td>
               <td className="px-2 py-1.5 text-gray-700 truncate max-w-[260px]" title={r.캠페인명}>{r.캠페인명}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-800">{fmt(r.공급가액)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{fmt(r.세액)}</td>
@@ -224,7 +226,7 @@ function SalesTable({ rows }: { rows: SalesRow[] }) {
         </tbody>
         <tfoot className="bg-gray-100">
           <tr>
-            <td colSpan={4} className="px-2 py-2 font-bold text-gray-900">합계</td>
+            <td colSpan={5} className="px-2 py-2 font-bold text-gray-900">합계</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-gray-900">{fmt(totals.net)}</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-gray-700">{fmt(totals.vat)}</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-gray-900">{fmt(totals.total)}</td>
@@ -264,6 +266,7 @@ function PurchaseTable({ rows }: { rows: PurchaseRow[] }) {
             <th className="px-2 py-2 text-left font-semibold">담당자</th>
             <th className="px-2 py-2 text-left font-semibold">구분</th>
             <th className="px-2 py-2 text-left font-semibold">거래처명</th>
+            <th className="px-2 py-2 text-left font-semibold">광고주명</th>
             <th className="px-2 py-2 text-left font-semibold">캠페인명</th>
             <th className="px-2 py-2 text-right font-semibold">공급가액</th>
             <th className="px-2 py-2 text-right font-semibold">세액</th>
@@ -284,6 +287,7 @@ function PurchaseTable({ rows }: { rows: PurchaseRow[] }) {
               <td className="px-2 py-1.5 text-gray-800 font-medium truncate max-w-[200px]" title={r['거래처명 (세금계산서 기준)']}>
                 {r['거래처명 (세금계산서 기준)']}
               </td>
+              <td className="px-2 py-1.5 text-gray-600 truncate max-w-[160px]" title={r.광고주명}>{r.광고주명 || '-'}</td>
               <td className="px-2 py-1.5 text-gray-700 truncate max-w-[260px]" title={r.캠페인명}>{r.캠페인명}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-800">{fmt(r.공급가액)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{fmt(r.세액)}</td>
@@ -298,7 +302,7 @@ function PurchaseTable({ rows }: { rows: PurchaseRow[] }) {
         </tbody>
         <tfoot className="bg-gray-100">
           <tr>
-            <td colSpan={5} className="px-2 py-2 font-bold text-gray-900">합계</td>
+            <td colSpan={6} className="px-2 py-2 font-bold text-gray-900">합계</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-gray-900">{fmt(totals.net)}</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-gray-700">{fmt(totals.vat)}</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-gray-900">{fmt(totals.total)}</td>
