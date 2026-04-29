@@ -19,7 +19,6 @@ interface MenuGroup {
 interface Section {
   key: string
   label: string
-  color: string   // tailwind text color class
   groups: MenuGroup[]
 }
 
@@ -55,8 +54,8 @@ const CTTV_SECTIONS: MenuGroup[] = [
   {
     title: "CT TV",
     items: [
-      { label: "캠페인 세팅 내역 검수", href: "/campaign/ct-ctv/check",    badge: "준비중" },
-      { label: "캠페인 현황",           href: "/campaign/ct-ctv/analysis" },
+      { label: "소재 검수",   href: "/campaign/ct-ctv/creative-check" },
+      { label: "캠페인 현황", href: "/campaign/ct-ctv/analysis" },
     ],
   },
 ]
@@ -76,10 +75,10 @@ const SETTLEMENT_SECTIONS: MenuGroup[] = [
 ]
 
 const ALL_SECTIONS: Section[] = [
-  { key: "ctplus",     label: "CT+",        color: "text-orange-500", groups: CT_PLUS_SECTIONS },
-  { key: "ct",         label: "CT",         color: "text-blue-500",   groups: CT_SECTIONS },
-  { key: "cttv",       label: "CT TV",      color: "text-indigo-500", groups: CTTV_SECTIONS },
-  { key: "settlement", label: "캠페인 정산", color: "text-green-600",  groups: SETTLEMENT_SECTIONS },
+  { key: "ctplus",     label: "CT+",        groups: CT_PLUS_SECTIONS },
+  { key: "ct",         label: "CT",         groups: CT_SECTIONS },
+  { key: "cttv",       label: "CT TV",      groups: CTTV_SECTIONS },
+  { key: "settlement", label: "캠페인 정산", groups: SETTLEMENT_SECTIONS },
 ]
 
 // 관리 메뉴 (최하단 공통)
@@ -156,18 +155,13 @@ export default function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {ALL_SECTIONS.map(sec => (
           <div key={sec.key}>
-            {/* 섹션 레이블 */}
-            <p className={`px-3 pb-1 text-[10px] font-bold uppercase tracking-widest ${sec.color}`}>
-              {sec.label}
-            </p>
-
             {sec.groups.map(group => (
               <div key={group.title}>
                 <button
                   onClick={() => toggleGroup(group.title)}
                   className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                 >
-                  <span>{group.title}</span>
+                  <span>{sec.label}</span>
                   <svg
                     className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
                       openGroups[group.title] ? "rotate-180" : ""
