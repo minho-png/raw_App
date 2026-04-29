@@ -19,7 +19,6 @@ interface MenuGroup {
 interface Section {
   key: string
   label: string
-  color: string   // tailwind text color class
   groups: MenuGroup[]
 }
 
@@ -76,10 +75,10 @@ const SETTLEMENT_SECTIONS: MenuGroup[] = [
 ]
 
 const ALL_SECTIONS: Section[] = [
-  { key: "ctplus",     label: "CT+",        color: "text-orange-500", groups: CT_PLUS_SECTIONS },
-  { key: "ct",         label: "CT",         color: "text-blue-500",   groups: CT_SECTIONS },
-  { key: "cttv",       label: "CT TV",      color: "text-indigo-500", groups: CTTV_SECTIONS },
-  { key: "settlement", label: "캠페인 정산", color: "text-green-600",  groups: SETTLEMENT_SECTIONS },
+  { key: "ctplus",     label: "CT+",        groups: CT_PLUS_SECTIONS },
+  { key: "ct",         label: "CT",         groups: CT_SECTIONS },
+  { key: "cttv",       label: "CT TV",      groups: CTTV_SECTIONS },
+  { key: "settlement", label: "캠페인 정산", groups: SETTLEMENT_SECTIONS },
 ]
 
 // 관리 메뉴 (최하단 공통)
@@ -160,7 +159,7 @@ export default function Sidebar() {
               <div key={group.title}>
                 <button
                   onClick={() => toggleGroup(group.title)}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-bold hover:bg-gray-50 transition-colors ${sec.color}`}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   <span>{sec.label}</span>
                   <svg
