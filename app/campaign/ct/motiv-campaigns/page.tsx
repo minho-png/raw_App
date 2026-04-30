@@ -87,9 +87,9 @@ export default function MotivCampaignsPage() {
   return (
     <div className="mx-auto max-w-[1400px] space-y-4 px-6 py-8">
       <header>
-        <h1 className="text-2xl font-bold text-gray-900">Motiv 캠페인 리스트</h1>
+        <h1 className="text-2xl font-bold text-gray-900">CT 캠페인 현황</h1>
         <p className="mt-1 text-sm text-gray-500">
-          크로스타겟 운영데스크 API에서 캠페인 목록을 조회합니다.
+          크로스타겟 운영데스크 API에서 CT 캠페인 목록을 조회합니다.
         </p>
       </header>
 
