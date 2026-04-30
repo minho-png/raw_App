@@ -27,9 +27,9 @@ const CT_PLUS_SECTIONS: MenuGroup[] = [
   {
     title: "CT+",
     items: [
+      { label: "캠페인 제안",          href: "/campaign/ct-plus/proposal" },
       { label: "소재 검수",            href: "/campaign/ct-plus/creative-check" },
       { label: "게재 목업",            href: "/mockup" },
-      { label: "캠페인 제안",          href: "/campaign/ct-plus/proposal" },
       { label: "리포트 데이터 업로드", href: "/campaign/ct-plus/daily" },
       { label: "캠페인 현황",          href: "/campaign/ct-plus/status" },
       { label: "데일리 리포트",        href: "/campaign/ct-plus/daily-report", badge: "준비중" },
@@ -42,9 +42,8 @@ const CT_SECTIONS: MenuGroup[] = [
   {
     title: "CT",
     items: [
-      { label: "소재 검수",          href: "/campaign/ct/creative-check" },
-      { label: "캠페인 현황",        href: "/campaign/ct/status" },
-      { label: "Motiv 캠페인 리스트", href: "/campaign/ct/motiv-campaigns" },
+      { label: "소재 검수",   href: "/campaign/ct/creative-check" },
+      { label: "캠페인 현황", href: "/campaign/ct/motiv-campaigns" },
     ],
   },
 ]
