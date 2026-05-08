@@ -57,7 +57,7 @@ export function MotivSettlementTable({
     const adAcc = adAccountById?.get(c.adaccount_id)
     if (!adAcc) return {}
     // 1) adaccount 가 motiv agency_id 를 직접 포함하는 경우
-    let motivAgencyId: number | undefined =
+    const motivAgencyId: number | undefined =
       typeof adAcc.agency_id === 'number' ? adAcc.agency_id :
       typeof adAcc.agency?.id === 'number' ? adAcc.agency.id : undefined
     let motivName: string | undefined =
