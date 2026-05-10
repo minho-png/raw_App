@@ -11,6 +11,9 @@ import type { Campaign } from "@/lib/campaignTypes"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 import { useReports } from "@/lib/hooks/useReports"
+import { useRawData } from "@/lib/hooks/useRawData"
+import { useDailySpendMap } from "@/lib/hooks/useDailySpendMap"
+import { DailyDeltaCell } from "@/components/DailyDeltaCell"
 
 // ── 로컬스토리지 키 ────────────────────────────────────────────
 const CAMPAIGNS_KEY  = 'campaigns-v1'
@@ -40,10 +43,11 @@ const MEDIA_NAME_TO_TYPE: Record<string, MediaType> = {
 }
 
 // ── 서브컴포넌트: 캠페인 카드 ─────────────────────────────────────
-function CampaignCard({ c, advertiserName, agencyName }: {
+function CampaignCard({ c, advertiserName, agencyName, dailyEntry }: {
   c: Campaign
   advertiserName: string
   agencyName: string
+  dailyEntry?: import("@/lib/hooks/useDailySpendMap").DailySpendEntry
 }) {
   const totals   = getCampaignTotals(c)
   const progress = getCampaignProgress(c.startDate, c.endDate)
@@ -134,6 +138,16 @@ function CampaignCard({ c, advertiserName, agencyName }: {
           </div>
         </div>
 
+        {/* 전일 대비 소진율 */}
+        {dailyEntry && (dailyEntry.today > 0 || dailyEntry.yesterday > 0) && (
+          <div className="mt-2.5 border-t border-gray-50 pt-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-gray-400">전일 대비 소진</span>
+              <DailyDeltaCell entry={dailyEntry} variant="inline" className="text-right" />
+            </div>
+          </div>
+        )}
+
         {/* 메모 */}
         {c.memo && (
           <p className="mt-2.5 text-[11px] text-gray-400 border-t border-gray-50 pt-2 truncate">{c.memo}</p>
@@ -151,6 +165,8 @@ export default function DashboardPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | '집행 중' | '종료'>('집행 중')
 
   const { reports } = useReports()
+  const { allRows: rawRows } = useRawData()
+  const dailySpendMap = useDailySpendMap(rawRows, campaigns)
 
   useEffect(() => {
     try {
@@ -367,6 +383,7 @@ export default function DashboardPage() {
                     c={c}
                     advertiserName={advertisers[c.advertiserId] ?? ''}
                     agencyName={agencies[c.agencyId] ?? ''}
+                    dailyEntry={dailySpendMap.get(c.id)}
                   />
                 </Link>
               ))}

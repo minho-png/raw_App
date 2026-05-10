@@ -2,9 +2,11 @@
 import React from "react"
 import { Campaign, Agency, Advertiser, Operator, getCampaignTotals, getCampaignProgress, getDday } from "@/lib/campaignTypes"
 import { fmt, spendRateStyle } from "./statusUtils"
+import { DailyDeltaCell } from "@/components/DailyDeltaCell"
+import type { DailySpendEntry } from "@/lib/hooks/useDailySpendMap"
 
 export function CampaignTableSection({
-  filtered, agencies, advertisers, operators, computedSpendMap,
+  filtered, agencies, advertisers, operators, computedSpendMap, dailySpendMap,
   onEdit, onDelete, onStatusToggle,
   selectedDetailId, setSelectedDetailId
 }: {
@@ -13,6 +15,7 @@ export function CampaignTableSection({
   advertisers: Advertiser[]
   operators: Operator[]
   computedSpendMap: Map<string, { netAmount: number; executionAmount: number; rowCount: number }>
+  dailySpendMap?: Map<string, DailySpendEntry>
   onEdit: (c: Campaign) => void
   onDelete: (id: string) => void
   onStatusToggle: (id: string) => void
@@ -42,6 +45,7 @@ export function CampaignTableSection({
                 <th className="px-4 py-3 text-center">진행률</th>
                 <th className="px-4 py-3 text-center">소진율 <span className="text-[9px] font-normal text-gray-400">(raw)</span></th>
                 <th className="px-4 py-3 text-right">집행금액 <span className="text-[9px] font-normal text-gray-400">(세팅금액)</span></th>
+                <th className="px-4 py-3 text-right">전일 대비 소진<br/><span className="text-[9px] font-normal text-gray-400">(당일 / 전일)</span></th>
                 <th className="px-4 py-3 text-center">연결</th>
                 <th className="px-4 py-3 text-center">관리</th>
               </tr>
@@ -124,6 +128,7 @@ export function CampaignTableSection({
                         <span className="text-gray-300 text-[11px]">—</span>
                       )}
                     </td>
+                    <DailyDeltaCell entry={dailySpendMap?.get(c.id)} />
                     <td className="px-4 py-3 text-center">
                       {csvCount > 0 ? (
                         <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">
