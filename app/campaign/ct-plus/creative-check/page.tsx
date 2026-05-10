@@ -11,6 +11,7 @@ import {
 import { PlatformSelector } from "./PlatformSelector"
 import SpecTable from "./SpecTable"
 import DropZone from "./DropZone"
+import { genId } from "@/lib/idGen"
 
 // ── 타입 ──────────────────────────────────────────────────────────
 
@@ -157,7 +158,7 @@ export default function CreativeCheckPage() {
   const removeVideo = (id: string) => setVideos(prev => { const a = prev.find(x => x.id === id); if (a) URL.revokeObjectURL(a.objectUrl); return prev.filter(x => x.id !== id) })
 
   // ── URL ──────────────────────────────────────────────────────
-  const addUrl = () => { const t = urlInput.trim(); if (!t) return; setUrls(prev => [...prev, { id: Date.now().toString(), url: t, checked: false, note: '' }]); setUrlInput('') }
+  const addUrl = () => { const t = urlInput.trim(); if (!t) return; setUrls(prev => [...prev, { id: genId(), url: t, checked: false, note: '' }]); setUrlInput('') }
   const removeUrl = (id: string) => setUrls(prev => prev.filter(u => u.id !== id))
   const toggleChecked = (id: string) => setUrls(prev => prev.map(u => u.id === id ? { ...u, checked: !u.checked } : u))
   const updateNote = (id: string, note: string) => setUrls(prev => prev.map(u => u.id === id ? { ...u, note } : u))

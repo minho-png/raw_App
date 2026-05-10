@@ -3,6 +3,7 @@ import React, { useState } from "react"
 import { Operator } from "@/lib/campaignTypes"
 import { MF, inputCls } from "./statusUtils"
 import { ModalShell } from "@/components/atoms/ModalShell"
+import { genId } from "@/lib/idGen"
 
 export function OperatorModal({
   open, onClose, editOp, onSave,
@@ -19,7 +20,7 @@ export function OperatorModal({
 
   function handleSave() {
     if (!name.trim() || !email.trim() || !phone.trim()) { alert("모든 항목을 입력하세요."); return }
-    onSave({ id: editOp?.id ?? Date.now().toString(), name, email, phone } as Operator)
+    onSave({ id: editOp?.id ?? genId(), name, email, phone } as Operator)
   }
 
   return (

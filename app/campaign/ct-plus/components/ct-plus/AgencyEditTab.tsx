@@ -2,6 +2,7 @@
 import React, { useState } from "react"
 import { Agency } from "@/lib/campaignTypes"
 import { inputCls, MF } from "./statusUtils"
+import { genId } from "@/lib/idGen"
 
 export function AgencyEditTab({ agency, agencies: _agencies, onSave, onCancel }: {
   agency: Agency | null
@@ -62,7 +63,7 @@ export function AgencyEditTab({ agency, agencies: _agencies, onSave, onCancel }:
       return
     }
     const saved: Agency = {
-      id: agency?.id ?? Date.now().toString(),
+      id: agency?.id ?? genId(),
       name,
       contactName,
       email,

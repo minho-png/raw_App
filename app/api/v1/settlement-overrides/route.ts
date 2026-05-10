@@ -23,6 +23,12 @@ export interface SettlementOverride {
   type: 'sales' | 'purchase'
   month: string
   overrides: Record<string, unknown>
+  /**
+   * 사용자가 수정한 시점의 자동 계산값(수정 필드 한정).
+   * 자동 계산식이 변경된 후 같은 행을 다시 조회하면
+   * 현재 자동값 ≠ baseline → '계산 기준 변경됨' 경고 표시 가능.
+   */
+  baseline?: Record<string, unknown>
   updatedAt?: string
 }
 
@@ -56,6 +62,7 @@ export async function GET(req: NextRequest) {
       type:   d.type,
       month:  d.month,
       overrides: d.overrides ?? {},
+      baseline:  d.baseline ?? undefined,
       updatedAt: d.updated_at?.toISOString?.() ?? d.updatedAt,
     }))
     return NextResponse.json({ data })
@@ -75,17 +82,16 @@ export async function PUT(req: NextRequest) {
     }
     const col = await getCollection()
     const now = new Date()
+    const setDoc: Record<string, unknown> = {
+      type:       body.type,
+      month:      body.month,
+      overrides:  body.overrides ?? {},
+      updated_at: now,
+    }
+    if (body.baseline !== undefined) setDoc.baseline = body.baseline
     await col.updateOne(
       { workspace_id: WORKSPACE, rowKey: body.rowKey },
-      {
-        $set: {
-          type:      body.type,
-          month:     body.month,
-          overrides: body.overrides ?? {},
-          updated_at: now,
-        },
-        $setOnInsert: { created_at: now },
-      },
+      { $set: setDoc, $setOnInsert: { created_at: now } },
       { upsert: true },
     )
     return NextResponse.json({ ok: true })

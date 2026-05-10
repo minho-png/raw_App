@@ -115,6 +115,19 @@ export default function Sidebar() {
     setLoggingOut(true)
     try {
       await fetch("/api/auth/logout", { method: "POST" })
+      // 클라이언트 캐시 정리 (BUG-04: 이전 사용자 정보 잔류 방지)
+      try {
+        sessionStorage.clear()
+        // ct-plus-* / mockup-* 등 앱 LocalStorage 키만 선별 제거 (theme/preferences 보존)
+        const keys = Object.keys(localStorage)
+        for (const k of keys) {
+          if (k.startsWith('ct-plus-') || k.startsWith('mockup-') ||
+              k.startsWith('agency-fee-') || k.startsWith('media-cost-') ||
+              k.startsWith('lastUserId')) {
+            localStorage.removeItem(k)
+          }
+        }
+      } catch {}
       router.replace("/login")
       router.refresh()
     } finally {

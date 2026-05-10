@@ -54,7 +54,8 @@ function LoginForm() {
           <input
             id="username"
             type="text"
-            autoComplete="username"
+            autoComplete="off"
+            data-lpignore="true"
             required
             value={username}
             onChange={e => setUsername(e.target.value)}
@@ -70,7 +71,8 @@ function LoginForm() {
           <input
             id="password"
             type="password"
-            autoComplete="current-password"
+            autoComplete="new-password"
+            data-lpignore="true"
             required
             value={password}
             onChange={e => setPassword(e.target.value)}

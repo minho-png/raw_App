@@ -26,7 +26,7 @@ import {
 } from "@/lib/export/settlementExcel"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
-import { useSettlementOverrides, applyOverride } from "@/lib/hooks/useSettlementOverrides"
+import { useSettlementOverrides, applyOverride, isOverrideStale } from "@/lib/hooks/useSettlementOverrides"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { ModalShell } from "@/components/atoms/ModalShell"
 
@@ -127,6 +127,34 @@ export default function SalesPurchasePage() {
   // 수정 모달 상태
   const [editTarget, setEditTarget] = useState<{ type: 'sales' | 'purchase'; row: SalesRow | PurchaseRow } | null>(null)
 
+  // Stale override 감지 (저장 당시 baseline ≠ 현재 자동값 → 계산식 변경됨)
+  const staleSalesCount = useMemo(
+    () => salesRows.reduce((n, r) => n + (isOverrideStale(r, salesOv.byKey.get(r._rowKey)) ? 1 : 0), 0),
+    [salesRows, salesOv.byKey],
+  )
+  const stalePurchaseCount = useMemo(
+    () => purchaseRows.reduce((n, r) => n + (isOverrideStale(r, purchaseOv.byKey.get(r._rowKey)) ? 1 : 0), 0),
+    [purchaseRows, purchaseOv.byKey],
+  )
+  const staleCount = view === 'sales' ? staleSalesCount : stalePurchaseCount
+
+  // 과거 월 보고 있는지 (현재월보다 과거)
+  const isPastMonth = month < toMonthStr(today)
+
+  // 미지정 (대행사 미할당) 행 가시화 + 토글 필터
+  const [showUnassignedOnly, setShowUnassignedOnly] = useState(false)
+  const unassignedSales    = useMemo(() => mergedSales.filter(r => !r._agencyId).length,    [mergedSales])
+  const unassignedPurchase = useMemo(() => mergedPurchase.filter(r => !r._agencyId).length, [mergedPurchase])
+  const visibleSales    = useMemo(
+    () => showUnassignedOnly ? mergedSales.filter(r => !r._agencyId)    : mergedSales,
+    [mergedSales, showUnassignedOnly],
+  )
+  const visiblePurchase = useMemo(
+    () => showUnassignedOnly ? mergedPurchase.filter(r => !r._agencyId) : mergedPurchase,
+    [mergedPurchase, showUnassignedOnly],
+  )
+  const unassignedCount = view === 'sales' ? unassignedSales : unassignedPurchase
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white px-6 py-4">
@@ -174,8 +202,37 @@ export default function SalesPurchasePage() {
           }
         />
 
-        {view === 'sales'    && <SalesTable    rows={mergedSales}    onEdit={r => setEditTarget({ type: 'sales',    row: r })} />}
-        {view === 'purchase' && <PurchaseTable rows={mergedPurchase} onEdit={r => setEditTarget({ type: 'purchase', row: r })} />}
+        {isPastMonth && (
+          <div className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+            📅 <strong>과거 월({month})</strong> 데이터를 보고 있습니다. 자동 계산식·매핑이 이후 변경됐을 수 있으므로 수치 변동에 주의하세요.
+          </div>
+        )}
+        {staleCount > 0 && (
+          <div className="rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-900">
+            ⚙️ <strong>계산 기준 변경 감지 {staleCount}건</strong> — 사용자 수정값을 저장할 당시의 자동 계산값과 현재 값이 다릅니다.
+            해당 행은 수정 모달에서 새 자동값을 확인하고 필요 시 수정값을 다시 검토하세요.
+          </div>
+        )}
+        {unassignedCount > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-center justify-between gap-2">
+            <span>
+              ⚠ <strong>거래처 미지정 {unassignedCount}건</strong> 포함 — Motiv 캠페인에 대행사 매핑이 안 된 항목이 정산표에 빈 거래처로 노출됩니다.
+              {' '}<a href="/manage" className="underline hover:text-amber-700">관리 페이지</a>에서 매핑하거나 아래 토글로 격리 확인하세요.
+            </span>
+            <button
+              onClick={() => setShowUnassignedOnly(v => !v)}
+              className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                showUnassignedOnly
+                  ? 'border-amber-500 bg-amber-200 text-amber-900'
+                  : 'border-amber-300 bg-white text-amber-800 hover:bg-amber-100'
+              }`}
+            >
+              {showUnassignedOnly ? '전체 보기' : '미지정만 보기'}
+            </button>
+          </div>
+        )}
+        {view === 'sales'    && <SalesTable    rows={visibleSales}    onEdit={r => setEditTarget({ type: 'sales',    row: r })} />}
+        {view === 'purchase' && <PurchaseTable rows={visiblePurchase} onEdit={r => setEditTarget({ type: 'purchase', row: r })} />}
       </main>
 
       {editTarget && (
@@ -183,9 +240,9 @@ export default function SalesPurchasePage() {
           target={editTarget}
           month={month}
           onClose={() => setEditTarget(null)}
-          onSave={async (rowKey, overrides) => {
+          onSave={async (rowKey, overrides, baseline) => {
             const handle = editTarget.type === 'sales' ? salesOv : purchaseOv
-            await handle.upsert({ rowKey, type: editTarget.type, month, overrides })
+            await handle.upsert({ rowKey, type: editTarget.type, month, overrides, baseline })
             setEditTarget(null)
           }}
           onReset={async (rowKey) => {
@@ -434,7 +491,7 @@ function RowEditModal({
   target: { type: 'sales' | 'purchase'; row: SalesRow | PurchaseRow }
   month: string
   onClose: () => void
-  onSave: (rowKey: string, overrides: Record<string, unknown>) => Promise<void>
+  onSave: (rowKey: string, overrides: Record<string, unknown>, baseline: Record<string, unknown>) => Promise<void>
   onReset: (rowKey: string) => Promise<void>
   hasOverride: boolean
 }) {
@@ -447,9 +504,32 @@ function RowEditModal({
   }, [target.row])
   const [values, setValues] = useState<Record<string, unknown>>(initial)
   const [saving, setSaving] = useState(false)
+  // 사용자가 세액·합계금액을 직접 수정한 경우 그 후로는 공급가액 cascade 비활성
+  const [manualVatTouched, setManualVatTouched] = useState(false)
+  const [manualTotalTouched, setManualTotalTouched] = useState(false)
 
   function setField(key: string, type: 'text' | 'number' | 'date', raw: string) {
-    setValues(v => ({ ...v, [key]: type === 'number' ? (raw === '' ? '' : parseFloat(raw) || 0) : raw }))
+    const next = type === 'number' ? (raw === '' ? '' : parseFloat(raw) || 0) : raw
+    setValues(v => {
+      const merged: Record<string, unknown> = { ...v, [key]: next }
+      // 공급가액 변경 시 세액(10%) + 합계금액(net+vat) 자동 갱신.
+      // 단, 사용자가 세액/합계를 직접 수정한 적이 있으면 해당 필드는 건드리지 않음.
+      if (key === '공급가액' && typeof next === 'number') {
+        if (!manualVatTouched) merged['세액'] = Math.round(next * 0.1)
+        if (!manualTotalTouched) {
+          const vat = manualVatTouched ? Number(merged['세액'] ?? 0) : Math.round(next * 0.1)
+          merged['합계금액'] = next + vat
+        }
+      }
+      // 세액 변경 시 합계 = 공급가액 + 세액 (사용자가 합계를 직접 안 건드린 경우)
+      if (key === '세액' && typeof next === 'number' && !manualTotalTouched) {
+        const supply = Number(merged['공급가액'] ?? 0)
+        merged['합계금액'] = supply + next
+      }
+      return merged
+    })
+    if (key === '세액') setManualVatTouched(true)
+    if (key === '합계금액') setManualTotalTouched(true)
   }
 
   function diff(): Record<string, unknown> {
@@ -468,7 +548,11 @@ function RowEditModal({
         alert('변경된 항목이 없습니다.')
         return
       }
-      await onSave(target.row._rowKey, ov)
+      // baseline = 변경된 필드의 자동 계산값 스냅샷.
+      // 이후 자동 계산식이 바뀌면 row 의 현재 값과 baseline 비교로 stale 판정.
+      const baseline: Record<string, unknown> = {}
+      for (const k of Object.keys(ov)) baseline[k] = initial[k]
+      await onSave(target.row._rowKey, ov, baseline)
     } finally { setSaving(false) }
   }
 
@@ -514,6 +598,10 @@ function RowEditModal({
         </div>
         <p className="text-[11px] text-gray-400 px-1">
           변경된 항목(노란색)만 영속화됩니다. 자동 계산 값은 그대로 유지되고, 수정값이 우선 적용됩니다.
+        </p>
+        <p className="text-[11px] text-blue-600 px-1">
+          공급가액 변경 시 세액(10%)·합계금액이 자동 갱신됩니다.
+          {manualVatTouched || manualTotalTouched ? ' 직접 수정한 항목은 자동 갱신에서 제외됩니다.' : ''}
         </p>
       </div>
     </ModalShell>

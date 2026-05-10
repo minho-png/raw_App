@@ -18,6 +18,8 @@ import {
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
+import { useDailySpendMap } from "@/lib/hooks/useDailySpendMap"
+import { genId } from "@/lib/idGen"
 
 export default function CampaignStatusPage() {
   const {
@@ -25,6 +27,7 @@ export default function CampaignStatusPage() {
     saveCampaigns,
   } = useMasterData()
   const { allRows: rawRows } = useRawData()
+  const dailySpendMap = useDailySpendMap(rawRows, campaigns)
 
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("전체")
   const [filterMonth,  setFilterMonth]  = useState("")
@@ -224,6 +227,7 @@ export default function CampaignStatusPage() {
           filtered={filtered}
           agencies={agencies} advertisers={advertisers} operators={operators}
           computedSpendMap={computedSpendMap}
+          dailySpendMap={dailySpendMap}
           onEdit={(c) => { setEditTarget(c); setModalOpen(true) }}
           onDelete={handleDelete}
           onStatusToggle={handleStatusToggle}
@@ -239,7 +243,7 @@ export default function CampaignStatusPage() {
           takenCsvNames={takenCsvNames}
           onSave={(c) => {
             if (editTarget) saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))
-            else            saveCampaigns([...campaigns, { ...c, id: Date.now().toString() }])
+            else            saveCampaigns([...campaigns, { ...c, id: genId() }])
             setModalOpen(false)
           }}
           onClose={() => setModalOpen(false)}

@@ -11,6 +11,9 @@ import type { Campaign } from "@/lib/campaignTypes"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 import { useReports } from "@/lib/hooks/useReports"
+import { useRawData } from "@/lib/hooks/useRawData"
+import { useDailySpendMap } from "@/lib/hooks/useDailySpendMap"
+import { DailyDeltaCell } from "@/components/DailyDeltaCell"
 
 // ── 로컬스토리지 키 ────────────────────────────────────────────
 const CAMPAIGNS_KEY  = 'campaigns-v1'
@@ -40,10 +43,11 @@ const MEDIA_NAME_TO_TYPE: Record<string, MediaType> = {
 }
 
 // ── 서브컴포넌트: 캠페인 카드 ─────────────────────────────────────
-function CampaignCard({ c, advertiserName, agencyName }: {
+function CampaignCard({ c, advertiserName, agencyName, dailyEntry }: {
   c: Campaign
   advertiserName: string
   agencyName: string
+  dailyEntry?: import("@/lib/hooks/useDailySpendMap").DailySpendEntry
 }) {
   const totals   = getCampaignTotals(c)
   const progress = getCampaignProgress(c.startDate, c.endDate)
@@ -134,6 +138,16 @@ function CampaignCard({ c, advertiserName, agencyName }: {
           </div>
         </div>
 
+        {/* 전일 대비 소진율 */}
+        {dailyEntry && (dailyEntry.today > 0 || dailyEntry.yesterday > 0) && (
+          <div className="mt-2.5 border-t border-gray-50 pt-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-gray-400">전일 대비 소진</span>
+              <DailyDeltaCell entry={dailyEntry} variant="inline" className="text-right" />
+            </div>
+          </div>
+        )}
+
         {/* 메모 */}
         {c.memo && (
           <p className="mt-2.5 text-[11px] text-gray-400 border-t border-gray-50 pt-2 truncate">{c.memo}</p>
@@ -151,6 +165,8 @@ export default function DashboardPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | '집행 중' | '종료'>('집행 중')
 
   const { reports } = useReports()
+  const { allRows: rawRows } = useRawData()
+  const dailySpendMap = useDailySpendMap(rawRows, campaigns)
 
   useEffect(() => {
     try {
@@ -169,14 +185,25 @@ export default function DashboardPage() {
     } catch {}
   }, [])
 
+  // 상태값 정규화 — '집행중' / '집행 중' / '집행  중' 모두 동일하게 처리 (BUG-03)
+  function isActive(c: Campaign): boolean {
+    const s = (c.status ?? '').replace(/\s+/g, '')
+    return s === '집행중'
+  }
+
   const filtered = useMemo(() =>
-    campaigns.filter(c => filterStatus === 'all' || c.status === filterStatus),
+    campaigns.filter(c => {
+      if (filterStatus === 'all') return true
+      if (filterStatus === '집행 중') return isActive(c)
+      const norm = (c.status ?? '').replace(/\s+/g, '')
+      return norm === filterStatus.replace(/\s+/g, '')
+    }),
     [campaigns, filterStatus]
   )
 
   // 집행 중 통계
   const activeStats = useMemo(() => {
-    const active = campaigns.filter(c => c.status === '집행 중')
+    const active = campaigns.filter(isActive)
     let totalBudget = 0, totalSpend = 0, totalSettingCost = 0
     for (const c of active) {
       const t = getCampaignTotals(c)
@@ -192,7 +219,7 @@ export default function DashboardPage() {
 
   // 소진 경보 캠페인 수
   const alertCounts = useMemo(() => {
-    const active = campaigns.filter(c => c.status === '집행 중')
+    const active = campaigns.filter(isActive)
     let overSpend = 0, underSpend = 0, expiringSoon = 0
     for (const c of active) {
       const t    = getCampaignTotals(c)
@@ -224,15 +251,6 @@ export default function DashboardPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
               데이터 입력
-            </Link>
-            <Link
-              href="/campaign/ct-plus/report"
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              통합 리포트
             </Link>
           </div>
         </div>
@@ -298,8 +316,7 @@ export default function DashboardPage() {
           {[
             { href: '/campaign/ct-plus/status',       icon: '📊', label: '집행 현황' },
             { href: '/campaign/ct-plus/daily',         icon: '📥', label: '데이터 입력' },
-            { href: '/campaign/ct-plus/report',        icon: '📈', label: '통합 리포트' },
-            { href: '/campaign/ct-plus/final',         icon: '📋', label: '종료 리포트' },
+            { href: '/campaign/ct-plus/final',         icon: '📋', label: '계산서 발급' },
             { href: '/settlement/dmp-fee',             icon: '💰', label: 'DMP 정산' },
             { href: '/settlement/agency-fee',          icon: '🏢', label: '대행 수수료' },
             { href: '/settlement/media-cost',          icon: '📡', label: '매체비 정산' },
@@ -345,14 +362,21 @@ export default function DashboardPage() {
           </div>
 
           {campaigns.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center">
-              <p className="text-sm text-gray-400 mb-3">등록된 캠페인이 없습니다</p>
-              <Link
-                href="/campaign/ct-plus/status"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700"
-              >
-                캠페인 등록하기 →
-              </Link>
+            <div className="rounded-xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center space-y-3">
+              <p className="text-sm text-gray-400">등록된 캠페인이 없습니다</p>
+              {(Object.keys(advertisers).length === 0 || Object.keys(agencies).length === 0) && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 inline-block rounded px-2 py-1">
+                  ⚠ 광고주·대행사가 비어 있습니다. 캠페인 등록 전 <Link href="/management" className="underline font-medium">관리 페이지</Link>에서 먼저 추가하세요.
+                </p>
+              )}
+              <div>
+                <Link
+                  href="/campaign/ct-plus/status"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  캠페인 등록하기 →
+                </Link>
+              </div>
             </div>
           ) : filtered.length === 0 ? (
             <div className="rounded-xl border border-gray-100 bg-white px-6 py-8 text-center">
@@ -366,6 +390,7 @@ export default function DashboardPage() {
                     c={c}
                     advertiserName={advertisers[c.advertiserId] ?? ''}
                     agencyName={agencies[c.agencyId] ?? ''}
+                    dailyEntry={dailySpendMap.get(c.id)}
                   />
                 </Link>
               ))}
@@ -378,7 +403,7 @@ export default function DashboardPage() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-gray-800">최근 저장 리포트</h2>
-              <Link href="/campaign/ct-plus/report" className="text-xs text-blue-600 hover:underline">
+              <Link href="/campaign/ct-plus/daily" className="text-xs text-blue-600 hover:underline">
                 전체 보기 →
               </Link>
             </div>

@@ -3,6 +3,7 @@ import React, { useState } from "react"
 import { Agency } from "@/lib/campaignTypes"
 import { MF, inputCls } from "./statusUtils"
 import { ModalShell } from "@/components/atoms/ModalShell"
+import { genId } from "@/lib/idGen"
 
 export function AgencyFormModal({
   open, onClose, editAg, onSave,
@@ -20,7 +21,7 @@ export function AgencyFormModal({
   function handleSave() {
     if (!name.trim() || !contactName.trim()) { alert("대행사명과 담당자명은 필수입니다."); return }
     onSave({
-      id: editAg?.id ?? Date.now().toString(),
+      id: editAg?.id ?? genId(),
       name, contactName, email, phone,
       corporateName:   editAg?.corporateName,
       businessNumber:  editAg?.businessNumber,

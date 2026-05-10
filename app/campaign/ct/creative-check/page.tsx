@@ -65,7 +65,7 @@ export default function CtCreativeCheckPage() {
             ))}
           </div>
           <p className="mt-2 text-[11px] text-gray-500">
-            ※ 띠 · 전면은 동일 사이즈(640×100). 업로드 이미지가 해당 사이즈면 둘 다 매칭으로 표기.
+            ※ 업로드 이미지의 해상도가 위 규격 중 하나와 정확히 일치하면 통과.
           </p>
         </section>
 

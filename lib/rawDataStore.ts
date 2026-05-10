@@ -11,7 +11,7 @@ import type { RawRow } from './rawDataParser'
 const STORAGE_KEY = 'ct-plus-raw-batches-v1'
 
 export interface RawBatch {
-  id: string           // Date.now().toString()
+  id: string           // genId() — base36 ms + random suffix
   uploadedAt: string   // ISO 8601
   fileName: string
   rowCount: number

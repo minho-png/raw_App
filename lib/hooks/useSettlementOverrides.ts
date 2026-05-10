@@ -77,6 +77,26 @@ export function applyOverride<T extends object>(
 }
 
 /**
+ * 자동 계산식이 변경됐는지 감지.
+ * baseline(override 저장 당시 자동값)과 현재 row 자동값을 비교.
+ *   - baseline 없음 → false (구버전 데이터)
+ *   - baseline 의 모든 필드가 현재 row 와 동일 → false (변경 없음)
+ *   - 한 필드라도 다름 → true (계산식 변경 → 사용자 수정값의 의미 재검토 필요)
+ */
+export function isOverrideStale<T extends object>(
+  row: T,
+  override?: SettlementOverride,
+): boolean {
+  if (!override?.baseline) return false
+  const baseline = override.baseline
+  const r = row as unknown as Record<string, unknown>
+  for (const k of Object.keys(baseline)) {
+    if (baseline[k] !== r[k]) return true
+  }
+  return false
+}
+
+/**
  * rowKey 생성 — 빌더와 동일한 규칙 사용.
  */
 export function salesRowKey(month: string, campaignId: string): string {

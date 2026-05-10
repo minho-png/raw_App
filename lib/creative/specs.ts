@@ -12,7 +12,7 @@ export interface CreativeSpec {
 // CT — 이미지 규격 (사용자 정의)
 export const CT_IMAGE_SPECS: CreativeSpec[] = [
   { key: '띠',     label: '띠',     width: 640,  height: 100 },
-  { key: '전면',   label: '전면',   width: 640,  height: 100 },
+  { key: '전면',   label: '전면',   width: 640,  height: 960 },
   { key: '중간',   label: '중간',   width: 300,  height: 250 },
   { key: '네이티브', label: '네이티브', width: 1200, height: 627 },
 ]
