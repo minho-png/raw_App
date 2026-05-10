@@ -127,6 +127,20 @@ export default function SalesPurchasePage() {
   // 수정 모달 상태
   const [editTarget, setEditTarget] = useState<{ type: 'sales' | 'purchase'; row: SalesRow | PurchaseRow } | null>(null)
 
+  // 미지정 (대행사 미할당) 행 가시화 + 토글 필터
+  const [showUnassignedOnly, setShowUnassignedOnly] = useState(false)
+  const unassignedSales    = useMemo(() => mergedSales.filter(r => !r._agencyId).length,    [mergedSales])
+  const unassignedPurchase = useMemo(() => mergedPurchase.filter(r => !r._agencyId).length, [mergedPurchase])
+  const visibleSales    = useMemo(
+    () => showUnassignedOnly ? mergedSales.filter(r => !r._agencyId)    : mergedSales,
+    [mergedSales, showUnassignedOnly],
+  )
+  const visiblePurchase = useMemo(
+    () => showUnassignedOnly ? mergedPurchase.filter(r => !r._agencyId) : mergedPurchase,
+    [mergedPurchase, showUnassignedOnly],
+  )
+  const unassignedCount = view === 'sales' ? unassignedSales : unassignedPurchase
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white px-6 py-4">
@@ -174,8 +188,26 @@ export default function SalesPurchasePage() {
           }
         />
 
-        {view === 'sales'    && <SalesTable    rows={mergedSales}    onEdit={r => setEditTarget({ type: 'sales',    row: r })} />}
-        {view === 'purchase' && <PurchaseTable rows={mergedPurchase} onEdit={r => setEditTarget({ type: 'purchase', row: r })} />}
+        {unassignedCount > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-center justify-between gap-2">
+            <span>
+              ⚠ <strong>거래처 미지정 {unassignedCount}건</strong> 포함 — Motiv 캠페인에 대행사 매핑이 안 된 항목이 정산표에 빈 거래처로 노출됩니다.
+              {' '}<a href="/manage" className="underline hover:text-amber-700">관리 페이지</a>에서 매핑하거나 아래 토글로 격리 확인하세요.
+            </span>
+            <button
+              onClick={() => setShowUnassignedOnly(v => !v)}
+              className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                showUnassignedOnly
+                  ? 'border-amber-500 bg-amber-200 text-amber-900'
+                  : 'border-amber-300 bg-white text-amber-800 hover:bg-amber-100'
+              }`}
+            >
+              {showUnassignedOnly ? '전체 보기' : '미지정만 보기'}
+            </button>
+          </div>
+        )}
+        {view === 'sales'    && <SalesTable    rows={visibleSales}    onEdit={r => setEditTarget({ type: 'sales',    row: r })} />}
+        {view === 'purchase' && <PurchaseTable rows={visiblePurchase} onEdit={r => setEditTarget({ type: 'purchase', row: r })} />}
       </main>
 
       {editTarget && (

@@ -362,14 +362,21 @@ export default function DashboardPage() {
           </div>
 
           {campaigns.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center">
-              <p className="text-sm text-gray-400 mb-3">등록된 캠페인이 없습니다</p>
-              <Link
-                href="/campaign/ct-plus/status"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700"
-              >
-                캠페인 등록하기 →
-              </Link>
+            <div className="rounded-xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center space-y-3">
+              <p className="text-sm text-gray-400">등록된 캠페인이 없습니다</p>
+              {(Object.keys(advertisers).length === 0 || Object.keys(agencies).length === 0) && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 inline-block rounded px-2 py-1">
+                  ⚠ 광고주·대행사가 비어 있습니다. 캠페인 등록 전 <Link href="/management" className="underline font-medium">관리 페이지</Link>에서 먼저 추가하세요.
+                </p>
+              )}
+              <div>
+                <Link
+                  href="/campaign/ct-plus/status"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  캠페인 등록하기 →
+                </Link>
+              </div>
             </div>
           ) : filtered.length === 0 ? (
             <div className="rounded-xl border border-gray-100 bg-white px-6 py-8 text-center">

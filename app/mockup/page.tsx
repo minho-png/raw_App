@@ -1066,9 +1066,13 @@ export default function MockupPage() {
         >＋ 새 탭</button>
       </div>
 
-      {/* 캔버스 (탭 ID 로 React key — 탭 전환 시 완전 격리) */}
+      {/* 캔버스 — 모든 탭 mount 유지 (active만 표시) → 탭 전환 시 작업 보존 */}
       <div className="flex-1 overflow-auto">
-        <MockupCanvas key={activeId} />
+        {tabs.map(t => (
+          <div key={t.id} className={t.id === activeId ? '' : 'hidden'}>
+            <MockupCanvas />
+          </div>
+        ))}
       </div>
     </div>
   )
