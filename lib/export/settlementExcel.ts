@@ -158,6 +158,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
     const op = opById.get(s.campaign.managerId)
     // CT+ 매출 공급가액 = 부킹 금액 (광고주 청구 기준)
     const net = Math.round(s.totals.budget)
+    if (net <= 0) continue
     const vat = Math.round(net * 0.1)
     // CT+ 수수료 (VAT포함) = (DMP사 비용 + 대행수수료) × 1.1
     const fee = Math.round(s.totals.markup * 1.1)
@@ -200,6 +201,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
     const agencyFee = Math.round(Number(c.stats?.agency_fee ?? 0))
     const revenue = Math.round(Number(c.stats?.revenue ?? c.stats?.cost ?? 0))
     const net = revenue
+    if (net <= 0) continue
     const vat = Math.round(net * 0.1)
     rows.push({
       해당월: month,

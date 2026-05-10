@@ -6,7 +6,7 @@ import { sendGmail } from '@/lib/email/gmailSender'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const RECIPIENT = process.env.ALERT_RECIPIENT || 'minho@motiv-i.com'
+const RECIPIENT = process.env.ALERT_RECIPIENT?.trim() || ''
 
 /**
  * 401 원인을 정확히 식별해 반환.
@@ -58,6 +58,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       { ok: false, error: 'unauthorized', reason: auth.reason, hint: auth.hint },
       { status: 401 },
+    )
+  }
+
+  if (!RECIPIENT) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'missing_alert_recipient',
+        hint: 'Vercel env ALERT_RECIPIENT 미설정. 알림 수신자 이메일을 환경변수로 등록 후 재배포 필요.',
+      },
+      { status: 500 },
     )
   }
 

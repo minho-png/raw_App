@@ -447,9 +447,32 @@ function RowEditModal({
   }, [target.row])
   const [values, setValues] = useState<Record<string, unknown>>(initial)
   const [saving, setSaving] = useState(false)
+  // 사용자가 세액·합계금액을 직접 수정한 경우 그 후로는 공급가액 cascade 비활성
+  const [manualVatTouched, setManualVatTouched] = useState(false)
+  const [manualTotalTouched, setManualTotalTouched] = useState(false)
 
   function setField(key: string, type: 'text' | 'number' | 'date', raw: string) {
-    setValues(v => ({ ...v, [key]: type === 'number' ? (raw === '' ? '' : parseFloat(raw) || 0) : raw }))
+    const next = type === 'number' ? (raw === '' ? '' : parseFloat(raw) || 0) : raw
+    setValues(v => {
+      const merged: Record<string, unknown> = { ...v, [key]: next }
+      // 공급가액 변경 시 세액(10%) + 합계금액(net+vat) 자동 갱신.
+      // 단, 사용자가 세액/합계를 직접 수정한 적이 있으면 해당 필드는 건드리지 않음.
+      if (key === '공급가액' && typeof next === 'number') {
+        if (!manualVatTouched) merged['세액'] = Math.round(next * 0.1)
+        if (!manualTotalTouched) {
+          const vat = manualVatTouched ? Number(merged['세액'] ?? 0) : Math.round(next * 0.1)
+          merged['합계금액'] = next + vat
+        }
+      }
+      // 세액 변경 시 합계 = 공급가액 + 세액 (사용자가 합계를 직접 안 건드린 경우)
+      if (key === '세액' && typeof next === 'number' && !manualTotalTouched) {
+        const supply = Number(merged['공급가액'] ?? 0)
+        merged['합계금액'] = supply + next
+      }
+      return merged
+    })
+    if (key === '세액') setManualVatTouched(true)
+    if (key === '합계금액') setManualTotalTouched(true)
   }
 
   function diff(): Record<string, unknown> {
@@ -514,6 +537,10 @@ function RowEditModal({
         </div>
         <p className="text-[11px] text-gray-400 px-1">
           변경된 항목(노란색)만 영속화됩니다. 자동 계산 값은 그대로 유지되고, 수정값이 우선 적용됩니다.
+        </p>
+        <p className="text-[11px] text-blue-600 px-1">
+          공급가액 변경 시 세액(10%)·합계금액이 자동 갱신됩니다.
+          {manualVatTouched || manualTotalTouched ? ' 직접 수정한 항목은 자동 갱신에서 제외됩니다.' : ''}
         </p>
       </div>
     </ModalShell>
