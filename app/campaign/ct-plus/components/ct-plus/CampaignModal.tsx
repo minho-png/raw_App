@@ -10,6 +10,7 @@ import { ModalShell } from "@/components/atoms/ModalShell"
 import { inputCls, emptyMB, MF } from "./statusUtils"
 import { MediaBudgetCard } from "./MediaBudgetCard"
 import { CsvMappingPanel } from "./CsvMappingPanel"
+import { genId } from "@/lib/idGen"
 
 // VAT 포함 표시 매체 (실 세팅금액 자동계산 시 ×1.1)
 const VAT_INCLUDED_MEDIA = ['네이버 GFA', '카카오모먼트']
@@ -61,7 +62,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   async function handleAddOperator() {
     const name = newOpName.trim()
     if (!name) return
-    const newOp: Operator = { id: Date.now().toString(), name, email: "", phone: "" }
+    const newOp: Operator = { id: genId(), name, email: "", phone: "" }
     await saveOperators([...operators, newOp])
     setManagerId(newOp.id)
     setNewOpName("")
@@ -113,7 +114,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   function addSubCampaign(media: string) {
     setMediaBudgets(mediaBudgets.map(mb => {
       if (mb.media !== media) return mb
-      const sub: SubCampaign = { id: Date.now().toString(), name: '', budget: 0, spend: 0 }
+      const sub: SubCampaign = { id: genId(), name: '', budget: 0, spend: 0 }
       return { ...mb, subCampaigns: [...(mb.subCampaigns ?? []), sub] }
     }))
   }
@@ -174,7 +175,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
 
   function handleConfirmSave() {
     onSave({
-      id: initial?.id ?? Date.now().toString(),
+      id: initial?.id ?? genId(),
       campaignName,
       campaignType: campaignType || undefined,
       agencyId, advertiserId, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo,

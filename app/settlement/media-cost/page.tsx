@@ -7,6 +7,7 @@ import { useMasterData } from "@/lib/hooks/useMasterData"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
+import { genId } from "@/lib/idGen"
 
 const SNAPSHOTS_KEY  = "media-cost-snapshots-v1"
 
@@ -151,7 +152,7 @@ export default function MediaCostPage() {
   // ── 정산 확정 ─────────────────────────────────────────────────
   function handleConfirm() {
     const snap: Snapshot = {
-      id: Date.now().toString(),
+      id: genId(),
       month,
       snapshotAt: new Date().toISOString(),
       rows,

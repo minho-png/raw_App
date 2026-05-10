@@ -10,6 +10,7 @@ import { MotivAgencyAggregation } from "@/components/settlement/MotivAgencyAggre
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
+import { genId } from "@/lib/idGen"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
 
@@ -222,7 +223,7 @@ export default function AgencyFeePage() {
     if (allRows.length === 0) return
     if (!confirm(`${month} 정산을 확정하시겠습니까?\n현재 집행 금액을 스냅샷으로 저장합니다.`)) return
     const snapshot: SettlementSnapshot = {
-      id: Date.now().toString(),
+      id: genId(),
       month,
       snapshotAt: new Date().toISOString(),
       rows: allRows,

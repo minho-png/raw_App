@@ -85,6 +85,14 @@ export function MotivSettlementTable({
   const [bulkAdvertiserId, setBulkAdvertiserId] = useState('')
   const [bulkOperatorId, setBulkOperatorId] = useState('')
 
+  // 자동 매칭 마지막 결과 (alert 대신 영구 패널로 표시)
+  interface MatchResult {
+    matched: number
+    unmatched: { campaignId: number; campaignTitle: string; motivName: string }[]
+    skipped: number  // 이미 지정돼 있어 건너뛴 건수
+  }
+  const [matchResult, setMatchResult] = useState<MatchResult | null>(null)
+
   const filteredCampaigns = useMemo(() => {
     const q = search.trim().toLowerCase()
     return campaigns.filter(c => {
@@ -147,19 +155,18 @@ export function MotivSettlementTable({
   /**
    * 선택된(혹은 미선택 시 전체) 캠페인에 대해
    * Motiv adaccount.agency_id → 내부 Agency.id 자동 매칭 후 일괄 적용.
-   * - 매칭 성공한 캠페인만 upsert
-   * - 매칭 실패는 콘솔로 경고 + 결과 토스트
+   * 결과는 setMatchResult 로 영구 패널에 노출 (alert 미사용).
    */
   function applyMotivAutoMatch() {
     const targets = selected.size > 0
       ? filteredCampaigns.filter(c => selected.has(c.id))
       : filteredCampaigns
     let matched = 0
-    let unmatched = 0
-    const unmatchedNames: string[] = []
+    let skipped = 0
+    const unmatched: MatchResult['unmatched'] = []
     for (const c of targets) {
       const existing = byId.get(c.id)
-      if (existing?.agencyId) continue // 이미 지정된 행은 건드리지 않음
+      if (existing?.agencyId) { skipped++; continue }
       const { agencyId, motivName } = suggestedInternalAgencyId(c)
       if (agencyId) {
         onUpsertAssignment({
@@ -169,23 +176,10 @@ export function MotivSettlementTable({
         })
         matched++
       } else if (motivName) {
-        unmatched++
-        if (unmatchedNames.length < 5) unmatchedNames.push(motivName)
+        unmatched.push({ campaignId: c.id, campaignTitle: c.title ?? `#${c.id}`, motivName })
       }
     }
-    if (matched + unmatched === 0) {
-      alert('자동 매칭할 캠페인이 없습니다. (Motiv 광고계정 정보가 비어있거나 이미 모두 지정됨)')
-      return
-    }
-    let msg = `자동 매칭: ${matched}건 적용`
-    if (unmatched > 0) {
-      msg += ` · ${unmatched}건은 내부 대행사 미발견`
-      if (unmatchedNames.length > 0) {
-        msg += `\n매칭 실패 예: ${unmatchedNames.slice(0, 5).join(', ')}${unmatched > 5 ? ' …' : ''}`
-        msg += `\n→ 관리 페이지에서 동일 이름의 대행사 추가 시 다음 매칭 가능.`
-      }
-    }
-    alert(msg)
+    setMatchResult({ matched, unmatched, skipped })
     if (matched > 0) clearSelection()
   }
 
@@ -295,6 +289,56 @@ export function MotivSettlementTable({
           )}
         </div>
       </header>
+
+      {matchResult && (
+        <div className="border-b border-purple-100 bg-purple-50/40 px-4 py-2.5 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-purple-900">
+              ✨ 자동 매칭 결과 — 적용 <strong className="text-purple-700">{matchResult.matched}</strong>건
+              {matchResult.skipped > 0 && <> · 이미 지정 {matchResult.skipped}건</>}
+              {matchResult.unmatched.length > 0 && <> · 미매칭 <strong className="text-orange-700">{matchResult.unmatched.length}</strong>건</>}
+            </p>
+            <div className="flex items-center gap-1">
+              {matchResult.unmatched.length > 0 && (
+                <button
+                  onClick={() => setUnassignedOnly(true)}
+                  className="rounded border border-orange-300 bg-white px-2 py-0.5 text-[11px] font-medium text-orange-700 hover:bg-orange-50"
+                >
+                  미지정만 보기
+                </button>
+              )}
+              <button
+                onClick={() => setMatchResult(null)}
+                className="rounded text-gray-400 hover:text-gray-700 px-1.5 py-0.5 text-xs"
+                aria-label="결과 닫기"
+              >×</button>
+            </div>
+          </div>
+          {matchResult.matched + matchResult.skipped + matchResult.unmatched.length === 0 && (
+            <p className="text-[11px] text-gray-600">
+              자동 매칭할 캠페인이 없습니다. (Motiv 광고계정 정보가 비어있거나 이미 모두 지정됨)
+            </p>
+          )}
+          {matchResult.unmatched.length > 0 && (
+            <details className="text-[11px] text-orange-900">
+              <summary className="cursor-pointer hover:text-orange-700">
+                미매칭 {matchResult.unmatched.length}건 보기 — 내부 대행사 목록에 동일 이름이 없음
+              </summary>
+              <ul className="mt-1 ml-4 max-h-40 overflow-auto space-y-0.5 list-disc">
+                {matchResult.unmatched.map(u => (
+                  <li key={u.campaignId} className="leading-tight">
+                    <span className="font-medium">{u.motivName}</span>
+                    <span className="text-gray-500"> · {u.campaignTitle}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[10px] text-purple-700">
+                → <a href="/management" className="underline">관리 페이지</a>에서 동일 이름의 대행사를 추가하면 다음 매칭에서 자동 인식됩니다.
+              </p>
+            </details>
+          )}
+        </div>
+      )}
 
       {loading && <p className="px-4 py-6 text-center text-xs text-gray-400">불러오는 중...</p>}
       {error && (

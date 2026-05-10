@@ -8,6 +8,7 @@ import type { MediaType } from "@/lib/reportTypes"
 import { parseUnifiedCsv } from "@/lib/unifiedCsvParser"
 import type { RawBatch } from "@/lib/rawDataStore"
 import { useRawData } from "@/lib/hooks/useRawData"
+import { genId } from "@/lib/idGen"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
@@ -123,7 +124,7 @@ function CtPlusDailyContent() {
       const result  = parseUnifiedCsv(text, [])
       const newRows = Object.values(result.rowsByMedia).flat() as RawRow[]
       const batch: RawBatch = {
-        id: Date.now().toString(),
+        id: genId(),
         uploadedAt: new Date().toISOString(),
         fileName: uploadFile.name,
         rowCount: newRows.length,

@@ -3,6 +3,7 @@ import React, { useState } from "react"
 import { Advertiser, Agency } from "@/lib/campaignTypes"
 import { MF, inputCls } from "./statusUtils"
 import { ModalShell } from "@/components/atoms/ModalShell"
+import { genId } from "@/lib/idGen"
 
 const MAX_PDF_SIZE = 10 * 1024 * 1024 // 10MB
 
@@ -76,7 +77,7 @@ export function AdvertiserModal({
   function handleSave() {
     if (!name.trim() || !agencyId) { alert("광고주명과 대행사는 필수입니다."); return }
     const saved: Advertiser = {
-      id: editAdv?.id ?? Date.now().toString(),
+      id: editAdv?.id ?? genId(),
       name, agencyId,
       contactName: contactName || undefined,
       email: email || undefined,

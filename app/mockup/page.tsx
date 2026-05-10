@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import type { Campaign, Agency, Advertiser } from '@/lib/campaignTypes'
 import { useMasterData } from "@/lib/hooks/useMasterData"
+import { genId } from "@/lib/idGen"
 
 // ── Types ─────────────────────────────────────────────────────
 interface CoverRect { xR: number; yR: number; wR: number; hR: number; fill: string }
@@ -976,7 +977,7 @@ export default function MockupPage() {
       const raw = localStorage.getItem(TABS_KEY)
       const list: MockupTab[] = raw ? JSON.parse(raw) : []
       if (list.length === 0) {
-        const seed: MockupTab = { id: `tab-${Date.now()}`, name: '작업 1' }
+        const seed: MockupTab = { id: `tab-${genId()}`, name: '작업 1' }
         setTabs([seed])
         setActiveId(seed.id)
       } else {
@@ -985,7 +986,7 @@ export default function MockupPage() {
         setActiveId(stored && list.some(t => t.id === stored) ? stored : list[0].id)
       }
     } catch {
-      const seed: MockupTab = { id: `tab-${Date.now()}`, name: '작업 1' }
+      const seed: MockupTab = { id: `tab-${genId()}`, name: '작업 1' }
       setTabs([seed])
       setActiveId(seed.id)
     }
@@ -1003,7 +1004,7 @@ export default function MockupPage() {
   }, [activeId, hydrated])
 
   function addTab() {
-    const id = `tab-${Date.now()}`
+    const id = `tab-${genId()}`
     const next: MockupTab = { id, name: `작업 ${tabs.length + 1}` }
     setTabs(arr => [...arr, next])
     setActiveId(id)

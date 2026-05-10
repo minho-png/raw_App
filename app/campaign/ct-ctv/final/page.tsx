@@ -10,6 +10,7 @@ import MediaUploadCard from "@/components/ct-plus/MediaUploadCard"
 import { parseCtvExcelFile } from "@/lib/excelParser"
 import { CTV_REPORT_SECTIONS, MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType, CtvMediaData, CtvReportSection } from "@/lib/reportTypes"
+import { genId } from "@/lib/idGen"
 
 const MEDIA_TYPES: MediaType[] = ["google", "naver", "kakao", "meta"]
 const HISTORY_KEY = "ct-ctv-final-history"
@@ -345,7 +346,7 @@ export default function CtCtvFinalPage() {
 
   function saveToHistory(mediaList: CtvMediaData[], sections: CtvReportSection[]) {
     const entry: SavedReport = {
-      id: Date.now().toString(),
+      id: genId(),
       name: "CT/CTV 종료 리포트",
       createdAt: new Date().toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" }),
       mediaLabels: mediaList.map(m => MEDIA_CONFIG[m.media].label),

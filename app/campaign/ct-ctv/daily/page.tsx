@@ -5,6 +5,7 @@ import MediaUploadCard from "@/components/ct-plus/MediaUploadCard"
 import { parseCtvRawRows } from "@/lib/excelParser"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType, CtvRawRow } from "@/lib/reportTypes"
+import { genId } from "@/lib/idGen"
 
 const MEDIA_TYPES: MediaType[] = ['google', 'naver', 'kakao', 'meta']
 const REPORTS_KEY = 'ct-ctv-daily-reports-v1'
@@ -171,7 +172,7 @@ export default function CtCtvDailyPage() {
   function handleSaveReport() {
     const mediaTypes = Object.keys(rowsByMedia) as MediaType[]
     const report: SavedReport = {
-      id: Date.now().toString(),
+      id: genId(),
       savedAt: new Date().toISOString(),
       label: makeLabel(rowsByMedia, mediaTypes),
       mediaTypes,
