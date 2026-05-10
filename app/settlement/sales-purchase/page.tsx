@@ -26,7 +26,7 @@ import {
 } from "@/lib/export/settlementExcel"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
-import { useSettlementOverrides, applyOverride } from "@/lib/hooks/useSettlementOverrides"
+import { useSettlementOverrides, applyOverride, isOverrideStale } from "@/lib/hooks/useSettlementOverrides"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { ModalShell } from "@/components/atoms/ModalShell"
 
@@ -127,6 +127,20 @@ export default function SalesPurchasePage() {
   // 수정 모달 상태
   const [editTarget, setEditTarget] = useState<{ type: 'sales' | 'purchase'; row: SalesRow | PurchaseRow } | null>(null)
 
+  // Stale override 감지 (저장 당시 baseline ≠ 현재 자동값 → 계산식 변경됨)
+  const staleSalesCount = useMemo(
+    () => salesRows.reduce((n, r) => n + (isOverrideStale(r, salesOv.byKey.get(r._rowKey)) ? 1 : 0), 0),
+    [salesRows, salesOv.byKey],
+  )
+  const stalePurchaseCount = useMemo(
+    () => purchaseRows.reduce((n, r) => n + (isOverrideStale(r, purchaseOv.byKey.get(r._rowKey)) ? 1 : 0), 0),
+    [purchaseRows, purchaseOv.byKey],
+  )
+  const staleCount = view === 'sales' ? staleSalesCount : stalePurchaseCount
+
+  // 과거 월 보고 있는지 (현재월보다 과거)
+  const isPastMonth = month < toMonthStr(today)
+
   // 미지정 (대행사 미할당) 행 가시화 + 토글 필터
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false)
   const unassignedSales    = useMemo(() => mergedSales.filter(r => !r._agencyId).length,    [mergedSales])
@@ -188,6 +202,17 @@ export default function SalesPurchasePage() {
           }
         />
 
+        {isPastMonth && (
+          <div className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+            📅 <strong>과거 월({month})</strong> 데이터를 보고 있습니다. 자동 계산식·매핑이 이후 변경됐을 수 있으므로 수치 변동에 주의하세요.
+          </div>
+        )}
+        {staleCount > 0 && (
+          <div className="rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-900">
+            ⚙️ <strong>계산 기준 변경 감지 {staleCount}건</strong> — 사용자 수정값을 저장할 당시의 자동 계산값과 현재 값이 다릅니다.
+            해당 행은 수정 모달에서 새 자동값을 확인하고 필요 시 수정값을 다시 검토하세요.
+          </div>
+        )}
         {unassignedCount > 0 && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-center justify-between gap-2">
             <span>
@@ -215,9 +240,9 @@ export default function SalesPurchasePage() {
           target={editTarget}
           month={month}
           onClose={() => setEditTarget(null)}
-          onSave={async (rowKey, overrides) => {
+          onSave={async (rowKey, overrides, baseline) => {
             const handle = editTarget.type === 'sales' ? salesOv : purchaseOv
-            await handle.upsert({ rowKey, type: editTarget.type, month, overrides })
+            await handle.upsert({ rowKey, type: editTarget.type, month, overrides, baseline })
             setEditTarget(null)
           }}
           onReset={async (rowKey) => {
@@ -466,7 +491,7 @@ function RowEditModal({
   target: { type: 'sales' | 'purchase'; row: SalesRow | PurchaseRow }
   month: string
   onClose: () => void
-  onSave: (rowKey: string, overrides: Record<string, unknown>) => Promise<void>
+  onSave: (rowKey: string, overrides: Record<string, unknown>, baseline: Record<string, unknown>) => Promise<void>
   onReset: (rowKey: string) => Promise<void>
   hasOverride: boolean
 }) {
@@ -523,7 +548,11 @@ function RowEditModal({
         alert('변경된 항목이 없습니다.')
         return
       }
-      await onSave(target.row._rowKey, ov)
+      // baseline = 변경된 필드의 자동 계산값 스냅샷.
+      // 이후 자동 계산식이 바뀌면 row 의 현재 값과 baseline 비교로 stale 판정.
+      const baseline: Record<string, unknown> = {}
+      for (const k of Object.keys(ov)) baseline[k] = initial[k]
+      await onSave(target.row._rowKey, ov, baseline)
     } finally { setSaving(false) }
   }
 
