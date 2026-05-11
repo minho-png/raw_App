@@ -67,12 +67,18 @@ export function useRawData(): RawDataHook {
 
   const loadAll = useCallback(async () => {
     setBatches(lsRead())
-    const remote = await fetchBatches()
-    if (remote.length > 0) {
-      setBatches(remote)
-      lsWrite(remote)
+    // QA BUG-005: fetchBatches reject 시 setLoading(false) 미호출 → 무한 로딩.
+    try {
+      const remote = await fetchBatches()
+      if (remote.length > 0) {
+        setBatches(remote)
+        lsWrite(remote)
+      }
+    } catch (e) {
+      console.error('[useRawData] MongoDB fetch failed, using localStorage:', e)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [])
 
   useEffect(() => { loadAll() }, [loadAll])

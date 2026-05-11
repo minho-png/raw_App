@@ -117,16 +117,18 @@ export default function ManagementPage() {
                 >
                   새 대행사 추가
                 </button>
-                <button
-                  onClick={async () => {
-                    if (!confirm("목업 대행사 8건을 추가/병합합니다. 계속하시겠습니까?")) return
-                    await saveAgencies(mergeMockAgencies(agencies))
-                  }}
-                  className="rounded-lg border border-purple-300 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors"
-                  title="기존 대행사는 유지, 동일 ID(mock-ag-*) 만 갱신"
-                >
-                  목업 대행사 시드 (8건)
-                </button>
+                {process.env.NODE_ENV !== 'production' && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm("목업 대행사 8건을 추가/병합합니다. 계속하시겠습니까?")) return
+                      await saveAgencies(mergeMockAgencies(agencies))
+                    }}
+                    className="rounded-lg border border-purple-300 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors"
+                    title="개발 환경 전용 — 기존 대행사는 유지, 동일 ID(mock-ag-*) 만 갱신"
+                  >
+                    목업 대행사 시드 (8건 · dev)
+                  </button>
+                )}
                 {agencies.some(a => a.id.startsWith('mock-ag-')) && (
                   <button
                     onClick={async () => {
