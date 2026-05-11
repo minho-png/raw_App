@@ -19,9 +19,8 @@ const MEDIA_COLORS: Record<string, string> = {
 const CREATIVE_COLORS = ["#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"]
 function mColor(m: string) { return MEDIA_COLORS[m] ?? "#94a3b8" }
 
+// 금액 표기 — 단위 약어(만/억) 사용 안 함, 천 단위 콤마만.
 function fmtAbbr(n: number): string {
-  if (n >= 100_000_000) return `${(n/100_000_000).toFixed(1)}억`
-  if (n >= 10_000) return `${(n/10_000).toFixed(0)}만`
   return fmt(n)
 }
 
