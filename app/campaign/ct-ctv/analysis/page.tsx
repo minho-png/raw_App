@@ -746,8 +746,8 @@ export default function CtCtvAnalysisPage() {
                     <tr key={c.id} className={`border-b border-gray-50 ${hasCritical ? 'bg-red-100/60' : hasAlert ? 'bg-red-50/40' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
                       {/* 캠페인명 + 대행사 */}
                       <td className="px-4 py-3 max-w-[170px]">
-                        <div className="font-medium text-gray-800 truncate">{c.name}</div>
-                        <div className="text-[11px] text-gray-500 truncate">{c.agency}</div>
+                        <div className="font-medium text-gray-800 truncate" title={c.name}>{c.name}</div>
+                        <div className="text-[11px] text-gray-500 truncate" title={c.agency}>{c.agency}</div>
                       </td>
                       <td className="px-3 py-3 text-center">
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${TYPE_COLOR[c.type]}`}>{TYPE_LABEL[c.type]}</span>
