@@ -33,13 +33,19 @@ export function MediaBudgetCard({
     [mb.media, getCsvNamesUsedInMedia]
   )
 
+  // 총 예산 = 하위 캠페인 예산의 합 (사용자 직접 입력 비활성)
+  const computedTotalBudget = React.useMemo(
+    () => (mb.subCampaigns ?? []).reduce((s, sc) => s + (sc.budget ?? 0), 0),
+    [mb.subCampaigns],
+  )
+
   return (
     <div className="rounded-lg border border-gray-200 p-4 space-y-3">
       <h3 className="text-sm font-semibold text-gray-900">{mb.media}</h3>
 
-      {/* 총 수수료율 + 거래처 수수료율 + 예산 */}
+      {/* DMP 수수료율 + 거래처 수수료율 + 총 예산(자동) */}
       <div className="grid grid-cols-3 gap-3">
-        <MF label="총 수수료율 (%)">
+        <MF label="DMP 수수료율 (%)">
           <input
             type="number" min="0" max="100" step="0.1"
             value={mb.totalFeeRate ?? ''}
@@ -57,12 +63,13 @@ export function MediaBudgetCard({
             placeholder="예: 10"
           />
         </MF>
-        <MF label="총 예산">
+        <MF label="총 예산 (캠페인 합계 · 자동)">
           <input
-            type="number" min="0"
-            value={mb.totalBudget ?? mb.dmp.budget + mb.nonDmp.budget}
-            onChange={e => onUpdateMBField(mb.media, 'totalBudget', parseFloat(e.target.value) || 0)}
-            className={inputCls}
+            type="number"
+            value={computedTotalBudget}
+            readOnly
+            className={`${inputCls} bg-gray-50 text-gray-700 cursor-not-allowed`}
+            title="하위 캠페인 예산의 합으로 자동 계산됩니다"
           />
         </MF>
       </div>
@@ -86,7 +93,7 @@ export function MediaBudgetCard({
       {/* KPI 목표 */}
       <KpiTargetSection mb={mb} onUpdateMBField={onUpdateMBField} />
 
-      {/* 서브 캠페인 */}
+      {/* 캠페인 (구 서브 캠페인) */}
       <SubCampaignList
         media={mb.media}
         subCampaigns={mb.subCampaigns}

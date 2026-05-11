@@ -27,7 +27,7 @@ export function SubCampaignList({
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-gray-600">서브 캠페인</span>
+        <span className="text-xs font-medium text-gray-600">캠페인</span>
         <button
           type="button"
           onClick={onAddSubCampaign}
@@ -37,7 +37,7 @@ export function SubCampaignList({
         </button>
       </div>
       {subCampaigns.length === 0 ? (
-        <p className="text-[11px] text-gray-400">서브 캠페인 없음 — 위에서 선택한 CSV 캠페인명 전체가 이 매체에 매핑됩니다</p>
+        <p className="text-[11px] text-gray-400">캠페인 없음 — 위에서 선택한 CSV 캠페인명 전체가 이 매체에 매핑됩니다</p>
       ) : (
         <div className="space-y-2">
           {subCampaigns.map((sc, idx) => (
@@ -47,7 +47,7 @@ export function SubCampaignList({
                   type="text"
                   value={sc.name}
                   onChange={e => onUpdateSubCampaign(idx, 'name', e.target.value)}
-                  placeholder="서브 캠페인명"
+                  placeholder="캠페인명"
                   className="text-xs font-medium flex-1 rounded border border-gray-300 bg-white px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
                 />
                 <div className="flex items-center gap-2 ml-2">
