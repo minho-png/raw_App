@@ -1,5 +1,5 @@
 "use client"
-import React, { useMemo, useState, useCallback } from "react"
+import React, { useMemo, useState, useCallback, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   LineChart, Line, BarChart, Bar,
@@ -24,7 +24,7 @@ function fmtAbbr(n: number): string {
   return fmt(n)
 }
 
-type Tab = "summary" | "daily" | "weekly" | "creative" | "media" | "raw"
+type Tab = "summary" | "daily" | "weekly" | "creative" | "raw"
 
 function aggRows(rows: RawRow[]) {
   const imp = rows.reduce((s,r)=>s+(r.impressions??0),0)
@@ -51,6 +51,11 @@ export default function CampaignDetailPage() {
   const { campaigns, operators, agencies, advertisers } = useMasterData()
   const { batches, allRows: rawRows, updateBatch } = useRawData()
   const [tab, setTab] = useState<Tab>("summary")
+  const [mediaFilter, setMediaFilter] = useState<string>("")
+  // 기간·검색 필터 (모든 기능 탭 공통)
+  type DateRange = "all"|"7d"|"30d"
+  const [dateRange, setDateRange] = useState<DateRange>("all")
+  const [creativeQuery, setCreativeQuery] = useState("")
   const [saving, setSaving] = useState(false)
   const [toast,  setToast]  = useState<string|null>(null)
   const [edits, setEdits]   = useState<Map<string,Partial<RawRow>>>(new Map())
@@ -61,6 +66,33 @@ export default function CampaignDetailPage() {
     if(!campaign) return []
     return applyMarkupToRows(rawRows,campaigns).filter(r=>r.matchedCampaignId===campaign.id)
   },[rawRows,campaigns,campaign])
+  // 선택된 매체 + 기간 + 소재 검색으로 필터링된 행 — 모든 탭의 기본 데이터셋.
+  // 기간: 'all' = 전체, '7d'/'30d' = 최근 N일 (raw 의 최대 date 기준)
+  const filteredRows = useMemo(()=>{
+    let rs = mediaFilter ? campRows.filter(r=>r.media===mediaFilter) : campRows
+    if(dateRange!=="all" && rs.length>0){
+      const dates = rs.map(r=>r.date).filter(Boolean).sort()
+      const latest = dates[dates.length-1]
+      if(latest){
+        const days = dateRange==="7d" ? 7 : 30
+        const cutoff = new Date(latest)
+        cutoff.setDate(cutoff.getDate() - days + 1)
+        const cutoffStr = cutoff.toISOString().slice(0,10)
+        rs = rs.filter(r => r.date >= cutoffStr)
+      }
+    }
+    if(creativeQuery.trim()){
+      const q = creativeQuery.trim().toLowerCase()
+      rs = rs.filter(r => (r.creativeName ?? "").toLowerCase().includes(q))
+    }
+    return rs
+  },[campRows,mediaFilter,dateRange,creativeQuery])
+  // 캠페인 로딩 후 첫 매체로 초기화
+  useEffect(()=>{
+    if(!campaign) return
+    const firstMedia = campaign.mediaBudgets[0]?.media
+    if(firstMedia && !mediaFilter) setMediaFilter(firstMedia)
+  },[campaign, mediaFilter])
 
   // RAW 편집
   const getVal = useCallback(<K extends keyof RawRow>(r:RawRow,key:K):RawRow[K]=>{
@@ -97,7 +129,7 @@ export default function CampaignDetailPage() {
   // 집계
   const totals   = campaign ? getCampaignTotals(campaign) : null
   const progress = campaign ? getCampaignProgress(campaign.startDate, campaign.endDate) : 0
-  const totalA   = useMemo(()=>aggRows(campRows),[campRows])
+  const totalA   = useMemo(()=>aggRows(filteredRows),[filteredRows])
 
   const rawSpendRate = totals && totals.totalSettingCost>0
     ? +(totalA.spend/totals.totalSettingCost*100).toFixed(1) : 0
@@ -123,11 +155,11 @@ export default function CampaignDetailPage() {
     return rows
   },[campaign,totals,totalA])
 
-  // 요약 행 (매체×칄페인)
+  // 요약 행 (선택 매체 내 캠페인별)
   const summaryRows = useMemo(()=>{
     if(!campaign) return []
     const map=new Map<string,RawRow[]>()
-    for(const r of campRows){
+    for(const r of filteredRows){
       const key=`${r.media}||${r.campaignName}`
       const arr=map.get(key)??[];arr.push(r);map.set(key,arr)
     }
@@ -138,12 +170,12 @@ export default function CampaignDetailPage() {
       const a=aggRows(rows)
       return {media,campName,budget,...a,spendRate:budget>0?+(a.spend/budget*100).toFixed(1):0}
     }).sort((a,b)=>a.media.localeCompare(b.media))
-  },[campRows,campaign])
+  },[filteredRows,campaign])
 
   // 소재별
   const creativeRows = useMemo(()=>{
     const map=new Map<string,RawRow[]>()
-    for(const r of campRows){
+    for(const r of filteredRows){
       const key=`${r.creativeName}||${r.media}`
       const arr=map.get(key)??[];arr.push(r);map.set(key,arr)
     }
@@ -151,19 +183,12 @@ export default function CampaignDetailPage() {
       const [creative,media]=key.split("||")
       return {creative,media,...aggRows(rows)}
     }).sort((a,b)=>b.spend-a.spend)
-  },[campRows])
-
-  // 매체별
-  const mediaData = useMemo(()=>{
-    const map=new Map<string,RawRow[]>()
-    for(const r of campRows){const arr=map.get(r.media)??[];arr.push(r);map.set(r.media,arr)}
-    return [...map.entries()].map(([media,rows])=>({media,activeDays:new Set(rows.map(r=>r.date)).size,...aggRows(rows)}))
-  },[campRows])
+  },[filteredRows])
 
   // 일별
   const dailyData = useMemo(()=>{
     const map=new Map<string,{date:string;impressions:number;clicks:number;views:number;spend:number;netAmount:number}>()
-    for(const r of campRows){
+    for(const r of filteredRows){
       if(!r.date)continue
       const cur=map.get(r.date)??{date:r.date,impressions:0,clicks:0,views:0,spend:0,netAmount:0}
       cur.impressions+=r.impressions??0;cur.clicks+=r.clicks??0;cur.views+=r.views??0
@@ -175,19 +200,19 @@ export default function CampaignDetailPage() {
       cumSpend+=d.spend
       return {...d,dateLabel:d.date.slice(5),ctr:d.impressions>0?+(d.clicks/d.impressions*100).toFixed(2):0,cumSpend}
     })
-  },[campRows])
+  },[filteredRows])
 
-  const mediaNames=useMemo(()=>[...new Set(campRows.map(r=>r.media))].sort(),[campRows])
+  const mediaNames=useMemo(()=>[...new Set(filteredRows.map(r=>r.media))].sort(),[filteredRows])
   const dailyByMedia=useMemo(()=>{
     const map=new Map<string,Record<string,number>>()
-    for(const r of campRows){
+    for(const r of filteredRows){
       if(!r.date)continue
       const cur=map.get(r.date)??{}
       cur[r.media]=(cur[r.media]??0)+(r.netAmount??0)
       map.set(r.date,cur)
     }
     return [...map.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([date,vals])=>({date:date.slice(5),...vals}))
-  },[campRows])
+  },[filteredRows])
 
   // 주간
   const weeklyData=useMemo(()=>{
@@ -222,10 +247,11 @@ export default function CampaignDetailPage() {
     {key:"summary",label:"요약"},
     {key:"daily",label:"일별"},
     {key:"weekly",label:"주간"},
-    {key:"creative",label:"소재별"},
-    {key:"media",label:"매체별"},
+    {key:"creative",label:"소재"},
     {key:"raw",label:"RAW 편집"},
   ]
+  // 1차 매체 탭 — campaign.mediaBudgets 의 매체 목록
+  const MEDIA_TABS = campaign.mediaBudgets.map(mb=>mb.media)
 
   const thCls="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 whitespace-nowrap"
   const thRCls="px-3 py-2 text-right text-[11px] font-semibold text-gray-500 whitespace-nowrap"
@@ -285,6 +311,19 @@ export default function CampaignDetailPage() {
       </div>
 
       <main className="p-4 max-w-6xl mx-auto space-y-3">
+        {/* 1차 — 매체 탭 */}
+        {MEDIA_TABS.length>0 && (
+          <div className="flex gap-1 flex-wrap rounded-xl bg-white px-2 py-2 border border-gray-200">
+            <span className="text-[10px] text-gray-400 self-center pl-1 pr-1">매체</span>
+            {MEDIA_TABS.map(m=>(
+              <button key={m} onClick={()=>setMediaFilter(m)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${mediaFilter===m?"bg-blue-600 text-white":"bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              >{m}</button>
+            ))}
+          </div>
+        )}
+
+        {/* 2차 — 기능 탭 */}
         <div className="flex gap-0.5 border-b border-gray-200 bg-white rounded-t-xl px-2">
           {TABS.map(t=>(
             <button key={t.key} onClick={()=>setTab(t.key)}
@@ -293,7 +332,39 @@ export default function CampaignDetailPage() {
           ))}
         </div>
 
-        {campRows.length===0&&tab!=="raw"?(
+        {/* 필터 바 — 기능 탭별로 표시 항목 다름 */}
+        <div className="flex items-center gap-2 flex-wrap rounded-lg bg-white border border-gray-200 px-3 py-2">
+          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">필터</span>
+          <span className="text-[11px] text-gray-500">기간</span>
+          <div className="inline-flex rounded-md border border-gray-200 overflow-hidden">
+            {([
+              {k:"all" as DateRange, label:"전체"},
+              {k:"7d" as DateRange,  label:"최근 7일"},
+              {k:"30d" as DateRange, label:"최근 30일"},
+            ]).map(o=>(
+              <button key={o.k} onClick={()=>setDateRange(o.k)}
+                className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${dateRange===o.k?"bg-blue-600 text-white":"bg-white text-gray-600 hover:bg-gray-50"}`}
+              >{o.label}</button>
+            ))}
+          </div>
+          {(tab==="creative" || tab==="raw") && (
+            <input
+              type="text"
+              value={creativeQuery}
+              onChange={e=>setCreativeQuery(e.target.value)}
+              placeholder="🔍 소재명 검색"
+              className="ml-1 rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 min-w-[180px]"
+            />
+          )}
+          {(dateRange!=="all" || creativeQuery) && (
+            <button
+              onClick={()=>{setDateRange("all");setCreativeQuery("")}}
+              className="ml-auto text-[11px] text-gray-500 hover:text-gray-800 underline"
+            >초기화</button>
+          )}
+        </div>
+
+        {filteredRows.length===0&&tab!=="raw"?(
           <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
             <p className="text-sm text-gray-400">연결된 실적 데이터가 없습니다.</p>
             <p className="text-xs text-gray-300 mt-1">데이터 업로드에서 CSV를 업로드하면 자동 연결됩니다.</p>
@@ -568,50 +639,11 @@ export default function CampaignDetailPage() {
             </div>
           )}
 
-          {/* ===== 매체별 탭 ===== */}
-          {tab==="media"&&(
-            <div className="space-y-3">
-              <div className="rounded-xl border border-gray-200 bg-white p-4">
-                <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">매체별 집행금액 vs 순금액</h3>
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={mediaData} margin={{top:4,right:8,left:0,bottom:4}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
-                    <XAxis dataKey="media" tick={{fontSize:10,fill:"#9ca3af"}}/>
-                    <YAxis tickFormatter={fmtAbbr} tick={{fontSize:9,fill:"#9ca3af"}} width={44}/>
-                    <Tooltip formatter={(v:unknown)=>[fmt(v as number)+"원",""]} contentStyle={{fontSize:10,borderRadius:6}}/>
-                    <Bar dataKey="spend" name="집행금액" fill="#93c5fd" radius={[3,3,0,0]}/>
-                    <Bar dataKey="netAmount" name="순금액" fill="#3b82f6" radius={[3,3,0,0]}/>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                <table className="w-full text-xs"><thead className="bg-gray-50 border-b border-gray-100"><tr>
-                  <th className={thCls}>매체</th><th className={thRCls}>집행일</th>
-                  <th className={thRCls}>노출</th><th className={thRCls}>조회</th><th className={thRCls}>클릭</th>
-                  <th className={thRCls}>VTR</th><th className={thRCls}>CTR</th><th className={thRCls}>CPM</th><th className={thRCls}>CPC</th>
-                  <th className={thRCls}>순금액</th>
-                </tr></thead>
-                <tbody className="divide-y divide-gray-50">
-                  {mediaData.map(m=>(
-                    <tr key={m.media} className="hover:bg-gray-50">
-                      <td className={`${tdCls} font-medium text-gray-800`}>{m.media}</td>
-                      <td className={tdRCls}>{m.activeDays}일</td>
-                      <td className={tdRCls}>{fmt(m.impressions)}</td><td className={tdRCls}>{fmt(m.views)}</td><td className={tdRCls}>{fmt(m.clicks)}</td>
-                      <td className={tdRCls}>{m.vtr}%</td><td className={`${tdRCls} text-purple-600 font-medium`}>{m.ctr}%</td>
-                      <td className={tdRCls}>{fmt(m.cpm)}원</td><td className={tdRCls}>{fmt(m.cpc)}원</td>
-                      <td className={`${tdRCls} text-blue-700 font-medium`}>{fmtAbbr(m.netAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody></table>
-              </div>
-            </div>
-          )}
-
           {/* ===== RAW 편집 탭 ===== */}
           {tab==="raw"&&(
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-500">{campRows.length}행 · 노출/조회/클릭/집행금액 직접 수정 가능</p>
+                <p className="text-xs text-gray-500">{filteredRows.length}행 · 노출/조회/클릭/집행금액 직접 수정 가능</p>
                 <div className="flex gap-2">
                   {editMode?(
                     <>
@@ -642,7 +674,7 @@ export default function CampaignDetailPage() {
                       <th className={thRCls}>클릭</th><th className={thRCls}>집행금액</th>
                     </tr></thead>
                     <tbody className="divide-y divide-gray-50">
-                      {campRows.map((r,i)=>{
+                      {filteredRows.map((r,i)=>{
                         const changed=edits.has(rowKey(r))
                         return(
                           <tr key={i} className={changed?"bg-yellow-50":"hover:bg-gray-50"}>
