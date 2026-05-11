@@ -35,46 +35,46 @@ const PRESETS: Preset[] = [
     imagePos: { xR: 0.030, yR: 0.155, wR: 0.925, hR: 0.100, radiusPct: 0.032 },
   },
   {
-    // 실측: 배경 323×720, 텍스트 스트립 y=539~576 (yR 0.748~0.800)
+    // 실측 (323×720): 광고 이미지 y=388~542, 광고 제목 y≈572, 우측 outline 버튼 x=246~306 / y=552~583
     id: "native-1200x600", label: "카카오 네이티브 1200×600 (더보기탭)",
     src: "/%EC%B9%B4%EC%B9%B4%EC%98%A4%20%EB%84%A4%EC%9D%B4%ED%8B%B0%EB%B8%8C%201200X600.png",
-    imagePos: { xR: 0.040, yR: 0.540, wR: 0.925, hR: 0.195, radiusPct: 0.016 },
+    imagePos: { xR: 0.053, yR: 0.542, wR: 0.895, hR: 0.214, radiusPct: 0.014 },
     textDefs: [
       {
         label: "광고 제목", default: "광고 제목",
-        cover: { xR: 0.010, yR: 0.746, wR: 0.722, hR: 0.056, fill: "#FFFFFF" },
-        draw: { type: "text", xR: 0.035, yR: 0.774, sizeR: 0.038, fill: "#222222", weight: "500" },
+        cover: { xR: 0.010, yR: 0.770, wR: 0.700, hR: 0.060, fill: "#FFFFFF" },
+        draw: { type: "text", xR: 0.053, yR: 0.799, sizeR: 0.034, fill: "#222222", weight: "500" },
       },
       {
         label: "버튼", default: "바로가기",
-        cover: { xR: 0.732, yR: 0.748, wR: 0.248, hR: 0.052, fill: "#FFFFFF" },
-        draw: { type: "button", xR: 0.736, yR: 0.752, wR: 0.240, hR: 0.044, rR: 0.012, bg: "#FFFFFF", fg: "#222222", sizeR: 0.033, borderColor: "#CCCCCC" },
+        cover: { xR: 0.730, yR: 0.755, wR: 0.250, hR: 0.060, fill: "#FFFFFF" },
+        draw: { type: "button", xR: 0.762, yR: 0.766, wR: 0.186, hR: 0.043, rR: 0.014, bg: "#FFFFFF", fg: "#222222", sizeR: 0.030, borderColor: "#CCCCCC" },
       },
     ],
   },
   {
-    // 실측: 배경 323×720, 광고이미지 y=78~428, 문구 y=475~505, 버튼 y=508~545
+    // 실측 (323×720): 브랜드 헤더 y≈122, 광고 카드 y=160~485, 광고 문구 y≈514, 보라 버튼 y=540~588
     id: "native-1000x800", label: "카카오 네이티브 1000×800 (피드탭)",
     src: "/%EC%B9%B4%EC%B9%B4%EC%98%A4%20%EB%84%A4%EC%9D%B4%ED%8B%B0%EB%B8%8C1000x800.jpg",
-    imagePos: { xR: 0.031, yR: 0.108, wR: 0.938, hR: 0.486, radiusPct: 0.020 },
+    imagePos: { xR: 0.053, yR: 0.222, wR: 0.898, hR: 0.451, radiusPct: 0.020 },
     textDefs: [
       {
         label: "브랜드명", default: "브랜드",
-        cover: { xR: 0.150, yR: 0.063, wR: 0.250, hR: 0.040, fill: "#FFFFFF" },
-        draw: { type: "text", xR: 0.161, yR: 0.083, sizeR: 0.040, fill: "#111111", weight: "700" },
+        cover: { xR: 0.140, yR: 0.150, wR: 0.350, hR: 0.045, fill: "#FFFFFF" },
+        draw: { type: "text", xR: 0.149, yR: 0.181, sizeR: 0.036, fill: "#111111", weight: "700" },
       },
       {
         label: "광고 문구", default: "광고 문구를 입력하세요",
-        cover: { xR: 0.020, yR: 0.658, wR: 0.960, hR: 0.048, fill: "#FFFFFF" },
-        draw: { type: "text", xR: 0.040, yR: 0.682, sizeR: 0.037, fill: "#444444" },
+        cover: { xR: 0.020, yR: 0.685, wR: 0.960, hR: 0.045, fill: "#FFFFFF" },
+        draw: { type: "text", xR: 0.053, yR: 0.714, sizeR: 0.033, fill: "#444444" },
       },
       {
         label: "버튼", default: "바로가기",
-        cover: { xR: 0.020, yR: 0.702, wR: 0.960, hR: 0.058, fill: "#FFFFFF" },
-        draw: { type: "button", xR: 0.020, yR: 0.704, wR: 0.960, hR: 0.054, rR: 0.014, bg: "#6600CC", fg: "#FFFFFF", sizeR: 0.040 },
+        cover: { xR: 0.020, yR: 0.738, wR: 0.960, hR: 0.077, fill: "#FFFFFF" },
+        draw: { type: "button", xR: 0.053, yR: 0.748, wR: 0.898, hR: 0.067, rR: 0.018, bg: "#6600CC", fg: "#FFFFFF", sizeR: 0.038 },
       },
     ],
-    logoDef: { label: "브랜드 로고", coverFill: "#DDDDDD", cxR: 0.099, cyR: 0.081, rR: 0.037 },
+    logoDef: { label: "브랜드 로고", coverFill: "#DDDDDD", cxR: 0.087, cyR: 0.169, rR: 0.040 },
   },
   {
     id: "native-view", label: "카카오 네이티브 (카카오뷰)",
