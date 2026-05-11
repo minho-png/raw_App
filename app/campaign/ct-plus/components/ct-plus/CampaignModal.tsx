@@ -115,8 +115,20 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
     setMediaBudgets(mediaBudgets.map(mb => {
       if (mb.media !== media) return mb
       const sub: SubCampaign = { id: genId(), name: '', budget: 0, spend: 0 }
-      return { ...mb, subCampaigns: [...(mb.subCampaigns ?? []), sub] }
+      return recalcMbBudget({ ...mb, subCampaigns: [...(mb.subCampaigns ?? []), sub] })
     }))
+  }
+
+  // 매체 totalBudget = 하위 캠페인 예산 합 (자동 동기화)
+  function recalcMbBudget(mb: MediaBudget): MediaBudget {
+    const sum = (mb.subCampaigns ?? []).reduce((s, sc) => s + (sc.budget ?? 0), 0)
+    if (sum === (mb.totalBudget ?? 0)) return mb
+    const next: MediaBudget = { ...mb, totalBudget: sum }
+    if ((mb.totalFeeRate ?? 0) >= 0 && sum > 0) {
+      const base = sum * (1 - (mb.totalFeeRate ?? 0) / 100)
+      next.actualSettingCost = Math.round(VAT_INCLUDED_MEDIA.includes(mb.media) ? base * 1.1 : base)
+    }
+    return next
   }
 
   function updateSubCampaign(media: string, idx: number, field: string, value: string | number | boolean | undefined) {
@@ -129,7 +141,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
       } else {
         subs[idx] = { ...subs[idx], [field]: value }
       }
-      return { ...mb, subCampaigns: subs }
+      return recalcMbBudget({ ...mb, subCampaigns: subs })
     }))
   }
 
@@ -137,7 +149,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
     setMediaBudgets(mediaBudgets.map(mb => {
       if (mb.media !== media) return mb
       const subs = (mb.subCampaigns ?? []).filter((_, i) => i !== idx)
-      return { ...mb, subCampaigns: subs }
+      return recalcMbBudget({ ...mb, subCampaigns: subs })
     }))
   }
 
