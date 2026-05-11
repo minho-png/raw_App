@@ -13,6 +13,7 @@ import type { MediaType } from "@/lib/reportTypes"
 import { useReports } from "@/lib/hooks/useReports"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { useDailySpendMap } from "@/lib/hooks/useDailySpendMap"
+import { applyMarkupToRows } from "@/lib/markupService"
 import { DailyDeltaCell } from "@/components/DailyDeltaCell"
 
 // ── 로컬스토리지 키 ────────────────────────────────────────────
@@ -201,6 +202,20 @@ export default function DashboardPage() {
     [campaigns, filterStatus]
   )
 
+  // 캠페인 ID → raw data 기반 실집행금액 합계
+  // QA BUG-001/002: 캠페인 모달의 mb.spend(수동 입력) 은 비어있는 경우가 많아
+  // 누적 소진 KPI 가 0 으로 표기되던 문제 → raw rows 의 executionAmount 합으로 보정.
+  const rawSpendByCampaign = useMemo(() => {
+    if (rawRows.length === 0 || campaigns.length === 0) return new Map<string, number>()
+    const computed = applyMarkupToRows(rawRows, campaigns)
+    const m = new Map<string, number>()
+    for (const r of computed) {
+      if (!r.matchedCampaignId) continue
+      m.set(r.matchedCampaignId, (m.get(r.matchedCampaignId) ?? 0) + (r.executionAmount ?? 0))
+    }
+    return m
+  }, [rawRows, campaigns])
+
   // 집행 중 통계
   const activeStats = useMemo(() => {
     const active = campaigns.filter(isActive)
@@ -208,14 +223,16 @@ export default function DashboardPage() {
     for (const c of active) {
       const t = getCampaignTotals(c)
       totalBudget      += t.totalBudget
-      totalSpend       += t.totalSpend
       totalSettingCost += t.totalSettingCost
+      // raw 집행금액 우선, 없으면 수동 입력값(t.totalSpend) 폴백
+      const rawSpend = rawSpendByCampaign.get(c.id)
+      totalSpend += (rawSpend !== undefined && rawSpend > 0) ? rawSpend : t.totalSpend
     }
     const spendRate = totalSettingCost > 0
       ? Math.round((totalSpend / totalSettingCost) * 1000) / 10
       : 0
     return { count: active.length, totalBudget, totalSpend, totalSettingCost, spendRate }
-  }, [campaigns])
+  }, [campaigns, rawSpendByCampaign])
 
   // 소진 경보 캠페인 수
   const alertCounts = useMemo(() => {
