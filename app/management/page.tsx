@@ -127,6 +127,19 @@ export default function ManagementPage() {
                 >
                   목업 대행사 시드 (8건)
                 </button>
+                {agencies.some(a => a.id.startsWith('mock-ag-')) && (
+                  <button
+                    onClick={async () => {
+                      const mockCount = agencies.filter(a => a.id.startsWith('mock-ag-')).length
+                      if (!confirm(`MongoDB 에서 목업 대행사 ${mockCount}건(mock-ag-*) 을 영구 삭제합니다. 계속하시겠습니까?`)) return
+                      await saveAgencies(agencies.filter(a => !a.id.startsWith('mock-ag-')))
+                    }}
+                    className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
+                    title="ID 가 mock-ag- 로 시작하는 시드 데이터를 ct_master_data 에서 제거"
+                  >
+                    목업 대행사 삭제
+                  </button>
+                )}
               </div>
               <div className="space-y-3">
                 {agencies.map(ag => (
