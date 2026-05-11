@@ -1,8 +1,6 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import type { Campaign, Agency, Advertiser } from '@/lib/campaignTypes'
-import { useMasterData } from "@/lib/hooks/useMasterData"
 import { genId } from "@/lib/idGen"
 
 // ── Types ─────────────────────────────────────────────────────
@@ -164,7 +162,6 @@ function AdjRow({ label, value, onUp, onDown, onChange }: {
 function MockupCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const layersRef = useRef<Layer[]>([])
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dragRef = useRef<{ id: string; sx: number; sy: number; ox: number; oy: number } | null>(null)
 
   const [bgImg,          setBgImg]          = useState<HTMLImageElement | null>(null)
@@ -175,17 +172,6 @@ function MockupCanvas() {
   const [newText,        setNewText]        = useState("")
   const [showAddText,    setShowAddText]    = useState(false)
   const [downloadName,   setDownloadName]   = useState("kakao_mockup")
-
-  // AI 이미지 생성 상태
-  const [aiPrompt,        setAiPrompt]        = useState("")
-  const [aiRefFile,       setAiRefFile]       = useState<File | null>(null)
-  const [aiGenerating,    setAiGenerating]    = useState(false)
-  const [aiError,         setAiError]         = useState<string | null>(null)
-  const aiRefInputRef = useRef<HTMLInputElement>(null)
-
-  // 캠페인 연동
-  const { campaigns, agencies, advertisers } = useMasterData()
-  const [selectedCampaignId, setSelectedCampaignId]   = useState<string | null>(null)
 
   // 게재 목업 (소재 + 지면 합성)
   const [compositFile, setCompositFile]               = useState<File | null>(null)
@@ -214,14 +200,6 @@ function MockupCanvas() {
   }, [])
 
   useEffect(() => { layersRef.current = layers }, [layers])
-
-  // 캠페인 선택 시 다운로드 파일명 자동 설정
-  useEffect(() => {
-    if (selectedCampaignId) {
-      const c = campaigns.find(x => x.id === selectedCampaignId)
-      if (c) setDownloadName(c.campaignName.replace(/[/\\?%*:|"<>]/g, '_'))
-    }
-  }, [selectedCampaignId, campaigns])
 
   // ── Canvas render ─────────────────────────────────────────
   useEffect(() => {
@@ -343,60 +321,6 @@ function MockupCanvas() {
     setSelectedId(layer.id)
   }
 
-  async function generateAiImage() {
-    if (!aiPrompt.trim() && !aiRefFile) return
-    setAiGenerating(true)
-    setAiError(null)
-    try {
-      const form = new FormData()
-      form.append('prompt', aiPrompt)
-      if (aiRefFile) form.append('referenceImage', aiRefFile)
-      if (selectedPreset) form.append('presetId', selectedPreset)
-      if (selectedCampaignId) {
-        form.append('campaignId', selectedCampaignId)
-        const c = campaigns.find(x => x.id === selectedCampaignId)
-        if (c) form.append('campaignName', c.campaignName)
-      }
-
-      // 지면 이미지가 있으면 base64로 직렬화해 mediaImage로 전달
-      if (bgImg) {
-        const tmp = document.createElement('canvas')
-        tmp.width = bgImg.naturalWidth; tmp.height = bgImg.naturalHeight
-        tmp.getContext('2d')!.drawImage(bgImg, 0, 0)
-        const dataUrl = tmp.toDataURL('image/png')
-        const blob = await fetch(dataUrl).then(r => r.blob())
-        form.append('mediaImage', new File([blob], 'media.png', { type: 'image/png' }))
-      }
-      const res = await fetch('/api/generate-mockup-image', { method: 'POST', body: form })
-      const data = await res.json()
-      if (!res.ok || data.error) throw new Error(data.error ?? '생성 실패')
-
-      // base64 → HTMLImageElement
-      const img = new Image()
-      img.src = `data:${data.mimeType};base64,${data.imageData}`
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve()
-        img.onerror = () => reject(new Error('이미지 로드 실패'))
-      })
-
-      const ip = PRESETS.find(p => p.id === selectedPreset)?.imagePos
-      const layer: Layer = {
-        id: uid(), type: "image", label: "AI 생성 이미지", visible: true,
-        img, xR: ip?.xR ?? 0.02, yR: ip?.yR ?? 0.20,
-        wR: ip?.wR ?? 0.96, hR: ip?.hR ?? 0.30,
-        radiusPct: ip?.radiusPct ?? 0.010,
-      }
-      setLayers(prev => [layer, ...prev])
-      setSelectedId(layer.id)
-      setAiPrompt("")
-      setAiRefFile(null)
-    } catch (e) {
-      setAiError(e instanceof Error ? e.message : '생성 중 오류가 발생했습니다.')
-    } finally {
-      setAiGenerating(false)
-    }
-  }
-
   async function generateCompositeMockup() {
     if (!compositFile || !bgImg) return
     setCompositGenerating(true)
@@ -413,12 +337,6 @@ function MockupCanvas() {
       const dataUrl = tmp.toDataURL('image/png')
       const blob = await fetch(dataUrl).then(r => r.blob())
       form.append('mediaImage', new File([blob], 'media.png', { type: 'image/png' }))
-      // 캠페인 컨텍스트 전달
-      if (selectedCampaignId) {
-        form.append('campaignId', selectedCampaignId)
-        const c = campaigns.find(x => x.id === selectedCampaignId)
-        if (c) form.append('campaignName', c.campaignName)
-      }
 
       const res = await fetch('/api/generate-mockup-image', { method: 'POST', body: form })
       const data = await res.json()
@@ -496,33 +414,13 @@ function MockupCanvas() {
   // ── Render ────────────────────────────────────────────────
   const selLayer = layers.find(l=>l.id===selectedId)
   const activePreset = PRESETS.find(p=>p.id===selectedPreset)
-  const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId) ?? null
-  const selectedAgency = selectedCampaign ? agencies.find(a => a.id === selectedCampaign.agencyId) ?? null : null
-  const selectedAdvertiser = selectedCampaign ? advertisers.find(a => a.id === selectedCampaign.advertiserId) ?? null : null
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-base font-semibold text-gray-900">게재 목업</h1>
-            <p className="text-xs text-gray-400 mt-0.5">레이어를 추가하고 캔버스에서 드래그로 위치를 조정하세요</p>
-          </div>
-          {campaigns.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 shrink-0">캠페인</span>
-              <select
-                value={selectedCampaignId ?? ''}
-                onChange={e => setSelectedCampaignId(e.target.value || null)}
-                className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-300 focus:outline-none min-w-[160px]"
-              >
-                <option value="">캠페인 선택</option>
-                {campaigns.map(c => (
-                  <option key={c.id} value={c.id}>{c.campaignName}</option>
-                ))}
-              </select>
-            </div>
-          )}
+        <div>
+          <h1 className="text-base font-semibold text-gray-900">게재 목업</h1>
+          <p className="text-xs text-gray-400 mt-0.5">레이어를 추가하고 캔버스에서 드래그로 위치를 조정하세요</p>
         </div>
       </header>
 
@@ -557,117 +455,6 @@ function MockupCanvas() {
               </div>
             )}
           </section>
-
-          {/* ── 캠페인 정보 ──────────────────────── */}
-          {selectedCampaign && (
-            <section className="space-y-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
-              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">캠페인 정보</p>
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-[10px] text-gray-500">캠페인</span>
-                  <span className="text-[10px] font-medium text-gray-800 text-right max-w-[110px] truncate" title={selectedCampaign.campaignName}>{selectedCampaign.campaignName}</span>
-                </div>
-                {selectedAdvertiser && (
-                  <div className="flex justify-between">
-                    <span className="text-[10px] text-gray-500">광고주</span>
-                    <span className="text-[10px] text-gray-700">{selectedAdvertiser.name}</span>
-                  </div>
-                )}
-                {selectedAgency && (
-                  <div className="flex justify-between">
-                    <span className="text-[10px] text-gray-500">대행사</span>
-                    <span className="text-[10px] text-gray-700">{selectedAgency.name}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-[10px] text-gray-500">기간</span>
-                  <span className="text-[10px] text-gray-700">{selectedCampaign.startDate} ~ {selectedCampaign.endDate}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[10px] text-gray-500">상태</span>
-                  <span className={`text-[10px] font-medium ${selectedCampaign.status === '집행 중' ? 'text-green-600' : 'text-gray-400'}`}>{selectedCampaign.status}</span>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* ── AI 이미지 생성 ─────────────────────── */}
-          {bgImg && (
-            <section className="space-y-2 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
-              <div className="flex items-center gap-1.5">
-                <svg className="h-3 w-3 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                </svg>
-                <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest">AI 이미지 생성</p>
-              </div>
-
-              {/* 프롬프트 입력 */}
-              <textarea
-                value={aiPrompt}
-                onChange={e => setAiPrompt(e.target.value)}
-                placeholder="생성할 광고 이미지를 설명하세요&#10;예: 여름 화장품 광고, 파란 배경에 세럼 제품"
-                rows={3}
-                className="w-full rounded-lg border border-violet-200 bg-white px-2.5 py-2 text-xs text-gray-700 focus:border-violet-400 focus:outline-none resize-none placeholder:text-gray-500"
-              />
-
-              {/* 참고 이미지 업로드 */}
-              <div>
-                <input
-                  ref={aiRefInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={e => {
-                    const f = e.target.files?.[0]
-                    if (f) { setAiRefFile(f); e.target.value = "" }
-                  }}
-                />
-                {aiRefFile ? (
-                  <div className="flex items-center justify-between rounded-lg border border-violet-200 bg-white px-2.5 py-2">
-                    <span className="text-[10px] text-violet-700 truncate max-w-[120px]">{aiRefFile.name}</span>
-                    <button onClick={() => setAiRefFile(null)} className="text-[10px] text-gray-400 hover:text-red-500 ml-1">×</button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => aiRefInputRef.current?.click()}
-                    className="w-full rounded-lg border border-dashed border-violet-200 bg-white px-2.5 py-2 text-[10px] text-gray-400 hover:border-violet-300 hover:bg-violet-50 transition-colors text-left"
-                  >
-                    + 참고 이미지 업로드 (선택)
-                  </button>
-                )}
-              </div>
-
-              {/* 에러 표시 */}
-              {aiError && (
-                <p className="rounded-lg bg-red-50 px-2.5 py-2 text-[10px] text-red-600 border border-red-200">{aiError}</p>
-              )}
-
-              {/* 생성 버튼 */}
-              <button
-                onClick={generateAiImage}
-                disabled={aiGenerating || !aiPrompt.trim()}
-                className="w-full rounded-lg bg-violet-600 py-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5"
-              >
-                {aiGenerating ? (
-                  <>
-                    <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    생성 중...
-                  </>
-                ) : (
-                  <>
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                    </svg>
-                    Gemini로 생성
-                  </>
-                )}
-              </button>
-              <p className="text-[9px] text-violet-400 text-center">GEMINI_API_KEY 환경변수 필요</p>
-            </section>
-          )}
 
           {/* ── 게재 목업 합성 ──────────────────── */}
           {bgImg && (
