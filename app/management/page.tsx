@@ -18,6 +18,7 @@ export default function ManagementPage() {
 
   const [activeTab, setActiveTab] = useState<TabName>("agency")
   const [editAgency, setEditAgency] = useState<Agency | null>(null)
+  const [showAgencyForm, setShowAgencyForm] = useState(false)
   const [editAdvertiser, setEditAdvertiser] = useState<Advertiser | null>(null)
   const [showAdvModal, setShowAdvModal] = useState(false)
   const [editOperator, setEditOperator] = useState<Operator | null>(null)
@@ -30,6 +31,7 @@ export default function ManagementPage() {
       : [...agencies, agency]
     await saveAgencies(updated)
     setEditAgency(null)
+    setShowAgencyForm(false)
   }
 
   // 광고주 저장
@@ -99,18 +101,18 @@ export default function ManagementPage() {
       {/* 대행사 탭 */}
       {activeTab === "agency" && (
         <div>
-          {editAgency ? (
+          {(showAgencyForm || editAgency) ? (
             <AgencyEditTab
               agency={editAgency}
               agencies={agencies}
               onSave={handleSaveAgency}
-              onCancel={() => setEditAgency(null)}
+              onCancel={() => { setEditAgency(null); setShowAgencyForm(false) }}
             />
           ) : (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setEditAgency(null)}
+                  onClick={() => { setEditAgency(null); setShowAgencyForm(true) }}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
                 >
                   새 대행사 추가
