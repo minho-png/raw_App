@@ -59,11 +59,13 @@ export const REPORT_SECTIONS: { id: ReportSection; label: string; description: s
   { id: 'insights', label: '종합 인사이트', description: '자동 요약 및 다음 단계 제안' },
 ]
 
+// 주의: color 는 lib/mediaColors.ts 의 MEDIA_COLORS 와 동기화된 값 (단일 source 보장).
+//        bgColor/borderColor 는 매체별 패널 디자인 토큰이라 별도 유지.
 export const MEDIA_CONFIG: Record<MediaType, { label: string; color: string; bgColor: string; borderColor: string }> = {
-  google: { label: 'Google', color: '#4285F4', bgColor: '#EFF6FF', borderColor: '#BFDBFE' },
-  naver: { label: '네이버 GFA', color: '#03C75A', bgColor: '#F0FDF4', borderColor: '#BBF7D0' },
-  kakao: { label: '카카오모먼트', color: '#FAE100', bgColor: '#FEFCE8', borderColor: '#FEF08A' },
-  meta: { label: 'META', color: '#0866FF', bgColor: '#EFF6FF', borderColor: '#BFDBFE' },
+  google: { label: 'Google',     color: '#4285F4', bgColor: '#EFF6FF', borderColor: '#BFDBFE' },
+  naver:  { label: '네이버 GFA', color: '#03C75A', bgColor: '#F0FDF4', borderColor: '#BBF7D0' },
+  kakao:  { label: '카카오모먼트', color: '#FEE500', bgColor: '#FEFCE8', borderColor: '#FEF08A' },
+  meta:   { label: 'META',       color: '#1877F2', bgColor: '#EFF6FF', borderColor: '#BFDBFE' },
 }
 
 // ── CT/CTV 전용 타입 ──────────────────────────────────────────

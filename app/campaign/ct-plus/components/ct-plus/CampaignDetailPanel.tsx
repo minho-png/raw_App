@@ -11,14 +11,7 @@ import {
 } from "@/lib/campaignTypes"
 import type { RawRow } from "@/lib/rawDataParser"
 import { fmt, spendRateStyle, getDailySuggestion } from "./statusUtils"
-
-// 매체 색상
-const MEDIA_COLORS: Record<string, string> = {
-  "네이버 GFA": "#03C75A", "카카오모멘트": "#FEE500",
-  "Google": "#4285F4", "META": "#1877F2",
-}
-const fallbackColor = "#94a3b8"
-function mColor(m: string) { return MEDIA_COLORS[m] ?? fallbackColor }
+import { mColor } from "@/lib/mediaColors"
 
 function fmtAbbr(n: number): string {
   if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}억`
@@ -413,7 +406,7 @@ export function CampaignDetailPanel({
                     const noData    = rows.length === 0
                     return (
                       <tr key={mb.media} className={`hover:bg-gray-50 ${overSpend ? "bg-red-50/40" : ""}`}>
-                        <td className="px-3 py-2 font-medium text-gray-700">{mb.media}</td>
+                        <td className="px-3 py-2 font-medium" style={{ borderLeft: `3px solid ${mColor(mb.media)}`, color: mColor(mb.media) }}>{mb.media}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-gray-600">{fmtAbbr(t.totalSettingCost)}</td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium text-blue-700">
                           {noData ? <span className="text-gray-300 font-normal">없음</span> : fmtAbbr(rawNet)}

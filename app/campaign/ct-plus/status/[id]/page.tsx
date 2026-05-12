@@ -11,13 +11,9 @@ import { applyMarkupToRows } from "@/lib/markupService"
 import { getCampaignTotals, getCampaignProgress, getMediaTotals } from "@/lib/campaignTypes"
 import { fmt, spendRateStyle } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { RawRow } from "@/lib/rawDataParser"
+import { mColor, mediaTint, contrastOn } from "@/lib/mediaColors"
 
-const MEDIA_COLORS: Record<string, string> = {
-  "네이버 GFA": "#03C75A", "카카오모멘트": "#FEE500",
-  "Google": "#4285F4", "META": "#1877F2",
-}
 const CREATIVE_COLORS = ["#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"]
-function mColor(m: string) { return MEDIA_COLORS[m] ?? "#94a3b8" }
 
 // 금액 표기 — 단위 약어(만/억) 사용 안 함, 천 단위 콤마만.
 function fmtAbbr(n: number): string {
@@ -315,11 +311,22 @@ export default function CampaignDetailPage() {
         {MEDIA_TABS.length>0 && (
           <div className="flex gap-1 flex-wrap rounded-xl bg-white px-2 py-2 border border-gray-200">
             <span className="text-[10px] text-gray-400 self-center pl-1 pr-1">매체</span>
-            {MEDIA_TABS.map(m=>(
-              <button key={m} onClick={()=>setMediaFilter(m)}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${mediaFilter===m?"bg-blue-600 text-white":"bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-              >{m}</button>
-            ))}
+            {MEDIA_TABS.map(m=>{
+              const active = mediaFilter===m
+              const c = mColor(m)
+              return (
+                <button
+                  key={m}
+                  onClick={()=>setMediaFilter(m)}
+                  className="px-3 py-1 rounded-full text-xs font-medium transition-colors border hover:opacity-90"
+                  style={{
+                    backgroundColor: active ? c : mediaTint(m),
+                    color: active ? contrastOn(c) : c,
+                    borderColor: active ? c : "transparent",
+                  }}
+                >{m}</button>
+              )
+            })}
           </div>
         )}
 
@@ -468,7 +475,7 @@ export default function CampaignDetailPage() {
                       const sc2=spendRateStyle(r.spendRate)
                       return(
                         <tr key={i} className="hover:bg-gray-50">
-                          <td className={`${tdCls} font-medium text-gray-800`}>{r.media}</td>
+                          <td className={`${tdCls} font-medium`} style={{ borderLeft: `3px solid ${mColor(r.media)}`, color: mColor(r.media) }}>{r.media}</td>
                           <td className={`${tdCls} max-w-[180px] truncate`} title={r.campName}>{r.campName}</td>
                           <td className={tdRCls}>{fmtAbbr(r.budget)}</td>
                           <td className={`${tdRCls} font-medium text-blue-700`}>{fmtAbbr(r.spend)}</td>
@@ -657,7 +664,7 @@ export default function CampaignDetailPage() {
                     {creativeRows.map((r,i)=>(
                       <tr key={i} className="hover:bg-gray-50">
                         <td className={`${tdCls} font-medium text-gray-800 max-w-[160px] truncate`} title={r.creative}>{r.creative||"(없음)"}</td>
-                        <td className={tdCls}>{r.media}</td>
+                        <td className={`${tdCls} font-medium`} style={{ borderLeft: `3px solid ${mColor(r.media)}`, color: mColor(r.media) }}>{r.media}</td>
                         <td className={tdRCls}>{fmt(r.impressions)}</td><td className={tdRCls}>{fmt(r.views)}</td><td className={tdRCls}>{fmt(r.clicks)}</td>
                         <td className={tdRCls}>{r.vtr}%</td><td className={`${tdRCls} text-purple-600 font-medium`}>{r.ctr}%</td>
                         <td className={tdRCls}>{fmt(r.cpm)}</td><td className={tdRCls}>{fmt(r.cpc)}</td>
@@ -710,7 +717,7 @@ export default function CampaignDetailPage() {
                         return(
                           <tr key={i} className={changed?"bg-yellow-50":"hover:bg-gray-50"}>
                             <td className={`${tdCls} font-mono text-gray-600`}>{r.date}</td>
-                            <td className={tdCls}>{r.media}</td>
+                            <td className={`${tdCls} font-medium`} style={{ borderLeft: `3px solid ${mColor(r.media)}`, color: mColor(r.media) }}>{r.media}</td>
                             <td className={`${tdCls} max-w-[140px] truncate`} title={r.campaignName}>{r.campaignName}</td>
                             <td className={`${tdCls} max-w-[100px] truncate`} title={r.creativeName}>{r.creativeName}</td>
                             {(["impressions","views","clicks"] as const).map(key=>(
