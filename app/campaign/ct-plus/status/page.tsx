@@ -24,7 +24,7 @@ import { genId } from "@/lib/idGen"
 export default function CampaignStatusPage() {
   const {
     campaigns, operators, agencies, advertisers,
-    saveCampaigns,
+    upsertCampaign, deleteCampaign,
   } = useMasterData()
   const { allRows: rawRows } = useRawData()
   const dailySpendMap = useDailySpendMap(rawRows, campaigns)
@@ -163,7 +163,7 @@ export default function CampaignStatusPage() {
       title: "상태 변경",
       message: `"${c.campaignName}"\n캠페인을 [${next}](으)로 변경하시겠습니까?`,
       onConfirm: () => {
-        saveCampaigns(campaigns.map(x => x.id === id ? { ...x, status: next } : x))
+        upsertCampaign({ ...c, status: next })
         setConfirmCfg(null)
       },
     })
@@ -175,7 +175,7 @@ export default function CampaignStatusPage() {
     confirm({
       title: "캠페인 삭제",
       message: `"${advName} - ${c.campaignName}"\n을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`,
-      onConfirm: () => { saveCampaigns(campaigns.filter(x => x.id !== id)); setConfirmCfg(null) },
+      onConfirm: () => { deleteCampaign(id); setConfirmCfg(null) },
     })
   }
 
@@ -242,8 +242,7 @@ export default function CampaignStatusPage() {
           agencies={agencies} advertisers={advertisers}
           takenCsvNames={takenCsvNames}
           onSave={(c) => {
-            if (editTarget) saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))
-            else            saveCampaigns([...campaigns, { ...c, id: genId() }])
+            upsertCampaign(editTarget ? c : { ...c, id: genId() })
             setModalOpen(false)
           }}
           onClose={() => setModalOpen(false)}
@@ -262,7 +261,7 @@ export default function CampaignStatusPage() {
           rawRows={rawRows}
           onClose={() => setSelectedDetailId(null)}
           onEdit={(c) => { setEditTarget(c); setModalOpen(true); setSelectedDetailId(null) }}
-          onUpdate={(c) => saveCampaigns(campaigns.map(x => x.id === c.id ? c : x))}
+          onUpdate={(c) => upsertCampaign(c)}
         />
       )}
     </div>
