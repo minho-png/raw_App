@@ -36,10 +36,20 @@ export function FilterBar({ value, onChange, onSearch, onReset, isLoading }: Pro
   const update = <K extends keyof Filters>(key: K, v: Filters[K]) =>
     onChange({ ...value, [key]: v });
 
+  // QA BUG-007: 시작일/종료일 정합성 — 한쪽만 입력되거나 역전된 경우 안내
+  const dateHint =
+    value.start_date && value.end_date && value.start_date > value.end_date
+      ? '시작일이 종료일보다 늦습니다.'
+      : (value.start_date && !value.end_date) ? '종료일도 입력해 주세요.'
+      : (!value.start_date && value.end_date) ? '시작일도 입력해 주세요.'
+      : null
+
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-        <div className="md:col-span-2">
+      {/* QA BUG-007: 6 필드를 5열 grid 에 배치하면 한 필드가 다음 줄로 밀려
+          '통계 시작일' 이 안 보이는 것처럼 보였던 문제 → 6열 grid 로 정렬 */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
+        <div className="md:col-span-2 lg:col-span-2">
           <label className="mb-1 block text-xs font-semibold text-gray-600">검색어 (캠페인명)</label>
           <input
             type="text"
@@ -82,6 +92,7 @@ export function FilterBar({ value, onChange, onSearch, onReset, isLoading }: Pro
           <input
             type="date"
             value={value.start_date}
+            max={value.end_date || undefined}
             onChange={(e) => update('start_date', e.target.value)}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
@@ -92,11 +103,16 @@ export function FilterBar({ value, onChange, onSearch, onReset, isLoading }: Pro
           <input
             type="date"
             value={value.end_date}
+            min={value.start_date || undefined}
             onChange={(e) => update('end_date', e.target.value)}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
         </div>
       </div>
+
+      {dateHint && (
+        <p className="mt-2 text-[11px] text-amber-700">⚠ {dateHint}</p>
+      )}
 
       <div className="mt-3 flex items-center justify-end gap-2">
         <button
