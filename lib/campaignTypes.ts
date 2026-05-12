@@ -10,6 +10,14 @@ export const MEDIA_MARKUP_RATE: Record<string, number> = {
   '네이버 GFA': 0, '카카오모먼트': 0, 'Google': 10, 'META': 10,
 }
 
+// 네이버 GFA 는 VAT 별도 청구가 아닌 VAT 포함 금액으로 표시 (실 세팅 금액에 가산)
+export const VAT_RATE = 10
+export const VAT_INCLUDED_MEDIA: ReadonlySet<string> = new Set(['네이버 GFA'])
+export function applyMediaVat(media: string, settingCost: number): number {
+  if (!VAT_INCLUDED_MEDIA.has(media)) return settingCost
+  return Math.round(settingCost * (1 + VAT_RATE / 100))
+}
+
 export const MEDIA_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   '네이버 GFA':   { bg: 'bg-green-100',  text: 'text-green-700',  border: 'border-green-200' },
   '카카오모먼트': { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-200' },
@@ -163,7 +171,8 @@ export function calcSpendRate(spend: number, settingCost: number): number {
 export function getMediaTotals(mb: MediaBudget) {
   // totalBudget + totalFeeRate unified setting takes priority
   if (mb.totalBudget !== undefined && mb.totalFeeRate !== undefined) {
-    const totalSettingCost = calcSettingCost(mb.totalBudget, mb.totalFeeRate)
+    const baseSetting = calcSettingCost(mb.totalBudget, mb.totalFeeRate)
+    const totalSettingCost = applyMediaVat(mb.media, baseSetting)
     const totalSpend = mb.dmp.spend + mb.nonDmp.spend
     return {
       totalBudget: mb.totalBudget, totalSettingCost, totalSpend,
@@ -176,8 +185,8 @@ export function getMediaTotals(mb: MediaBudget) {
   const mm = MEDIA_MARKUP_RATE[mb.media] ?? 0
   const dmpMarkup    = getTotalMarkup(mm, DMP_FEE_RATE, mb.dmp.agencyFeeRate)
   const nonDmpMarkup = getTotalMarkup(mm, 0,            mb.nonDmp.agencyFeeRate)
-  const dmpSC    = calcSettingCost(mb.dmp.budget,    dmpMarkup)
-  const nonDmpSC = calcSettingCost(mb.nonDmp.budget, nonDmpMarkup)
+  const dmpSC    = applyMediaVat(mb.media, calcSettingCost(mb.dmp.budget,    dmpMarkup))
+  const nonDmpSC = applyMediaVat(mb.media, calcSettingCost(mb.nonDmp.budget, nonDmpMarkup))
   const totalBudget      = mb.dmp.budget    + mb.nonDmp.budget
   const totalSettingCost = dmpSC            + nonDmpSC
   const totalSpend       = mb.dmp.spend     + mb.nonDmp.spend
