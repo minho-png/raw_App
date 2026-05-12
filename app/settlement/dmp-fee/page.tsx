@@ -263,7 +263,7 @@ export default function DmpFeePage() {
                   </tr>
                   {/* 컬럼 헤더 */}
                   <tr className="bg-gray-100 text-gray-600 border-b border-gray-200">
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">광고주</th>
+                    <th className="sticky left-0 z-20 bg-gray-100 px-3 py-2 text-left font-medium whitespace-nowrap shadow-[2px_0_0_0_rgba(0,0,0,0.05)]">광고주</th>
                     <th className="px-3 py-2 text-left font-medium whitespace-nowrap">대행사</th>
                     <th className="px-3 py-2 text-left font-medium whitespace-nowrap">캠페인</th>
                     <th className="px-3 py-2 text-left font-medium whitespace-nowrap border-r border-gray-200">매체</th>
@@ -301,8 +301,8 @@ export default function DmpFeePage() {
                 {/* 데이터 행 */}
                 <tbody className="divide-y divide-gray-50">
                   {rows.map((r) => (
-                    <tr key={r.key} className="hover:bg-gray-50/70 transition-colors">
-                      <td className="px-3 py-2 text-gray-800 font-medium whitespace-nowrap">{r.advertiserName}</td>
+                    <tr key={r.key} className="group hover:bg-gray-50/70 transition-colors">
+                      <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50/70 px-3 py-2 text-gray-800 font-medium whitespace-nowrap shadow-[2px_0_0_0_rgba(0,0,0,0.05)]">{r.advertiserName}</td>
                       <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.agencyName}</td>
                       <td className="px-3 py-2 text-gray-700 max-w-[180px] truncate">
                         {!r.isMatched && (

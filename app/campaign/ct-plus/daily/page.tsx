@@ -260,21 +260,23 @@ function CtPlusDailyContent() {
         </div>
       </header>
 
-      {/* 전체 초기화 확인 */}
+      {/* 전체 초기화 확인 — QA UX-002: 2-step confirm + 명시적 경고 문구 */}
       {clearConfirm && (
-        <div className="border-b border-red-200 bg-red-50 px-6 py-3 flex items-center justify-between">
-          <p className="text-sm text-red-700">
-            <span className="font-semibold">전체 데이터 삭제</span>
-            <span className="ml-2 text-red-600">{fmt(totalCount)}행이 모두 삭제됩니다. 되돌릴 수 없습니다.</span>
-          </p>
+        <div className="border-b-2 border-red-300 bg-red-50 px-6 py-3.5 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm text-red-700">
+            <span className="font-bold">⚠ 정말로 삭제하시겠습니까?</span>
+            <span className="ml-2 text-red-600">
+              저장된 <span className="font-semibold">{fmt(totalCount)}행</span>이 모두 삭제되며 되돌릴 수 없습니다.
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setClearConfirm(false)}
               className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
               취소
             </button>
             <button onClick={handleClearAll}
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
-              삭제 확인
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 shadow-sm">
+              네, 모두 삭제합니다
             </button>
           </div>
         </div>

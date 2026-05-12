@@ -71,7 +71,23 @@ export function useMotivSettlementCampaigns({ types, month, perPage = 200, enabl
             params.set('start_date', range.start)
             params.set('end_date',   range.end)
           }
-          const res = await fetch(`/api/motiv/campaigns?${params.toString()}`, { cache: 'no-store' })
+          // QA BUG-004: 응답이 끊긴 채로 멈추면 무한 '로딩 중…' 이 됨.
+          //              30초 timeout 으로 명시적 에러 전환 → 페이지가 에러 분기로 이동.
+          const ac = new AbortController()
+          const timer = setTimeout(() => ac.abort(), 30_000)
+          let res: Response
+          try {
+            res = await fetch(`/api/motiv/campaigns?${params.toString()}`, {
+              cache: 'no-store', signal: ac.signal,
+            })
+          } catch (e) {
+            if ((e as Error).name === 'AbortError') {
+              throw new Error(`Motiv ${t} 응답 시간 초과 (30s)`)
+            }
+            throw e
+          } finally {
+            clearTimeout(timer)
+          }
           if (!res.ok) throw new Error(`Motiv ${t} ${res.status}`)
           return (await res.json()) as MotivCampaignListResponse
         }))

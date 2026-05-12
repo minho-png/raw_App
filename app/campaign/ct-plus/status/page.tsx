@@ -30,11 +30,41 @@ export default function CampaignStatusPage() {
   const { allRows: rawRows } = useRawData()
   const dailySpendMap = useDailySpendMap(rawRows, campaigns)
 
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>("전체")
-  const [filterMonth,  setFilterMonth]  = useState("")
-  const [filterOperator, setFilterOperator] = useState("")
-  const [filterMedia,  setFilterMedia]  = useState("")
-  const [searchQuery,  setSearchQuery]  = useState("")
+  // QA UX-003: 상세 분석 ↔ 목록 왕복 시 필터/스크롤 보존을 위해 sessionStorage lazy-init
+  const SS_KEY = 'ctplus-status-filters-v1'
+  type Saved = { status?: FilterStatus; month?: string; operator?: string; media?: string; q?: string }
+  const loadSaved = (): Saved => {
+    if (typeof window === 'undefined') return {}
+    try { return JSON.parse(sessionStorage.getItem(SS_KEY) || '{}') as Saved } catch { return {} }
+  }
+  const savedRef = loadSaved()
+  const [filterStatus,   setFilterStatus]   = useState<FilterStatus>(savedRef.status ?? "전체")
+  const [filterMonth,    setFilterMonth]    = useState(savedRef.month    ?? "")
+  const [filterOperator, setFilterOperator] = useState(savedRef.operator ?? "")
+  const [filterMedia,    setFilterMedia]    = useState(savedRef.media    ?? "")
+  const [searchQuery,    setSearchQuery]    = useState(savedRef.q        ?? "")
+
+  // 필터 변경 시 즉시 저장 (페이지 이탈 후 복귀해도 동일 상태 유지)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    sessionStorage.setItem(SS_KEY, JSON.stringify({
+      status: filterStatus, month: filterMonth, operator: filterOperator, media: filterMedia, q: searchQuery,
+    }))
+  }, [filterStatus, filterMonth, filterOperator, filterMedia, searchQuery])
+
+  // 스크롤 위치 보존
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const SK = 'ctplus-status-scroll-v1'
+    const saved = sessionStorage.getItem(SK)
+    if (saved) {
+      const y = parseInt(saved, 10)
+      if (Number.isFinite(y)) requestAnimationFrame(() => window.scrollTo(0, y))
+    }
+    const onScroll = () => sessionStorage.setItem(SK, String(window.scrollY))
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
   const [modalOpen,    setModalOpen]    = useState(false)
   const [editTarget,   setEditTarget]   = useState<Campaign | null>(null)
   const [confirmCfg,   setConfirmCfg]   = useState<ConfirmCfg | null>(null)

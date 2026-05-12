@@ -153,7 +153,13 @@ export default function CtCtvAnalysisPage() {
             </h2>
           </div>
           {motiv.loading ? (
-            <div className="p-6 text-center text-xs text-gray-400">로딩 중…</div>
+            <div className="p-6 text-center text-xs text-gray-400 flex items-center justify-center gap-2">
+              <svg className="animate-spin h-3.5 w-3.5 text-gray-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-30" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+              </svg>
+              MOTIV API 응답 대기 중… (최대 30s)
+            </div>
           ) : motiv.error ? (
             <div className="p-6 text-center text-xs text-red-500">MOTIV API 오류: {motiv.error}</div>
           ) : snapshots.length === 0 ? (

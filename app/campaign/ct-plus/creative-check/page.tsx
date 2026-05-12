@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import {
   Platform, AdProduct,
   getProducts, getProduct, getDefaultProductId,
@@ -158,7 +158,20 @@ export default function CreativeCheckPage() {
   const removeVideo = (id: string) => setVideos(prev => { const a = prev.find(x => x.id === id); if (a) URL.revokeObjectURL(a.objectUrl); return prev.filter(x => x.id !== id) })
 
   // ── URL ──────────────────────────────────────────────────────
-  const addUrl = () => { const t = urlInput.trim(); if (!t) return; setUrls(prev => [...prev, { id: genId(), url: t, checked: false, note: '' }]); setUrlInput('') }
+  // QA UX-005: 빈값 + URL 형식 검증 (http/https 만 허용)
+  const isValidLandingUrl = (u: string): boolean => {
+    try {
+      const p = new URL(u)
+      return p.protocol === 'http:' || p.protocol === 'https:'
+    } catch { return false }
+  }
+  const urlInputTrimmed = urlInput.trim()
+  const urlInputValid   = urlInputTrimmed.length > 0 && isValidLandingUrl(urlInputTrimmed)
+  const addUrl = () => {
+    if (!urlInputValid) return
+    setUrls(prev => [...prev, { id: genId(), url: urlInputTrimmed, checked: false, note: '' }])
+    setUrlInput('')
+  }
   const removeUrl = (id: string) => setUrls(prev => prev.filter(u => u.id !== id))
   const toggleChecked = (id: string) => setUrls(prev => prev.map(u => u.id === id ? { ...u, checked: !u.checked } : u))
   const updateNote = (id: string, note: string) => setUrls(prev => prev.map(u => u.id === id ? { ...u, note } : u))
@@ -174,7 +187,23 @@ export default function CreativeCheckPage() {
   const vidPass = vidResults.filter(r => r?.overallPass).length
   const vidFail = vidResults.filter(r => r && !r.overallPass).length
 
-  const selectorProps = { platform, onPlatformChange: handlePlatformChange, productId, onProductChange: setProductId }
+  // 탭/매체 변경 시 productId 자동 보정 (QA BUG-003: 영상 탭에 이미지 규격 잔류 방지)
+  useEffect(() => {
+    if (tab === 'url') return
+    const products = getProducts(platform)
+    const cur = products.find(p => p.id === productId)
+    const wantedType = tab as 'image' | 'video'
+    const compat = (p: typeof products[number]) => p.mediaType === 'both' || p.mediaType === wantedType
+    if (!cur || !compat(cur)) {
+      const next = products.find(compat) ?? products[0]
+      if (next) setProductId(next.id)
+    }
+  }, [tab, platform, productId])
+
+  const selectorProps = {
+    platform, onPlatformChange: handlePlatformChange, productId, onProductChange: setProductId,
+    activeMediaType: tab === 'image' ? ('image' as const) : tab === 'video' ? ('video' as const) : undefined,
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -259,7 +288,7 @@ export default function CreativeCheckPage() {
 
         {/* URL 탭 */}
         {tab === 'url' && (
-          <UrlTab urls={urls} urlInput={urlInput} onInputChange={setUrlInput}
+          <UrlTab urls={urls} urlInput={urlInput} urlInputValid={urlInputValid} onInputChange={setUrlInput}
             onAdd={addUrl} onRemove={removeUrl} onToggle={toggleChecked} onNoteChange={updateNote} />
         )}
       </main>
@@ -414,7 +443,7 @@ function VideoResultTable({ videos, product, onRemove }: { videos: VideoAsset[];
 
 // ── URL 탭 ────────────────────────────────────────────────────────
 
-function UrlTab({ urls, urlInput, onInputChange, onAdd, onRemove, onToggle, onNoteChange }: any) {
+function UrlTab({ urls, urlInput, urlInputValid, onInputChange, onAdd, onRemove, onToggle, onNoteChange }: any) {
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -423,10 +452,17 @@ function UrlTab({ urls, urlInput, onInputChange, onAdd, onRemove, onToggle, onNo
           <input type="url" value={urlInput} onChange={e => onInputChange(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') onAdd() }}
             placeholder="https://example.com/landing?utm_source=kakao&utm_medium=display"
-            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 font-mono" />
-          <button onClick={onAdd} disabled={!urlInput.trim()}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">추가</button>
+            className={`flex-1 rounded-lg border px-3 py-2 text-sm outline-none focus:ring-1 font-mono ${
+              urlInput.trim().length > 0 && !urlInputValid
+                ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
+                : 'border-gray-200 focus:border-blue-400 focus:ring-blue-100'
+            }`} />
+          <button onClick={onAdd} disabled={!urlInputValid}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">추가</button>
         </div>
+        {urlInput.trim().length > 0 && !urlInputValid && (
+          <p className="mt-1.5 text-[11px] text-red-600">⚠ http:// 또는 https:// 로 시작하는 올바른 URL 을 입력하세요.</p>
+        )}
       </div>
       {urls.length === 0
         ? <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center"><p className="text-sm text-gray-400">추가된 랜딩 URL이 없습니다.</p></div>
