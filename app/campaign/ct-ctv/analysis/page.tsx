@@ -6,6 +6,7 @@ import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettle
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAgencies } from "@/lib/hooks/useMotivAgencies"
+import { useMotivDailySnapshot } from "@/lib/hooks/useMotivDailySnapshot"
 import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import { KpiCard } from "@/components/analysis/KpiCard"
 import { AlertIcon } from "@/components/analysis/AlertIcon"
@@ -14,6 +15,7 @@ import { buildAlerts, dDay } from "@/components/analysis/alertEngine"
 import { DEFAULT_ANALYSIS_SETTINGS, type AnalysisSettings } from "@/components/analysis/types"
 import {
   motivCampaignToSnapshot,
+  motivStatsToMetrics,
   aggregateMetrics,
   calcCTR, calcSR, calcPR, calcVTR,
   type UnifiedCampaignSnapshot,
@@ -36,6 +38,8 @@ export default function CtCtvAnalysisPage() {
   const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
   const { byId: adAccountById }   = useMotivAdAccounts()
   const { byId: motivAgencyById } = useMotivAgencies()
+  const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot()
+  const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
 
   // MotivCampaign → UnifiedCampaignSnapshot
   const snapshots: UnifiedCampaignSnapshot[] = useMemo(() => {
@@ -45,12 +49,14 @@ export default function CtCtvAnalysisPage() {
         const adAccount = adAccountById.get(c.adaccount_id)
         const motivAgency = adAccount?.agency_id ? motivAgencyById.get(adAccount.agency_id) : undefined
         const agencyName = motivAgency?.name ?? '—'
-        return motivCampaignToSnapshot(c, agencyName)
+        const yStats = yesterdayStats.get(c.id)
+        return motivCampaignToSnapshot(c, agencyName, yStats ? motivStatsToMetrics(yStats) : undefined)
       })
-  }, [motiv.data, adAccountById, motivAgencyById])
+  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats])
 
   // 합계
-  const sumT      = useMemo(() => aggregateMetrics(snapshots.map(s => s.today)), [snapshots])
+  const sumT        = useMemo(() => aggregateMetrics(snapshots.map(s => s.today)),     [snapshots])
+  const sumY        = useMemo(() => aggregateMetrics(snapshots.map(s => s.yesterday)), [snapshots])
   const totalBudget = useMemo(() => snapshots.reduce((a, c) => a + c.budget, 0), [snapshots])
 
   return (
@@ -68,9 +74,15 @@ export default function CtCtvAnalysisPage() {
               onChange={e => setMonth(e.target.value)}
               className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
             />
-            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] text-amber-700 font-medium">
-              전일 비교 데이터 미연동 (Phase S4 예정)
-            </span>
+            {yesterdayAvailable ? (
+              <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11px] text-green-700 font-medium">
+                전일 스냅샷 {snapshot?.date} 연결됨
+              </span>
+            ) : (
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] text-amber-700 font-medium">
+                전일 스냅샷 없음 — cron 1회 이상 실행 후 표시
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setShowSettings(v => !v)}
@@ -93,33 +105,33 @@ export default function CtCtvAnalysisPage() {
             <KpiCard
               label="CTR (클릭률)"
               todayVal={calcCTR(sumT.clicks, sumT.impressions)}
-              yestVal={0}
+              yestVal={calcCTR(sumY.clicks, sumY.impressions)}
               threshold={settings.ctrDiff}
-              yesterdayMissing
+              yesterdayMissing={!yesterdayAvailable}
             />
             <KpiCard
               label="소진금액률"
               todayVal={calcSR(sumT.spend, totalBudget)}
-              yestVal={0}
+              yestVal={calcSR(sumY.spend, totalBudget)}
               threshold={settings.spendRateDiff}
-              yesterdayMissing
+              yesterdayMissing={!yesterdayAvailable}
             />
             <KpiCard
               label="수익률"
               todayVal={calcPR(sumT)}
-              yestVal={0}
+              yestVal={calcPR(sumY)}
               threshold={settings.profitRateDiff}
               benchmarkMin={settings.videoProfitMin}
-              yesterdayMissing
+              yesterdayMissing={!yesterdayAvailable}
             />
             <KpiCard
               label="VTR (완료율)"
               todayVal={calcVTR(sumT)}
-              yestVal={0}
+              yestVal={calcVTR(sumY)}
               threshold={5}
               note="평균 기준: 95% 이상"
               benchmarkMin={settings.ctvVtrMin}
-              yesterdayMissing
+              yesterdayMissing={!yesterdayAvailable}
             />
           </div>
         </section>
@@ -164,7 +176,7 @@ export default function CtCtvAnalysisPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {snapshots.map(c => {
-                    const alerts = buildAlerts(c, settings, { yesterdayMissing: true })
+                    const alerts = buildAlerts(c, settings, { yesterdayMissing: !yesterdayAvailable })
                     const dd = dDay(c.endDate)
                     return (
                       <tr key={c.id} className="hover:bg-gray-50">
