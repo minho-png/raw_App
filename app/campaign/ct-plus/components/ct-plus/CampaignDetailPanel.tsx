@@ -2,7 +2,7 @@
 import React, { useMemo } from "react"
 import { useRouter } from "next/navigation"
 import {
-  BarChart, Bar, LineChart, Line,
+  LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
 } from "recharts"
 import {
@@ -56,12 +56,13 @@ export function CampaignDetailPanel({
 
   // 매체별 집계
   const byMedia = useMemo(() => {
-    const map = new Map<string, { rows: number; impressions: number; clicks: number; executionAmount: number; netAmount: number }>()
+    const map = new Map<string, { rows: number; impressions: number; clicks: number; views: number; executionAmount: number; netAmount: number }>()
     for (const r of campRows) {
-      const cur = map.get(r.media) ?? { rows: 0, impressions: 0, clicks: 0, executionAmount: 0, netAmount: 0 }
+      const cur = map.get(r.media) ?? { rows: 0, impressions: 0, clicks: 0, views: 0, executionAmount: 0, netAmount: 0 }
       cur.rows++
       cur.impressions    += r.impressions
       cur.clicks         += r.clicks
+      cur.views          += r.views ?? 0
       cur.executionAmount += r.executionAmount ?? 0
       cur.netAmount      += r.netAmount ?? 0
       map.set(r.media, cur)
@@ -85,11 +86,69 @@ export function CampaignDetailPanel({
 
   const trendMedias = useMemo(() => [...new Set(campRows.map(r => r.media))].sort(), [campRows])
 
-  // 예산 차트 데이터
-  const budgetChart = campaign.mediaBudgets.map(mb => {
-    const t = getMediaTotals(mb)
-    return { name: mb.media, "부킹": t.totalBudget, "세팅": t.totalSettingCost, "집행": t.totalSpend }
-  })
+  // 매체별 KPI 목표 달성률 (CPC/CTR/CPM/VTR — mediaBudget 에 target 설정된 항목만)
+  //   higher-better (CTR/VTR): rate = actual / target * 100
+  //   lower-better  (CPC/CPM): rate = target / actual * 100
+  type KpiRow = {
+    media: string
+    metric: 'CTR' | 'CPC' | 'CPM' | 'VTR'
+    target: number
+    actual: number
+    rate: number | null      // null = 실적 0 으로 계산 불가
+    good: boolean
+    unit: '%' | '원'
+    lowerBetter: boolean
+    diffLabel: string
+  }
+  const kpiRowsByMedia = useMemo<KpiRow[]>(() => {
+    const out: KpiRow[] = []
+    for (const mb of campaign.mediaBudgets) {
+      const agg = byMedia.get(mb.media)
+      const imp = agg?.impressions ?? 0
+      const clk = agg?.clicks ?? 0
+      const vws = agg?.views ?? 0
+      const spd = agg?.executionAmount ?? 0
+      const ctrActual = imp > 0 ? +(clk / imp * 100).toFixed(2) : 0
+      const vtrActual = imp > 0 ? +(vws / imp * 100).toFixed(2) : 0
+      const cpcActual = clk > 0 ? Math.round(spd / clk) : 0
+      const cpmActual = imp > 0 ? Math.round(spd / imp * 1000) : 0
+
+      const push = (
+        metric: KpiRow['metric'], target: number | null | undefined, actual: number,
+        unit: '%' | '원', lowerBetter: boolean,
+      ) => {
+        if (target == null || target === 0) return
+        let rate: number | null = null
+        if (lowerBetter) {
+          rate = actual > 0 ? +(target / actual * 100).toFixed(1) : null
+        } else {
+          rate = +(actual / target * 100).toFixed(1)
+        }
+        const good = rate !== null && rate >= 100
+        let diffLabel = ''
+        if (unit === '%') {
+          const dp = +(actual - target).toFixed(2)
+          diffLabel = `${dp >= 0 ? '+' : ''}${dp.toFixed(2)}%p`
+        } else {
+          if (lowerBetter) {
+            const saved = Math.round(target - actual)
+            diffLabel = actual <= 0 ? '실적 없음'
+              : saved >= 0 ? `₩${fmt(saved)} 절감` : `₩${fmt(Math.abs(saved))} 초과`
+          } else {
+            const diff = Math.round(actual - target)
+            diffLabel = `${diff >= 0 ? '+' : ''}${fmt(diff)}`
+          }
+        }
+        out.push({ media: mb.media, metric, target, actual, rate, good, unit, lowerBetter, diffLabel })
+      }
+
+      push('CTR', mb.ctrTarget, ctrActual, '%', false)
+      push('VTR', mb.vtrTarget, vtrActual, '%', false)
+      push('CPC', mb.cpcTarget, cpcActual, '원', true)
+      push('CPM', mb.cpmTarget, cpmActual, '원', true)
+    }
+    return out
+  }, [campaign.mediaBudgets, byMedia])
 
   const totals   = getCampaignTotals(campaign)
   const progress = getCampaignProgress(campaign.startDate, campaign.endDate)
@@ -307,23 +366,59 @@ export function CampaignDetailPanel({
             </div>
           )}
 
-          {/* 매체별 예산 차트 */}
-          {budgetChart.length > 0 && (
+          {/* 매체별 KPI 목표 달성률 — CTR/VTR/CPC/CPM (목표 설정된 항목만) */}
+          {kpiRowsByMedia.length > 0 && (
             <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">매체별 예산 현황</h3>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={budgetChart} barCategoryGap="35%" barGap={2}
-                  margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={(v: number) => fmtAbbr(v)} tick={{ fontSize: 9 }}
-                    axisLine={false} tickLine={false} width={36} />
-                  <Tooltip formatter={(v: unknown) => [fmt(v as number) + "원", ""]} />
-                  <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10 }} />
-                  <Bar dataKey="부킹" fill="#e2e8f0" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="세팅" fill="#93c5fd" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="집행" fill="#3b82f6" radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">매체별 KPI 목표 달성률</h3>
+              <div className="space-y-3">
+                {Object.entries(
+                  kpiRowsByMedia.reduce<Record<string, KpiRow[]>>((acc, r) => {
+                    (acc[r.media] ??= []).push(r); return acc
+                  }, {})
+                ).map(([media, rows]) => (
+                  <div key={media}>
+                    <div className="mb-1.5 flex items-center gap-1.5">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: mColor(media) }} />
+                      <span className="text-[11px] font-semibold" style={{ color: mColor(media) }}>{media}</span>
+                    </div>
+                    <div className="space-y-1.5 pl-3">
+                      {rows.map(r => {
+                        const barW = r.rate === null ? 0 : Math.min(r.rate, 100)
+                        const noData = r.rate === null
+                        const targetTxt = r.unit === '원' ? `₩${fmt(r.target)}` : `${r.target.toFixed(2)}%`
+                        const actualTxt = noData ? '실적 없음'
+                          : r.unit === '원' ? `₩${fmt(r.actual)}` : `${r.actual.toFixed(2)}%`
+                        return (
+                          <div key={r.metric}>
+                            <div className="flex items-baseline justify-between text-[11px] mb-0.5">
+                              <span className="font-semibold text-gray-700 w-10 shrink-0">{r.metric}</span>
+                              <span className="text-gray-400 flex-1">
+                                목표 <span className="text-gray-600 font-medium">{targetTxt}</span>
+                                <span className="mx-1.5 text-gray-300">·</span>
+                                실적 <span className="text-blue-700 font-medium">{actualTxt}</span>
+                              </span>
+                              <span className={`font-bold tabular-nums w-12 text-right ${noData ? 'text-gray-300' : r.good ? 'text-green-600' : 'text-orange-500'}`}>
+                                {noData ? '-' : `${r.rate}%`}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 flex-1 rounded-full bg-gray-100 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all ${noData ? '' : r.good ? 'bg-green-400' : 'bg-orange-400'}`}
+                                  style={{ width: `${barW}%` }}
+                                />
+                              </div>
+                              <span className={`text-[10px] tabular-nums w-24 text-right ${noData ? 'text-gray-300' : r.good ? 'text-green-600' : 'text-orange-500'}`}>
+                                {r.diffLabel}
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
