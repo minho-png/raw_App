@@ -22,26 +22,40 @@ import {
 } from "@/lib/motivApi/statsMapper"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 
+type Category = 'total' | 'display' | 'video'
+
+const TYPE_LABEL: Record<UnifiedCampaignSnapshot['uiType'], string> = {
+  display:  '디스플레이',
+  video:    '동영상',
+  partners: '파트너스',
+  ctv:      'CTV',
+}
+const TYPE_COLOR: Record<UnifiedCampaignSnapshot['uiType'], string> = {
+  display:  'bg-blue-50 text-blue-600',
+  video:    'bg-purple-50 text-purple-600',
+  partners: 'bg-amber-50 text-amber-700',
+  ctv:      'bg-green-50 text-green-600',
+}
+
 const f = (n: number) => Math.round(n).toLocaleString('ko-KR')
 function fmtMonth(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 
-// CTV(TV) 매체 분석 — Motiv API 의 campaign_type='TV' 캠페인만.
-// AUD-005 fix: 이전에는 mock 데이터로 채워져 있었으나 실 MOTIV 데이터 연결.
-export default function CtCtvAnalysisPage() {
+export default function CtAnalysisPage() {
   const [month, setMonth]               = useState<string>(fmtMonth(new Date()))
+  const [category, setCategory]         = useState<Category>('total')
   const [showSettings, setShowSettings] = useState(false)
   const [settings, setSettings]         = useState<AnalysisSettings>(DEFAULT_ANALYSIS_SETTINGS)
 
   // ── 데이터 소스 ──────────────────────────────────────────
   const { agencies, advertisers, operators } = useMasterData()
-  const motiv = useMotivSettlementCampaignsByProduct('CTV', month)
+  const motiv = useMotivSettlementCampaignsByProduct('CT', month)
   const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
   const { byId: adAccountById }   = useMotivAdAccounts()
   const { byId: motivAgencyById } = useMotivAgencies()
   const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot()
   const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
 
-  // MotivCampaign → UnifiedCampaignSnapshot
+  // MotivCampaign → UnifiedCampaignSnapshot (전일 스냅샷이 있으면 yesterday 주입)
   const snapshots: UnifiedCampaignSnapshot[] = useMemo(() => {
     return motiv.data
       .filter(c => !isExcludedCampaign(c.title ?? ''))
@@ -54,18 +68,33 @@ export default function CtCtvAnalysisPage() {
       })
   }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats])
 
+  // 카테고리 필터 (PARTNERS 는 합계에만 포함)
+  const filtered = useMemo(() => {
+    if (category === 'total') return snapshots
+    return snapshots.filter(s => s.uiType === category)
+  }, [snapshots, category])
+
   // 합계
-  const sumT        = useMemo(() => aggregateMetrics(snapshots.map(s => s.today)),     [snapshots])
-  const sumY        = useMemo(() => aggregateMetrics(snapshots.map(s => s.yesterday)), [snapshots])
-  const totalBudget = useMemo(() => snapshots.reduce((a, c) => a + c.budget, 0), [snapshots])
+  const sumT        = useMemo(() => aggregateMetrics(filtered.map(s => s.today)),     [filtered])
+  const sumY        = useMemo(() => aggregateMetrics(filtered.map(s => s.yesterday)), [filtered])
+  const totalBudget = useMemo(() => filtered.reduce((a, c) => a + c.budget, 0), [filtered])
+  const showVTR = category === 'video'
+
+  // 카테고리 별 캠페인 수 (탭 배지)
+  const countByCategory = useMemo(() => ({
+    total:   snapshots.length,
+    display: snapshots.filter(s => s.uiType === 'display').length,
+    video:   snapshots.filter(s => s.uiType === 'video').length,
+  }), [snapshots])
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* 헤더 */}
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">CTV 매체 분석</h1>
-            <p className="text-xs text-gray-400 mt-0.5">TV 매체 (Connected TV) · MOTIV API 실시간</p>
+            <h1 className="text-base font-semibold text-gray-900">CT 매체 분석</h1>
+            <p className="text-xs text-gray-400 mt-0.5">자체 DA 매체 (DISPLAY / VIDEO / PARTNERS) · MOTIV API 실시간</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <input
@@ -97,9 +126,31 @@ export default function CtCtvAnalysisPage() {
       </header>
 
       <main className="p-6 space-y-5">
-        {showSettings && <SettingsPanel settings={settings} onChange={setSettings} variant="CTV" />}
+        {showSettings && <SettingsPanel settings={settings} onChange={setSettings} variant="CT" />}
 
-        {/* KPI 카드 — TV 단일이라 카테고리 토글 없음 */}
+        {/* 카테고리 토글 */}
+        <div className="flex items-center gap-1.5">
+          {(['total', 'display', 'video'] as const).map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCategory(c)}
+              className={`rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                category === c ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {c === 'total' ? '총 합계' : TYPE_LABEL[c]}
+              <span className="ml-1.5 opacity-70">({countByCategory[c]})</span>
+            </button>
+          ))}
+          {category === 'total' && (
+            <span className="ml-2 text-[11px] text-gray-400">
+              ※ 합계에는 PARTNERS 포함
+            </span>
+          )}
+        </div>
+
+        {/* KPI 카드 */}
         <section>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <KpiCard
@@ -121,25 +172,27 @@ export default function CtCtvAnalysisPage() {
               todayVal={calcPR(sumT)}
               yestVal={calcPR(sumY)}
               threshold={settings.profitRateDiff}
-              benchmarkMin={settings.videoProfitMin}
+              benchmarkMin={category === 'video' ? settings.videoProfitMin : settings.displayProfitMin}
               yesterdayMissing={!yesterdayAvailable}
             />
-            <KpiCard
-              label="VTR (완료율)"
-              todayVal={calcVTR(sumT)}
-              yestVal={calcVTR(sumY)}
-              threshold={5}
-              note="평균 기준: 95% 이상"
-              benchmarkMin={settings.ctvVtrMin}
-              yesterdayMissing={!yesterdayAvailable}
-            />
+            {showVTR && (
+              <KpiCard
+                label="VTR (완료율)"
+                todayVal={calcVTR(sumT)}
+                yestVal={calcVTR(sumY)}
+                threshold={5}
+                note="평균 기준: 75~80%"
+                benchmarkMin={settings.videoVtrMin}
+                yesterdayMissing={!yesterdayAvailable}
+              />
+            )}
           </div>
         </section>
 
         {/* 요약 통계 */}
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <SummaryCard label="총 노출" value={f(sumT.impressions)} />
-          <SummaryCard label="완료 시청" value={f(sumT.completedViews)} />
+          <SummaryCard label="총 클릭" value={f(sumT.clicks)} />
           <SummaryCard label="총 소진금액" value={`₩${f(sumT.spend)}`} />
           <SummaryCard label="총 매체비용" value={`₩${f(sumT.mediaCost)}`} />
         </section>
@@ -148,15 +201,15 @@ export default function CtCtvAnalysisPage() {
         <section className="rounded-xl border border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-5 py-3">
             <h2 className="text-sm font-semibold text-gray-900">
-              CTV 캠페인 목록
-              <span className="ml-2 text-[11px] font-normal text-gray-400">{snapshots.length}건</span>
+              캠페인 목록
+              <span className="ml-2 text-[11px] font-normal text-gray-400">{filtered.length}건</span>
             </h2>
           </div>
           {motiv.loading ? (
             <div className="p-6 text-center text-xs text-gray-400">로딩 중…</div>
           ) : motiv.error ? (
             <div className="p-6 text-center text-xs text-red-500">MOTIV API 오류: {motiv.error}</div>
-          ) : snapshots.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <div className="p-6 text-center text-xs text-gray-400">해당 월에 데이터가 없습니다.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -165,28 +218,32 @@ export default function CtCtvAnalysisPage() {
                   <tr className="text-gray-500">
                     <th className="px-3 py-2 text-left font-medium">상태</th>
                     <th className="px-3 py-2 text-left font-medium">캠페인</th>
+                    <th className="px-3 py-2 text-left font-medium">유형</th>
                     <th className="px-3 py-2 text-left font-medium">대행사</th>
                     <th className="px-3 py-2 text-right font-medium">예산</th>
                     <th className="px-3 py-2 text-right font-medium">소진</th>
-                    <th className="px-3 py-2 text-right font-medium">노출</th>
-                    <th className="px-3 py-2 text-right font-medium">VTR</th>
+                    <th className="px-3 py-2 text-right font-medium">CTR</th>
                     <th className="px-3 py-2 text-right font-medium">수익률</th>
                     <th className="px-3 py-2 text-center font-medium">D-day</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {snapshots.map(c => {
+                  {filtered.map(c => {
                     const alerts = buildAlerts(c, settings, { yesterdayMissing: !yesterdayAvailable })
                     const dd = dDay(c.endDate)
                     return (
                       <tr key={c.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2"><AlertIcon msgs={alerts} /></td>
                         <td className="px-3 py-2 font-medium text-gray-800">{c.name}</td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${TYPE_COLOR[c.uiType]}`}>
+                            {TYPE_LABEL[c.uiType]}
+                          </span>
+                        </td>
                         <td className="px-3 py-2 text-gray-600">{c.agency}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.budget)}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.today.spend)}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{f(c.today.impressions)}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{calcVTR(c.today).toFixed(2)}%</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{c.ctr.toFixed(2)}%</td>
                         <td className="px-3 py-2 text-right text-gray-700">{c.profitRate.toFixed(2)}%</td>
                         <td className={`px-3 py-2 text-center ${dd.color}`}>{dd.label}</td>
                       </tr>
@@ -198,10 +255,10 @@ export default function CtCtvAnalysisPage() {
           )}
         </section>
 
-        {/* 정산 테이블 */}
+        {/* 정산 테이블 (MOTIV → 내부 Agency 자동 매칭) */}
         <section className="space-y-2 mt-8">
           <MotivSettlementTable
-            title="CTV 정산 지정"
+            title="CT 정산 지정"
             loading={motiv.loading}
             error={motiv.error}
             campaigns={motiv.data.filter(c => !isExcludedCampaign(c.title ?? ''))}

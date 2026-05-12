@@ -37,24 +37,25 @@ const CT_PLUS_SECTIONS: MenuGroup[] = [
   },
 ]
 
-// ── CT ────────────────────────────────────────────────
+// ── CT (자체 DA 매체) ────────────────────────────────
 const CT_SECTIONS: MenuGroup[] = [
   {
     title: "CT",
     items: [
-      { label: "소재 검수",   href: "/campaign/ct/creative-check" },
-      { label: "캠페인 현황", href: "/campaign/ct/motiv-campaigns" },
+      { label: "소재 검수",     href: "/campaign/ct/creative-check" },
+      { label: "캠페인 분석",   href: "/campaign/ct/analysis" },
+      { label: "캠페인 현황",   href: "/campaign/ct/motiv-campaigns" },
     ],
   },
 ]
 
-// ── CT TV ─────────────────────────────────────────────
+// ── CTV (TV 매체) ─────────────────────────────────────
 const CTTV_SECTIONS: MenuGroup[] = [
   {
-    title: "CT TV",
+    title: "CTV",
     items: [
       { label: "소재 검수",   href: "/campaign/ct-ctv/creative-check" },
-      { label: "캠페인 현황", href: "/campaign/ct-ctv/analysis" },
+      { label: "캠페인 분석", href: "/campaign/ct-ctv/analysis" },
     ],
   },
 ]
@@ -76,7 +77,7 @@ const SETTLEMENT_SECTIONS: MenuGroup[] = [
 const ALL_SECTIONS: Section[] = [
   { key: "ctplus",     label: "CT+",        groups: CT_PLUS_SECTIONS },
   { key: "ct",         label: "CT",         groups: CT_SECTIONS },
-  { key: "cttv",       label: "CT TV",      groups: CTTV_SECTIONS },
+  { key: "cttv",       label: "CTV",        groups: CTTV_SECTIONS },
   { key: "settlement", label: "캠페인 정산", groups: SETTLEMENT_SECTIONS },
 ]
 

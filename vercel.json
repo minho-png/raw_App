@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/zero-spend-alert",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/motiv-snapshot",
+      "schedule": "5 0 * * *"
     }
   ]
 }
