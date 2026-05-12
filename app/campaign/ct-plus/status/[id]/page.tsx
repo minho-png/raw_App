@@ -387,6 +387,7 @@ export default function CampaignDetailPage() {
                         <th className={thRCls}>목표</th>
                         <th className={thRCls}>실적</th>
                         <th className={thRCls}>달성률</th>
+                        <th className={thRCls}>효율 차이</th>
                         <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 w-40">달성률 현황</th>
                       </tr></thead>
                       <tbody className="divide-y divide-gray-50">
@@ -397,6 +398,33 @@ export default function CampaignDetailPage() {
                             :+(r.actual/r.target!*100).toFixed(1)):null
                           const good=rate!==null&&rate>=100
                           const barW=rate!==null?Math.min(rate,100):0
+                          // 효율 차이 — 단위와 lowerBetter 에 따라 분기
+                          //   %  지표(CTR/VTR): %p 차이
+                          //   원 지표(CPC/CPM/Budget): 금액 차이 + 절감/초과/잔여 라벨
+                          let diffLabel: string | null = null
+                          if (hasTarget) {
+                            if (r.unit === "%") {
+                              const dp = +(r.actual - r.target!).toFixed(2)
+                              diffLabel = `${dp>=0?"+":""}${dp.toFixed(2)}%p`
+                            } else if (r.unit === "원") {
+                              if (r.lowerBetter) {
+                                // CPC/CPM: 적게 쓸수록 좋음
+                                const saved = Math.round(r.target! - r.actual)
+                                diffLabel = saved >= 0
+                                  ? `₩${fmt(saved)} 절감`
+                                  : `₩${fmt(Math.abs(saved))} 초과`
+                              } else {
+                                // Budget: 소진 관점 — 100% 달성 이상부터는 초과 소진
+                                const diff = Math.round(r.actual - r.target!)
+                                diffLabel = diff >= 0
+                                  ? `₩${fmt(diff)} 초과`
+                                  : `₩${fmt(Math.abs(diff))} 잔여`
+                              }
+                            } else {
+                              const diff = Math.round(r.actual - r.target!)
+                              diffLabel = `${diff>=0?"+":""}${fmt(diff)}`
+                            }
+                          }
                           return(
                             <tr key={i} className="hover:bg-gray-50">
                               <td className={`${tdCls} font-semibold text-gray-800 w-24`}>{r.label}</td>
@@ -404,6 +432,9 @@ export default function CampaignDetailPage() {
                               <td className={`${tdRCls} font-medium text-blue-700`}>{fmt(Math.round(r.actual))}{r.unit}</td>
                               <td className={`${tdRCls} font-bold ${good?"text-green-600":"text-orange-500"}`}>
                                 {rate!==null?`${rate}%`:"-"}
+                              </td>
+                              <td className={`${tdRCls} font-semibold ${good?"text-green-600":"text-orange-500"}`}>
+                                {diffLabel ?? "-"}
                               </td>
                               <td className="px-3 py-2">
                                 {rate!==null&&(
