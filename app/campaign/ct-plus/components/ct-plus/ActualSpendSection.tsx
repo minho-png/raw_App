@@ -28,8 +28,8 @@ export function ActualSpendSection({
   return (
     <MF label={
       VAT_INCLUDED_MEDIA.includes(mb.media)
-        ? <span>실 세팅금액 <span className="font-bold text-red-500">(VAT포함)</span></span>
-        : <span>실 세팅금액 <span className="text-gray-400 font-normal">(VAT별도)</span></span>
+        ? <span>실 세팅금액 <span className="font-bold text-red-500">(VAT 포함)</span></span>
+        : <span>실 세팅금액 <span className="text-gray-400 font-normal">(VAT 별도)</span></span>
     }>
       <input
         type="number" min="0"

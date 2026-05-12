@@ -112,7 +112,7 @@ export default function CTPlusOverviewPage() {
           {/* KPI 카드 4개 */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiCard label="총 예산" value={fmtKrw(overview.totals.totalBudget)} color="blue" />
-            <KpiCard label="셋팅 비용" value={fmtKrw(overview.totals.totalSettingCost)} color="blue" />
+            <KpiCard label="세팅 비용" value={fmtKrw(overview.totals.totalSettingCost)} color="blue" />
             <KpiCard
               label="소진 금액"
               value={fmtKrw(overview.totals.totalSpend)}
@@ -216,7 +216,7 @@ export default function CTPlusOverviewPage() {
               <table className="w-full text-xs">
                 <thead className="bg-gray-50">
                   <tr>
-                    {['매체', '구분', '예산', '셋팅비용', '소진', '소진율'].map(h => (
+                    {['매체', '구분', '예산', '세팅금액', '소진', '소진율'].map(h => (
                       <th key={h} className="px-4 py-2.5 text-left font-medium text-gray-500">{h}</th>
                     ))}
                   </tr>

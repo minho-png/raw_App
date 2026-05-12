@@ -230,7 +230,7 @@ export default function CampaignDetailPage() {
 
   if(!campaign||!totals){
     return(<div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center"><p className="text-sm text-gray-500">칄페인을 찾을 수 없습니다.</p>
+      <div className="text-center"><p className="text-sm text-gray-500">캠페인을 찾을 수 없습니다.</p>
         <button onClick={()=>router.back()} className="mt-3 text-xs text-blue-600 hover:underline">돌아가기</button>
       </div></div>)
   }
@@ -458,14 +458,14 @@ export default function CampaignDetailPage() {
                   </div>
                 </div>
               )}
-              {/* 매체×칄페인 집계 테이블 */}
+              {/* 매체×캠페인 집계 테이블 */}
               <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                 <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                  <h3 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">매체 × 칄페인별 집계</h3>
+                  <h3 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">매체 × 캠페인별 집계</h3>
                 </div>
                 <div className="overflow-x-auto"><table className="w-full text-xs">
                   <thead className="bg-gray-50 border-b border-gray-100"><tr>
-                    <th className={thCls}>매체</th><th className={thCls}>칄페인</th>
+                    <th className={thCls}>매체</th><th className={thCls}>캠페인</th>
                     <th className={thRCls}>세팅금액</th><th className={thRCls}>집행금액</th><th className={thRCls}>소진율</th>
                     <th className={thRCls}>노출</th><th className={thRCls}>조회</th><th className={thRCls}>클릭</th>
                     <th className={thRCls}>VTR</th><th className={thRCls}>CTR</th><th className={thRCls}>CPM</th><th className={thRCls}>CPC</th>
@@ -707,7 +707,7 @@ export default function CampaignDetailPage() {
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50 border-b border-gray-100 sticky top-0"><tr>
                       <th className={thCls}>날짜</th><th className={thCls}>매체</th>
-                      <th className={thCls}>칄페인명</th><th className={thCls}>소재</th>
+                      <th className={thCls}>캠페인명</th><th className={thCls}>소재</th>
                       <th className={thRCls}>노출</th><th className={thRCls}>조회</th>
                       <th className={thRCls}>클릭</th><th className={thRCls}>집행금액</th>
                     </tr></thead>
