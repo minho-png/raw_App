@@ -446,7 +446,7 @@ export default function CtPlusFinalPage() {
                             <td colSpan={4} className="px-4 py-2" />
                             <td className="px-4 py-2 text-[11px] font-medium text-gray-700">
                               {mr.media}
-                              {mr.isNaver && <span className="ml-1 text-[9px] text-amber-600">(VAT포함)</span>}
+                              {mr.isNaver && <span className="ml-1 text-[9px] text-amber-600">(VAT 포함)</span>}
                             </td>
                             <td className="px-4 py-2 text-right tabular-nums text-gray-500 text-[11px]">{fmt(mr.budget)}</td>
                             <td className="px-4 py-2 text-right tabular-nums text-gray-500 text-[11px]">

@@ -11,13 +11,9 @@ import { applyMarkupToRows } from "@/lib/markupService"
 import { getCampaignTotals, getCampaignProgress, getMediaTotals } from "@/lib/campaignTypes"
 import { fmt, spendRateStyle } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { RawRow } from "@/lib/rawDataParser"
+import { mColor, mediaTint, contrastOn } from "@/lib/mediaColors"
 
-const MEDIA_COLORS: Record<string, string> = {
-  "네이버 GFA": "#03C75A", "카카오모멘트": "#FEE500",
-  "Google": "#4285F4", "META": "#1877F2",
-}
 const CREATIVE_COLORS = ["#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"]
-function mColor(m: string) { return MEDIA_COLORS[m] ?? "#94a3b8" }
 
 // 금액 표기 — 단위 약어(만/억) 사용 안 함, 천 단위 콤마만.
 function fmtAbbr(n: number): string {
@@ -234,7 +230,7 @@ export default function CampaignDetailPage() {
 
   if(!campaign||!totals){
     return(<div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center"><p className="text-sm text-gray-500">칄페인을 찾을 수 없습니다.</p>
+      <div className="text-center"><p className="text-sm text-gray-500">캠페인을 찾을 수 없습니다.</p>
         <button onClick={()=>router.back()} className="mt-3 text-xs text-blue-600 hover:underline">돌아가기</button>
       </div></div>)
   }
@@ -315,11 +311,22 @@ export default function CampaignDetailPage() {
         {MEDIA_TABS.length>0 && (
           <div className="flex gap-1 flex-wrap rounded-xl bg-white px-2 py-2 border border-gray-200">
             <span className="text-[10px] text-gray-400 self-center pl-1 pr-1">매체</span>
-            {MEDIA_TABS.map(m=>(
-              <button key={m} onClick={()=>setMediaFilter(m)}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${mediaFilter===m?"bg-blue-600 text-white":"bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-              >{m}</button>
-            ))}
+            {MEDIA_TABS.map(m=>{
+              const active = mediaFilter===m
+              const c = mColor(m)
+              return (
+                <button
+                  key={m}
+                  onClick={()=>setMediaFilter(m)}
+                  className="px-3 py-1 rounded-full text-xs font-medium transition-colors border hover:opacity-90"
+                  style={{
+                    backgroundColor: active ? c : mediaTint(m),
+                    color: active ? contrastOn(c) : c,
+                    borderColor: active ? c : "transparent",
+                  }}
+                >{m}</button>
+              )
+            })}
           </div>
         )}
 
@@ -387,6 +394,7 @@ export default function CampaignDetailPage() {
                         <th className={thRCls}>목표</th>
                         <th className={thRCls}>실적</th>
                         <th className={thRCls}>달성률</th>
+                        <th className={thRCls}>효율 차이</th>
                         <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 w-40">달성률 현황</th>
                       </tr></thead>
                       <tbody className="divide-y divide-gray-50">
@@ -397,6 +405,33 @@ export default function CampaignDetailPage() {
                             :+(r.actual/r.target!*100).toFixed(1)):null
                           const good=rate!==null&&rate>=100
                           const barW=rate!==null?Math.min(rate,100):0
+                          // 효율 차이 — 단위와 lowerBetter 에 따라 분기
+                          //   %  지표(CTR/VTR): %p 차이
+                          //   원 지표(CPC/CPM/Budget): 금액 차이 + 절감/초과/잔여 라벨
+                          let diffLabel: string | null = null
+                          if (hasTarget) {
+                            if (r.unit === "%") {
+                              const dp = +(r.actual - r.target!).toFixed(2)
+                              diffLabel = `${dp>=0?"+":""}${dp.toFixed(2)}%p`
+                            } else if (r.unit === "원") {
+                              if (r.lowerBetter) {
+                                // CPC/CPM: 적게 쓸수록 좋음
+                                const saved = Math.round(r.target! - r.actual)
+                                diffLabel = saved >= 0
+                                  ? `₩${fmt(saved)} 절감`
+                                  : `₩${fmt(Math.abs(saved))} 초과`
+                              } else {
+                                // Budget: 소진 관점 — 100% 달성 이상부터는 초과 소진
+                                const diff = Math.round(r.actual - r.target!)
+                                diffLabel = diff >= 0
+                                  ? `₩${fmt(diff)} 초과`
+                                  : `₩${fmt(Math.abs(diff))} 잔여`
+                              }
+                            } else {
+                              const diff = Math.round(r.actual - r.target!)
+                              diffLabel = `${diff>=0?"+":""}${fmt(diff)}`
+                            }
+                          }
                           return(
                             <tr key={i} className="hover:bg-gray-50">
                               <td className={`${tdCls} font-semibold text-gray-800 w-24`}>{r.label}</td>
@@ -404,6 +439,9 @@ export default function CampaignDetailPage() {
                               <td className={`${tdRCls} font-medium text-blue-700`}>{fmt(Math.round(r.actual))}{r.unit}</td>
                               <td className={`${tdRCls} font-bold ${good?"text-green-600":"text-orange-500"}`}>
                                 {rate!==null?`${rate}%`:"-"}
+                              </td>
+                              <td className={`${tdRCls} font-semibold ${good?"text-green-600":"text-orange-500"}`}>
+                                {diffLabel ?? "-"}
                               </td>
                               <td className="px-3 py-2">
                                 {rate!==null&&(
@@ -420,14 +458,14 @@ export default function CampaignDetailPage() {
                   </div>
                 </div>
               )}
-              {/* 매체×칄페인 집계 테이블 */}
+              {/* 매체×캠페인 집계 테이블 */}
               <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                 <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                  <h3 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">매체 × 칄페인별 집계</h3>
+                  <h3 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">매체 × 캠페인별 집계</h3>
                 </div>
                 <div className="overflow-x-auto"><table className="w-full text-xs">
                   <thead className="bg-gray-50 border-b border-gray-100"><tr>
-                    <th className={thCls}>매체</th><th className={thCls}>칄페인</th>
+                    <th className={thCls}>매체</th><th className={thCls}>캠페인</th>
                     <th className={thRCls}>세팅금액</th><th className={thRCls}>집행금액</th><th className={thRCls}>소진율</th>
                     <th className={thRCls}>노출</th><th className={thRCls}>조회</th><th className={thRCls}>클릭</th>
                     <th className={thRCls}>VTR</th><th className={thRCls}>CTR</th><th className={thRCls}>CPM</th><th className={thRCls}>CPC</th>
@@ -437,7 +475,7 @@ export default function CampaignDetailPage() {
                       const sc2=spendRateStyle(r.spendRate)
                       return(
                         <tr key={i} className="hover:bg-gray-50">
-                          <td className={`${tdCls} font-medium text-gray-800`}>{r.media}</td>
+                          <td className={`${tdCls} font-medium`} style={{ borderLeft: `3px solid ${mColor(r.media)}`, color: mColor(r.media) }}>{r.media}</td>
                           <td className={`${tdCls} max-w-[180px] truncate`} title={r.campName}>{r.campName}</td>
                           <td className={tdRCls}>{fmtAbbr(r.budget)}</td>
                           <td className={`${tdRCls} font-medium text-blue-700`}>{fmtAbbr(r.spend)}</td>
@@ -626,7 +664,7 @@ export default function CampaignDetailPage() {
                     {creativeRows.map((r,i)=>(
                       <tr key={i} className="hover:bg-gray-50">
                         <td className={`${tdCls} font-medium text-gray-800 max-w-[160px] truncate`} title={r.creative}>{r.creative||"(없음)"}</td>
-                        <td className={tdCls}>{r.media}</td>
+                        <td className={`${tdCls} font-medium`} style={{ borderLeft: `3px solid ${mColor(r.media)}`, color: mColor(r.media) }}>{r.media}</td>
                         <td className={tdRCls}>{fmt(r.impressions)}</td><td className={tdRCls}>{fmt(r.views)}</td><td className={tdRCls}>{fmt(r.clicks)}</td>
                         <td className={tdRCls}>{r.vtr}%</td><td className={`${tdRCls} text-purple-600 font-medium`}>{r.ctr}%</td>
                         <td className={tdRCls}>{fmt(r.cpm)}</td><td className={tdRCls}>{fmt(r.cpc)}</td>
@@ -669,7 +707,7 @@ export default function CampaignDetailPage() {
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50 border-b border-gray-100 sticky top-0"><tr>
                       <th className={thCls}>날짜</th><th className={thCls}>매체</th>
-                      <th className={thCls}>칄페인명</th><th className={thCls}>소재</th>
+                      <th className={thCls}>캠페인명</th><th className={thCls}>소재</th>
                       <th className={thRCls}>노출</th><th className={thRCls}>조회</th>
                       <th className={thRCls}>클릭</th><th className={thRCls}>집행금액</th>
                     </tr></thead>
@@ -679,7 +717,7 @@ export default function CampaignDetailPage() {
                         return(
                           <tr key={i} className={changed?"bg-yellow-50":"hover:bg-gray-50"}>
                             <td className={`${tdCls} font-mono text-gray-600`}>{r.date}</td>
-                            <td className={tdCls}>{r.media}</td>
+                            <td className={`${tdCls} font-medium`} style={{ borderLeft: `3px solid ${mColor(r.media)}`, color: mColor(r.media) }}>{r.media}</td>
                             <td className={`${tdCls} max-w-[140px] truncate`} title={r.campaignName}>{r.campaignName}</td>
                             <td className={`${tdCls} max-w-[100px] truncate`} title={r.creativeName}>{r.creativeName}</td>
                             {(["impressions","views","clicks"] as const).map(key=>(
