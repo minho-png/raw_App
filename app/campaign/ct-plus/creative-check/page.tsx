@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import {
   Platform, AdProduct,
   getProducts, getProduct, getDefaultProductId,
@@ -174,7 +174,23 @@ export default function CreativeCheckPage() {
   const vidPass = vidResults.filter(r => r?.overallPass).length
   const vidFail = vidResults.filter(r => r && !r.overallPass).length
 
-  const selectorProps = { platform, onPlatformChange: handlePlatformChange, productId, onProductChange: setProductId }
+  // 탭/매체 변경 시 productId 자동 보정 (QA BUG-003: 영상 탭에 이미지 규격 잔류 방지)
+  useEffect(() => {
+    if (tab === 'url') return
+    const products = getProducts(platform)
+    const cur = products.find(p => p.id === productId)
+    const wantedType = tab as 'image' | 'video'
+    const compat = (p: typeof products[number]) => p.mediaType === 'both' || p.mediaType === wantedType
+    if (!cur || !compat(cur)) {
+      const next = products.find(compat) ?? products[0]
+      if (next) setProductId(next.id)
+    }
+  }, [tab, platform, productId])
+
+  const selectorProps = {
+    platform, onPlatformChange: handlePlatformChange, productId, onProductChange: setProductId,
+    activeMediaType: tab === 'image' ? ('image' as const) : tab === 'video' ? ('video' as const) : undefined,
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

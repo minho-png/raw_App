@@ -12,13 +12,18 @@ const PLATFORM_INFO: { key: Platform; label: string; color: string; bg: string }
 export function PlatformSelector({
   platform, onPlatformChange,
   productId, onProductChange,
+  activeMediaType,
 }: {
   platform: Platform
   onPlatformChange: (p: Platform) => void
   productId: string
   onProductChange: (id: string) => void
+  // 'image' | 'video' 지정 시 호환되지 않는 상품은 비활성화 (QA BUG-003/005).
+  activeMediaType?: 'image' | 'video'
 }) {
   const products: AdProduct[] = getProducts(platform)
+  const isCompat = (p: AdProduct) =>
+    !activeMediaType || p.mediaType === 'both' || p.mediaType === activeMediaType
 
   return (
     <div className="space-y-3 mb-4">
@@ -46,22 +51,33 @@ export function PlatformSelector({
       <div>
         <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">광고 상품 선택</p>
         <div className="flex flex-wrap gap-2">
-          {products.map(prod => (
-            <button
-              key={prod.id}
-              onClick={() => onProductChange(prod.id)}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                productId === prod.id
-                  ? 'border-blue-400 bg-blue-600 text-white shadow-sm'
-                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {prod.name}
-              <span className={`ml-1.5 text-[9px] font-normal opacity-70 ${productId === prod.id ? 'text-blue-100' : 'text-gray-400'}`}>
-                {prod.mediaType === 'image' ? '이미지' : prod.mediaType === 'video' ? '동영상' : '이미지+동영상'}
-              </span>
-            </button>
-          ))}
+          {products.map(prod => {
+            const compat   = isCompat(prod)
+            const selected = productId === prod.id && compat
+            return (
+              <button
+                key={prod.id}
+                onClick={() => compat && onProductChange(prod.id)}
+                disabled={!compat}
+                title={compat ? undefined
+                  : `${activeMediaType === 'video' ? '동영상' : '이미지'} 탭에서는 지원되지 않는 상품입니다`}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  !compat
+                    ? 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed opacity-60'
+                    : selected
+                      ? 'border-blue-400 bg-blue-600 text-white shadow-sm'
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {prod.name}
+                <span className={`ml-1.5 text-[9px] font-normal ${
+                  !compat ? 'text-gray-300' : selected ? 'text-blue-100' : 'text-gray-400'
+                }`}>
+                  {prod.mediaType === 'image' ? '이미지' : prod.mediaType === 'video' ? '동영상' : '이미지+동영상'}
+                </span>
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
