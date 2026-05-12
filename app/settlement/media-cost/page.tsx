@@ -4,6 +4,8 @@ import { useState, useEffect } from "react"
 import type { Campaign } from "@/lib/campaignTypes"
 import { MEDIA_MARKUP_RATE } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
+import { useRawData } from "@/lib/hooks/useRawData"
+import { applyMarkupToRows } from "@/lib/markupService"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
@@ -60,6 +62,7 @@ const AGENCY_PALETTE = [
 export default function MediaCostPage() {
   const today = new Date()
   const { campaigns, advertisers, agencies } = useMasterData()
+  const { allRows: rawRows } = useRawData()
   const [month, setMonth] = useState(toMonthStr(today))
   const [product, setProduct] = useState<MediaProductFilter>('CT_PLUS')
   const [snapshots, setSnapshots]       = useState<Snapshot[]>([])
@@ -85,6 +88,21 @@ export default function MediaCostPage() {
   function getAdvertiserName(adId: string) { return advertisers.find(a => a.id === adId)?.name ?? '—' }
   function getAgencyName(agId: string)     { return agencies.find(a => a.id === agId)?.name ?? '—' }
 
+  // QA BUG-006: 매체비용 정산이 mb.dmp.spend / mb.nonDmp.spend (수동 입력)만 보고
+  // raw data 의 실집행금액을 반영하지 못해 빈 표가 노출되던 문제 보정.
+  // (campaignId, media) → raw 집행금액 합 맵 구성.
+  const rawSpendByCampMedia = (() => {
+    if (rawRows.length === 0 || campaigns.length === 0) return new Map<string, number>()
+    const computed = applyMarkupToRows(rawRows, campaigns)
+    const m = new Map<string, number>()
+    for (const r of computed) {
+      if (!r.matchedCampaignId || !r.media) continue
+      const key = `${r.matchedCampaignId}||${r.media}`
+      m.set(key, (m.get(key) ?? 0) + (r.executionAmount ?? 0))
+    }
+    return m
+  })()
+
   // ── 결과 행 계산 ───────────────────────────────────────────────
   const rows: ResultRow[] = []
   for (const c of campaigns) {
@@ -93,6 +111,7 @@ export default function MediaCostPage() {
     const agencyName     = getAgencyName(c.agencyId)
     for (const mb of c.mediaBudgets) {
       const markupRate = MEDIA_MARKUP_RATE[mb.media] ?? 0
+      const rawSpend = rawSpendByCampMedia.get(`${c.id}||${mb.media}`) ?? 0
       if (mb.dmp.spend > 0) {
         const spend = mb.dmp.spend
         rows.push({
@@ -117,6 +136,19 @@ export default function MediaCostPage() {
           spend,
           markupRate,
           netCost: Math.round(spend * (1 - markupRate / 100)),
+        })
+      }
+      // 수동 입력 spend 가 모두 0 이지만 raw 가 있는 경우 → raw 기반 행 추가 (실집행 누락 보정)
+      if (mb.dmp.spend === 0 && mb.nonDmp.spend === 0 && rawSpend > 0) {
+        rows.push({
+          advertiserName, agencyName, agencyId: c.agencyId,
+          campaignName: c.campaignName,
+          media: mb.media,
+          kind: 'DMP',
+          budget: (mb.dmp.budget ?? 0) + (mb.nonDmp.budget ?? 0),
+          spend: rawSpend,
+          markupRate,
+          netCost: Math.round(rawSpend * (1 - markupRate / 100)),
         })
       }
     }

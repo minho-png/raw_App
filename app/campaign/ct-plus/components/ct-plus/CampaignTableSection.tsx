@@ -131,11 +131,15 @@ export function CampaignTableSection({
                     <DailyDeltaCell entry={dailySpendMap?.get(c.id)} />
                     <td className="px-4 py-3 text-center">
                       {csvCount > 0 ? (
-                        <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">
+                        <span
+                          className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700"
+                          aria-label={`연결된 CSV 캠페인 ${csvCount}개`}
+                          title={`연결된 CSV 캠페인 ${csvCount}개${c.csvNames?.length ? `: ${c.csvNames.join(', ')}` : ''}`}
+                        >
                           DB {csvCount}
                         </span>
                       ) : (
-                        <span className="text-[10px] text-gray-400">—</span>
+                        <span className="text-[10px] text-gray-400" aria-label="연결된 DB 없음">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>

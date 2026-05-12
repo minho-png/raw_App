@@ -73,18 +73,24 @@ export function useMasterData(): MasterData {
     setOperators(lsRead<Operator>(LS_KEYS.operators))
 
     // 2. Fetch from MongoDB and update (MongoDB wins on conflict)
-    const [mc, ma, mdv, mo] = await Promise.all([
-      fetchFromMongo<Campaign>('campaigns'),
-      fetchFromMongo<Agency>('agencies'),
-      fetchFromMongo<Advertiser>('advertisers'),
-      fetchFromMongo<Operator>('operators'),
-    ])
-
-    if (mc.length)  { setCampaigns(mc);    lsWrite(LS_KEYS.campaigns,   mc) }
-    if (ma.length)  { setAgencies(ma);     lsWrite(LS_KEYS.agencies,    ma) }
-    if (mdv.length) { setAdvertisers(mdv); lsWrite(LS_KEYS.advertisers, mdv) }
-    if (mo.length)  { setOperators(mo);    lsWrite(LS_KEYS.operators,   mo) }
-    setLoading(false)
+    // QA BUG-005: Promise.all 중 하나라도 reject 시 setLoading(false) 미호출 → 무한 로딩.
+    // try/finally 로 종료 보장.
+    try {
+      const [mc, ma, mdv, mo] = await Promise.all([
+        fetchFromMongo<Campaign>('campaigns'),
+        fetchFromMongo<Agency>('agencies'),
+        fetchFromMongo<Advertiser>('advertisers'),
+        fetchFromMongo<Operator>('operators'),
+      ])
+      if (mc.length)  { setCampaigns(mc);    lsWrite(LS_KEYS.campaigns,   mc) }
+      if (ma.length)  { setAgencies(ma);     lsWrite(LS_KEYS.agencies,    ma) }
+      if (mdv.length) { setAdvertisers(mdv); lsWrite(LS_KEYS.advertisers, mdv) }
+      if (mo.length)  { setOperators(mo);    lsWrite(LS_KEYS.operators,   mo) }
+    } catch (e) {
+      console.error('[useMasterData] MongoDB fetch failed, falling back to localStorage:', e)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => { loadAll() }, [loadAll])
