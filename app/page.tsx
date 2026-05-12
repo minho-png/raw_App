@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useMemo } from "react"
 import Link from "next/link"
 import {
   getCampaignTotals,
@@ -12,17 +12,60 @@ import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
 import { useReports } from "@/lib/hooks/useReports"
 import { useRawData } from "@/lib/hooks/useRawData"
+import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useDailySpendMap } from "@/lib/hooks/useDailySpendMap"
 import { applyMarkupToRows } from "@/lib/markupService"
 import { DailyDeltaCell } from "@/components/DailyDeltaCell"
 
-// ── 로컬스토리지 키 ────────────────────────────────────────────
-const CAMPAIGNS_KEY  = 'campaigns-v1'
-const AGENCIES_KEY   = 'agencies-v1'
-const ADVERTISERS_KEY = 'advertisers-v1'
-
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 function fmtPct(n: number) { return n.toFixed(1) + '%' }
+
+// 사이드바 그룹 순(CT+ → CT → CTV → 정산) 과 동일한 워크플로우 단계.
+// 각 그룹 내 메뉴 순서도 사이드바 순서를 그대로 반영하여 운영 흐름(제작 → 데이터 → 분석/현황) 을 시각화.
+// 목업/관리 메뉴는 워크플로우 단계가 아니므로 제외.
+const WORKFLOWS: ReadonlyArray<{
+  title: string
+  desc: string
+  items: ReadonlyArray<{ href: string; icon: string; label: string }>
+}> = [
+  {
+    title: 'CT+ 워크플로우',
+    desc: '자체 입력 데이터 기반',
+    items: [
+      { href: '/campaign/ct-plus/creative-check', icon: '🔍', label: '소재 검수' },
+      { href: '/campaign/ct-plus/daily',          icon: '📥', label: '데이터 업로드' },
+      { href: '/campaign/ct-plus/status',         icon: '📊', label: '캠페인 현황' },
+    ],
+  },
+  {
+    title: 'CT 워크플로우',
+    desc: '자체 DA (DISPLAY/VIDEO/PARTNERS)',
+    items: [
+      { href: '/campaign/ct/creative-check',  icon: '🔍', label: '소재 검수' },
+      { href: '/campaign/ct/analysis',        icon: '📈', label: '캠페인 분석' },
+      { href: '/campaign/ct/motiv-campaigns', icon: '📊', label: '캠페인 현황' },
+    ],
+  },
+  {
+    title: 'CTV 워크플로우',
+    desc: 'TV (Connected TV)',
+    items: [
+      { href: '/campaign/ct-ctv/creative-check', icon: '🔍', label: '소재 검수' },
+      { href: '/campaign/ct-ctv/analysis',       icon: '📺', label: '캠페인 분석' },
+    ],
+  },
+  {
+    title: '캠페인 정산',
+    desc: '매입·매출 → 수수료 → 계산서',
+    items: [
+      { href: '/settlement/sales-purchase', icon: '💰', label: '매입/매출' },
+      { href: '/settlement/agency-fee',     icon: '🏢', label: '대행사 수수료' },
+      { href: '/settlement/dmp-fee',        icon: '🗂', label: 'DMP 수수료' },
+      { href: '/settlement/media-cost',     icon: '📡', label: '매체 비용' },
+      { href: '/campaign/ct-plus/final',    icon: '📋', label: '계산서 발급' },
+    ],
+  },
+]
 
 // ── 소진률 색상 ──────────────────────────────────────────────────
 function spendColor(rate: number): string {
@@ -160,31 +203,28 @@ function CampaignCard({ c, advertiserName, agencyName, dailyEntry }: {
 
 // ── 메인 페이지 ──────────────────────────────────────────────────
 export default function DashboardPage() {
-  const [campaigns,    setCampaigns]    = useState<Campaign[]>([])
-  const [advertisers,  setAdvertisers]  = useState<Record<string, string>>({})  // id → name
-  const [agencies,     setAgencies]     = useState<Record<string, string>>({})  // id → name
   const [filterStatus, setFilterStatus] = useState<'all' | '집행 중' | '종료'>('집행 중')
+
+  // BUG-001/002/006 fix:
+  //   기존엔 메인 대시보드만 localStorage(campaigns-v1, agencies-v1, advertisers-v1) 에서 직접 로드해
+  //   다른 페이지(useMasterData → MongoDB) 와 데이터 소스가 분리돼 있었음.
+  //   결과: 캠페인이 실제 등록돼 있어도 메인은 0개로 표시 + 광고주/대행사 빈 경고가 잘못 노출.
+  //   useMasterData 로 통합하여 모든 페이지가 동일한 데이터를 보도록 정정.
+  const { campaigns, advertisers: advertiserList, agencies: agencyList, loading: masterLoading } = useMasterData()
+
+  // id → name lookup (CampaignCard 가 string 으로 받음)
+  const advertisers = useMemo(
+    () => Object.fromEntries(advertiserList.map(a => [a.id, a.name])),
+    [advertiserList],
+  )
+  const agencies = useMemo(
+    () => Object.fromEntries(agencyList.map(a => [a.id, a.name])),
+    [agencyList],
+  )
 
   const { reports } = useReports()
   const { allRows: rawRows } = useRawData()
   const dailySpendMap = useDailySpendMap(rawRows, campaigns)
-
-  useEffect(() => {
-    try {
-      const c = localStorage.getItem(CAMPAIGNS_KEY)
-      if (c) setCampaigns(JSON.parse(c))
-      const ag = localStorage.getItem(AGENCIES_KEY)
-      if (ag) {
-        const list = JSON.parse(ag)
-        setAgencies(Object.fromEntries(list.map((a: { id: string; name: string }) => [a.id, a.name])))
-      }
-      const adv = localStorage.getItem(ADVERTISERS_KEY)
-      if (adv) {
-        const list = JSON.parse(adv)
-        setAdvertisers(Object.fromEntries(list.map((a: { id: string; name: string }) => [a.id, a.name])))
-      }
-    } catch {}
-  }, [])
 
   // 상태값 정규화 — '집행중' / '집행 중' / '집행  중' 모두 동일하게 처리 (BUG-03)
   function isActive(c: Campaign): boolean {
@@ -328,27 +368,31 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── 빠른 이동 ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-          {[
-            { href: '/campaign/ct-plus/status',       icon: '📊', label: '집행 현황' },
-            { href: '/campaign/ct-plus/daily',         icon: '📥', label: '데이터 입력' },
-            { href: '/campaign/ct-plus/final',         icon: '📋', label: '계산서 발급' },
-            { href: '/settlement/dmp-fee',             icon: '💰', label: 'DMP 정산' },
-            { href: '/settlement/agency-fee',          icon: '🏢', label: '대행 수수료' },
-            { href: '/settlement/media-cost',          icon: '📡', label: '매체비 정산' },
-            { href: '/campaign/ct-ctv/analysis',       icon: '📺', label: 'CT/CTV 분석' },
-            { href: '/campaign/ct-plus/creative-check',icon: '🔍', label: '소재 검수' },
-            { href: '/mockup',                         icon: '🎨', label: '목업 생성' },
-          ].map(({ href, icon, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs font-medium text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-all"
-            >
-              <span>{icon}</span>
-              <span className="truncate">{label}</span>
-            </Link>
+        {/* ── 빠른 이동 — 사이드바 워크플로우(CT+ → CT → CTV → 정산) 순 그룹 ── */}
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {WORKFLOWS.map(wf => (
+            <div key={wf.title} className="rounded-xl border border-gray-200 bg-white p-3.5">
+              <div className="mb-2 flex items-baseline justify-between">
+                <h3 className="text-xs font-semibold text-gray-700">{wf.title}</h3>
+                <span className="text-[10px] text-gray-400">{wf.desc}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {wf.items.map((it, i) => (
+                  <div key={it.href} className="flex items-center gap-1.5">
+                    <Link
+                      href={it.href}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] font-medium text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                    >
+                      <span>{it.icon}</span>
+                      <span>{it.label}</span>
+                    </Link>
+                    {i < wf.items.length - 1 && (
+                      <span className="text-gray-300 text-xs select-none" aria-hidden>→</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
 
@@ -378,10 +422,14 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {campaigns.length === 0 ? (
+          {masterLoading ? (
+            <div className="rounded-xl border border-gray-100 bg-white px-6 py-12 text-center">
+              <p className="text-sm text-gray-400">캠페인을 불러오는 중…</p>
+            </div>
+          ) : campaigns.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center space-y-3">
               <p className="text-sm text-gray-400">등록된 캠페인이 없습니다</p>
-              {(Object.keys(advertisers).length === 0 || Object.keys(agencies).length === 0) && (
+              {(advertiserList.length === 0 || agencyList.length === 0) && (
                 <p className="text-[11px] text-amber-700 bg-amber-50 inline-block rounded px-2 py-1">
                   ⚠ 광고주·대행사가 비어 있습니다. 캠페인 등록 전 <Link href="/management" className="underline font-medium">관리 페이지</Link>에서 먼저 추가하세요.
                 </p>
