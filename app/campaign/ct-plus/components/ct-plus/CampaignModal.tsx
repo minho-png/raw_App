@@ -40,7 +40,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   const [csvSearch,       setCsvSearch]       = useState('')
   const [csvMediaFilter,  setCsvMediaFilter]  = useState('')
   const { allRows: rawRows } = useRawData()
-  const { saveOperators } = useMasterData()
+  const { upsertOperator, deleteOperator } = useMasterData()
   const [confirmMode,     setConfirmMode]     = useState<null | "save" | "close">(null)
   const [isDirty,         setIsDirty]         = useState(false)
   const [opDropOpen,      setOpDropOpen]      = useState(false)
@@ -63,14 +63,14 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
     const name = newOpName.trim()
     if (!name) return
     const newOp: Operator = { id: genId(), name, email: "", phone: "" }
-    await saveOperators([...operators, newOp])
+    await upsertOperator(newOp)
     setManagerId(newOp.id)
     setNewOpName("")
     setOpDropOpen(false)
   }
 
   async function handleDeleteOperator(id: string) {
-    await saveOperators(operators.filter(o => o.id !== id))
+    await deleteOperator(id)
     if (managerId === id) setManagerId("")
   }
 

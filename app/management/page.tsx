@@ -13,8 +13,12 @@ import { mergeMockAgencies } from "@/lib/seed/mockAgencies"
 type TabName = "agency" | "advertiser" | "operator"
 
 export default function ManagementPage() {
-  const { agencies, advertisers, operators, campaigns, loading, saveAgencies, saveAdvertisers, saveOperators } =
-    useMasterData()
+  const {
+    agencies, advertisers, operators, campaigns, loading,
+    saveAgencies,
+    upsertAgency, upsertAdvertiser, upsertOperator,
+    deleteAdvertiser, deleteOperator,
+  } = useMasterData()
 
   const [activeTab, setActiveTab] = useState<TabName>("agency")
   const [editAgency, setEditAgency] = useState<Agency | null>(null)
@@ -24,22 +28,16 @@ export default function ManagementPage() {
   const [editOperator, setEditOperator] = useState<Operator | null>(null)
   const [showOpModal, setShowOpModal] = useState(false)
 
-  // 대행사 저장
+  // 대행사 저장 — 단건 upsert (QA DB-003)
   const handleSaveAgency = async (agency: Agency) => {
-    const updated = editAgency
-      ? agencies.map(a => (a.id === agency.id ? agency : a))
-      : [...agencies, agency]
-    await saveAgencies(updated)
+    await upsertAgency(agency)
     setEditAgency(null)
     setShowAgencyForm(false)
   }
 
   // 광고주 저장
   const handleSaveAdvertiser = async (adv: Advertiser) => {
-    const updated = editAdvertiser
-      ? advertisers.map(a => (a.id === adv.id ? adv : a))
-      : [...advertisers, adv]
-    await saveAdvertisers(updated)
+    await upsertAdvertiser(adv)
     setShowAdvModal(false)
     setEditAdvertiser(null)
   }
@@ -47,15 +45,12 @@ export default function ManagementPage() {
   // 광고주 삭제
   const handleDeleteAdvertiser = async (id: string) => {
     if (!confirm("삭제하시겠습니까?")) return
-    await saveAdvertisers(advertisers.filter(a => a.id !== id))
+    await deleteAdvertiser(id)
   }
 
   // 운영자 저장
   const handleSaveOperator = async (op: Operator) => {
-    const updated = editOperator
-      ? operators.map(o => (o.id === op.id ? op : o))
-      : [...operators, op]
-    await saveOperators(updated)
+    await upsertOperator(op)
     setShowOpModal(false)
     setEditOperator(null)
   }
@@ -63,7 +58,7 @@ export default function ManagementPage() {
   // 운영자 삭제
   const handleDeleteOperator = async (id: string) => {
     if (!confirm("삭제하시겠습니까?")) return
-    await saveOperators(operators.filter(o => o.id !== id))
+    await deleteOperator(id)
   }
 
   if (loading) {

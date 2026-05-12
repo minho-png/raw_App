@@ -20,7 +20,7 @@ function fmt(n: number) { return n.toLocaleString('ko-KR') }
 export default function CtPlusManagePage() {
   const { groups, loading, addGroup, updateGroup, deleteGroup, newGroup } = useCtGroups()
   const { reports, deleteReport } = useReports()
-  const { campaigns, saveCampaigns } = useMasterData()
+  const { campaigns } = useMasterData()
 
   // ── 탭 상태 ────────────────────────────────────────────────
   const [manageTab, setManageTab] = useState<ManageTab>('groups')

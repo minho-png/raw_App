@@ -33,11 +33,20 @@ export function MediaBudgetCard({
     [mb.media, getCsvNamesUsedInMedia]
   )
 
-  // 총 예산 = 하위 캠페인 예산의 합 (사용자 직접 입력 비활성)
+  // 서브 캠페인이 1개 이상이면 합산값 자동, 0개면 사용자 수동 입력
+  const subCount = (mb.subCampaigns ?? []).length
+  const hasSubs = subCount > 0
   const computedTotalBudget = React.useMemo(
     () => (mb.subCampaigns ?? []).reduce((s, sc) => s + (sc.budget ?? 0), 0),
     [mb.subCampaigns],
   )
+  // sub 가 있을 때만 자동 동기화 — 수동 입력 모드일 때 값을 덮어쓰지 않음
+  React.useEffect(() => {
+    if (!hasSubs) return
+    if (mb.totalBudget !== computedTotalBudget) {
+      onUpdateMBField(mb.media, 'totalBudget', computedTotalBudget)
+    }
+  }, [hasSubs, computedTotalBudget, mb.totalBudget, mb.media, onUpdateMBField])
 
   return (
     <div className="rounded-lg border border-gray-200 p-4 space-y-3">
@@ -63,13 +72,20 @@ export function MediaBudgetCard({
             placeholder="예: 10"
           />
         </MF>
-        <MF label="총 예산 (캠페인 합계 · 자동)">
+        <MF label={hasSubs ? `총 예산 (캠페인 ${subCount}건 합산 · 자동)` : '총 예산 (직접 입력)'}>
           <input
             type="number"
-            value={computedTotalBudget}
-            readOnly
-            className={`${inputCls} bg-gray-50 text-gray-700 cursor-not-allowed`}
-            title="하위 캠페인 예산의 합으로 자동 계산됩니다"
+            min="0"
+            step="1"
+            value={hasSubs ? computedTotalBudget : (mb.totalBudget ?? '')}
+            readOnly={hasSubs}
+            onChange={hasSubs ? undefined : e => {
+              const v = parseFloat(e.target.value)
+              onUpdateMBField(mb.media, 'totalBudget', Number.isFinite(v) ? v : undefined)
+            }}
+            className={`${inputCls} ${hasSubs ? 'bg-gray-50 text-gray-700 cursor-not-allowed' : ''}`}
+            title={hasSubs ? '하위 캠페인 예산의 합으로 자동 계산됩니다' : '하위 캠페인이 없어 직접 입력합니다'}
+            placeholder={hasSubs ? undefined : '예: 10000000'}
           />
         </MF>
       </div>
