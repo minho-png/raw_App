@@ -5,6 +5,7 @@ import { CampaignFilterBar } from "@/app/campaign/ct-plus/components/ct-plus/Cam
 import { CampaignSummaryBanner } from "@/app/campaign/ct-plus/components/ct-plus/CampaignSummaryBanner"
 import { CampaignTableSection } from "@/app/campaign/ct-plus/components/ct-plus/CampaignTableSection"
 import { AnomalyBanner } from "@/app/campaign/ct-plus/components/ct-plus/AnomalyBanner"
+import { CsvUploadButton } from "@/components/ct-plus/CsvUploadButton"
 import type { CampaignAnomaly } from "@/app/campaign/ct-plus/components/ct-plus/AnomalyBanner"
 import { ConfirmModal, FilterStatus, btnPrimary, getDailySuggestion, fmt } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { ConfirmCfg } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
@@ -187,9 +188,14 @@ export default function CampaignStatusPage() {
             <h1 className="text-base font-semibold text-gray-900">집행 관리</h1>
             <p className="text-xs text-gray-400 mt-0.5">캠페인 현황 및 관리</p>
           </div>
-          <button onClick={() => { setEditTarget(null); setModalOpen(true) }} className={btnPrimary}>
-            + 캠페인 추가
-          </button>
+          <div className="flex items-center gap-2">
+            <CsvUploadButton
+              onResult={r => setToast({ message: r.message, type: r.type })}
+            />
+            <button onClick={() => { setEditTarget(null); setModalOpen(true) }} className={btnPrimary}>
+              + 캠페인 추가
+            </button>
+          </div>
         </div>
       </header>
 
