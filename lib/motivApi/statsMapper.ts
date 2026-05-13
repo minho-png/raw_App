@@ -49,13 +49,45 @@ const ZERO_METRICS: UnifiedDailyMetrics = {
   agencyFee: 0, dmpFee: 0, mediaCost: 0, completedViews: 0,
 }
 
+// 한 캠페인의 stats 한 번만 dev 로그 — 가설 검증용
+let _statsLogged = false
+
 export function motivStatsToMetrics(stats: MotivCampaignStats | null | undefined): UnifiedDailyMetrics {
   if (!stats) return { ...ZERO_METRICS }
-  const spend = Math.round(stats.cost ?? 0)
-  const agencyFee = Math.round(stats.agency_fee ?? 0)
-  const dmpFee = Math.round(stats.data_fee ?? 0)
-  const profit = Math.round(stats.profit ?? 0)
-  const mediaCost = Math.max(0, spend - agencyFee - dmpFee - profit)
+
+  // MOTIV API stats 매핑 (재정정):
+  //   확인된 사실 — Motiv stats.agency_fee 필드는 '대행 수수료 + DMP 수수료(data_fee)' 합산값.
+  //   초기 매핑은 agency_fee 를 그대로 대행수수료로 노출하고 mediaCost 산식에서 data_fee 를
+  //   한 번 더 빼고 있었음 → 화면의 대행수수료 = 실 대행+DMP, 매체비는 과소 계산되던 문제.
+  //
+  // 정정 항등식 (Motiv 회계 — 사용자 확인):
+  //   cost (매출)  =  mediaCost (매체비)  +  agency_fee (대행+DMP 합)  +  profit (이익)
+  //   ↔  spend    =  mediaCost           +  rawAgency                 +  profit
+  //
+  // 따라서:
+  //   순수 대행 수수료  = rawAgency - data_fee
+  //   DMP 수수료       = data_fee
+  //   매체비           = spend - rawAgency - profit          (rawAgency 한 번만 차감)
+  //   이익             = profit
+  //   sum check       = mediaCost + agencyFee + dmpFee + profit = spend  ✓
+  const spend     = Math.round(stats.cost ?? 0)
+  const rawAgency = Math.round(stats.agency_fee ?? 0)  // Motiv 의 agency_fee (대행+DMP 합 추정)
+  const dmpFee    = Math.round(stats.data_fee ?? 0)
+  const agencyFee = Math.max(0, rawAgency - dmpFee)    // 순수 대행 수수료
+  const profit    = Math.round(stats.profit ?? 0)
+  const mediaCost = Math.max(0, spend - rawAgency - profit)
+
+  // dev 환경 진단 — 한 캠페인의 stats 첫 한 번만 출력. 화면 값이 의도와 다르면 콘솔 확인.
+  if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production' && !_statsLogged && spend > 0) {
+    _statsLogged = true
+    console.info('[motivStatsToMetrics] 첫 캠페인 stats 진단', {
+      cost: stats.cost, revenue: stats.revenue,
+      agency_fee: stats.agency_fee, data_fee: stats.data_fee, profit: stats.profit,
+      derived: { spend, agencyFee, dmpFee, mediaCost, profit },
+      check: { sum: mediaCost + agencyFee + dmpFee + profit, equalsSpend: mediaCost + agencyFee + dmpFee + profit === spend },
+    })
+  }
+
   return {
     impressions: Math.round(stats.v_impression || stats.win || 0),
     clicks: Math.round(stats.click ?? 0),
