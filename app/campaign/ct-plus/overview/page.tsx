@@ -6,6 +6,9 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, CartesianGrid, Legend,
 } from 'recharts'
+// KpiCard 통합 구현은 components/atoms/MetricCard.tsx 단일 source 사용.
+// 페이지 시각 스타일은 variant="tinted" (컬러 배경, 기본값) 로 동일 유지.
+import { MetricCard as KpiCard } from '@/components/atoms/MetricCard'
 
 // ── 포맷 헬퍼 ────────────────────────────────────────────────
 function fmtKrw(n: number) {
@@ -19,25 +22,6 @@ function fmtDate(d: string) {
 }
 
 function pct(n: number) { return `${n.toFixed(1)}%` }
-
-// ── KPI 카드 ─────────────────────────────────────────────────
-function KpiCard({ label, value, sub, color = 'blue' }: {
-  label: string; value: string; sub?: string; color?: 'blue' | 'green' | 'orange' | 'red'
-}) {
-  const colorMap = {
-    blue:   'bg-blue-50 text-blue-700',
-    green:  'bg-green-50 text-green-700',
-    orange: 'bg-orange-50 text-orange-700',
-    red:    'bg-red-50 text-red-600',
-  }
-  return (
-    <div className={`rounded-xl p-4 ${colorMap[color]}`}>
-      <p className="text-xs font-medium opacity-70 mb-1">{label}</p>
-      <p className="text-2xl font-bold">{value}</p>
-      {sub && <p className="text-xs mt-1 opacity-60">{sub}</p>}
-    </div>
-  )
-}
 
 export default function CTPlusOverviewPage() {
   const { campaigns, selectedId, selectCampaign, overview, isLoading } = useCTPlusOverview()
