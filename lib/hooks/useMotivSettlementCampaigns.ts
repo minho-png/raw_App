@@ -6,8 +6,10 @@ import { motivTypeToProduct, isExcludedCampaign, type MediaProductType } from "@
 interface Options {
   // 가져올 Motiv campaign_type 집합 (예: ['TV'] for CTV, ['DISPLAY','VIDEO','PARTNERS'] for CT)
   types: MotivCampaignType[]
-  // 대상 월 (YYYY-MM) — start_date 기준 필터에 사용
+  // 대상 월 (YYYY-MM) — start_date 기준 필터에 사용. dateRange 가 있으면 무시.
   month?: string
+  // 일자 범위 직접 지정 — dateRange 가 우선. start/end 는 'YYYY-MM-DD'
+  dateRange?: { start: string; end: string }
   perPage?: number
   enabled?: boolean
 }
@@ -48,15 +50,22 @@ function monthToRange(month: string): { start: string; end: string } | null {
  *
  * 주의: per_page 200, 첫 페이지만 조회 (향후 무한 스크롤/페이지네이션 고려).
  */
-export function useMotivSettlementCampaigns({ types, month, perPage = 200, enabled = true }: Options) {
+export function useMotivSettlementCampaigns({ types, month, dateRange, perPage = 200, enabled = true }: Options) {
   const [state, setState] = useState<State>({ data: [], loading: true, error: null, exchangeRate: 0, total: 0 })
+
+  // deps 안정화: dateRange 객체 자체는 매 렌더 새 참조라 primitive 로 분해
+  const rangeStart = dateRange?.start
+  const rangeEnd   = dateRange?.end
 
   useEffect(() => {
     if (!enabled || types.length === 0) {
       setState({ data: [], loading: false, error: null, exchangeRate: 0, total: 0 })
       return
     }
-    const range = month ? monthToRange(month) : null
+    // 우선순위: dateRange > month
+    const range = (rangeStart && rangeEnd)
+      ? { start: rangeStart, end: rangeEnd }
+      : (month ? monthToRange(month) : null)
     let cancelled = false
     ;(async () => {
       setState(s => ({ ...s, loading: true, error: null }))
@@ -128,24 +137,40 @@ export function useMotivSettlementCampaigns({ types, month, perPage = 200, enabl
       }
     })()
     return () => { cancelled = true }
-  }, [enabled, types.join(','), month, perPage])
+  }, [enabled, types.join(','), month, rangeStart, rangeEnd, perPage])
 
   return state
 }
 
-// 편의: product type (CT, CTV) 기반으로 types 자동 결정
+// 편의: product type (CT, CTV) 기반으로 types 자동 결정.
+//
+// 오버로드 — 기존 호출 호환 + 일자 범위 옵션 추가:
+//   useMotivSettlementCampaignsByProduct('CT', '2026-05', true)        // 위치 인자 (기존)
+//   useMotivSettlementCampaignsByProduct('CT', { dateRange })          // 옵션 객체
+//   useMotivSettlementCampaignsByProduct('CT', { month: '2026-05' })   // 동등
 export function useMotivSettlementCampaignsByProduct(
   product: MediaProductType | 'CT_CTV_BOTH',
-  month?: string,
-  enabled = true,
+  monthOrOptions?: string | { month?: string; dateRange?: { start: string; end: string }; enabled?: boolean },
+  enabledArg = true,
 ) {
   let types: MotivCampaignType[] = []
   if (product === 'CT')   types = ['DISPLAY', 'VIDEO', 'PARTNERS']
   if (product === 'CTV')  types = ['TV']
   if (product === 'CT_CTV_BOTH') types = ['DISPLAY', 'VIDEO', 'PARTNERS', 'TV']
 
+  // 옵션 객체 vs 위치 인자 정규화
+  const opts = typeof monthOrOptions === 'object' && monthOrOptions !== null
+    ? monthOrOptions
+    : { month: monthOrOptions, enabled: enabledArg }
+  const enabled = opts.enabled ?? enabledArg
+
   return {
-    ...useMotivSettlementCampaigns({ types, month, enabled }),
+    ...useMotivSettlementCampaigns({
+      types,
+      month:     opts.month,
+      dateRange: 'dateRange' in opts ? opts.dateRange : undefined,
+      enabled,
+    }),
     // helper: Motiv campaign → product type
     productOf: motivTypeToProduct,
   }
