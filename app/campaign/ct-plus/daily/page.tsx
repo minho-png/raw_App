@@ -1,20 +1,13 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback, Suspense } from "react"
+import { useState, useEffect, useCallback, Suspense } from "react"
 import type { RawRow } from "@/lib/rawDataParser"
 import { parseUnifiedCsv } from "@/lib/unifiedCsvParser"
 import type { RawBatch } from "@/lib/rawDataStore"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { genId } from "@/lib/idGen"
-import { useMasterData } from "@/lib/hooks/useMasterData"
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
-
-function fmtDelta(n: number) {
-  const sign = n > 0 ? "+" : n < 0 ? "" : ""
-  const cls  = n > 0 ? "text-blue-600" : n < 0 ? "text-red-500" : "text-gray-400"
-  return { text: `${sign}${fmt(Math.round(n))}`, cls }
-}
 
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -80,26 +73,12 @@ function PreviewPanel({ preview }: { preview: Preview }) {
   )
 }
 
-// ── 전일/당일 비교 Row 타입 ─────────────────────────────
-interface DayCompRow {
-  key: string
-  label: string   // 캠페인명 (or raw campaignName)
-  prevDate: string
-  todayDate: string
-  prev: number
-  today: number
-  delta: number
-  deltaRate: number
-  medias: string[]
-}
-
 export default function CtPlusDailyPage() {
   return <Suspense><CtPlusDailyContent /></Suspense>
 }
 
 function CtPlusDailyContent() {
   const { allRows, addBatch, clearAll } = useRawData()
-  const { campaigns } = useMasterData()
 
   const [loading,      setLoading]      = useState(false)
   const [parseError,   setParseError]   = useState<string | null>(null)
@@ -107,16 +86,6 @@ function CtPlusDailyContent() {
   const [preview,      setPreview]      = useState<Preview | null>(null)
   const [toast,        setToast]        = useState<string | null>(null)
   const [clearConfirm, setClearConfirm] = useState(false)
-  const [compareDate,  setCompareDate]  = useState<string>("")
-
-  // 최신 날짜로 비교 날짜 자동 세팅
-  useEffect(() => {
-    if (allRows.length === 0 || compareDate) return
-    const dates = allRows.map(r => r.date).filter(Boolean)
-    if (dates.length === 0) return
-    const latest = dates.reduce((a, b) => a > b ? a : b)
-    setCompareDate(latest)
-  }, [allRows, compareDate])
 
   // 토스트 자동 소멸
   useEffect(() => {
@@ -178,69 +147,10 @@ function CtPlusDailyContent() {
   async function handleClearAll() {
     await clearAll()
     setClearConfirm(false)
-    setCompareDate("")
     setToast("전체 데이터가 초기화되었습니다")
   }
 
-  // ── 전일/당일 비교 계산 ───────────────────────────────
-  const comparisonRows = useMemo((): DayCompRow[] => {
-    if (!compareDate || allRows.length === 0) return []
-
-    const prevD = new Date(compareDate)
-    prevD.setDate(prevD.getDate() - 1)
-    const prevDate = prevD.toISOString().slice(0, 10)
-
-    const todayRows = allRows.filter(r => r.date === compareDate)
-    const prevRows  = allRows.filter(r => r.date === prevDate)
-
-    if (todayRows.length === 0 && prevRows.length === 0) return []
-
-    // 캠페인별 집계
-    const map = new Map<string, { label: string; prev: number; today: number; medias: Set<string> }>()
-
-    function addRows(rows: RawRow[], isToday: boolean) {
-      for (const r of rows) {
-        const key   = r.matchedCampaignId ?? r.campaignName
-        const label = r.matchedCampaignId
-          ? (campaigns.find(c => c.id === r.matchedCampaignId)?.campaignName ?? r.campaignName)
-          : r.campaignName
-        const cur = map.get(key) ?? { label, prev: 0, today: 0, medias: new Set() }
-        if (isToday) cur.today += r.netCost ?? 0
-        else         cur.prev  += r.netCost ?? 0
-        cur.medias.add(r.media)
-        map.set(key, cur)
-      }
-    }
-
-    addRows(prevRows, false)
-    addRows(todayRows, true)
-
-    return [...map.entries()]
-      .map(([key, v]) => {
-        const delta     = v.today - v.prev
-        const deltaRate = v.prev > 0 ? (delta / v.prev) * 100 : v.today > 0 ? 100 : 0
-        return {
-          key, label: v.label,
-          prevDate, todayDate: compareDate,
-          prev: Math.round(v.prev), today: Math.round(v.today),
-          delta, deltaRate,
-          medias: [...v.medias],
-        }
-      })
-      .sort((a, b) => b.today - a.today)
-  }, [compareDate, allRows, campaigns])
-
   const totalCount = allRows.length
-
-  // 비교 날짜 범위 계산
-  const dateRange = useMemo(() => {
-    if (allRows.length === 0) return { min: "", max: "" }
-    const dates = allRows.map(r => r.date).filter(Boolean)
-    return {
-      min: dates.reduce((a, b) => a < b ? a : b),
-      max: dates.reduce((a, b) => a > b ? a : b),
-    }
-  }, [allRows])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -352,102 +262,11 @@ function CtPlusDailyContent() {
           )}
         </div>
 
-        {/* ── 전일/당일 비교 ─────────────────────────────── */}
-        {allRows.length > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">전일 / 당일 비교</h2>
-                <p className="text-xs text-gray-500 mt-0.5">날짜를 선택하면 전날 대비 캠페인별 순금액 변화를 확인합니다</p>
-              </div>
-              <input
-                type="date"
-                value={compareDate}
-                min={dateRange.min}
-                max={dateRange.max}
-                onChange={e => setCompareDate(e.target.value)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
-              />
-            </div>
-
-            {comparisonRows.length === 0 ? (
-              <p className="text-xs text-gray-400 py-4 text-center">
-                {compareDate ? "선택한 날짜에 데이터가 없습니다" : "날짜를 선택하세요"}
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">캠페인</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">매체</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">
-                        전일 <span className="text-gray-300">({comparisonRows[0]?.prevDate.slice(5)})</span>
-                      </th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">
-                        당일 <span className="text-gray-300">({compareDate.slice(5)})</span>
-                      </th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">증감액</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">증감율</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {comparisonRows.map(row => {
-                      const d = fmtDelta(row.delta)
-                      const r = fmtDelta(row.deltaRate)
-                      return (
-                        <tr key={row.key} className="hover:bg-gray-50">
-                          <td className="px-3 py-2.5 font-medium text-gray-800 max-w-[180px] truncate" title={row.label}>
-                            {row.label}
-                          </td>
-                          <td className="px-3 py-2.5 text-gray-500">
-                            <div className="flex flex-wrap gap-1">
-                              {row.medias.map(m => (
-                                <span key={m} className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">{m}</span>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
-                            {row.prev > 0 ? fmt(row.prev) : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums font-medium text-blue-700">
-                            {row.today > 0 ? fmt(row.today) : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${d.cls}`}>{d.text}</td>
-                          <td className={`px-3 py-2.5 text-right tabular-nums ${r.cls}`}>
-                            {row.prev > 0 || row.today > 0 ? `${r.text}%` : <span className="text-gray-300">—</span>}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot className="bg-gray-50 border-t-2 border-gray-200">
-                    <tr>
-                      <td className="px-3 py-2.5 font-semibold text-gray-900" colSpan={2}>합계</td>
-                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-gray-700">
-                        {fmt(comparisonRows.reduce((s, r) => s + r.prev, 0))}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-blue-700">
-                        {fmt(comparisonRows.reduce((s, r) => s + r.today, 0))}
-                      </td>
-                      {(() => {
-                        const totalDelta = comparisonRows.reduce((s, r) => s + r.delta, 0)
-                        const d = fmtDelta(totalDelta)
-                        return (
-                          <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${d.cls}`}>{d.text}</td>
-                        )
-                      })()}
-                      <td className="px-3 py-2.5 text-right text-gray-400">—</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
+        {/* 전일/당일 비교표는 상세 분석 페이지(/status/[id]) 의 '일별' 탭으로 이동.
+            본 페이지는 업로드(preview) 에 집중. */}
 
         {/* R2: 매체별 탭 + DailyDataTable 제거.
-            업로드 직전에 보이는 PreviewPanel + 상단 전일/당일 비교표 가 있어 raw 표시는 불필요.
+            업로드 직전에 보이는 PreviewPanel 만 노출.
             전체 raw 데이터가 필요하면 캠페인 상세분석(status/[id]) 의 RAW 탭 이용. */}
       </main>
     </div>

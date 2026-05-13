@@ -198,6 +198,45 @@ export default function CampaignDetailPage() {
     })
   },[filteredRows])
 
+  // 단일 캠페인 매체별 전일/당일 비교 (daily 페이지에서 이동) — 같은 캠페인의 매체 단위 비교
+  const availableDates = useMemo(() => {
+    const ds = [...new Set(filteredRows.map(r => r.date).filter(Boolean))].sort()
+    return ds
+  }, [filteredRows])
+  const [compareDate, setCompareDate] = useState<string>("")
+  // 가용 가장 최근 일자로 자동 세팅
+  useEffect(() => {
+    if (compareDate) return
+    if (availableDates.length === 0) return
+    setCompareDate(availableDates[availableDates.length - 1])
+  }, [availableDates, compareDate])
+  const dailyComparison = useMemo(() => {
+    if (!compareDate) return { rows: [] as Array<{ media: string; prev: number; today: number; delta: number; deltaRate: number }>, prevDate: '' }
+    const cur = new Date(compareDate); cur.setDate(cur.getDate() - 1)
+    const prevDate = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`
+    const map = new Map<string, { prev: number; today: number }>()
+    for (const r of filteredRows) {
+      const m = map.get(r.media) ?? { prev: 0, today: 0 }
+      if (r.date === compareDate) m.today += r.netAmount ?? 0
+      else if (r.date === prevDate) m.prev += r.netAmount ?? 0
+      map.set(r.media, m)
+    }
+    const rows = [...map.entries()]
+      .filter(([, v]) => v.prev > 0 || v.today > 0)
+      .map(([media, v]) => {
+        const delta = v.today - v.prev
+        const deltaRate = v.prev > 0 ? (delta / v.prev) * 100 : (v.today > 0 ? 100 : 0)
+        return { media, prev: Math.round(v.prev), today: Math.round(v.today), delta, deltaRate }
+      })
+      .sort((a, b) => b.today - a.today)
+    return { rows, prevDate }
+  }, [filteredRows, compareDate])
+  function fmtDelta(n: number) {
+    const sign = n > 0 ? "+" : ""
+    const cls  = n > 0 ? "text-blue-600" : n < 0 ? "text-red-500" : "text-gray-400"
+    return { text: `${sign}${fmt(Math.round(n))}`, cls }
+  }
+
   const mediaNames=useMemo(()=>[...new Set(filteredRows.map(r=>r.media))].sort(),[filteredRows])
   const dailyByMedia=useMemo(()=>{
     const map=new Map<string,Record<string,number>>()
@@ -506,6 +545,85 @@ export default function CampaignDetailPage() {
           {/* ===== 일별 탭 ===== */}
           {tab==="daily"&&(
             <div className="space-y-3">
+              {/* 전일/당일 비교 (daily 페이지에서 이동) — 이 캠페인의 매체 단위 */}
+              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">전일 / 당일 비교</h3>
+                    <p className="text-[11px] text-gray-400 mt-0.5">이 캠페인의 매체별 순금액 변화</p>
+                  </div>
+                  <input
+                    type="date"
+                    value={compareDate}
+                    min={availableDates[0] || undefined}
+                    max={availableDates[availableDates.length - 1] || undefined}
+                    onChange={e => setCompareDate(e.target.value)}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                </div>
+                {dailyComparison.rows.length === 0 ? (
+                  <p className="text-xs text-gray-400 py-4 text-center">
+                    {compareDate ? '선택한 날짜에 데이터가 없습니다' : '날짜를 선택하세요'}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">매체</th>
+                          <th className="px-3 py-2 text-right font-medium text-gray-500">
+                            전일 <span className="text-gray-300">({dailyComparison.prevDate.slice(5)})</span>
+                          </th>
+                          <th className="px-3 py-2 text-right font-medium text-gray-500">
+                            당일 <span className="text-gray-300">({compareDate.slice(5)})</span>
+                          </th>
+                          <th className="px-3 py-2 text-right font-medium text-gray-500">증감액</th>
+                          <th className="px-3 py-2 text-right font-medium text-gray-500">증감율</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {dailyComparison.rows.map(row => {
+                          const d = fmtDelta(row.delta)
+                          const r = fmtDelta(row.deltaRate)
+                          return (
+                            <tr key={row.media} className="hover:bg-gray-50">
+                              <td className="px-3 py-2.5 font-medium" style={{ borderLeft: `3px solid ${mColor(row.media)}`, color: mColor(row.media) }}>{row.media}</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
+                                {row.prev > 0 ? fmt(row.prev) : <span className="text-gray-300">—</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums font-medium text-blue-700">
+                                {row.today > 0 ? fmt(row.today) : <span className="text-gray-300">—</span>}
+                              </td>
+                              <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${d.cls}`}>{d.text}</td>
+                              <td className={`px-3 py-2.5 text-right tabular-nums ${r.cls}`}>
+                                {row.prev > 0 || row.today > 0 ? `${r.text}%` : <span className="text-gray-300">—</span>}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                        <tr>
+                          <td className="px-3 py-2.5 font-semibold text-gray-900">합계</td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-gray-700">
+                            {fmt(dailyComparison.rows.reduce((s, r) => s + r.prev, 0))}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-blue-700">
+                            {fmt(dailyComparison.rows.reduce((s, r) => s + r.today, 0))}
+                          </td>
+                          {(() => {
+                            const totalDelta = dailyComparison.rows.reduce((s, r) => s + r.delta, 0)
+                            const d = fmtDelta(totalDelta)
+                            return (<td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${d.cls}`}>{d.text}</td>)
+                          })()}
+                          <td className="px-3 py-2.5 text-right text-gray-400">—</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+
               {/* 매체별 순금액 LineChart */}
               <div className="rounded-xl border border-gray-200 bg-white p-4">
                 <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">일별 순금액 추이 (매체별)</h3>
