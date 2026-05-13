@@ -12,6 +12,7 @@ import {
 import type { RawRow } from "@/lib/rawDataParser"
 import { fmt, spendRateStyle, getDailySuggestion } from "./statusUtils"
 import { mColor } from "@/lib/mediaColors"
+import { MetricCard as DetailKPICard } from "@/components/atoms/MetricCard"
 
 function fmtAbbr(n: number): string {
   if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}억`
@@ -19,18 +20,8 @@ function fmtAbbr(n: number): string {
   return fmt(n)
 }
 
-function DetailKPICard({ label, value, color }: {
-  label: string; value: string; color?: "red" | "blue" | "green"
-}) {
-  const cls = color === "red" ? "text-red-600" : color === "green" ? "text-green-600"
-    : color === "blue" ? "text-blue-600" : "text-gray-900"
-  return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-      <p className="text-[11px] text-gray-500 font-medium">{label}</p>
-      <p className={`text-sm font-semibold mt-1 ${cls}`}>{value}</p>
-    </div>
-  )
-}
+// DetailKPICard 통합 구현은 components/atoms/MetricCard.tsx 단일 source 사용.
+// variant="bordered" 가 기존 시각(회색 박스 + 텍스트 색만) 과 동일.
 
 export function CampaignDetailPanel({
   campaign, operators, agencies, advertisers, rawRows, onClose, onEdit, onUpdate,
@@ -218,11 +209,11 @@ export function CampaignDetailPanel({
 
           {/* KPI 카드 */}
           <div className="grid grid-cols-2 gap-2.5">
-            <DetailKPICard label="부킹 금액"  value={fmt(totals.totalBudget) + "원"} />
-            <DetailKPICard label="세팅 금액"  value={fmt(totals.totalSettingCost) + "원"} />
-            <DetailKPICard label="집행 금액 (CSV)"  value={fmt(rawExecTotal) + "원"}
+            <DetailKPICard variant="bordered" label="부킹 금액"  value={fmt(totals.totalBudget) + "원"} />
+            <DetailKPICard variant="bordered" label="세팅 금액"  value={fmt(totals.totalSettingCost) + "원"} />
+            <DetailKPICard variant="bordered" label="집행 금액 (CSV)"  value={fmt(rawExecTotal) + "원"}
               color={rawSpendRate > 100 ? "red" : "blue"} />
-            <DetailKPICard label="미소진 잔액"
+            <DetailKPICard variant="bordered" label="미소진 잔액"
               value={fmt(Math.max(0, totals.totalSettingCost - rawExecTotal)) + "원"} />
           </div>
 

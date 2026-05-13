@@ -14,6 +14,7 @@ import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettle
 import { applyMarkupToRows } from "@/lib/markupService"
 import { MediaConsoleMenu } from "@/components/MediaConsoleMenu"
 import { DomainStatusCard, type MediaDistribution } from "@/components/molecules/DomainStatusCard"
+import { AlertCard } from "@/components/molecules/AlertCard"
 import { isActiveMotivCampaign, motivLifeSpendRate } from "@/lib/motivApi/campaignFilters"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
@@ -25,63 +26,6 @@ function spendTextColor(rate: number): string {
   if (rate >= 90)  return 'text-orange-600 font-semibold'
   if (rate >= 70)  return 'text-yellow-600'
   return 'text-blue-600'
-}
-
-// ── 서브컴포넌트: 이상 알림 카드 (mini-list + querystring 점프) ────
-type AlertTone = 'red' | 'orange' | 'yellow'
-const ALERT_TONE: Record<AlertTone, { border: string; bg: string; text: string; dot: string; pulse?: boolean }> = {
-  red:    { border: 'border-red-200',    bg: 'bg-red-50',    text: 'text-red-700',    dot: 'bg-red-500',    pulse: true },
-  orange: { border: 'border-orange-200', bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-400' },
-  yellow: { border: 'border-yellow-200', bg: 'bg-yellow-50', text: 'text-yellow-700', dot: 'bg-yellow-500' },
-}
-function AlertCard({
-  title, count, note, tone, campaigns, alertKey,
-}: {
-  title: string
-  count: number
-  note: string
-  tone: AlertTone
-  campaigns: Campaign[]
-  alertKey: 'overspend' | 'underspend' | 'expiring'
-}) {
-  const s = ALERT_TONE[tone]
-  if (count === 0) {
-    return (
-      <div className="rounded-xl border border-gray-100 bg-white px-4 py-3.5 opacity-60">
-        <div className="flex items-baseline justify-between">
-          <p className="text-xs font-semibold text-gray-400">{title}</p>
-          <span className="text-xs text-gray-300">0개</span>
-        </div>
-        <p className="mt-1 text-[10px] text-gray-300">{note}</p>
-        <p className="mt-2 text-[11px] text-gray-300">해당 없음</p>
-      </div>
-    )
-  }
-  return (
-    <Link
-      href={`/campaign/ct-plus/status?alert=${alertKey}`}
-      className={`block rounded-xl border ${s.border} ${s.bg} px-4 py-3.5 transition-transform hover:scale-[1.01] hover:shadow-sm`}
-    >
-      <div className="flex items-baseline justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full ${s.dot} ${s.pulse ? 'animate-pulse' : ''}`} />
-          <p className={`text-xs font-semibold ${s.text}`}>{title}</p>
-        </div>
-        <span className={`text-sm font-bold ${s.text} tabular-nums`}>{count}개</span>
-      </div>
-      <p className="mt-0.5 text-[10px] text-gray-500">{note}</p>
-      <div className="mt-2 space-y-0.5">
-        {campaigns.slice(0, 3).map(c => (
-          <p key={c.id} className="text-[11px] text-gray-700 truncate" title={c.campaignName}>
-            · {c.campaignName}
-          </p>
-        ))}
-        {campaigns.length > 3 && (
-          <p className="text-[10px] text-gray-400">+{campaigns.length - 3}개 더 보기 →</p>
-        )}
-      </div>
-    </Link>
-  )
 }
 
 // ── 메인 페이지 ──────────────────────────────────────────────────
