@@ -200,6 +200,7 @@ export interface MotivAgencyListResponse {
 
 export interface MotivAgencyQuery {
   per_page?: number;     // 1~200
+  page?: number;         // 페이지네이션 (Laravel paginator)
   q?: string;            // ≤100 chars
   sort?: string;
   status?: MotivStatus;
