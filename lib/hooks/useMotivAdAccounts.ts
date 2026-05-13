@@ -1,43 +1,45 @@
 "use client"
 import { useEffect, useState } from "react"
-import type { MotivAdAccount, MotivAdAccountListResponse } from "@/lib/motivApi/types"
+import type { MotivAdAccount } from "@/lib/motivApi/types"
+import { fetchAllPages } from "@/lib/motivApi/paginatedFetch"
 
 interface State {
   data: MotivAdAccount[]
   byId: Map<number, MotivAdAccount>
   loading: boolean
   error: string | null
+  /** 일부 페이지 fetch 실패 또는 maxPages 초과 시 true — 광고주 매핑이 무작위로 누락될 수 있음 */
+  partial: boolean
 }
 
 /**
- * Motiv /api/v1/adaccounts 조회 — campaign.adaccount_id 의 부모 정보를 가져와
- * 캠페인 별 default 대행사·운영자 자동 채우기에 사용.
+ * Motiv /api/v1/adaccounts 전체 조회 — Laravel paginator 모든 페이지 순회.
  *
- * 엔드포인트가 존재하지 않거나 401/500 시 graceful: data=[], error=msg.
- * 호출부는 default 미적용 으로 동작하므로 안전.
+ * 이전엔 page=1 만 호출했음 → 광고계정이 200건 초과인 환경에서 200건 이후가
+ * byId 에 없어 캠페인의 광고주/대행사 매핑이 '—' 로 떨어지는 문제 → 페이지네이션 적용.
  */
 export function useMotivAdAccounts(enabled = true) {
-  const [state, setState] = useState<State>({ data: [], byId: new Map(), loading: true, error: null })
+  const [state, setState] = useState<State>({
+    data: [], byId: new Map(), loading: true, error: null, partial: false,
+  })
 
   useEffect(() => {
     if (!enabled) {
-      setState({ data: [], byId: new Map(), loading: false, error: null })
+      setState({ data: [], byId: new Map(), loading: false, error: null, partial: false })
       return
     }
     let cancelled = false
     ;(async () => {
-      try {
-        const res = await fetch('/api/motiv/ad-accounts?per_page=200&page=1', { cache: 'no-store' })
-        if (!res.ok) throw new Error(`${res.status}`)
-        const j = (await res.json()) as MotivAdAccountListResponse
-        const data = j.data ?? []
-        const byId = new Map<number, MotivAdAccount>(data.map(a => [a.id, a]))
-        if (!cancelled) setState({ data, byId, loading: false, error: null })
-      } catch (e) {
-        if (cancelled) return
-        const msg = e instanceof Error ? e.message : String(e)
-        setState({ data: [], byId: new Map(), loading: false, error: msg })
-      }
+      const result = await fetchAllPages<MotivAdAccount>({
+        endpoint: '/api/motiv/ad-accounts',
+        perPage: 200,
+      })
+      if (cancelled) return
+      const data = result.data
+      const byId = new Map<number, MotivAdAccount>(data.map(a => [a.id, a]))
+      // 전체 실패 케이스 — errors 만 있고 data 가 빈 경우 → error 상태로
+      const error = data.length === 0 && result.errors.length > 0 ? result.errors[0] : null
+      setState({ data, byId, loading: false, error, partial: result.partial })
     })()
     return () => { cancelled = true }
   }, [enabled])

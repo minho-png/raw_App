@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
-import type { MotivAgency, MotivAgencyListResponse } from "@/lib/motivApi/types"
+import type { MotivAgency } from "@/lib/motivApi/types"
+import { fetchAllPages } from "@/lib/motivApi/paginatedFetch"
 
 interface State {
   data: MotivAgency[]
@@ -8,6 +9,8 @@ interface State {
   byNormalizedName: Map<string, MotivAgency>
   loading: boolean
   error: string | null
+  /** 일부 페이지 fetch 실패 또는 maxPages 초과 시 true */
+  partial: boolean
 }
 
 /**
@@ -23,43 +26,46 @@ export function normalizeAgencyName(name: string): string {
 }
 
 /**
- * Motiv /api/v1/agencies (agencies.index) 전체 페치.
+ * Motiv /api/v1/agencies (agencies.index) 전체 페치 — 페이지네이션 모든 페이지 순회.
  * 활성(status=Y) 만 가져옴 — 비활성 대행사는 매칭 대상 아님.
  *
  * 결과:
- *   data: 원본 배열
+ *   data: 원본 배열 (모든 페이지 병합)
  *   byId: id → MotivAgency (Motiv adaccount 의 agency_id 역참조용)
  *   byNormalizedName: 정규화이름 → MotivAgency (내부 Agency.name 매칭용)
+ *   partial: 일부 페이지 실패 또는 한도 초과 시 true
  */
 export function useMotivAgencies(enabled = true) {
   const [state, setState] = useState<State>({
-    data: [], byId: new Map(), byNormalizedName: new Map(), loading: true, error: null,
+    data: [], byId: new Map(), byNormalizedName: new Map(),
+    loading: true, error: null, partial: false,
   })
 
   useEffect(() => {
     if (!enabled) {
-      setState({ data: [], byId: new Map(), byNormalizedName: new Map(), loading: false, error: null })
+      setState({
+        data: [], byId: new Map(), byNormalizedName: new Map(),
+        loading: false, error: null, partial: false,
+      })
       return
     }
     let cancelled = false
     ;(async () => {
-      try {
-        const res = await fetch('/api/motiv/agencies?per_page=200&status=Y', { cache: 'no-store' })
-        if (!res.ok) throw new Error(`${res.status}`)
-        const j = (await res.json()) as MotivAgencyListResponse
-        const data = j.data ?? []
-        const byId = new Map<number, MotivAgency>(data.map(a => [a.id, a]))
-        const byNormalizedName = new Map<string, MotivAgency>()
-        for (const a of data) {
-          const key = normalizeAgencyName(a.name)
-          if (key) byNormalizedName.set(key, a)
-        }
-        if (!cancelled) setState({ data, byId, byNormalizedName, loading: false, error: null })
-      } catch (e) {
-        if (cancelled) return
-        const msg = e instanceof Error ? e.message : String(e)
-        setState({ data: [], byId: new Map(), byNormalizedName: new Map(), loading: false, error: msg })
+      const result = await fetchAllPages<MotivAgency>({
+        endpoint: '/api/motiv/agencies',
+        perPage: 200,
+        extraParams: { status: 'Y' },
+      })
+      if (cancelled) return
+      const data = result.data
+      const byId = new Map<number, MotivAgency>(data.map(a => [a.id, a]))
+      const byNormalizedName = new Map<string, MotivAgency>()
+      for (const a of data) {
+        const key = normalizeAgencyName(a.name)
+        if (key) byNormalizedName.set(key, a)
       }
+      const error = data.length === 0 && result.errors.length > 0 ? result.errors[0] : null
+      setState({ data, byId, byNormalizedName, loading: false, error, partial: result.partial })
     })()
     return () => { cancelled = true }
   }, [enabled])
