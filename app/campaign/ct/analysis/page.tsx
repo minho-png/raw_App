@@ -21,6 +21,7 @@ import {
   type UnifiedCampaignSnapshot,
 } from "@/lib/motivApi/statsMapper"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
+import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
 
 type Category = 'total' | 'display' | 'video'
 
@@ -55,16 +56,22 @@ export default function CtAnalysisPage() {
   const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot()
   const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
 
-  // MotivCampaign → UnifiedCampaignSnapshot (전일 스냅샷이 있으면 yesterday 주입)
+  // MotivCampaign → UnifiedCampaignSnapshot (전일 스냅샷 + 광고주 매핑)
+  // P1: getAdvertiserName / getAgencyDisplayName 헬퍼로 fallback chain 적용
   const snapshots: UnifiedCampaignSnapshot[] = useMemo(() => {
     return motiv.data
       .filter(c => !isExcludedCampaign(c.title ?? ''))
       .map(c => {
         const adAccount = adAccountById.get(c.adaccount_id)
         const motivAgency = adAccount?.agency_id ? motivAgencyById.get(adAccount.agency_id) : undefined
-        const agencyName = motivAgency?.name ?? '—'
+        const agencyName = getAgencyDisplayName(motivAgency)
+        const advertiserName = getAdvertiserName(adAccount)
         const yStats = yesterdayStats.get(c.id)
-        return motivCampaignToSnapshot(c, agencyName, yStats ? motivStatsToMetrics(yStats) : undefined)
+        return motivCampaignToSnapshot(
+          c, agencyName,
+          yStats ? motivStatsToMetrics(yStats) : undefined,
+          advertiserName,
+        )
       })
   }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats])
 
@@ -219,6 +226,7 @@ export default function CtAnalysisPage() {
                     <th className="px-3 py-2 text-left font-medium">상태</th>
                     <th className="px-3 py-2 text-left font-medium">캠페인</th>
                     <th className="px-3 py-2 text-left font-medium">유형</th>
+                    <th className="px-3 py-2 text-left font-medium">광고주</th>
                     <th className="px-3 py-2 text-left font-medium">대행사</th>
                     <th className="px-3 py-2 text-right font-medium">예산</th>
                     <th className="px-3 py-2 text-right font-medium">소진</th>
@@ -240,6 +248,7 @@ export default function CtAnalysisPage() {
                             {TYPE_LABEL[c.uiType]}
                           </span>
                         </td>
+                        <td className="px-3 py-2 text-gray-700 font-medium">{c.advertiser}</td>
                         <td className="px-3 py-2 text-gray-600">{c.agency}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.budget)}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.today.spend)}</td>

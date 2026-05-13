@@ -31,6 +31,7 @@ export interface UnifiedCampaignSnapshot {
   motivId: number
   name: string
   agency: string
+  advertiser: string         // P1 신규: 광고주 표시명 (MotivAdAccount 에서 추출)
   product: MediaProductType
   motivCampaignType: string   // 'DISPLAY' | 'VIDEO' | 'TV' | 'PARTNERS' (원본)
   uiType: 'display' | 'video' | 'partners' | 'ctv'
@@ -72,10 +73,12 @@ function motivTypeToUiType(campaignType: string): UnifiedCampaignSnapshot['uiTyp
 
 // MotivCampaign → UnifiedCampaignSnapshot.
 // yesterday 는 별도 일별 스냅샷 컬렉션이 도입되기 전까지 0 으로 채움 (Phase S4 에서 주입).
+// advertiserName 은 옵셔널 — 호출부에서 광고주 미매핑 시 '—' 로 채움.
 export function motivCampaignToSnapshot(
   c: MotivCampaign,
   agencyName: string,
   yesterdayMetrics?: UnifiedDailyMetrics,
+  advertiserName?: string,
 ): UnifiedCampaignSnapshot {
   const product = motivTypeToProduct(c.campaign_type) ?? 'CT'
   return {
@@ -83,6 +86,7 @@ export function motivCampaignToSnapshot(
     motivId: c.id,
     name: c.title ?? `Campaign #${c.id}`,
     agency: agencyName || '—',
+    advertiser: advertiserName && advertiserName.trim() ? advertiserName : '—',
     product,
     motivCampaignType: c.campaign_type,
     uiType: motivTypeToUiType(c.campaign_type),

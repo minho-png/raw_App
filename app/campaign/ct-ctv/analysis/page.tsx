@@ -20,6 +20,7 @@ import {
   calcCTR, calcSR, calcPR, calcVTR,
   type UnifiedCampaignSnapshot,
 } from "@/lib/motivApi/statsMapper"
+import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 
 const f = (n: number) => Math.round(n).toLocaleString('ko-KR')
@@ -41,16 +42,21 @@ export default function CtCtvAnalysisPage() {
   const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot()
   const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
 
-  // MotivCampaign → UnifiedCampaignSnapshot
+  // MotivCampaign → UnifiedCampaignSnapshot (P1: 광고주 매핑 포함)
   const snapshots: UnifiedCampaignSnapshot[] = useMemo(() => {
     return motiv.data
       .filter(c => !isExcludedCampaign(c.title ?? ''))
       .map(c => {
         const adAccount = adAccountById.get(c.adaccount_id)
         const motivAgency = adAccount?.agency_id ? motivAgencyById.get(adAccount.agency_id) : undefined
-        const agencyName = motivAgency?.name ?? '—'
+        const agencyName = getAgencyDisplayName(motivAgency)
+        const advertiserName = getAdvertiserName(adAccount)
         const yStats = yesterdayStats.get(c.id)
-        return motivCampaignToSnapshot(c, agencyName, yStats ? motivStatsToMetrics(yStats) : undefined)
+        return motivCampaignToSnapshot(
+          c, agencyName,
+          yStats ? motivStatsToMetrics(yStats) : undefined,
+          advertiserName,
+        )
       })
   }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats])
 
@@ -171,6 +177,7 @@ export default function CtCtvAnalysisPage() {
                   <tr className="text-gray-500">
                     <th className="px-3 py-2 text-left font-medium">상태</th>
                     <th className="px-3 py-2 text-left font-medium">캠페인</th>
+                    <th className="px-3 py-2 text-left font-medium">광고주</th>
                     <th className="px-3 py-2 text-left font-medium">대행사</th>
                     <th className="px-3 py-2 text-right font-medium">예산</th>
                     <th className="px-3 py-2 text-right font-medium">소진</th>
@@ -188,6 +195,7 @@ export default function CtCtvAnalysisPage() {
                       <tr key={c.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2"><AlertIcon msgs={alerts} /></td>
                         <td className="px-3 py-2 font-medium text-gray-800">{c.name}</td>
+                        <td className="px-3 py-2 text-gray-700 font-medium">{c.advertiser}</td>
                         <td className="px-3 py-2 text-gray-600">{c.agency}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.budget)}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.today.spend)}</td>
