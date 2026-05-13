@@ -9,6 +9,7 @@ import { useMotivAgencies } from "@/lib/hooks/useMotivAgencies"
 import { useMotivDailySnapshot } from "@/lib/hooks/useMotivDailySnapshot"
 import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import { KpiCard } from "@/components/analysis/KpiCard"
+import { SummaryCard } from "@/components/molecules/SummaryCard"
 import { AlertIcon } from "@/components/analysis/AlertIcon"
 import { SettingsPanel } from "@/components/analysis/SettingsPanel"
 import { buildAlerts, dDay } from "@/components/analysis/alertEngine"
@@ -356,11 +357,4 @@ function CostBreakdownCell({
   )
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white px-5 py-4">
-      <p className="text-[11px] font-medium text-gray-400 mb-1">{label}</p>
-      <p className="text-xl font-bold text-gray-900">{value}</p>
-    </div>
-  )
-}
+// SummaryCard 는 components/molecules/SummaryCard.tsx 의 단일 source 사용 (CTV analysis 와 공유)
