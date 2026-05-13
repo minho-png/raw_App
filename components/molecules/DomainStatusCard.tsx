@@ -32,6 +32,8 @@ interface Props {
   error?: string | null
   /** 빈 상태일 때 추가 안내 (선택) */
   emptyHint?: string
+  /** KPI 임계값 경고 캠페인 수. 0/undefined 면 표시 안 함. */
+  warningCount?: number
 }
 
 function fmtPct(n: number): string {
@@ -64,7 +66,7 @@ function DotRow({ count, color }: { count: number; color: string }) {
 export function DomainStatusCard({
   title, subtitle, campaignCount, distribution,
   avgSpendRate, distributionNote, href,
-  loading, error, emptyHint,
+  loading, error, emptyHint, warningCount,
 }: Props) {
   return (
     <Link
@@ -74,7 +76,15 @@ export function DomainStatusCard({
       {/* 헤더 */}
       <div className="flex items-baseline justify-between mb-3">
         <div>
-          <h3 className="text-sm font-bold text-gray-800">{title}</h3>
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-sm font-bold text-gray-800">{title}</h3>
+            {warningCount !== undefined && warningCount > 0 && (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-red-100 border border-red-200 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                <span className="w-1 h-1 rounded-full bg-red-500 animate-pulse" />
+                ⚠ {warningCount}
+              </span>
+            )}
+          </div>
           {subtitle && <p className="text-[10px] text-gray-400 mt-0.5">{subtitle}</p>}
         </div>
         <div className="text-right">
