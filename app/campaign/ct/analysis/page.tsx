@@ -62,11 +62,19 @@ export default function CtAnalysisPage() {
   // MotivCampaign → UnifiedCampaignSnapshot (전일 스냅샷 + 광고주 매핑)
   // P1: getAdvertiserName / getAgencyDisplayName 헬퍼로 fallback chain 적용
   const snapshots: UnifiedCampaignSnapshot[] = useMemo(() => {
-    return motiv.data
+    // dev 환경 — 매핑 실패 케이스 진단
+    const missingAd: number[] = []
+    const missingAgency: { campaignId: number; adAccountId: number; agencyId: number }[] = []
+
+    const result = motiv.data
       .filter(c => !isExcludedCampaign(c.title ?? ''))
       .map(c => {
         const adAccount = adAccountById.get(c.adaccount_id)
+        if (!adAccount && adAccountById.size > 0) missingAd.push(c.adaccount_id)
         const motivAgency = adAccount?.agency_id ? motivAgencyById.get(adAccount.agency_id) : undefined
+        if (adAccount?.agency_id && !motivAgency && motivAgencyById.size > 0) {
+          missingAgency.push({ campaignId: c.id, adAccountId: c.adaccount_id, agencyId: adAccount.agency_id })
+        }
         const agencyName = getAgencyDisplayName(motivAgency)
         const advertiserName = getAdvertiserName(adAccount)
         const yStats = yesterdayStats.get(c.id)
@@ -76,6 +84,21 @@ export default function CtAnalysisPage() {
           advertiserName,
         )
       })
+
+    // dev 환경 — 매핑 실패 케이스 가시화 (어떤 adaccount_id / agency_id 가 비어있는지)
+    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+      if (missingAd.length > 0) {
+        console.warn('[CT analysis] adaccount_id 매핑 실패 (광고주명·대행사명 모두 누락):',
+          [...new Set(missingAd)])
+      }
+      if (missingAgency.length > 0) {
+        const uniqueAgencyIds = [...new Set(missingAgency.map(m => m.agencyId))]
+        console.warn('[CT analysis] agency_id 매핑 실패 (대행사명 누락) — 누락된 agency_id:',
+          uniqueAgencyIds, '· 영향 캠페인:', missingAgency.length)
+      }
+    }
+
+    return result
   }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats])
 
   // 카테고리 필터 (PARTNERS 는 합계에만 포함)
