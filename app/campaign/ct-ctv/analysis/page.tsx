@@ -21,6 +21,8 @@ import {
   type UnifiedCampaignSnapshot,
 } from "@/lib/motivApi/statsMapper"
 import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
+import { useMotivStatsDaily } from "@/lib/hooks/useMotivStatsDaily"
+import { DailyCostChart } from "@/components/analysis/DailyCostChart"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 
 const f = (n: number) => Math.round(n).toLocaleString('ko-KR')
@@ -64,6 +66,23 @@ export default function CtCtvAnalysisPage() {
   const sumT        = useMemo(() => aggregateMetrics(snapshots.map(s => s.today)),     [snapshots])
   const sumY        = useMemo(() => aggregateMetrics(snapshots.map(s => s.yesterday)), [snapshots])
   const totalBudget = useMemo(() => snapshots.reduce((a, c) => a + c.budget, 0), [snapshots])
+
+  // P3: 일별 비용 추세
+  const monthRange = useMemo(() => {
+    const [y, m] = month.split('-').map(Number)
+    if (!y || !m) return { start: '', end: '' }
+    const first = new Date(y, m - 1, 1)
+    const last  = new Date(y, m,     0)
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return { start: fmt(first), end: fmt(last) }
+  }, [month])
+  const snapshotCampaignIds = useMemo(() => snapshots.map(s => s.motivId), [snapshots])
+  const statsDaily = useMotivStatsDaily({
+    scope: { campaignIds: snapshotCampaignIds },
+    startDate: monthRange.start,
+    endDate:   monthRange.end,
+    enabled:   snapshotCampaignIds.length > 0,
+  })
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -164,6 +183,11 @@ export default function CtCtvAnalysisPage() {
               value={Math.max(0, sumT.spend - sumT.mediaCost - sumT.agencyFee - sumT.dmpFee)}
               total={sumT.spend} tone="green" />
           </div>
+        </section>
+
+        {/* P3: 일별 비용 추세 (MOTIV /stats/daily) */}
+        <section>
+          <DailyCostChart data={statsDaily.data} loading={statsDaily.loading} error={statsDaily.error} />
         </section>
 
         {/* 캠페인 테이블 */}

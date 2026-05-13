@@ -22,6 +22,8 @@ import {
 } from "@/lib/motivApi/statsMapper"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
+import { useMotivStatsDaily } from "@/lib/hooks/useMotivStatsDaily"
+import { DailyCostChart } from "@/components/analysis/DailyCostChart"
 
 type Category = 'total' | 'display' | 'video'
 
@@ -86,6 +88,23 @@ export default function CtAnalysisPage() {
   const sumY        = useMemo(() => aggregateMetrics(filtered.map(s => s.yesterday)), [filtered])
   const totalBudget = useMemo(() => filtered.reduce((a, c) => a + c.budget, 0), [filtered])
   const showVTR = category === 'video'
+
+  // P3: 일별 비용 추세 — month 의 시작·종료일을 startDate/endDate 로
+  const monthRange = useMemo(() => {
+    const [y, m] = month.split('-').map(Number)
+    if (!y || !m) return { start: '', end: '' }
+    const first = new Date(y, m - 1, 1)
+    const last  = new Date(y, m,     0)
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return { start: fmt(first), end: fmt(last) }
+  }, [month])
+  const filteredCampaignIds = useMemo(() => filtered.map(s => s.motivId), [filtered])
+  const statsDaily = useMotivStatsDaily({
+    scope: { campaignIds: filteredCampaignIds },
+    startDate: monthRange.start,
+    endDate:   monthRange.end,
+    enabled:   filteredCampaignIds.length > 0,
+  })
 
   // 카테고리 별 캠페인 수 (탭 배지)
   const countByCategory = useMemo(() => ({
@@ -218,6 +237,11 @@ export default function CtAnalysisPage() {
               value={Math.max(0, sumT.spend - sumT.mediaCost - sumT.agencyFee - sumT.dmpFee)}
               total={sumT.spend} tone="green" />
           </div>
+        </section>
+
+        {/* P3: 일별 비용 추세 (MOTIV /stats/daily) */}
+        <section>
+          <DailyCostChart data={statsDaily.data} loading={statsDaily.loading} error={statsDaily.error} />
         </section>
 
         {/* 캠페인 테이블 */}
