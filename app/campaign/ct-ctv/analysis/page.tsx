@@ -23,6 +23,8 @@ import {
 } from "@/lib/motivApi/statsMapper"
 import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
 import { useMotivStatsDaily } from "@/lib/hooks/useMotivStatsDaily"
+import { useRefreshControl } from "@/lib/hooks/useRefreshControl"
+import { RefreshControlBar } from "@/components/molecules/RefreshControl"
 import { DailyCostChart } from "@/components/analysis/DailyCostChart"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 
@@ -50,17 +52,21 @@ export default function CtCtvAnalysisPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [settings, setSettings]         = useState<AnalysisSettings>(DEFAULT_ANALYSIS_SETTINGS)
 
+  // ── 실시간 갱신 제어 ────────────────────────────────────
+  const refreshControl = useRefreshControl()
+  const refreshKey = refreshControl.key
+
   // ── 데이터 소스 ──────────────────────────────────────────
   const { agencies, advertisers, operators } = useMasterData()
   const motiv = useMotivSettlementCampaignsByProduct('CTV',
-    { dateRange: { start: rangeStart, end: rangeEnd } },
+    { dateRange: { start: rangeStart, end: rangeEnd }, refreshKey },
   )
   const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
-  const { byId: adAccountById }   = useMotivAdAccounts()
-  const { byId: motivAgencyById } = useMotivAgencies()
+  const { byId: adAccountById }   = useMotivAdAccounts(true, refreshKey)
+  const { byId: motivAgencyById } = useMotivAgencies(true, refreshKey)
   // 선택한 일자(시작일)의 전일자 스냅샷과 비교
   const yesterdayDate = useMemo(() => addDays(rangeStart, -1), [rangeStart])
-  const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot(yesterdayDate)
+  const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot(yesterdayDate, refreshKey)
   const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
 
   // MotivCampaign → UnifiedCampaignSnapshot (P1: 광고주 매핑 포함)
@@ -97,6 +103,7 @@ export default function CtCtvAnalysisPage() {
     startDate: monthRange.start,
     endDate:   monthRange.end,
     enabled:   snapshotCampaignIds.length > 0,
+    refreshKey,
   })
 
   return (
@@ -150,6 +157,7 @@ export default function CtCtvAnalysisPage() {
                 )
               })}
             </div>
+            <RefreshControlBar control={refreshControl} loading={motiv.loading} />
             {yesterdayAvailable ? (
               <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11px] text-green-700 font-medium">
                 {snapshot?.date} 비교 데이터 연결됨
@@ -217,7 +225,10 @@ export default function CtCtvAnalysisPage() {
           <SummaryCard label="총 노출" value={f(sumT.impressions)} />
           <SummaryCard label="완료 시청" value={f(sumT.completedViews)} />
           <SummaryCard label="총 매출"
-            value={`₩${f(sumT.spend)}`} />
+            value={`₩${f(sumT.spend)}`}
+            sub={statsDaily.data.length > 0
+              ? `일자별 합 ₩${f(statsDaily.data.reduce((s, p) => s + p.cost, 0))}`
+              : undefined} />
           <SummaryCard label="총 비용"
             value={`₩${f(sumT.mediaCost + sumT.agencyFee + sumT.dmpFee)}`} />
         </section>

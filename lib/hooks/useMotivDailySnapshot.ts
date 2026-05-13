@@ -25,7 +25,7 @@ interface State {
 
 // 어제 자정에 캡처된 누적 stats 를 조회.
 // date 가 undefined 면 자동으로 "어제" 사용.
-export function useMotivDailySnapshot(date?: string) {
+export function useMotivDailySnapshot(date?: string, refreshKey = 0) {
   const [state, setState] = useState<State>({
     snapshot: null, byMotivId: new Map(), loading: true, error: null,
   })
@@ -51,7 +51,7 @@ export function useMotivDailySnapshot(date?: string) {
       }
     })()
     return () => { cancelled = true }
-  }, [date])
+  }, [date, refreshKey])
 
   return state
 }

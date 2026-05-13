@@ -18,7 +18,7 @@ interface State {
  * 이전엔 page=1 만 호출했음 → 광고계정이 200건 초과인 환경에서 200건 이후가
  * byId 에 없어 캠페인의 광고주/대행사 매핑이 '—' 로 떨어지는 문제 → 페이지네이션 적용.
  */
-export function useMotivAdAccounts(enabled = true) {
+export function useMotivAdAccounts(enabled = true, refreshKey = 0) {
   const [state, setState] = useState<State>({
     data: [], byId: new Map(), loading: true, error: null, partial: false,
   })
@@ -50,7 +50,7 @@ export function useMotivAdAccounts(enabled = true) {
       setState({ data, byId, loading: false, error, partial: result.partial })
     })()
     return () => { cancelled = true }
-  }, [enabled])
+  }, [enabled, refreshKey])
 
   return state
 }

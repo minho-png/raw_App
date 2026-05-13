@@ -12,6 +12,8 @@ interface Options {
   dateRange?: { start: string; end: string }
   perPage?: number
   enabled?: boolean
+  // useRefreshControl().key — 증가 시 재호출 (실시간 갱신)
+  refreshKey?: number
 }
 
 interface State {
@@ -50,7 +52,7 @@ function monthToRange(month: string): { start: string; end: string } | null {
  *
  * 주의: per_page 200, 첫 페이지만 조회 (향후 무한 스크롤/페이지네이션 고려).
  */
-export function useMotivSettlementCampaigns({ types, month, dateRange, perPage = 200, enabled = true }: Options) {
+export function useMotivSettlementCampaigns({ types, month, dateRange, perPage = 200, enabled = true, refreshKey = 0 }: Options) {
   const [state, setState] = useState<State>({ data: [], loading: true, error: null, exchangeRate: 0, total: 0 })
 
   // deps 안정화: dateRange 객체 자체는 매 렌더 새 참조라 primitive 로 분해
@@ -137,7 +139,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
       }
     })()
     return () => { cancelled = true }
-  }, [enabled, types.join(','), month, rangeStart, rangeEnd, perPage])
+  }, [enabled, types.join(','), month, rangeStart, rangeEnd, perPage, refreshKey])
 
   return state
 }
@@ -150,7 +152,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
 //   useMotivSettlementCampaignsByProduct('CT', { month: '2026-05' })   // 동등
 export function useMotivSettlementCampaignsByProduct(
   product: MediaProductType | 'CT_CTV_BOTH',
-  monthOrOptions?: string | { month?: string; dateRange?: { start: string; end: string }; enabled?: boolean },
+  monthOrOptions?: string | { month?: string; dateRange?: { start: string; end: string }; enabled?: boolean; refreshKey?: number },
   enabledArg = true,
 ) {
   let types: MotivCampaignType[] = []
@@ -167,9 +169,10 @@ export function useMotivSettlementCampaignsByProduct(
   return {
     ...useMotivSettlementCampaigns({
       types,
-      month:     opts.month,
-      dateRange: 'dateRange' in opts ? opts.dateRange : undefined,
+      month:      opts.month,
+      dateRange:  'dateRange'  in opts ? opts.dateRange  : undefined,
       enabled,
+      refreshKey: 'refreshKey' in opts ? opts.refreshKey : undefined,
     }),
     // helper: Motiv campaign → product type
     productOf: motivTypeToProduct,

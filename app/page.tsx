@@ -17,6 +17,8 @@ import { DomainStatusCard, type MediaDistribution } from "@/components/molecules
 import { AlertCard } from "@/components/molecules/AlertCard"
 import { isActiveMotivCampaign, motivLifeSpendRate } from "@/lib/motivApi/campaignFilters"
 import { useKpiThresholds, checkBudgetWarning } from "@/lib/kpiThresholds"
+import { useRefreshControl } from "@/lib/hooks/useRefreshControl"
+import { RefreshControlBar } from "@/components/molecules/RefreshControl"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 function fmtPct(n: number) { return n.toFixed(1) + '%' }
@@ -41,8 +43,11 @@ export default function DashboardPage() {
 
   // CT / CTV — MOTIV API 캠페인 (운영 중 판정 위해 page-level 호출)
   // month 파라미터 미지정 — 전체 캠페인 중 isActiveMotivCampaign 으로 필터.
-  const motivCt  = useMotivSettlementCampaignsByProduct('CT')
-  const motivCtv = useMotivSettlementCampaignsByProduct('CTV')
+  // 실시간 갱신 — 모든 MOTIV 호출 + master data 가 refreshKey 에 반응
+  const refreshControl = useRefreshControl()
+  const refreshKey = refreshControl.key
+  const motivCt  = useMotivSettlementCampaignsByProduct('CT',  { refreshKey })
+  const motivCtv = useMotivSettlementCampaignsByProduct('CTV', { refreshKey })
 
   // 상태값 정규화 — '집행중' / '집행 중' / '집행  중' 모두 동일하게 처리 (BUG-03)
   function isActive(c: Campaign): boolean {
@@ -190,6 +195,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {/* R4: 매체 운영 콘솔 외부 링크 (데스크톱 가로 5버튼 / 모바일 드롭다운) */}
+            <RefreshControlBar control={refreshControl} loading={motivCt.loading || motivCtv.loading || masterLoading} />
             <MediaConsoleMenu />
             {/* 이전 '데이터 입력' (→/campaign/ct-plus/daily) 버튼은 캠페인 현황 페이지 헤더의
                 CSV 파일 추가 버튼으로 통합됨. 메인 헤더에서는 캠페인 현황으로 안내. */}

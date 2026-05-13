@@ -20,6 +20,8 @@ export interface UseMotivStatsDailyArgs {
   startDate?: string         // YYYY-MM-DD
   endDate?: string
   enabled?: boolean
+  /** useRefreshControl().key — 증가 시 재호출 */
+  refreshKey?: number
 }
 
 interface State {
@@ -49,7 +51,7 @@ function scopeKey(s: DailyStatsScope, start?: string, end?: string): string {
 }
 
 export function useMotivStatsDaily({
-  scope, startDate, endDate, enabled = true,
+  scope, startDate, endDate, enabled = true, refreshKey = 0,
 }: UseMotivStatsDailyArgs) {
   const [state, setState] = useState<State>({ data: [], totals: null, loading: false, error: null })
   const key = scopeKey(scope, startDate, endDate)
@@ -94,7 +96,7 @@ export function useMotivStatsDaily({
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, enabled])
+  }, [key, enabled, refreshKey])
 
   return state
 }
