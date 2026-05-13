@@ -37,13 +37,21 @@ export default function CampaignStatusPage() {
   const dailySpendMap = useDailySpendMap(rawRows, campaigns)
 
   // QA UX-003: 상세 분석 ↔ 목록 왕복 시 필터/스크롤 보존을 위해 sessionStorage lazy-init
+  // R5: 메인의 이상 알림에서 ?alert=overspend|underspend|expiring 진입 시 1회 override.
+  //     querystring 우선, 그 후 사용자 조작은 sessionStorage 로 정상 저장.
   const SS_KEY = 'ctplus-status-filters-v1'
   type Saved = { status?: FilterStatus; month?: string; operator?: string; media?: string; q?: string }
-  const loadSaved = (): Saved => {
+  const loadInitial = (): Saved => {
     if (typeof window === 'undefined') return {}
+    const qs = new URLSearchParams(window.location.search)
+    const alert = qs.get('alert')
+    // 알림 카테고리별 의도: 모두 '집행 중' 캠페인 대상이므로 status 만 강제
+    if (alert === 'overspend' || alert === 'underspend' || alert === 'expiring') {
+      return { status: '집행 중' }
+    }
     try { return JSON.parse(sessionStorage.getItem(SS_KEY) || '{}') as Saved } catch { return {} }
   }
-  const savedRef = loadSaved()
+  const savedRef = loadInitial()
   const [filterStatus,   setFilterStatus]   = useState<FilterStatus>(savedRef.status ?? "전체")
   const [filterMonth,    setFilterMonth]    = useState(savedRef.month    ?? "")
   const [filterOperator, setFilterOperator] = useState(savedRef.operator ?? "")

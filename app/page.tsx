@@ -10,7 +10,6 @@ import {
 import type { Campaign } from "@/lib/campaignTypes"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
 import type { MediaType } from "@/lib/reportTypes"
-import { useReports } from "@/lib/hooks/useReports"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useDailySpendMap } from "@/lib/hooks/useDailySpendMap"
@@ -20,52 +19,6 @@ import { DailyDeltaCell } from "@/components/DailyDeltaCell"
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 function fmtPct(n: number) { return n.toFixed(1) + '%' }
 
-// 사이드바 그룹 순(CT+ → CT → CTV → 정산) 과 동일한 워크플로우 단계.
-// 각 그룹 내 메뉴 순서도 사이드바 순서를 그대로 반영하여 운영 흐름(제작 → 데이터 → 분석/현황) 을 시각화.
-// 목업/관리 메뉴는 워크플로우 단계가 아니므로 제외.
-const WORKFLOWS: ReadonlyArray<{
-  title: string
-  desc: string
-  items: ReadonlyArray<{ href: string; icon: string; label: string }>
-}> = [
-  {
-    title: 'CT+ 워크플로우',
-    desc: '자체 입력 데이터 기반',
-    items: [
-      { href: '/campaign/ct-plus/creative-check', icon: '🔍', label: '소재 검수' },
-      { href: '/campaign/ct-plus/daily',          icon: '📥', label: '데이터 업로드' },
-      { href: '/campaign/ct-plus/status',         icon: '📊', label: '캠페인 현황' },
-    ],
-  },
-  {
-    title: 'CT 워크플로우',
-    desc: '자체 DA (DISPLAY/VIDEO/PARTNERS)',
-    items: [
-      { href: '/campaign/ct/creative-check',  icon: '🔍', label: '소재 검수' },
-      { href: '/campaign/ct/analysis',        icon: '📈', label: '캠페인 분석' },
-      { href: '/campaign/ct/motiv-campaigns', icon: '📊', label: '캠페인 현황' },
-    ],
-  },
-  {
-    title: 'CTV 워크플로우',
-    desc: 'TV (Connected TV)',
-    items: [
-      { href: '/campaign/ct-ctv/creative-check', icon: '🔍', label: '소재 검수' },
-      { href: '/campaign/ct-ctv/analysis',       icon: '📺', label: '캠페인 분석' },
-    ],
-  },
-  {
-    title: '캠페인 정산',
-    desc: '매입·매출 → 수수료 → 계산서',
-    items: [
-      { href: '/settlement/sales-purchase', icon: '💰', label: '매입/매출' },
-      { href: '/settlement/agency-fee',     icon: '🏢', label: '대행사 수수료' },
-      { href: '/settlement/dmp-fee',        icon: '🗂', label: 'DMP 수수료' },
-      { href: '/settlement/media-cost',     icon: '📡', label: '매체 비용' },
-      { href: '/campaign/ct-plus/final',    icon: '📋', label: '계산서 발급' },
-    ],
-  },
-]
 
 // ── 소진률 색상 ──────────────────────────────────────────────────
 function spendColor(rate: number): string {
@@ -86,23 +39,82 @@ const MEDIA_NAME_TO_TYPE: Record<string, MediaType> = {
   '네이버 GFA': 'naver', '카카오모먼트': 'kakao', 'Google': 'google', 'META': 'meta',
 }
 
+// ── 서브컴포넌트: 이상 알림 카드 (mini-list + querystring 점프) ────
+type AlertTone = 'red' | 'orange' | 'yellow'
+const ALERT_TONE: Record<AlertTone, { border: string; bg: string; text: string; dot: string; pulse?: boolean }> = {
+  red:    { border: 'border-red-200',    bg: 'bg-red-50',    text: 'text-red-700',    dot: 'bg-red-500',    pulse: true },
+  orange: { border: 'border-orange-200', bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-400' },
+  yellow: { border: 'border-yellow-200', bg: 'bg-yellow-50', text: 'text-yellow-700', dot: 'bg-yellow-500' },
+}
+function AlertCard({
+  title, count, note, tone, campaigns, alertKey,
+}: {
+  title: string
+  count: number
+  note: string
+  tone: AlertTone
+  campaigns: Campaign[]
+  alertKey: 'overspend' | 'underspend' | 'expiring'
+}) {
+  const s = ALERT_TONE[tone]
+  if (count === 0) {
+    return (
+      <div className="rounded-xl border border-gray-100 bg-white px-4 py-3.5 opacity-60">
+        <div className="flex items-baseline justify-between">
+          <p className="text-xs font-semibold text-gray-400">{title}</p>
+          <span className="text-xs text-gray-300">0개</span>
+        </div>
+        <p className="mt-1 text-[10px] text-gray-300">{note}</p>
+        <p className="mt-2 text-[11px] text-gray-300">해당 없음</p>
+      </div>
+    )
+  }
+  return (
+    <Link
+      href={`/campaign/ct-plus/status?alert=${alertKey}`}
+      className={`block rounded-xl border ${s.border} ${s.bg} px-4 py-3.5 transition-transform hover:scale-[1.01] hover:shadow-sm`}
+    >
+      <div className="flex items-baseline justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${s.dot} ${s.pulse ? 'animate-pulse' : ''}`} />
+          <p className={`text-xs font-semibold ${s.text}`}>{title}</p>
+        </div>
+        <span className={`text-sm font-bold ${s.text} tabular-nums`}>{count}개</span>
+      </div>
+      <p className="mt-0.5 text-[10px] text-gray-500">{note}</p>
+      <div className="mt-2 space-y-0.5">
+        {campaigns.slice(0, 3).map(c => (
+          <p key={c.id} className="text-[11px] text-gray-700 truncate" title={c.campaignName}>
+            · {c.campaignName}
+          </p>
+        ))}
+        {campaigns.length > 3 && (
+          <p className="text-[10px] text-gray-400">+{campaigns.length - 3}개 더 보기 →</p>
+        )}
+      </div>
+    </Link>
+  )
+}
+
 // ── 서브컴포넌트: 캠페인 카드 ─────────────────────────────────────
+// R3 간소화: 캠페인명/광고주·대행사/D-day/소진률(+ 색띠)/매체 도트 + 전일대비 만 표시.
+// 제거: 기간진행률 행, 예산/소진 텍스트 행, 메모.
 function CampaignCard({ c, advertiserName, agencyName, dailyEntry }: {
   c: Campaign
   advertiserName: string
   agencyName: string
   dailyEntry?: import("@/lib/hooks/useDailySpendMap").DailySpendEntry
 }) {
-  const totals   = getCampaignTotals(c)
-  const progress = getCampaignProgress(c.startDate, c.endDate)
-  const dday     = getDday(c.endDate)
+  const totals    = getCampaignTotals(c)
+  const dday      = getDday(c.endDate)
   const mediaKeys = c.mediaBudgets.map(mb => MEDIA_NAME_TO_TYPE[mb.media]).filter(Boolean) as MediaType[]
+  const hasDaily  = dailyEntry && (dailyEntry.today > 0 || dailyEntry.yesterday > 0)
 
   return (
     <div className={`rounded-xl border bg-white overflow-hidden transition-shadow hover:shadow-md ${
       dday.expired ? 'border-gray-200 opacity-70' : 'border-gray-200'
     }`}>
-      {/* 상단 색띠: 소진률 프로그레스 */}
+      {/* 상단 색띠 — 소진률 프로그레스 */}
       <div className="h-1 w-full bg-gray-100">
         <div
           className={`h-full transition-all ${spendColor(totals.spendRate)}`}
@@ -110,92 +122,55 @@ function CampaignCard({ c, advertiserName, agencyName, dailyEntry }: {
         />
       </div>
 
-      <div className="px-4 py-3.5">
-        {/* 캠페인명 + D-day */}
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-800 truncate">{c.campaignName}</p>
-            <p className="text-[11px] text-gray-400 truncate mt-0.5">
-              {advertiserName || '광고주 미지정'}
-              {agencyName ? ` · ${agencyName}` : ''}
-            </p>
-          </div>
-          <div className="shrink-0 text-right">
-            <span className={`text-sm font-bold ${
-              dday.expired ? 'text-gray-500' : dday.urgent ? 'text-red-500' : 'text-gray-500'
-            }`}>
-              {dday.label}
-            </span>
-            <p className="text-[10px] text-gray-500 mt-0.5">{c.endDate.slice(2).replace(/-/g, '.')}</p>
-          </div>
+      <div className="px-4 py-3">
+        {/* 1행: 캠페인명 + D-day */}
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <p className="text-sm font-semibold text-gray-800 truncate flex-1 min-w-0">{c.campaignName}</p>
+          <span className={`shrink-0 text-xs font-bold ${
+            dday.expired ? 'text-gray-500' : dday.urgent ? 'text-red-500' : 'text-gray-500'
+          }`}>
+            {dday.label}
+          </span>
         </div>
 
-        {/* 소진률 */}
-        <div className="flex items-center justify-between mb-2.5">
-          <span className="text-[11px] text-gray-400">소진률</span>
-          <div className="flex items-center gap-2">
-            <div className="w-28 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-              <div
-                className={`h-full rounded-full ${spendColor(totals.spendRate)}`}
-                style={{ width: `${Math.min(totals.spendRate, 100)}%` }}
-              />
-            </div>
-            <span className={`text-xs tabular-nums ${spendTextColor(totals.spendRate)}`}>
-              {fmtPct(totals.spendRate)}
-            </span>
-          </div>
-        </div>
-
-        {/* 기간 진행률 */}
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] text-gray-400">기간 진행</span>
-          <div className="flex items-center gap-2">
-            <div className="w-28 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gray-300"
-                style={{ width: `${Math.min(progress, 100)}%` }}
-              />
-            </div>
-            <span className="text-xs tabular-nums text-gray-400">{fmtPct(progress)}</span>
-          </div>
-        </div>
-
-        {/* 예산/소진 요약 + 매체 뱃지 */}
-        <div className="flex items-center justify-between">
-          <div className="flex flex-wrap gap-1">
+        {/* 2행: 광고주 · 대행사 + 매체 도트 */}
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-[11px] text-gray-400 truncate flex-1 min-w-0">
+            {advertiserName || '광고주 미지정'}
+            {agencyName ? ` · ${agencyName}` : ''}
+          </p>
+          <div className="flex gap-1 shrink-0">
             {mediaKeys.map(mk => {
               const cfg = MEDIA_CONFIG[mk]
               return (
                 <span
                   key={mk}
-                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: cfg.color }} />
-                  {cfg.label}
-                </span>
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{ backgroundColor: cfg.color }}
+                  title={cfg.label}
+                />
               )
             })}
           </div>
-          <div className="text-right shrink-0">
-            <p className="text-xs tabular-nums text-gray-700 font-medium">₩{fmt(totals.totalSpend)}</p>
-            <p className="text-[10px] text-gray-500">/ ₩{fmt(totals.totalSettingCost)}</p>
-          </div>
         </div>
 
-        {/* 전일 대비 소진율 */}
-        {dailyEntry && (dailyEntry.today > 0 || dailyEntry.yesterday > 0) && (
-          <div className="mt-2.5 border-t border-gray-50 pt-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-gray-400">전일 대비 소진</span>
-              <DailyDeltaCell entry={dailyEntry} variant="inline" className="text-right" />
+        {/* 3행: 소진률 게이지 + 전일대비 */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="h-1.5 flex-1 rounded-full bg-gray-100 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${spendColor(totals.spendRate)}`}
+                style={{ width: `${Math.min(totals.spendRate, 100)}%` }}
+              />
             </div>
+            <span className={`text-[11px] tabular-nums font-semibold ${spendTextColor(totals.spendRate)}`}>
+              {fmtPct(totals.spendRate)}
+            </span>
           </div>
-        )}
-
-        {/* 메모 */}
-        {c.memo && (
-          <p className="mt-2.5 text-[11px] text-gray-400 border-t border-gray-50 pt-2 truncate">{c.memo}</p>
-        )}
+          {hasDaily && (
+            <DailyDeltaCell entry={dailyEntry} variant="inline" className="shrink-0" />
+          )}
+        </div>
       </div>
     </div>
   )
@@ -222,7 +197,6 @@ export default function DashboardPage() {
     [agencyList],
   )
 
-  const { reports } = useReports()
   const { allRows: rawRows } = useRawData()
   const dailySpendMap = useDailySpendMap(rawRows, campaigns)
 
@@ -274,21 +248,24 @@ export default function DashboardPage() {
     return { count: active.length, totalBudget, totalSpend, totalSettingCost, spendRate }
   }, [campaigns, rawSpendByCampaign])
 
-  // 소진 경보 캠페인 수
-  const alertCounts = useMemo(() => {
+  // R3: 이상 알림 — 카운트뿐 아니라 캠페인명 미니리스트도 노출.
+  // 각 카테고리는 진단 결과 + 캠페인 인스턴스 보유.
+  const alerts = useMemo(() => {
     const active = campaigns.filter(isActive)
-    let overSpend = 0, underSpend = 0, expiringSoon = 0
+    const overSpend:    Campaign[] = []
+    const underSpend:   Campaign[] = []
+    const expiringSoon: Campaign[] = []
     for (const c of active) {
       const t    = getCampaignTotals(c)
       const dday = getDday(c.endDate)
-      if (t.spendRate >= 95)  overSpend++
-      if (t.spendRate <  50 && getCampaignProgress(c.startDate, c.endDate) > 60) underSpend++
-      if (dday.urgent && !dday.expired) expiringSoon++
+      if (t.spendRate >= 95)  overSpend.push(c)
+      if (t.spendRate <  50 && getCampaignProgress(c.startDate, c.endDate) > 60) underSpend.push(c)
+      if (dday.urgent && !dday.expired) expiringSoon.push(c)
     }
     return { overSpend, underSpend, expiringSoon }
   }, [campaigns])
+  const totalAlertCount = alerts.overSpend.length + alerts.underSpend.length + alerts.expiringSoon.length
 
-  const reportCount = reports.length
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -316,7 +293,7 @@ export default function DashboardPage() {
       <main className="p-6 space-y-6">
 
         {/* ── KPI 요약 카드 ──────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3.5">
             <p className="text-[11px] text-gray-400 mb-1">집행 중 캠페인</p>
             <p className="text-2xl font-bold text-gray-900">{activeStats.count}<span className="text-sm font-normal text-gray-400 ml-1">개</span></p>
@@ -335,66 +312,38 @@ export default function DashboardPage() {
                 : `₩${fmt(activeStats.totalSpend)}`}
             </p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3.5">
-            <p className="text-[11px] text-gray-400 mb-1">저장 리포트</p>
-            <p className="text-2xl font-bold text-gray-900">{reportCount}<span className="text-sm font-normal text-gray-400 ml-1">건</span></p>
-          </div>
         </div>
 
-        {/* ── 경보 패널 ──────────────────────────────────────────── */}
-        {(alertCounts.overSpend > 0 || alertCounts.underSpend > 0 || alertCounts.expiringSoon > 0) && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="text-xs font-semibold text-amber-800 mb-2.5">⚠ 주의 필요 캠페인</p>
-            <div className="flex flex-wrap gap-2">
-              {alertCounts.overSpend > 0 && (
-                <Link href="/campaign/ct-plus/status" className="flex items-center gap-1.5 rounded-full bg-red-100 border border-red-200 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200 transition-colors">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-                  소진 과다 {alertCounts.overSpend}개 (95% 이상)
-                </Link>
-              )}
-              {alertCounts.underSpend > 0 && (
-                <Link href="/campaign/ct-plus/status" className="flex items-center gap-1.5 rounded-full bg-orange-100 border border-orange-200 px-3 py-1 text-xs font-medium text-orange-700 hover:bg-orange-200 transition-colors">
-                  <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
-                  소진 저조 {alertCounts.underSpend}개 (기간 60% 이상 경과)
-                </Link>
-              )}
-              {alertCounts.expiringSoon > 0 && (
-                <Link href="/campaign/ct-plus/status" className="flex items-center gap-1.5 rounded-full bg-yellow-100 border border-yellow-200 px-3 py-1 text-xs font-medium text-yellow-700 hover:bg-yellow-200 transition-colors">
-                  <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0" />
-                  종료 임박 {alertCounts.expiringSoon}개 (7일 이내)
-                </Link>
-              )}
-            </div>
+        {/* R3 이상 알림 — 카드형 + 인라인 mini-list (캠페인명 상위 3건)
+            클릭 시 status 페이지로 querystring 전달 → 자동 필터 (R5 수신) */}
+        {totalAlertCount > 0 && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <AlertCard
+              title="소진 과다"
+              count={alerts.overSpend.length}
+              note="95% 이상"
+              tone="red"
+              campaigns={alerts.overSpend}
+              alertKey="overspend"
+            />
+            <AlertCard
+              title="소진 저조"
+              count={alerts.underSpend.length}
+              note="기간 60% 경과 · 소진 50% 미만"
+              tone="orange"
+              campaigns={alerts.underSpend}
+              alertKey="underspend"
+            />
+            <AlertCard
+              title="종료 임박"
+              count={alerts.expiringSoon.length}
+              note="7일 이내"
+              tone="yellow"
+              campaigns={alerts.expiringSoon}
+              alertKey="expiring"
+            />
           </div>
         )}
-
-        {/* ── 빠른 이동 — 사이드바 워크플로우(CT+ → CT → CTV → 정산) 순 그룹 ── */}
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {WORKFLOWS.map(wf => (
-            <div key={wf.title} className="rounded-xl border border-gray-200 bg-white p-3.5">
-              <div className="mb-2 flex items-baseline justify-between">
-                <h3 className="text-xs font-semibold text-gray-700">{wf.title}</h3>
-                <span className="text-[10px] text-gray-400">{wf.desc}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {wf.items.map((it, i) => (
-                  <div key={it.href} className="flex items-center gap-1.5">
-                    <Link
-                      href={it.href}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] font-medium text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                    >
-                      <span>{it.icon}</span>
-                      <span>{it.label}</span>
-                    </Link>
-                    {i < wf.items.length - 1 && (
-                      <span className="text-gray-300 text-xs select-none" aria-hidden>→</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
 
         {/* ── 캠페인 목록 ────────────────────────────────────────── */}
         <div>
@@ -462,43 +411,6 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
-
-        {/* ── 저장 리포트 빠른 보기 ──────────────────────────────── */}
-        {reportCount > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-gray-800">최근 저장 리포트</h2>
-              <Link href="/campaign/ct-plus/daily" className="text-xs text-blue-600 hover:underline">
-                전체 보기 →
-              </Link>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white divide-y divide-gray-50">
-              {reports.slice(0, 5).map(r => {
-                const d    = new Date(r.savedAt)
-                const dt   = `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
-                const rows = r.chunked ? (r.totalRows ?? 0) : r.mediaTypes.reduce((s, m) => s + (r.rowsByMedia[m]?.length ?? 0), 0)
-                return (
-                  <div key={r.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50/50 transition-colors">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-700 truncate">{r.label}</p>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400">
-                        <span>{dt}</span>
-                        <span>·</span>
-                        <span>{fmt(rows)}행</span>
-                        {r.chunked && <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-600">대용량</span>}
-                      </div>
-                    </div>
-                    <div className="flex gap-1 shrink-0 ml-3">
-                      {r.mediaTypes.map(m => (
-                        <span key={m} className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: MEDIA_CONFIG[m]?.color ?? '#9ca3af' }} title={MEDIA_CONFIG[m]?.label} />
-                      ))}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
       </main>
     </div>
