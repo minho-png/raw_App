@@ -15,6 +15,7 @@ import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useDailySpendMap } from "@/lib/hooks/useDailySpendMap"
 import { applyMarkupToRows } from "@/lib/markupService"
 import { DailyDeltaCell } from "@/components/DailyDeltaCell"
+import { MediaConsoleMenu } from "@/components/MediaConsoleMenu"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 function fmtPct(n: number) { return n.toFixed(1) + '%' }
@@ -276,7 +277,9 @@ export default function DashboardPage() {
             <h1 className="text-base font-semibold text-gray-900">광고 운영 대시보드</h1>
             <p className="text-xs text-gray-400 mt-0.5">크로스타겟 CT+ · 전체 현황</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* R4: 매체 운영 콘솔 외부 링크 (데스크톱 가로 5버튼 / 모바일 드롭다운) */}
+            <MediaConsoleMenu />
             <Link
               href="/campaign/ct-plus/daily"
               className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
