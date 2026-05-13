@@ -2,7 +2,7 @@
 import React, { useMemo } from "react"
 import { useRouter } from "next/navigation"
 import {
-  LineChart, Line, BarChart, Bar, ReferenceLine, Cell,
+  LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
 } from "recharts"
 import {
@@ -164,20 +164,24 @@ export function CampaignDetailPanel({
     [kpiMatrix],
   )
 
-  // 막대 차트 데이터 — { media, CTR, VTR, CPC, CPM } 각 값은 달성률(%).
-  // outlier(200% 초과) 는 시각적으로 200 으로 클램프하고 라벨에 실제값 표시.
-  const CHART_MAX = 200
-  const chartData = useMemo(
-    () => kpiMatrix.map(({ media, kpis }) => {
-      const row: Record<string, string | number | null> = { media }
-      for (const k of KPI_METRICS) {
-        const r = kpis[k]
-        row[k] = r && r.rate !== null ? r.rate : null
-      }
-      return row
+  // KPI 별 차트 데이터 — 목표 vs 실적 절대값 비교 (단위가 KPI 마다 달라 차트 분리)
+  //   CTR/VTR : % 단위 (0~100 범위)
+  //   CPC/CPM : 원 단위 (수백~수만)
+  // 각 KPI 차트마다 매체 별로 [목표 막대, 실적 막대] 표시.
+  const kpiChartGroups = useMemo(
+    () => visibleKpiCols.map(k => {
+      const unit: '%' | '원' = (k === 'CTR' || k === 'VTR') ? '%' : '원'
+      const data = kpiMatrix
+        .map(({ media, kpis }) => {
+          const r = kpis[k]
+          if (!r) return null
+          return { media, 목표: r.target, 실적: r.actual, good: r.good, rate: r.rate }
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+      return { metric: k, unit, data }
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [kpiMatrix],
+    [kpiMatrix, visibleKpiCols],
   )
 
   const KPI_COLOR: Record<KpiMetric, string> = {
@@ -185,6 +189,17 @@ export function CampaignDetailPanel({
     VTR: '#a855f7',  // violet
     CPC: '#10b981',  // green
     CPM: '#f59e0b',  // amber
+  }
+
+  function fmtAxis(unit: '%' | '원'): (v: number) => string {
+    if (unit === '%') return (v: number) => `${v}%`
+    return (v: number) => v >= 10_000 ? `${(v / 10_000).toFixed(0)}만` : `${v.toLocaleString('ko-KR')}`
+  }
+  function fmtTooltip(unit: '%' | '원'): (v: unknown) => string {
+    return (v: unknown) => {
+      const n = Number(v ?? 0)
+      return unit === '%' ? `${n.toFixed(2)}%` : `₩${n.toLocaleString('ko-KR')}`
+    }
   }
 
   const totals   = getCampaignTotals(campaign)
@@ -453,41 +468,54 @@ export function CampaignDetailPanel({
                 </table>
               </div>
 
-              {/* ── 하단: 매체별 세로 막대 차트 (달성률 %) ───────── */}
+              {/* ── 하단: KPI 별 목표 vs 실적 미니 차트 그리드 ───── */}
               <div className="pt-2 border-t border-gray-100">
                 <div className="flex items-baseline justify-between mb-2">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">달성률 차트</p>
-                  <p className="text-[9px] text-gray-300">100% 기준 · 200% 초과는 200 으로 표시</p>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">목표 vs 실적</p>
+                  <p className="text-[9px] text-gray-300">KPI 별 단위에 맞춰 매체별 비교</p>
                 </div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-                    <XAxis dataKey="media" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      domain={[0, CHART_MAX]}
-                      tickFormatter={v => `${v}%`}
-                      tick={{ fontSize: 9, fill: '#9ca3af' }}
-                      axisLine={false} tickLine={false} width={36}
-                    />
-                    <Tooltip
-                      formatter={(v) => v == null ? '—' : `${Number(v).toFixed(1)}%`}
-                      contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
-                    />
-                    <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10 }} />
-                    <ReferenceLine y={100} stroke="#9ca3af" strokeDasharray="3 3" strokeWidth={1} />
-                    {visibleKpiCols.map(k => (
-                      <Bar key={k} dataKey={k} name={k} radius={[3, 3, 0, 0]} maxBarSize={32}>
-                        {chartData.map((row, idx) => {
-                          const v = row[k] as number | null
-                          const isGood = v !== null && v >= 100
-                          // 100% 미달은 KPI 색의 옅은 톤, 100% 이상은 진한 톤. outlier 시각 클램프.
-                          const color = v === null ? '#e5e7eb' : isGood ? KPI_COLOR[k] : `${KPI_COLOR[k]}88`
-                          return <Cell key={idx} fill={color} />
-                        })}
-                      </Bar>
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
+                <div className={`grid gap-3 ${
+                  kpiChartGroups.length === 1 ? 'grid-cols-1'
+                    : kpiChartGroups.length === 2 ? 'grid-cols-1 sm:grid-cols-2'
+                    : 'grid-cols-1 sm:grid-cols-2'
+                }`}>
+                  {kpiChartGroups.map(({ metric, unit, data }) => {
+                    const color = KPI_COLOR[metric]
+                    return (
+                      <div key={metric} className="rounded-lg border border-gray-100 bg-gray-50/40 p-2">
+                        <div className="flex items-baseline justify-between mb-1.5 px-1">
+                          <span className="text-[11px] font-semibold" style={{ color }}>{metric}</span>
+                          <span className="text-[9px] text-gray-400">단위: {unit}</span>
+                        </div>
+                        <ResponsiveContainer width="100%" height={150}>
+                          <BarChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                            barCategoryGap="30%" barGap={2}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                            <XAxis dataKey="media" tick={{ fontSize: 9, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                            <YAxis
+                              tickFormatter={fmtAxis(unit)}
+                              tick={{ fontSize: 8, fill: '#9ca3af' }}
+                              axisLine={false} tickLine={false} width={36}
+                            />
+                            <Tooltip
+                              formatter={fmtTooltip(unit)}
+                              contentStyle={{ fontSize: 10, borderRadius: 6, border: '1px solid #e5e7eb' }}
+                            />
+                            <Legend iconType="circle" iconSize={6} wrapperStyle={{ fontSize: 9 }} />
+                            <Bar dataKey="목표" fill="#cbd5e1" radius={[3, 3, 0, 0]} maxBarSize={32} />
+                            <Bar dataKey="실적" radius={[3, 3, 0, 0]} maxBarSize={32}>
+                              {data.map((row, idx) => (
+                                // lowerBetter(CPC/CPM) 는 실적 < 목표 가 좋음, 그 외는 실적 >= 목표 가 좋음.
+                                // good 플래그가 이미 그 정책 반영됨.
+                                <Cell key={idx} fill={row.good ? color : `${color}66`} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           )}
