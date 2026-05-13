@@ -1,5 +1,5 @@
 "use client"
-import React from "react"
+import React, { useState } from "react"
 import { Campaign, Agency, Advertiser, Operator, getCampaignTotals, getCampaignProgress, getDday } from "@/lib/campaignTypes"
 import { fmt, spendRateStyle } from "./statusUtils"
 import { DailyDeltaCell } from "@/components/DailyDeltaCell"
@@ -7,7 +7,7 @@ import type { DailySpendEntry } from "@/lib/hooks/useDailySpendMap"
 
 export function CampaignTableSection({
   filtered, agencies, advertisers, operators, computedSpendMap, dailySpendMap,
-  onEdit, onDelete, onStatusToggle,
+  onEdit, onDelete, onStatusToggle, onMemoSave,
   selectedDetailId, setSelectedDetailId
 }: {
   filtered: Campaign[]
@@ -19,6 +19,8 @@ export function CampaignTableSection({
   onEdit: (c: Campaign) => void
   onDelete: (id: string) => void
   onStatusToggle: (id: string) => void
+  // 캠페인 현황 인라인 메모 저장
+  onMemoSave: (c: Campaign, memo: string) => Promise<void>
   selectedDetailId: string | null
   setSelectedDetailId: (id: string | null) => void
 }) {
@@ -46,6 +48,7 @@ export function CampaignTableSection({
                 <th className="px-4 py-3 text-center">소진율 <span className="text-[9px] font-normal text-gray-400">(raw)</span></th>
                 <th className="px-4 py-3 text-right">집행금액 <span className="text-[9px] font-normal text-gray-400">(세팅금액)</span></th>
                 <th className="px-4 py-3 text-right">전일 대비 소진<br/><span className="text-[9px] font-normal text-gray-400">(당일 / 전일)</span></th>
+                <th className="px-4 py-3 text-left">메모</th>
                 <th className="px-4 py-3 text-center">연결</th>
                 <th className="px-4 py-3 text-center">관리</th>
               </tr>
@@ -129,6 +132,9 @@ export function CampaignTableSection({
                       )}
                     </td>
                     <DailyDeltaCell entry={dailySpendMap?.get(c.id)} />
+                    <td className="px-4 py-3 max-w-[180px]" onClick={e => e.stopPropagation()}>
+                      <MemoCell c={c} onSave={onMemoSave} />
+                    </td>
                     <td className="px-4 py-3 text-center">
                       {csvCount > 0 ? (
                         <span
@@ -171,6 +177,89 @@ export function CampaignTableSection({
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+// 캠페인 현황 인라인 메모 셀.
+// - 평소: 메모 내용을 2줄 truncate 로 표시. 비어있으면 '+ 메모' placeholder.
+// - 클릭: textarea 편집 모드. 저장/취소 + Ctrl+Enter 저장.
+function MemoCell({
+  c, onSave,
+}: {
+  c: Campaign
+  onSave: (c: Campaign, memo: string) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft,   setDraft]   = useState(c.memo ?? '')
+  const [saving,  setSaving]  = useState(false)
+
+  const startEdit = () => { setDraft(c.memo ?? ''); setEditing(true) }
+  const cancel    = () => { setDraft(c.memo ?? ''); setEditing(false) }
+  const save      = async () => {
+    const next = draft.trim()
+    if (next === (c.memo ?? '').trim()) { setEditing(false); return }
+    setSaving(true)
+    try {
+      await onSave(c, next)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    const memo = (c.memo ?? '').trim()
+    return (
+      <button
+        type="button"
+        onClick={startEdit}
+        className="block w-full text-left rounded-md px-2 py-1 hover:bg-yellow-50 transition-colors"
+        title="클릭하여 메모 편집"
+      >
+        {memo ? (
+          <p className="text-[11px] text-gray-700 line-clamp-2 whitespace-pre-wrap" title={memo}>
+            {memo}
+          </p>
+        ) : (
+          <p className="text-[11px] text-gray-300">+ 메모</p>
+        )}
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      <textarea
+        autoFocus
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save() }
+          if (e.key === 'Escape') { e.preventDefault(); cancel() }
+        }}
+        placeholder="특이사항·운영 메모"
+        className="w-full rounded-md border border-blue-300 px-2 py-1 text-[11px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-y"
+        rows={3}
+        maxLength={500}
+      />
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-gray-400">{draft.length}/500 · Ctrl+Enter 저장</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button" onClick={cancel} disabled={saving}
+            className="rounded-md px-2 py-0.5 text-[10px] text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            type="button" onClick={save} disabled={saving}
+            className="rounded-md bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? '저장 중…' : '저장'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

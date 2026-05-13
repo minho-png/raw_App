@@ -3,6 +3,7 @@
 import { useState } from "react"
 import type { RawRow } from "@/lib/rawDataParser"
 import type { MediaType } from "@/lib/reportTypes"
+import { EditableCell } from "@/components/molecules/EditableCell"
 
 interface Props {
   rows: RawRow[]
@@ -12,77 +13,11 @@ interface Props {
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 
-/** Editable numeric cell component */
-function EditableCell({
-  value,
-  onUpdate,
-  disabled = false,
-}: {
-  value: number
-  onUpdate: (newValue: number) => void
-  disabled?: boolean
-}) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [inputValue, setInputValue] = useState(String(value))
-
-  const handleBlur = () => {
-    const num = parseInt(inputValue.replace(/,/g, ''), 10)
-    if (!isNaN(num)) {
-      onUpdate(num)
-    }
-    setIsEditing(false)
-    setInputValue(String(value))
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleBlur()
-    } else if (e.key === 'Escape') {
-      setIsEditing(false)
-      setInputValue(String(value))
-    }
-  }
-
-  if (!isEditing && disabled) {
-    return <span>{fmt(value)}</span>
-  }
-
-  return isEditing ? (
-    <input
-      type="number"
-      value={inputValue}
-      onChange={(e) => setInputValue(e.target.value)}
-      onBlur={handleBlur}
-      onKeyDown={handleKeyDown}
-      autoFocus
-      className="w-full border-0 bg-transparent px-0 py-1 text-right text-xs text-gray-700 tabular-nums outline-none ring-1 ring-blue-400 rounded"
-      style={{ fontSize: 'inherit' }}
-    />
-  ) : (
-    <span
-      onClick={() => !disabled && setIsEditing(true)}
-      className={!disabled ? 'cursor-text hover:bg-blue-50 rounded px-1' : ''}
-    >
-      {fmt(value)}
-    </span>
-  )
-}
-
 /** Google/META만 조회 컬럼 표시 */
 const MEDIA_WITH_VIEWS: MediaType[] = ['google', 'meta']
 
-const DMP_BADGE_COLORS: Record<string, string> = {
-  SKP:              'bg-blue-100 text-blue-700 border-blue-200',
-  KB:               'bg-yellow-100 text-yellow-700 border-yellow-200',
-  LOTTE:            'bg-red-100 text-red-700 border-red-200',
-  TG360:            'bg-orange-100 text-orange-700 border-orange-200',
-  BC:               'bg-gray-100 text-gray-600 border-gray-200',
-  SH:               'bg-slate-100 text-slate-600 border-slate-200',
-  WIFI:             'bg-teal-100 text-teal-700 border-teal-200',
-  HyperLocal:       'bg-purple-100 text-purple-700 border-purple-200',
-  MEDIA_TARGETING:  'bg-green-100 text-green-700 border-green-200',
-  DIRECT:           'bg-gray-50 text-gray-400 border-gray-100',
-}
+// DMP 배지 색상 — lib/colorPalettes.ts 의 단일 source (components/atoms/Badge.tsx 와 공유)
+import { DMP_COLORS as DMP_BADGE_COLORS, DMP_COLOR_FALLBACK } from "@/lib/colorPalettes"
 
 const DMP_LABELS: Record<string, string> = {
   MEDIA_TARGETING: '매체 타게팅',
@@ -164,7 +99,7 @@ export default function DailyDataTable({ rows, media, onRowUpdate }: Props) {
               .map(([dmp, total]) => (
                 <span
                   key={dmp}
-                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${DMP_BADGE_COLORS[dmp] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${DMP_BADGE_COLORS[dmp] ?? DMP_COLOR_FALLBACK}`}
                   title={`집행 ${fmt(total)}원`}
                 >
                   {dmp} {fmt(total)}원
@@ -208,7 +143,7 @@ export default function DailyDataTable({ rows, media, onRowUpdate }: Props) {
                 </td>
                 <td className={tdCls}>
                   {row.dmpType ? (
-                    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${DMP_BADGE_COLORS[row.dmpType] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${DMP_BADGE_COLORS[row.dmpType] ?? DMP_COLOR_FALLBACK}`}>
                       {DMP_LABELS[row.dmpType] ?? row.dmpType}
                     </span>
                   ) : '—'}

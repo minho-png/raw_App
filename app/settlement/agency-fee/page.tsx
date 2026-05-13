@@ -50,16 +50,8 @@ function overlapsMonth(campaign: Campaign, month: string): boolean {
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
 
-const AGENCY_PALETTE = [
-  { card: "border-blue-300 bg-blue-50",     badge: "bg-blue-100 text-blue-700 border-blue-200"       },
-  { card: "border-violet-300 bg-violet-50", badge: "bg-violet-100 text-violet-700 border-violet-200" },
-  { card: "border-teal-300 bg-teal-50",     badge: "bg-teal-100 text-teal-700 border-teal-200"       },
-  { card: "border-orange-300 bg-orange-50", badge: "bg-orange-100 text-orange-700 border-orange-200" },
-  { card: "border-pink-300 bg-pink-50",     badge: "bg-pink-100 text-pink-700 border-pink-200"       },
-  { card: "border-yellow-300 bg-yellow-50", badge: "bg-yellow-100 text-yellow-700 border-yellow-200" },
-  { card: "border-cyan-300 bg-cyan-50",     badge: "bg-cyan-100 text-cyan-700 border-cyan-200"       },
-  { card: "border-red-300 bg-red-50",       badge: "bg-red-100 text-red-700 border-red-200"           },
-]
+import { AGENCY_PALETTE } from "@/lib/colorPalettes"
+// AGENCY_PALETTE 는 lib/colorPalettes.ts 의 단일 source (settlement/media-cost 와 공유)
 
 export default function AgencyFeePage() {
   const today = new Date()
