@@ -35,7 +35,7 @@ export function normalizeAgencyName(name: string): string {
  *   byNormalizedName: 정규화이름 → MotivAgency (내부 Agency.name 매칭용)
  *   partial: 일부 페이지 실패 또는 한도 초과 시 true
  */
-export function useMotivAgencies(enabled = true) {
+export function useMotivAgencies(enabled = true, refreshKey = 0) {
   const [state, setState] = useState<State>({
     data: [], byId: new Map(), byNormalizedName: new Map(),
     loading: true, error: null, partial: false,
@@ -78,7 +78,7 @@ export function useMotivAgencies(enabled = true) {
       setState({ data, byId, byNormalizedName, loading: false, error, partial: result.partial })
     })()
     return () => { cancelled = true }
-  }, [enabled])
+  }, [enabled, refreshKey])
 
   return state
 }
