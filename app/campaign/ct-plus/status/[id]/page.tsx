@@ -12,6 +12,8 @@ import { getCampaignTotals, getCampaignProgress, getMediaTotals } from "@/lib/ca
 import { fmt, spendRateStyle } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { RawRow } from "@/lib/rawDataParser"
 import { mColor, mediaTint, contrastOn } from "@/lib/mediaColors"
+import { useKpiThresholds, checkBudgetWarning, checkRateWarning, checkCostWarning, type KpiWarning } from "@/lib/kpiThresholds"
+import { KpiThresholdSettings } from "@/components/molecules/KpiThresholdSettings"
 
 const CREATIVE_COLORS = ["#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"]
 
@@ -56,6 +58,8 @@ export default function CampaignDetailPage() {
   const [toast,  setToast]  = useState<string|null>(null)
   const [edits, setEdits]   = useState<Map<string,Partial<RawRow>>>(new Map())
   const [editMode, setEditMode] = useState(false)
+  const [showThresholds, setShowThresholds] = useState(false)
+  const { thresholds, update: updateThresholds } = useKpiThresholds()
 
   const campaign = useMemo(()=>campaigns.find(c=>c.id===id)??null,[campaigns,id])
   const campRows = useMemo(()=>{
@@ -143,24 +147,36 @@ export default function CampaignDetailPage() {
   }
   const kpiRows = useMemo<KpiRow[]>(() => {
     if (!campaign || !totals) return []
-    const rows: KpiRow[] = [
-      { media: null, label: 'Budget',     target: totals.totalBudget || null, actual: totalA.spend,        unit: '원' },
-      { media: null, label: 'Impression', target: null,                       actual: totalA.impressions,  unit: '' },
-      { media: null, label: 'Click',      target: null,                       actual: totalA.clicks,       unit: '' },
-    ]
-    // 매체별 raw 집계 — 한 번만 계산
+    // mediaFilter 가 있으면 해당 매체만, 없으면 전체 매체 + 전체합계 행 노출
+    const targetMbs = mediaFilter
+      ? campaign.mediaBudgets.filter(mb => mb.media === mediaFilter)
+      : campaign.mediaBudgets
+    const rows: KpiRow[] = []
+    // 전체합계 행 — 매체 미선택 시에만 표시 (선택 시엔 해당 매체 행만 보이는 게 자연스러움)
+    if (!mediaFilter) {
+      rows.push(
+        { media: null, label: 'Budget',     target: totals.totalBudget || null, actual: totalA.spend,        unit: '원' },
+        { media: null, label: 'Impression', target: null,                       actual: totalA.impressions,  unit: '' },
+        { media: null, label: 'Click',      target: null,                       actual: totalA.clicks,       unit: '' },
+      )
+    }
+    // 매체별 raw 집계 — 대상 매체만
     const aggByMedia = new Map<string, ReturnType<typeof aggRows>>()
-    for (const mb of campaign.mediaBudgets) {
+    for (const mb of targetMbs) {
       aggByMedia.set(mb.media, aggRows(filteredRows.filter(r => r.media === mb.media)))
     }
-    // 매체별 KPI 행 — 매체에 target 이 설정된 KPI 만 노출
-    for (const mb of campaign.mediaBudgets) {
+    for (const mb of targetMbs) {
       const a = aggByMedia.get(mb.media)
       if (!a) continue
-      // 매체 자체 Budget 도 매체별 행으로 추가 (선택)
+      // Budget target = 부킹 금액(totalBudget) — 마크업 차감 전. 실제 세팅 예산이 아닌 광고주 청구 기준.
       const mt = getMediaTotals(mb)
-      if (mt.totalSettingCost > 0) {
-        rows.push({ media: mb.media, label: 'Budget', target: mt.totalSettingCost, actual: a.spend, unit: '원' })
+      if (mt.totalBudget > 0) {
+        rows.push({ media: mb.media, label: 'Budget', target: mt.totalBudget, actual: a.spend, unit: '원' })
+      }
+      // 매체 선택 시 Impression/Click 도 매체 단위로 보강
+      if (mediaFilter) {
+        rows.push({ media: mb.media, label: 'Impression', target: null, actual: a.impressions, unit: '' })
+        rows.push({ media: mb.media, label: 'Click',      target: null, actual: a.clicks,      unit: '' })
       }
       if (mb.ctrTarget != null) rows.push({ media: mb.media, label: 'CTR', target: +mb.ctrTarget.toFixed(3), actual: a.ctr, unit: '%' })
       if (mb.vtrTarget != null) rows.push({ media: mb.media, label: 'VTR', target: +mb.vtrTarget.toFixed(3), actual: a.vtr, unit: '%' })
@@ -168,7 +184,7 @@ export default function CampaignDetailPage() {
       if (mb.cpmTarget != null) rows.push({ media: mb.media, label: 'CPM', target: Math.round(mb.cpmTarget), actual: a.cpm, unit: '원', lowerBetter: true })
     }
     return rows
-  }, [campaign, totals, totalA, filteredRows])
+  }, [campaign, totals, totalA, filteredRows, mediaFilter])
 
   // 요약 행 (선택 매체 내 캠페인별)
   const summaryRows = useMemo(()=>{
@@ -440,10 +456,20 @@ export default function CampaignDetailPage() {
           {tab==="summary"&&(
             <div className="space-y-3">
               {/* KPI 달성률 */}
+              {showThresholds && (
+                <KpiThresholdSettings thresholds={thresholds} onChange={updateThresholds} />
+              )}
               {kpiRows.length>0&&(
                 <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                  <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100">
+                  <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
                     <h3 className="text-[11px] font-semibold text-blue-700 uppercase tracking-wide">KPI 목표 대비 실적 달성률</h3>
+                    <button
+                      type="button"
+                      onClick={() => setShowThresholds(v => !v)}
+                      className={`text-[10px] font-medium rounded px-2 py-0.5 transition-colors ${
+                        showThresholds ? 'bg-blue-600 text-white' : 'text-blue-600 hover:bg-blue-100'
+                      }`}
+                    >경고 임계값 {showThresholds ? '닫기' : '설정'}</button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
@@ -491,21 +517,36 @@ export default function CampaignDetailPage() {
                               diffLabel = `${diff>=0?"+":""}${fmt(diff)}`
                             }
                           }
+                          // 사용자 임계값 기반 경고 판정
+                          let warn: KpiWarning | null = null
+                          if (r.label === 'Budget' && hasTarget) {
+                            const sr = +(r.actual / r.target! * 100).toFixed(1)
+                            // 진행률 — Budget(전체합계 행) 은 캠페인 progress, 매체별 행은 같은 progress (전체 동일)
+                            warn = checkBudgetWarning(sr, progress, thresholds)
+                          } else if (r.label === 'CTR' || r.label === 'VTR') {
+                            if (hasTarget) warn = checkRateWarning(r.label, r.target!, r.actual, thresholds)
+                          } else if (r.label === 'CPC' || r.label === 'CPM') {
+                            if (hasTarget) warn = checkCostWarning(r.label, r.target!, r.actual, thresholds)
+                          }
+                          const rowBg = warn ? 'bg-red-50/40 hover:bg-red-50' : 'hover:bg-gray-50'
                           return(
-                            <tr key={i} className="hover:bg-gray-50">
+                            <tr key={i} className={rowBg}>
                               <td className={tdCls} style={r.media ? { borderLeft: `3px solid ${mColor(r.media)}` } : undefined}>
                                 {r.media
                                   ? <span className="font-medium" style={{ color: mColor(r.media) }}>{r.media}</span>
                                   : <span className="text-gray-400">전체</span>}
                               </td>
-                              <td className={`${tdCls} font-semibold text-gray-800 w-24`}>{r.label}</td>
+                              <td className={`${tdCls} font-semibold text-gray-800 w-24`}>
+                                {r.label}
+                                {warn && <span className="ml-1 text-[9px] font-semibold text-red-600" title={warn.message}>⚠</span>}
+                              </td>
                               <td className={tdRCls}>{hasTarget?`${fmt(Math.round(r.target!))}${r.unit}`:"-"}</td>
                               <td className={`${tdRCls} font-medium text-blue-700`}>{fmt(Math.round(r.actual))}{r.unit}</td>
                               <td className={`${tdRCls} font-bold ${good?"text-green-600":"text-orange-500"}`}>
                                 {rate!==null?`${rate}%`:"-"}
                               </td>
-                              <td className={`${tdRCls} font-semibold ${good?"text-green-600":"text-orange-500"}`}>
-                                {diffLabel ?? "-"}
+                              <td className={`${tdRCls} font-semibold ${warn ? 'text-red-600' : good?"text-green-600":"text-orange-500"}`}>
+                                {warn ? warn.message : (diffLabel ?? "-")}
                               </td>
                               <td className="px-3 py-2">
                                 {rate!==null&&(

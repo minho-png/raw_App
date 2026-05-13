@@ -16,6 +16,7 @@ import { MediaConsoleMenu } from "@/components/MediaConsoleMenu"
 import { DomainStatusCard, type MediaDistribution } from "@/components/molecules/DomainStatusCard"
 import { AlertCard } from "@/components/molecules/AlertCard"
 import { isActiveMotivCampaign, motivLifeSpendRate } from "@/lib/motivApi/campaignFilters"
+import { useKpiThresholds, checkBudgetWarning } from "@/lib/kpiThresholds"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 function fmtPct(n: number) { return n.toFixed(1) + '%' }
@@ -81,6 +82,9 @@ export default function DashboardPage() {
     return { count: active.length, totalBudget, totalSpend, totalSettingCost, spendRate }
   }, [campaigns, rawSpendByCampaign])
 
+  // KPI 임계값 (localStorage) — 도메인별 경고 캠페인 수 계산에 사용
+  const { thresholds } = useKpiThresholds()
+
   // ── 도메인 카드 데이터 — CT+ / CT / CTV ──────────────
   // CT+: useMasterData 의 자체 입력 캠페인. 매체별 분포(중복 카운트 — 한 캠페인이 N 매체)
   //      평균 소진률은 활성 캠페인의 단순 평균.
@@ -88,22 +92,35 @@ export default function DashboardPage() {
     const active = campaigns.filter(isActive)
     const map = new Map<string, number>()
     let spendRateSum = 0
+    let warningCount = 0
     for (const c of active) {
+      const t = getCampaignTotals(c)
+      const prog = getCampaignProgress(c.startDate, c.endDate)
+      const rawSpend = rawSpendByCampaign.get(c.id)
+      const effSpend = (rawSpend !== undefined && rawSpend > 0) ? rawSpend : t.totalSpend
+      // 사용자 정책: 예산은 부킹 금액(totalBudget) 기준 — 마크업 차감 전
+      const sr = t.totalBudget > 0 ? (effSpend / t.totalBudget) * 100 : 0
+      if (checkBudgetWarning(sr, prog, thresholds)) warningCount++
+      spendRateSum += sr
       for (const mb of c.mediaBudgets) {
         map.set(mb.media, (map.get(mb.media) ?? 0) + 1)
       }
-      const t = getCampaignTotals(c)
-      const rawSpend = rawSpendByCampaign.get(c.id)
-      const effSpend = (rawSpend !== undefined && rawSpend > 0) ? rawSpend : t.totalSpend
-      const rate = t.totalSettingCost > 0 ? (effSpend / t.totalSettingCost) * 100 : 0
-      spendRateSum += rate
     }
     const distribution: MediaDistribution[] = [...map.entries()]
       .map(([label, count]) => ({ label, count }))
       .sort((a, b) => b.count - a.count)
     const avgSpendRate = active.length > 0 ? spendRateSum / active.length : 0
-    return { count: active.length, distribution, avgSpendRate }
-  }, [campaigns, rawSpendByCampaign])
+    return { count: active.length, distribution, avgSpendRate, warningCount }
+  }, [campaigns, rawSpendByCampaign, thresholds])
+
+  // CT/CTV 캠페인의 운영 기간 진행률 (now - start) / (end - start) * 100
+  function motivProgress(c: { start_date?: string | null; end_date?: string | null }, now: Date): number {
+    if (!c.start_date || !c.end_date) return 0
+    const s = new Date(c.start_date).getTime()
+    const e = new Date(c.end_date).getTime()
+    if (e <= s) return 0
+    return Math.min(100, Math.max(0, ((now.getTime() - s) / (e - s)) * 100))
+  }
 
   // CT (DISPLAY/VIDEO/PARTNERS) — isActiveMotivCampaign 으로 운영 중 필터
   const ctActive = useMemo(() => {
@@ -111,29 +128,37 @@ export default function DashboardPage() {
     const active = motivCt.data.filter(c => isActiveMotivCampaign(c, now))
     const map = new Map<string, number>()
     let rateSum = 0
+    let warningCount = 0
     for (const c of active) {
       map.set(c.campaign_type, (map.get(c.campaign_type) ?? 0) + 1)
-      rateSum += motivLifeSpendRate(c)
+      const sr = motivLifeSpendRate(c)
+      rateSum += sr
+      if (checkBudgetWarning(sr, motivProgress(c, now), thresholds)) warningCount++
     }
     const distribution: MediaDistribution[] = [...map.entries()]
       .map(([label, count]) => ({ label, count }))
       .sort((a, b) => b.count - a.count)
     const avgSpendRate = active.length > 0 ? rateSum / active.length : 0
-    return { count: active.length, distribution, avgSpendRate }
-  }, [motivCt.data])
+    return { count: active.length, distribution, avgSpendRate, warningCount }
+  }, [motivCt.data, thresholds])
 
   // CTV (TV) — TV 단일 매체
   const ctvActive = useMemo(() => {
     const now = new Date()
     const active = motivCtv.data.filter(c => isActiveMotivCampaign(c, now))
     let rateSum = 0
-    for (const c of active) rateSum += motivLifeSpendRate(c)
+    let warningCount = 0
+    for (const c of active) {
+      const sr = motivLifeSpendRate(c)
+      rateSum += sr
+      if (checkBudgetWarning(sr, motivProgress(c, now), thresholds)) warningCount++
+    }
     const distribution: MediaDistribution[] = active.length > 0
       ? [{ label: 'TV', count: active.length }]
       : []
     const avgSpendRate = active.length > 0 ? rateSum / active.length : 0
-    return { count: active.length, distribution, avgSpendRate }
-  }, [motivCtv.data])
+    return { count: active.length, distribution, avgSpendRate, warningCount }
+  }, [motivCtv.data, thresholds])
 
   // R3: 이상 알림 — 카운트뿐 아니라 캠페인명 미니리스트도 노출.
   // 각 카테고리는 진단 결과 + 캠페인 인스턴스 보유.
@@ -250,6 +275,7 @@ export default function DashboardPage() {
               distribution={ctPlusActive.distribution}
               distributionNote="* 한 캠페인이 여러 매체 포함 시 중복 표기"
               avgSpendRate={ctPlusActive.avgSpendRate}
+              warningCount={ctPlusActive.warningCount}
               href="/campaign/ct-plus/status"
               loading={masterLoading}
               emptyHint={
@@ -264,6 +290,7 @@ export default function DashboardPage() {
               campaignCount={ctActive.count}
               distribution={ctActive.distribution}
               avgSpendRate={ctActive.avgSpendRate}
+              warningCount={ctActive.warningCount}
               href="/campaign/ct/analysis"
               loading={motivCt.loading}
               error={motivCt.error}
@@ -274,6 +301,7 @@ export default function DashboardPage() {
               campaignCount={ctvActive.count}
               distribution={ctvActive.distribution}
               avgSpendRate={ctvActive.avgSpendRate}
+              warningCount={ctvActive.warningCount}
               href="/campaign/ct-ctv/analysis"
               loading={motivCtv.loading}
               error={motivCtv.error}
