@@ -3,6 +3,7 @@
 import { useState } from "react"
 import type { RawRow } from "@/lib/rawDataParser"
 import type { MediaType } from "@/lib/reportTypes"
+import { EditableCell } from "@/components/molecules/EditableCell"
 
 interface Props {
   rows: RawRow[]
@@ -11,62 +12,6 @@ interface Props {
 }
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
-
-/** Editable numeric cell component */
-function EditableCell({
-  value,
-  onUpdate,
-  disabled = false,
-}: {
-  value: number
-  onUpdate: (newValue: number) => void
-  disabled?: boolean
-}) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [inputValue, setInputValue] = useState(String(value))
-
-  const handleBlur = () => {
-    const num = parseInt(inputValue.replace(/,/g, ''), 10)
-    if (!isNaN(num)) {
-      onUpdate(num)
-    }
-    setIsEditing(false)
-    setInputValue(String(value))
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleBlur()
-    } else if (e.key === 'Escape') {
-      setIsEditing(false)
-      setInputValue(String(value))
-    }
-  }
-
-  if (!isEditing && disabled) {
-    return <span>{fmt(value)}</span>
-  }
-
-  return isEditing ? (
-    <input
-      type="number"
-      value={inputValue}
-      onChange={(e) => setInputValue(e.target.value)}
-      onBlur={handleBlur}
-      onKeyDown={handleKeyDown}
-      autoFocus
-      className="w-full border-0 bg-transparent px-0 py-1 text-right text-xs text-gray-700 tabular-nums outline-none ring-1 ring-blue-400 rounded"
-      style={{ fontSize: 'inherit' }}
-    />
-  ) : (
-    <span
-      onClick={() => !disabled && setIsEditing(true)}
-      className={!disabled ? 'cursor-text hover:bg-blue-50 rounded px-1' : ''}
-    >
-      {fmt(value)}
-    </span>
-  )
-}
 
 /** Google/META만 조회 컬럼 표시 */
 const MEDIA_WITH_VIEWS: MediaType[] = ['google', 'meta']
