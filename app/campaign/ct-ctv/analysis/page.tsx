@@ -27,30 +27,40 @@ import { DailyCostChart } from "@/components/analysis/DailyCostChart"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 
 const f = (n: number) => Math.round(n).toLocaleString('ko-KR')
-function fmtMonth(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+function fmtDate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function todayStr() { return fmtDate(new Date()) }
+function addDays(s: string, n: number): string {
+  const d = new Date(s); d.setDate(d.getDate() + n); return fmtDate(d)
+}
+function monthStart(s: string): string {
+  const d = new Date(s); return fmtDate(new Date(d.getFullYear(), d.getMonth(), 1))
+}
+function monthEnd(s: string): string {
+  const d = new Date(s); return fmtDate(new Date(d.getFullYear(), d.getMonth() + 1, 0))
+}
 
 // CTV(TV) 매체 분석 — Motiv API 의 campaign_type='TV' 캠페인만.
 // AUD-005 fix: 이전에는 mock 데이터로 채워져 있었으나 실 MOTIV 데이터 연결.
 export default function CtCtvAnalysisPage() {
-  // 조회 모드: 월별 / 일자 범위 (두 state 보존)
-  const [dateMode, setDateMode]         = useState<'month' | 'range'>('month')
-  const [month, setMonth]               = useState<string>(fmtMonth(new Date()))
-  const [rangeStart, setRangeStart]     = useState<string>('')
-  const [rangeEnd, setRangeEnd]         = useState<string>('')
+  // 일자 범위 — 기본: 시작=종료=오늘 (당일)
+  const [rangeStart, setRangeStart]     = useState<string>(todayStr())
+  const [rangeEnd, setRangeEnd]         = useState<string>(todayStr())
   const [showSettings, setShowSettings] = useState(false)
   const [settings, setSettings]         = useState<AnalysisSettings>(DEFAULT_ANALYSIS_SETTINGS)
 
   // ── 데이터 소스 ──────────────────────────────────────────
   const { agencies, advertisers, operators } = useMasterData()
   const motiv = useMotivSettlementCampaignsByProduct('CTV',
-    dateMode === 'range' && rangeStart && rangeEnd
-      ? { dateRange: { start: rangeStart, end: rangeEnd } }
-      : { month },
+    { dateRange: { start: rangeStart, end: rangeEnd } },
   )
   const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
   const { byId: adAccountById }   = useMotivAdAccounts()
   const { byId: motivAgencyById } = useMotivAgencies()
-  const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot()
+  // 선택한 일자(시작일)의 전일자 스냅샷과 비교
+  const yesterdayDate = useMemo(() => addDays(rangeStart, -1), [rangeStart])
+  const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot(yesterdayDate)
   const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
 
   // MotivCampaign → UnifiedCampaignSnapshot (P1: 광고주 매핑 포함)
@@ -76,18 +86,11 @@ export default function CtCtvAnalysisPage() {
   const sumY        = useMemo(() => aggregateMetrics(snapshots.map(s => s.yesterday)), [snapshots])
   const totalBudget = useMemo(() => snapshots.reduce((a, c) => a + c.budget, 0), [snapshots])
 
-  // P3: 일별 비용 추세 — 모드별 startDate/endDate
-  const monthRange = useMemo(() => {
-    if (dateMode === 'range') {
-      return { start: rangeStart || '', end: rangeEnd || '' }
-    }
-    const [y, m] = month.split('-').map(Number)
-    if (!y || !m) return { start: '', end: '' }
-    const first = new Date(y, m - 1, 1)
-    const last  = new Date(y, m,     0)
-    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    return { start: fmt(first), end: fmt(last) }
-  }, [dateMode, month, rangeStart, rangeEnd])
+  // P3: 일별 비용 추세 — 선택된 일자 범위 그대로 사용
+  const monthRange = useMemo(
+    () => ({ start: rangeStart, end: rangeEnd }),
+    [rangeStart, rangeEnd],
+  )
   const snapshotCampaignIds = useMemo(() => snapshots.map(s => s.motivId), [snapshots])
   const statsDaily = useMotivStatsDaily({
     scope: { campaignIds: snapshotCampaignIds },
@@ -105,56 +108,55 @@ export default function CtCtvAnalysisPage() {
             <p className="text-xs text-gray-400 mt-0.5">TV 매체 (Connected TV) · MOTIV API 실시간</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {/* 조회 모드 토글 — 월별 / 일자 범위 */}
-            <div className="inline-flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
-              <button
-                type="button"
-                onClick={() => setDateMode('month')}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${
-                  dateMode === 'month' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >월별</button>
-              <button
-                type="button"
-                onClick={() => setDateMode('range')}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${
-                  dateMode === 'range' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >일자 범위</button>
-            </div>
-            {dateMode === 'month' ? (
+            {/* 일자 범위 메인 입력 — 기본: 시작=종료=오늘 */}
+            <div className="flex items-center gap-1">
               <input
-                type="month"
-                value={month}
-                onChange={e => setMonth(e.target.value)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
+                type="date"
+                value={rangeStart}
+                max={rangeEnd || undefined}
+                onChange={e => setRangeStart(e.target.value)}
+                className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
               />
-            ) : (
-              <div className="flex items-center gap-1">
-                <input
-                  type="date"
-                  value={rangeStart}
-                  max={rangeEnd || undefined}
-                  onChange={e => setRangeStart(e.target.value)}
-                  className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
-                />
-                <span className="text-gray-300 text-xs">~</span>
-                <input
-                  type="date"
-                  value={rangeEnd}
-                  min={rangeStart || undefined}
-                  onChange={e => setRangeEnd(e.target.value)}
-                  className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
-                />
-              </div>
-            )}
+              <span className="text-gray-300 text-xs">~</span>
+              <input
+                type="date"
+                value={rangeEnd}
+                min={rangeStart || undefined}
+                onChange={e => setRangeEnd(e.target.value)}
+                className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
+              />
+            </div>
+            {/* 빠른 선택 (월별 등 하위 기능) */}
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
+              {([
+                { label: '오늘',    s: () => todayStr(),                e: () => todayStr() },
+                { label: '어제',    s: () => addDays(todayStr(), -1),    e: () => addDays(todayStr(), -1) },
+                { label: '최근 7일', s: () => addDays(todayStr(), -6),    e: () => todayStr() },
+                { label: '이번 달',  s: () => monthStart(todayStr()),     e: () => todayStr() },
+                { label: '지난 달',  s: () => monthStart(addDays(monthStart(todayStr()), -1)),
+                                    e: () => monthEnd(addDays(monthStart(todayStr()), -1)) },
+              ] as const).map(({ label, s, e }) => {
+                const ss = s(); const ee = e()
+                const active = rangeStart === ss && rangeEnd === ee
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => { setRangeStart(ss); setRangeEnd(ee) }}
+                    className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
+                      active ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >{label}</button>
+                )
+              })}
+            </div>
             {yesterdayAvailable ? (
               <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11px] text-green-700 font-medium">
-                전일 스냅샷 {snapshot?.date} 연결됨
+                {snapshot?.date} 비교 데이터 연결됨
               </span>
             ) : (
               <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] text-amber-700 font-medium">
-                전일 스냅샷 없음 — cron 1회 이상 실행 후 표시
+                {yesterdayDate} 비교 데이터 없음
               </span>
             )}
             <button
@@ -210,24 +212,29 @@ export default function CtCtvAnalysisPage() {
           </div>
         </section>
 
-        {/* 요약 통계 */}
+        {/* 요약 통계 — 소진액(MOTIV cost) = 매출 */}
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <SummaryCard label="총 노출" value={f(sumT.impressions)} />
           <SummaryCard label="완료 시청" value={f(sumT.completedViews)} />
-          <SummaryCard label="총 소진금액" value={`₩${f(sumT.spend)}`} />
-          <SummaryCard label="총 매체비용" value={`₩${f(sumT.mediaCost)}`} />
+          <SummaryCard label="총 매출"
+            value={`₩${f(sumT.spend)}`} />
+          <SummaryCard label="총 비용"
+            value={`₩${f(sumT.mediaCost + sumT.agencyFee + sumT.dmpFee)}`} />
         </section>
 
-        {/* P2: 비용 분해 — MOTIV stats 기준 */}
+        {/* P2: 매출·비용·이익 구조
+              매출(소진액) = MOTIV stats.cost
+              비용         = 매체비 + 대행 수수료 + DMP 수수료
+              이익         = 매출 - 비용 */}
         <section className="rounded-xl border border-gray-200 bg-white px-5 py-4">
           <div className="flex items-baseline justify-between mb-3">
-            <h3 className="text-xs font-semibold text-gray-700">비용 분해</h3>
-            <span className="text-[10px] text-gray-400">MOTIV stats 기준</span>
+            <h3 className="text-xs font-semibold text-gray-700">매출·비용·이익 구조</h3>
+            <span className="text-[10px] text-gray-400">매출(소진액) − 비용(매체비+대행+DMP) = 이익</span>
           </div>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <CostBreakdownCell label="매체비"      value={sumT.mediaCost} total={sumT.spend} tone="blue"   />
-            <CostBreakdownCell label="대행 수수료" value={sumT.agencyFee} total={sumT.spend} tone="purple" />
-            <CostBreakdownCell label="DMP 수수료"  value={sumT.dmpFee}    total={sumT.spend} tone="amber"  />
+            <CostBreakdownCell label="매체비 (비용)"      value={sumT.mediaCost} total={sumT.spend} tone="blue"   />
+            <CostBreakdownCell label="대행 수수료 (비용)" value={sumT.agencyFee} total={sumT.spend} tone="purple" />
+            <CostBreakdownCell label="DMP 수수료 (비용)"  value={sumT.dmpFee}    total={sumT.spend} tone="amber"  />
             <CostBreakdownCell label="이익"
               value={Math.max(0, sumT.spend - sumT.mediaCost - sumT.agencyFee - sumT.dmpFee)}
               total={sumT.spend} tone="green" />
