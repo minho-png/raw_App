@@ -28,6 +28,12 @@ export default function CampaignStatusPage() {
     upsertCampaign, deleteCampaign,
   } = useMasterData()
   const { allRows: rawRows } = useRawData()
+  // R1: 권위 함수(applyMarkupToRows) 결과를 한 번만 계산해 모달에 props 로 전달.
+  //     CampaignDetailPanel 의 KPI/소진률 이 상세 분석 페이지와 동일 데이터로 정합됨.
+  const computedRows = useMemo(
+    () => (campaigns.length === 0 ? rawRows : applyMarkupToRows(rawRows, campaigns)),
+    [rawRows, campaigns],
+  )
   const dailySpendMap = useDailySpendMap(rawRows, campaigns)
 
   // QA UX-003: 상세 분석 ↔ 목록 왕복 시 필터/스크롤 보존을 위해 sessionStorage lazy-init
@@ -294,7 +300,7 @@ export default function CampaignStatusPage() {
         <CampaignDetailPanel
           campaign={selectedDetailCampaign}
           operators={operators} agencies={agencies} advertisers={advertisers}
-          rawRows={rawRows}
+          rawRows={computedRows}
           onClose={() => setSelectedDetailId(null)}
           onEdit={(c) => { setEditTarget(c); setModalOpen(true); setSelectedDetailId(null) }}
           onUpdate={(c) => upsertCampaign(c)}
