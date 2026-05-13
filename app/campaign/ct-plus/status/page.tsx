@@ -281,6 +281,10 @@ export default function CampaignStatusPage() {
           onEdit={(c) => { setEditTarget(c); setModalOpen(true) }}
           onDelete={handleDelete}
           onStatusToggle={handleStatusToggle}
+          onMemoSave={async (c, memo) => {
+            await upsertCampaign({ ...c, memo })
+            setToast({ message: '메모가 저장되었습니다', type: 'success' })
+          }}
           selectedDetailId={selectedDetailId}
           setSelectedDetailId={setSelectedDetailId}
         />
