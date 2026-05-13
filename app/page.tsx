@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useMemo } from "react"
 import Link from "next/link"
 import {
   getCampaignTotals,
@@ -8,36 +8,23 @@ import {
   getDday,
 } from "@/lib/campaignTypes"
 import type { Campaign } from "@/lib/campaignTypes"
-import { MEDIA_CONFIG } from "@/lib/reportTypes"
-import type { MediaType } from "@/lib/reportTypes"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { useMasterData } from "@/lib/hooks/useMasterData"
-import { useDailySpendMap } from "@/lib/hooks/useDailySpendMap"
+import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import { applyMarkupToRows } from "@/lib/markupService"
-import { DailyDeltaCell } from "@/components/DailyDeltaCell"
 import { MediaConsoleMenu } from "@/components/MediaConsoleMenu"
+import { DomainStatusCard, type MediaDistribution } from "@/components/molecules/DomainStatusCard"
+import { isActiveMotivCampaign, motivLifeSpendRate } from "@/lib/motivApi/campaignFilters"
 
 function fmt(n: number) { return n.toLocaleString('ko-KR') }
 function fmtPct(n: number) { return n.toFixed(1) + '%' }
 
-
-// ── 소진률 색상 ──────────────────────────────────────────────────
-function spendColor(rate: number): string {
-  if (rate >= 100) return 'bg-red-500'
-  if (rate >= 90)  return 'bg-orange-400'
-  if (rate >= 70)  return 'bg-yellow-400'
-  return 'bg-blue-500'
-}
+// 소진률 텍스트 색 (KPI 카드용)
 function spendTextColor(rate: number): string {
   if (rate >= 100) return 'text-red-600 font-bold'
   if (rate >= 90)  return 'text-orange-600 font-semibold'
   if (rate >= 70)  return 'text-yellow-600'
   return 'text-blue-600'
-}
-
-// ── 매체 타입 변환 ────────────────────────────────────────────────
-const MEDIA_NAME_TO_TYPE: Record<string, MediaType> = {
-  '네이버 GFA': 'naver', '카카오모먼트': 'kakao', 'Google': 'google', 'META': 'meta',
 }
 
 // ── 서브컴포넌트: 이상 알림 카드 (mini-list + querystring 점프) ────
@@ -97,125 +84,26 @@ function AlertCard({
   )
 }
 
-// ── 서브컴포넌트: 캠페인 카드 ─────────────────────────────────────
-// R3 간소화: 캠페인명/광고주·대행사/D-day/소진률(+ 색띠)/매체 도트 + 전일대비 만 표시.
-// 제거: 기간진행률 행, 예산/소진 텍스트 행, 메모.
-function CampaignCard({ c, advertiserName, agencyName, dailyEntry }: {
-  c: Campaign
-  advertiserName: string
-  agencyName: string
-  dailyEntry?: import("@/lib/hooks/useDailySpendMap").DailySpendEntry
-}) {
-  const totals    = getCampaignTotals(c)
-  const dday      = getDday(c.endDate)
-  const mediaKeys = c.mediaBudgets.map(mb => MEDIA_NAME_TO_TYPE[mb.media]).filter(Boolean) as MediaType[]
-  const hasDaily  = dailyEntry && (dailyEntry.today > 0 || dailyEntry.yesterday > 0)
-
-  return (
-    <div className={`rounded-xl border bg-white overflow-hidden transition-shadow hover:shadow-md ${
-      dday.expired ? 'border-gray-200 opacity-70' : 'border-gray-200'
-    }`}>
-      {/* 상단 색띠 — 소진률 프로그레스 */}
-      <div className="h-1 w-full bg-gray-100">
-        <div
-          className={`h-full transition-all ${spendColor(totals.spendRate)}`}
-          style={{ width: `${Math.min(totals.spendRate, 100)}%` }}
-        />
-      </div>
-
-      <div className="px-4 py-3">
-        {/* 1행: 캠페인명 + D-day */}
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <p className="text-sm font-semibold text-gray-800 truncate flex-1 min-w-0">{c.campaignName}</p>
-          <span className={`shrink-0 text-xs font-bold ${
-            dday.expired ? 'text-gray-500' : dday.urgent ? 'text-red-500' : 'text-gray-500'
-          }`}>
-            {dday.label}
-          </span>
-        </div>
-
-        {/* 2행: 광고주 · 대행사 + 매체 도트 */}
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <p className="text-[11px] text-gray-400 truncate flex-1 min-w-0">
-            {advertiserName || '광고주 미지정'}
-            {agencyName ? ` · ${agencyName}` : ''}
-          </p>
-          <div className="flex gap-1 shrink-0">
-            {mediaKeys.map(mk => {
-              const cfg = MEDIA_CONFIG[mk]
-              return (
-                <span
-                  key={mk}
-                  className="inline-block w-2 h-2 rounded-full"
-                  style={{ backgroundColor: cfg.color }}
-                  title={cfg.label}
-                />
-              )
-            })}
-          </div>
-        </div>
-
-        {/* 3행: 소진률 게이지 + 전일대비 */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="h-1.5 flex-1 rounded-full bg-gray-100 overflow-hidden">
-              <div
-                className={`h-full rounded-full ${spendColor(totals.spendRate)}`}
-                style={{ width: `${Math.min(totals.spendRate, 100)}%` }}
-              />
-            </div>
-            <span className={`text-[11px] tabular-nums font-semibold ${spendTextColor(totals.spendRate)}`}>
-              {fmtPct(totals.spendRate)}
-            </span>
-          </div>
-          {hasDaily && (
-            <DailyDeltaCell entry={dailyEntry} variant="inline" className="shrink-0" />
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── 메인 페이지 ──────────────────────────────────────────────────
 export default function DashboardPage() {
-  const [filterStatus, setFilterStatus] = useState<'all' | '집행 중' | '종료'>('집행 중')
-
   // BUG-001/002/006 fix:
   //   기존엔 메인 대시보드만 localStorage(campaigns-v1, agencies-v1, advertisers-v1) 에서 직접 로드해
   //   다른 페이지(useMasterData → MongoDB) 와 데이터 소스가 분리돼 있었음.
   //   결과: 캠페인이 실제 등록돼 있어도 메인은 0개로 표시 + 광고주/대행사 빈 경고가 잘못 노출.
   //   useMasterData 로 통합하여 모든 페이지가 동일한 데이터를 보도록 정정.
   const { campaigns, advertisers: advertiserList, agencies: agencyList, loading: masterLoading } = useMasterData()
-
-  // id → name lookup (CampaignCard 가 string 으로 받음)
-  const advertisers = useMemo(
-    () => Object.fromEntries(advertiserList.map(a => [a.id, a.name])),
-    [advertiserList],
-  )
-  const agencies = useMemo(
-    () => Object.fromEntries(agencyList.map(a => [a.id, a.name])),
-    [agencyList],
-  )
-
   const { allRows: rawRows } = useRawData()
-  const dailySpendMap = useDailySpendMap(rawRows, campaigns)
+
+  // CT / CTV — MOTIV API 캠페인 (운영 중 판정 위해 page-level 호출)
+  // month 파라미터 미지정 — 전체 캠페인 중 isActiveMotivCampaign 으로 필터.
+  const motivCt  = useMotivSettlementCampaignsByProduct('CT')
+  const motivCtv = useMotivSettlementCampaignsByProduct('CTV')
 
   // 상태값 정규화 — '집행중' / '집행 중' / '집행  중' 모두 동일하게 처리 (BUG-03)
   function isActive(c: Campaign): boolean {
     const s = (c.status ?? '').replace(/\s+/g, '')
     return s === '집행중'
   }
-
-  const filtered = useMemo(() =>
-    campaigns.filter(c => {
-      if (filterStatus === 'all') return true
-      if (filterStatus === '집행 중') return isActive(c)
-      const norm = (c.status ?? '').replace(/\s+/g, '')
-      return norm === filterStatus.replace(/\s+/g, '')
-    }),
-    [campaigns, filterStatus]
-  )
 
   // 캠페인 ID → raw data 기반 실집행금액 합계
   // QA BUG-001/002: 캠페인 모달의 mb.spend(수동 입력) 은 비어있는 경우가 많아
@@ -248,6 +136,60 @@ export default function DashboardPage() {
       : 0
     return { count: active.length, totalBudget, totalSpend, totalSettingCost, spendRate }
   }, [campaigns, rawSpendByCampaign])
+
+  // ── 도메인 카드 데이터 — CT+ / CT / CTV ──────────────
+  // CT+: useMasterData 의 자체 입력 캠페인. 매체별 분포(중복 카운트 — 한 캠페인이 N 매체)
+  //      평균 소진률은 활성 캠페인의 단순 평균.
+  const ctPlusActive = useMemo(() => {
+    const active = campaigns.filter(isActive)
+    const map = new Map<string, number>()
+    let spendRateSum = 0
+    for (const c of active) {
+      for (const mb of c.mediaBudgets) {
+        map.set(mb.media, (map.get(mb.media) ?? 0) + 1)
+      }
+      const t = getCampaignTotals(c)
+      const rawSpend = rawSpendByCampaign.get(c.id)
+      const effSpend = (rawSpend !== undefined && rawSpend > 0) ? rawSpend : t.totalSpend
+      const rate = t.totalSettingCost > 0 ? (effSpend / t.totalSettingCost) * 100 : 0
+      spendRateSum += rate
+    }
+    const distribution: MediaDistribution[] = [...map.entries()]
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count)
+    const avgSpendRate = active.length > 0 ? spendRateSum / active.length : 0
+    return { count: active.length, distribution, avgSpendRate }
+  }, [campaigns, rawSpendByCampaign])
+
+  // CT (DISPLAY/VIDEO/PARTNERS) — isActiveMotivCampaign 으로 운영 중 필터
+  const ctActive = useMemo(() => {
+    const now = new Date()
+    const active = motivCt.data.filter(c => isActiveMotivCampaign(c, now))
+    const map = new Map<string, number>()
+    let rateSum = 0
+    for (const c of active) {
+      map.set(c.campaign_type, (map.get(c.campaign_type) ?? 0) + 1)
+      rateSum += motivLifeSpendRate(c)
+    }
+    const distribution: MediaDistribution[] = [...map.entries()]
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count)
+    const avgSpendRate = active.length > 0 ? rateSum / active.length : 0
+    return { count: active.length, distribution, avgSpendRate }
+  }, [motivCt.data])
+
+  // CTV (TV) — TV 단일 매체
+  const ctvActive = useMemo(() => {
+    const now = new Date()
+    const active = motivCtv.data.filter(c => isActiveMotivCampaign(c, now))
+    let rateSum = 0
+    for (const c of active) rateSum += motivLifeSpendRate(c)
+    const distribution: MediaDistribution[] = active.length > 0
+      ? [{ label: 'TV', count: active.length }]
+      : []
+    const avgSpendRate = active.length > 0 ? rateSum / active.length : 0
+    return { count: active.length, distribution, avgSpendRate }
+  }, [motivCtv.data])
 
   // R3: 이상 알림 — 카운트뿐 아니라 캠페인명 미니리스트도 노출.
   // 각 카테고리는 진단 결과 + 캠페인 인스턴스 보유.
@@ -348,71 +290,49 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── 캠페인 목록 ────────────────────────────────────────── */}
+        {/* ── 캠페인 현황 — CT+ / CT / CTV 도메인 카드 ───────────── */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-800">
-              캠페인 현황
-              <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-normal text-gray-500">
-                {filtered.length}개
-              </span>
-            </h2>
-            <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white p-0.5">
-              {(['all', '집행 중', '종료'] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => setFilterStatus(s)}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    filterStatus === s
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {s === 'all' ? '전체' : s}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-800">캠페인 현황 — 도메인별 집행 중</h2>
+            <p className="text-[10px] text-gray-400">카드 클릭 → 도메인 상세</p>
           </div>
-
-          {masterLoading ? (
-            <div className="rounded-xl border border-gray-100 bg-white px-6 py-12 text-center">
-              <p className="text-sm text-gray-400">캠페인을 불러오는 중…</p>
-            </div>
-          ) : campaigns.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center space-y-3">
-              <p className="text-sm text-gray-400">등록된 캠페인이 없습니다</p>
-              {(advertiserList.length === 0 || agencyList.length === 0) && (
-                <p className="text-[11px] text-amber-700 bg-amber-50 inline-block rounded px-2 py-1">
-                  ⚠ 광고주·대행사가 비어 있습니다. 캠페인 등록 전 <Link href="/management" className="underline font-medium">관리 페이지</Link>에서 먼저 추가하세요.
-                </p>
-              )}
-              <div>
-                <Link
-                  href="/campaign/ct-plus/status"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700"
-                >
-                  캠페인 등록하기 →
-                </Link>
-              </div>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="rounded-xl border border-gray-100 bg-white px-6 py-8 text-center">
-              <p className="text-sm text-gray-400">해당 상태의 캠페인이 없습니다</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map(c => (
-                <Link key={c.id} href="/campaign/ct-plus/status" className="block">
-                  <CampaignCard
-                    c={c}
-                    advertiserName={advertisers[c.advertiserId] ?? ''}
-                    agencyName={agencies[c.agencyId] ?? ''}
-                    dailyEntry={dailySpendMap.get(c.id)}
-                  />
-                </Link>
-              ))}
-            </div>
-          )}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <DomainStatusCard
+              title="CT+"
+              subtitle="자체 입력 데이터"
+              campaignCount={ctPlusActive.count}
+              distribution={ctPlusActive.distribution}
+              distributionNote="* 한 캠페인이 여러 매체 포함 시 중복 표기"
+              avgSpendRate={ctPlusActive.avgSpendRate}
+              href="/campaign/ct-plus/status"
+              loading={masterLoading}
+              emptyHint={
+                advertiserList.length === 0 || agencyList.length === 0
+                  ? '광고주·대행사 등록 후 캠페인을 추가하세요'
+                  : '집행 중 캠페인이 없습니다'
+              }
+            />
+            <DomainStatusCard
+              title="CT"
+              subtitle="자체 DA (DISPLAY/VIDEO/PARTNERS)"
+              campaignCount={ctActive.count}
+              distribution={ctActive.distribution}
+              avgSpendRate={ctActive.avgSpendRate}
+              href="/campaign/ct/analysis"
+              loading={motivCt.loading}
+              error={motivCt.error}
+            />
+            <DomainStatusCard
+              title="CTV"
+              subtitle="Connected TV"
+              campaignCount={ctvActive.count}
+              distribution={ctvActive.distribution}
+              avgSpendRate={ctvActive.avgSpendRate}
+              href="/campaign/ct-ctv/analysis"
+              loading={motivCtv.loading}
+              error={motivCtv.error}
+            />
+          </div>
         </div>
 
       </main>
