@@ -45,14 +45,22 @@ const f = (n: number) => Math.round(n).toLocaleString('ko-KR')
 function fmtMonth(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 
 export default function CtAnalysisPage() {
+  // 조회 모드: 월별 또는 일자 범위. 두 state 모두 유지하여 모드 전환 시 값 보존.
+  const [dateMode, setDateMode]         = useState<'month' | 'range'>('month')
   const [month, setMonth]               = useState<string>(fmtMonth(new Date()))
+  const [rangeStart, setRangeStart]     = useState<string>('')
+  const [rangeEnd, setRangeEnd]         = useState<string>('')
   const [category, setCategory]         = useState<Category>('total')
   const [showSettings, setShowSettings] = useState(false)
   const [settings, setSettings]         = useState<AnalysisSettings>(DEFAULT_ANALYSIS_SETTINGS)
 
   // ── 데이터 소스 ──────────────────────────────────────────
   const { agencies, advertisers, operators } = useMasterData()
-  const motiv = useMotivSettlementCampaignsByProduct('CT', month)
+  const motiv = useMotivSettlementCampaignsByProduct('CT',
+    dateMode === 'range' && rangeStart && rangeEnd
+      ? { dateRange: { start: rangeStart, end: rangeEnd } }
+      : { month },
+  )
   const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
   const { byId: adAccountById }   = useMotivAdAccounts()
   const { byId: motivAgencyById } = useMotivAgencies()
@@ -113,15 +121,18 @@ export default function CtAnalysisPage() {
   const totalBudget = useMemo(() => filtered.reduce((a, c) => a + c.budget, 0), [filtered])
   const showVTR = category === 'video'
 
-  // P3: 일별 비용 추세 — month 의 시작·종료일을 startDate/endDate 로
+  // P3: 일별 비용 추세 — 모드별 startDate/endDate
   const monthRange = useMemo(() => {
+    if (dateMode === 'range') {
+      return { start: rangeStart || '', end: rangeEnd || '' }
+    }
     const [y, m] = month.split('-').map(Number)
     if (!y || !m) return { start: '', end: '' }
     const first = new Date(y, m - 1, 1)
     const last  = new Date(y, m,     0)
     const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     return { start: fmt(first), end: fmt(last) }
-  }, [month])
+  }, [dateMode, month, rangeStart, rangeEnd])
   const filteredCampaignIds = useMemo(() => filtered.map(s => s.motivId), [filtered])
   const statsDaily = useMotivStatsDaily({
     scope: { campaignIds: filteredCampaignIds },
@@ -147,12 +158,49 @@ export default function CtAnalysisPage() {
             <p className="text-xs text-gray-400 mt-0.5">자체 DA 매체 (DISPLAY / VIDEO / PARTNERS) · MOTIV API 실시간</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <input
-              type="month"
-              value={month}
-              onChange={e => setMonth(e.target.value)}
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
-            />
+            {/* 조회 모드 토글 — 월별 / 일자 범위 */}
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
+              <button
+                type="button"
+                onClick={() => setDateMode('month')}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${
+                  dateMode === 'month' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >월별</button>
+              <button
+                type="button"
+                onClick={() => setDateMode('range')}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${
+                  dateMode === 'range' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >일자 범위</button>
+            </div>
+            {dateMode === 'month' ? (
+              <input
+                type="month"
+                value={month}
+                onChange={e => setMonth(e.target.value)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
+              />
+            ) : (
+              <div className="flex items-center gap-1">
+                <input
+                  type="date"
+                  value={rangeStart}
+                  max={rangeEnd || undefined}
+                  onChange={e => setRangeStart(e.target.value)}
+                  className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
+                />
+                <span className="text-gray-300 text-xs">~</span>
+                <input
+                  type="date"
+                  value={rangeEnd}
+                  min={rangeStart || undefined}
+                  onChange={e => setRangeEnd(e.target.value)}
+                  className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
+                />
+              </div>
+            )}
             {yesterdayAvailable ? (
               <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11px] text-green-700 font-medium">
                 전일 스냅샷 {snapshot?.date} 연결됨
@@ -343,6 +391,7 @@ export default function CtAnalysisPage() {
             onUpsertAssignment={upsertAssignment}
             adAccountById={adAccountById}
             motivAgencyById={motivAgencyById}
+            directMotivDisplay  /* 정산 시 Motiv API 광고주/대행사 직접 표시 — 추후 매칭 추가 예정 */
           />
         </section>
       </main>

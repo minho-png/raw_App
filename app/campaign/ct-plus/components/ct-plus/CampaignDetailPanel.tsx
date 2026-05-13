@@ -2,7 +2,7 @@
 import React, { useMemo } from "react"
 import { useRouter } from "next/navigation"
 import {
-  LineChart, Line,
+  LineChart, Line, BarChart, Bar, ReferenceLine, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
 } from "recharts"
 import {
@@ -140,6 +140,52 @@ export function CampaignDetailPanel({
     }
     return out
   }, [campaign.mediaBudgets, byMedia])
+
+  // ── KPI 표 / 차트용 가공 데이터 ────────────────────────
+  // 매체 × KPI 매트릭스. 사용자 요청: 상단 표(KPI 수치) + 하단 세로 막대(달성률)
+  type KpiMetric = 'CTR' | 'VTR' | 'CPC' | 'CPM'
+  const KPI_METRICS: KpiMetric[] = ['CTR', 'VTR', 'CPC', 'CPM']
+  const kpiMatrix = useMemo(() => {
+    const byMediaMap = new Map<string, Partial<Record<KpiMetric, KpiRow>>>()
+    for (const r of kpiRowsByMedia) {
+      const m = byMediaMap.get(r.media) ?? {}
+      m[r.metric] = r
+      byMediaMap.set(r.media, m)
+    }
+    return [...byMediaMap.entries()]
+      .map(([media, kpis]) => ({ media, kpis }))
+      .sort((a, b) => a.media.localeCompare(b.media))
+  }, [kpiRowsByMedia])
+
+  // 어느 KPI 가 어느 매체에든 한 번이라도 등장하면 표 컬럼으로 노출
+  const visibleKpiCols = useMemo<KpiMetric[]>(
+    () => KPI_METRICS.filter(k => kpiMatrix.some(r => r.kpis[k])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [kpiMatrix],
+  )
+
+  // 막대 차트 데이터 — { media, CTR, VTR, CPC, CPM } 각 값은 달성률(%).
+  // outlier(200% 초과) 는 시각적으로 200 으로 클램프하고 라벨에 실제값 표시.
+  const CHART_MAX = 200
+  const chartData = useMemo(
+    () => kpiMatrix.map(({ media, kpis }) => {
+      const row: Record<string, string | number | null> = { media }
+      for (const k of KPI_METRICS) {
+        const r = kpis[k]
+        row[k] = r && r.rate !== null ? r.rate : null
+      }
+      return row
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [kpiMatrix],
+  )
+
+  const KPI_COLOR: Record<KpiMetric, string> = {
+    CTR: '#3b82f6',  // blue
+    VTR: '#a855f7',  // violet
+    CPC: '#10b981',  // green
+    CPM: '#f59e0b',  // amber
+  }
 
   const totals   = getCampaignTotals(campaign)
   const progress = getCampaignProgress(campaign.startDate, campaign.endDate)
@@ -359,58 +405,89 @@ export function CampaignDetailPanel({
             </div>
           )}
 
-          {/* 매체별 KPI 목표 달성률 — CTR/VTR/CPC/CPM (목표 설정된 항목만) */}
-          {kpiRowsByMedia.length > 0 && (
-            <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">매체별 KPI 목표 달성률</h3>
-              <div className="space-y-3">
-                {Object.entries(
-                  kpiRowsByMedia.reduce<Record<string, KpiRow[]>>((acc, r) => {
-                    (acc[r.media] ??= []).push(r); return acc
-                  }, {})
-                ).map(([media, rows]) => (
-                  <div key={media}>
-                    <div className="mb-1.5 flex items-center gap-1.5">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: mColor(media) }} />
-                      <span className="text-[11px] font-semibold" style={{ color: mColor(media) }}>{media}</span>
-                    </div>
-                    <div className="space-y-1.5 pl-3">
-                      {rows.map(r => {
-                        const barW = r.rate === null ? 0 : Math.min(r.rate, 100)
-                        const noData = r.rate === null
-                        const targetTxt = r.unit === '원' ? `₩${fmt(r.target)}` : `${r.target.toFixed(2)}%`
-                        const actualTxt = noData ? '실적 없음'
-                          : r.unit === '원' ? `₩${fmt(r.actual)}` : `${r.actual.toFixed(2)}%`
-                        return (
-                          <div key={r.metric}>
-                            <div className="flex items-baseline justify-between text-[11px] mb-0.5">
-                              <span className="font-semibold text-gray-700 w-10 shrink-0">{r.metric}</span>
-                              <span className="text-gray-400 flex-1">
-                                목표 <span className="text-gray-600 font-medium">{targetTxt}</span>
-                                <span className="mx-1.5 text-gray-300">·</span>
-                                실적 <span className="text-blue-700 font-medium">{actualTxt}</span>
-                              </span>
-                              <span className={`font-bold tabular-nums w-12 text-right ${noData ? 'text-gray-300' : r.good ? 'text-green-600' : 'text-orange-500'}`}>
+          {/* 매체별 KPI — 상단: 수치 매트릭스 표 / 하단: 매체별 세로 막대 차트 */}
+          {kpiMatrix.length > 0 && (
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">매체별 KPI 목표 달성률</h3>
+
+              {/* ── 상단: KPI 수치 매트릭스 표 ───────────────────── */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-600">매체</th>
+                      {visibleKpiCols.map(k => (
+                        <th key={k} className="px-3 py-2 text-right font-semibold" style={{ color: KPI_COLOR[k] }}>
+                          {k}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {kpiMatrix.map(({ media, kpis }) => (
+                      <tr key={media} className="hover:bg-gray-50">
+                        <td className="px-3 py-2" style={{ borderLeft: `3px solid ${mColor(media)}` }}>
+                          <span className="font-medium" style={{ color: mColor(media) }}>{media}</span>
+                        </td>
+                        {visibleKpiCols.map(k => {
+                          const r = kpis[k]
+                          if (!r) return <td key={k} className="px-3 py-2 text-right text-gray-300">—</td>
+                          const noData = r.rate === null
+                          const targetTxt = r.unit === '원' ? `₩${fmt(r.target)}` : `${r.target.toFixed(2)}%`
+                          const actualTxt = noData ? '실적 없음'
+                            : r.unit === '원' ? `₩${fmt(r.actual)}` : `${r.actual.toFixed(2)}%`
+                          return (
+                            <td key={k} className="px-3 py-2 text-right">
+                              <div className="text-[10px] text-gray-400">목표 {targetTxt}</div>
+                              <div className="font-medium text-blue-700">{actualTxt}</div>
+                              <div className={`text-[10px] font-semibold ${noData ? 'text-gray-300' : r.good ? 'text-green-600' : 'text-orange-500'}`}>
                                 {noData ? '-' : `${r.rate}%`}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="h-1.5 flex-1 rounded-full bg-gray-100 overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all ${noData ? '' : r.good ? 'bg-green-400' : 'bg-orange-400'}`}
-                                  style={{ width: `${barW}%` }}
-                                />
+                                <span className="ml-1 text-[9px] font-normal text-gray-400">{r.diffLabel}</span>
                               </div>
-                              <span className={`text-[10px] tabular-nums w-24 text-right ${noData ? 'text-gray-300' : r.good ? 'text-green-600' : 'text-orange-500'}`}>
-                                {r.diffLabel}
-                              </span>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ── 하단: 매체별 세로 막대 차트 (달성률 %) ───────── */}
+              <div className="pt-2 border-t border-gray-100">
+                <div className="flex items-baseline justify-between mb-2">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">달성률 차트</p>
+                  <p className="text-[9px] text-gray-300">100% 기준 · 200% 초과는 200 으로 표시</p>
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                    <XAxis dataKey="media" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                    <YAxis
+                      domain={[0, CHART_MAX]}
+                      tickFormatter={v => `${v}%`}
+                      tick={{ fontSize: 9, fill: '#9ca3af' }}
+                      axisLine={false} tickLine={false} width={36}
+                    />
+                    <Tooltip
+                      formatter={(v) => v == null ? '—' : `${Number(v).toFixed(1)}%`}
+                      contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                    />
+                    <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10 }} />
+                    <ReferenceLine y={100} stroke="#9ca3af" strokeDasharray="3 3" strokeWidth={1} />
+                    {visibleKpiCols.map(k => (
+                      <Bar key={k} dataKey={k} name={k} radius={[3, 3, 0, 0]} maxBarSize={32}>
+                        {chartData.map((row, idx) => {
+                          const v = row[k] as number | null
+                          const isGood = v !== null && v >= 100
+                          // 100% 미달은 KPI 색의 옅은 톤, 100% 이상은 진한 톤. outlier 시각 클램프.
+                          const color = v === null ? '#e5e7eb' : isGood ? KPI_COLOR[k] : `${KPI_COLOR[k]}88`
+                          return <Cell key={idx} fill={color} />
+                        })}
+                      </Bar>
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </div>
           )}
