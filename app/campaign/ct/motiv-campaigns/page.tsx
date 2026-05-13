@@ -149,6 +149,7 @@ export default function MotivCampaignsPage() {
           onUpsertAssignment={upsertAssignment}
           adAccountById={adAccountById}
           motivAgencyById={motivAgencyById}
+          directMotivDisplay  /* 정산 시 Motiv API 광고주/대행사 직접 표시 — 추후 매칭 추가 예정 */
         />
       </section>
     </div>

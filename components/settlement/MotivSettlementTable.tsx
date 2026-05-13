@@ -20,6 +20,15 @@ interface Props {
   adAccountById?: Map<number, MotivAdAccount>
   /** Motiv agency.id → MotivAgency (adaccount.agency_id 역참조용). 없으면 fallback. */
   motivAgencyById?: Map<number, MotivAgency>
+  /**
+   * 정산 시 Motiv API 값(adAccount.name, agency.name) 을 주 표시로 노출.
+   * true 면:
+   *   - 셀 최상단에 API 이름 굵게 표시
+   *   - 보조 라벨 'API: ...' 을 매핑 유무와 무관하게 항상 표시
+   *   - 드롭다운은 유지 — 추후 매칭 로직 재활성화 시 사용자가 수동 매칭 가능
+   * false (기본) 면 기존 동작 — 매핑된 내부 Agency 가 선택값으로 표시.
+   */
+  directMotivDisplay?: boolean
 }
 
 function fmt(n: number) { return n.toLocaleString("ko-KR") }
@@ -36,6 +45,7 @@ export function MotivSettlementTable({
   assignments, onUpsertAssignment,
   adAccountById,
   motivAgencyById,
+  directMotivDisplay = false,
 }: Props) {
   // 내부 Agency 정규화 이름 → Agency.id  (Motiv 자동 매칭에 사용)
   const internalAgencyByNormalized = useMemo(() => {
@@ -423,6 +433,12 @@ export function MotivSettlementTable({
                       )}
                     </td>
                     <td className="px-3 py-2">
+                      {/* directMotivDisplay=true 시 API 이름을 주 표시로 끌어올림. 추후 매칭 추가 시 false 로 복구. */}
+                      {directMotivDisplay && apiAgencyName && (
+                        <p className="mb-1 text-xs font-semibold text-gray-800 truncate" title={`Motiv API: ${apiAgencyName}`}>
+                          {apiAgencyName}
+                        </p>
+                      )}
                       <select
                         value={a?.agencyId ?? ''}
                         onChange={e => onUpsertAssignment({ ...(a ?? {}), motivCampaignId: c.id, agencyId: e.target.value || undefined })}
@@ -431,13 +447,18 @@ export function MotivSettlementTable({
                         <option value="">미지정</option>
                         {agencies.map(ag => <option key={ag.id} value={ag.id}>{ag.name}</option>)}
                       </select>
-                      {!a?.agencyId && apiAgencyName && (
+                      {!directMotivDisplay && !a?.agencyId && apiAgencyName && (
                         <p className="mt-0.5 text-[9px] text-purple-600 truncate" title={`Motiv 기본값: ${apiAgencyName}`}>
                           API: {apiAgencyName}
                         </p>
                       )}
                     </td>
                     <td className="px-3 py-2">
+                      {directMotivDisplay && apiAdvName && (
+                        <p className="mb-1 text-xs font-semibold text-gray-800 truncate" title={`Motiv API: ${apiAdvName}`}>
+                          {apiAdvName}
+                        </p>
+                      )}
                       <select
                         value={a?.advertiserId ?? ''}
                         onChange={e => onUpsertAssignment({ ...(a ?? {}), motivCampaignId: c.id, advertiserId: e.target.value || undefined })}
@@ -448,7 +469,7 @@ export function MotivSettlementTable({
                           .filter(ad => !a?.agencyId || ad.agencyId === a.agencyId)
                           .map(ad => <option key={ad.id} value={ad.id}>{ad.name}</option>)}
                       </select>
-                      {!a?.advertiserId && apiAdvName && (
+                      {!directMotivDisplay && !a?.advertiserId && apiAdvName && (
                         <p className="mt-0.5 text-[9px] text-purple-600 truncate" title={`Motiv 기본값: ${apiAdvName}`}>
                           API: {apiAdvName}
                         </p>
