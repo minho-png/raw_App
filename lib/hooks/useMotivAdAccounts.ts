@@ -39,6 +39,14 @@ export function useMotivAdAccounts(enabled = true) {
       const byId = new Map<number, MotivAdAccount>(data.map(a => [a.id, a]))
       // 전체 실패 케이스 — errors 만 있고 data 가 빈 경우 → error 상태로
       const error = data.length === 0 && result.errors.length > 0 ? result.errors[0] : null
+
+      if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+        console.info('[useMotivAdAccounts]', {
+          loaded: data.length, total: result.total, partial: result.partial,
+          errors: result.errors, firstId: data[0]?.id, lastId: data[data.length - 1]?.id,
+        })
+      }
+
       setState({ data, byId, loading: false, error, partial: result.partial })
     })()
     return () => { cancelled = true }

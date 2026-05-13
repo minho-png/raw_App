@@ -51,8 +51,14 @@ export async function fetchAllPages<T>({
   }
 
   const firstData = firstJson.data ?? []
-  const lastPage  = firstJson.meta?.last_page ?? 1
-  const total     = firstJson.meta?.total
+  const metaLastPage = firstJson.meta?.last_page
+  const total        = firstJson.meta?.total
+
+  // meta 가 응답에 없는 경우 (Laravel paginator 가 아닌 단순 배열 반환 등) 의 fallback:
+  //   첫 페이지가 perPage 만큼 가득 차면 다음 페이지를 시도해 보고, 빈 응답이 나올 때까지 진행.
+  //   meta 가 있으면 그 값을 신뢰.
+  const lastPage = metaLastPage ?? (firstData.length >= perPage ? maxPages : 1)
+  const usingMetaFallback = metaLastPage == null && firstData.length >= perPage
 
   if (lastPage <= 1) return { data: firstData, partial: false, errors: [], total }
 
@@ -66,6 +72,30 @@ export async function fetchAllPages<T>({
   }
 
   // 3) 2~effectiveLast 병렬 호출 (Promise.allSettled — 부분 실패 허용)
+  //    meta 없는 fallback 모드에선 빈 응답이 나올 때까지 순차 호출 (조기 종료 위해)
+  const all: T[] = [...firstData]
+  if (usingMetaFallback) {
+    for (let p = 2; p <= effectiveLast; p++) {
+      try {
+        const res = await fetch(buildUrl(p), { cache: 'no-store' })
+        if (!res.ok) {
+          errors.push(`page=${p} HTTP ${res.status}`)
+          break
+        }
+        const json = (await res.json()) as PaginatedResponseShape<T>
+        const rows = json.data ?? []
+        if (rows.length === 0) break  // 빈 응답 = 끝
+        for (const row of rows) all.push(row)
+        if (rows.length < perPage) break  // 마지막 페이지 = 끝
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        errors.push(`page=${p}: ${msg}`)
+        break
+      }
+    }
+    return { data: all, partial: errors.length > 0 || exceeded, errors, total }
+  }
+
   const pageNums = Array.from({ length: effectiveLast - 1 }, (_, i) => i + 2)
   const results = await Promise.allSettled(
     pageNums.map(async p => {
@@ -75,7 +105,6 @@ export async function fetchAllPages<T>({
     }),
   )
 
-  const all: T[] = [...firstData]
   results.forEach((r, i) => {
     if (r.status === 'fulfilled') {
       for (const row of r.value.data ?? []) all.push(row)

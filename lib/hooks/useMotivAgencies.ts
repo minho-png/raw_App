@@ -51,10 +51,11 @@ export function useMotivAgencies(enabled = true) {
     }
     let cancelled = false
     ;(async () => {
+      // status=Y 필터 제거: 일부 광고계정이 비활성(status=N) 대행사를 참조하는 경우
+      // byId 매핑 실패로 '—' 가 떨어지던 문제 → 전체 대행사 로드.
       const result = await fetchAllPages<MotivAgency>({
         endpoint: '/api/motiv/agencies',
         perPage: 200,
-        extraParams: { status: 'Y' },
       })
       if (cancelled) return
       const data = result.data
@@ -65,6 +66,15 @@ export function useMotivAgencies(enabled = true) {
         if (key) byNormalizedName.set(key, a)
       }
       const error = data.length === 0 && result.errors.length > 0 ? result.errors[0] : null
+
+      // dev 환경 진단 로그 — 어떤 대행사가 적재됐는지 가시화
+      if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+        console.info('[useMotivAgencies]', {
+          loaded: data.length, total: result.total, partial: result.partial,
+          errors: result.errors, firstId: data[0]?.id, lastId: data[data.length - 1]?.id,
+        })
+      }
+
       setState({ data, byId, byNormalizedName, loading: false, error, partial: result.partial })
     })()
     return () => { cancelled = true }
