@@ -334,8 +334,8 @@ export default function CtPlusManagePage() {
           {allCsvNames.length === 0 && (
             <div className="border-t border-gray-100 px-4 py-6 text-center">
               <p className="text-xs text-gray-400">저장된 데이터가 없습니다</p>
-              <Link href="/campaign/ct-plus/daily" className="mt-2 inline-block text-[11px] text-blue-600 hover:underline">
-                데이터 업로드 →
+              <Link href="/campaign/ct-plus/status" className="mt-2 inline-block text-[11px] text-blue-600 hover:underline">
+                캠페인 현황에서 CSV 업로드 →
               </Link>
             </div>
           )}
@@ -610,7 +610,7 @@ export default function CtPlusManagePage() {
             {filteredUploadReports.length === 0 ? (
               <div className="flex items-center justify-center py-10 text-sm text-gray-400">
                 {reports.length === 0 ? (
-                  <span>저장된 데이터가 없습니다. <Link href="/campaign/ct-plus/daily" className="text-blue-600 hover:underline">데이터 업로드 →</Link></span>
+                  <span>저장된 데이터가 없습니다. <Link href="/campaign/ct-plus/status" className="text-blue-600 hover:underline">캠페인 현황에서 CSV 업로드 →</Link></span>
                 ) : '선택한 날짜 범위에 해당하는 데이터가 없습니다.'}
               </div>
             ) : (
