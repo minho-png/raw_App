@@ -131,25 +131,44 @@ export default function CampaignDetailPage() {
     ? +(totalA.spend/totals.totalSettingCost*100).toFixed(1) : 0
   const sc = spendRateStyle(rawSpendRate)
 
-  // KPI 달성률 (목표 있는 매체만)
-  const kpiRows = useMemo(()=>{
-    if(!campaign||!totals) return []
-    const rows: {label:string;target:number|null;actual:number;unit:string;lowerBetter?:boolean}[] = [
-      {label:"Budget",    target:totals.totalBudget||null, actual:totalA.spend, unit:"원"},
-      {label:"Impression",target:null,                     actual:totalA.impressions, unit:""},
-      {label:"Click",     target:null,                     actual:totalA.clicks, unit:""},
+  // KPI 달성률 — 매체별로 분리. 이전엔 매체 평균 목표 vs 캠페인 합계 실적이라
+  // 매체 간 차이를 가릴 수 없었음 → 매체별 행으로 재구성.
+  type KpiRow = {
+    media: string | null   // null = 전체 합계 (Budget/Impression/Click)
+    label: string
+    target: number | null
+    actual: number
+    unit: string
+    lowerBetter?: boolean
+  }
+  const kpiRows = useMemo<KpiRow[]>(() => {
+    if (!campaign || !totals) return []
+    const rows: KpiRow[] = [
+      { media: null, label: 'Budget',     target: totals.totalBudget || null, actual: totalA.spend,        unit: '원' },
+      { media: null, label: 'Impression', target: null,                       actual: totalA.impressions,  unit: '' },
+      { media: null, label: 'Click',      target: null,                       actual: totalA.clicks,       unit: '' },
     ]
-    // 매체별 KPI 목표 병합
-    const ctrTargets = campaign.mediaBudgets.map(mb=>mb.ctrTarget).filter((v):v is number=>v!=null)
-    const cpcTargets = campaign.mediaBudgets.map(mb=>mb.cpcTarget).filter((v):v is number=>v!=null)
-    const cpmTargets = campaign.mediaBudgets.map(mb=>mb.cpmTarget).filter((v):v is number=>v!=null)
-    const vtrTargets = campaign.mediaBudgets.map(mb=>mb.vtrTarget).filter((v):v is number=>v!=null)
-    if(ctrTargets.length>0) rows.push({label:"CTR",target:+(ctrTargets.reduce((a,b)=>a+b,0)/ctrTargets.length).toFixed(3),actual:totalA.ctr,unit:"%"})
-    if(vtrTargets.length>0) rows.push({label:"VTR",target:+(vtrTargets.reduce((a,b)=>a+b,0)/vtrTargets.length).toFixed(3),actual:totalA.vtr,unit:"%"})
-    if(cpcTargets.length>0) rows.push({label:"CPC",target:Math.round(cpcTargets.reduce((a,b)=>a+b,0)/cpcTargets.length),actual:totalA.cpc,unit:"원",lowerBetter:true})
-    if(cpmTargets.length>0) rows.push({label:"CPM",target:Math.round(cpmTargets.reduce((a,b)=>a+b,0)/cpmTargets.length),actual:totalA.cpm,unit:"원",lowerBetter:true})
+    // 매체별 raw 집계 — 한 번만 계산
+    const aggByMedia = new Map<string, ReturnType<typeof aggRows>>()
+    for (const mb of campaign.mediaBudgets) {
+      aggByMedia.set(mb.media, aggRows(filteredRows.filter(r => r.media === mb.media)))
+    }
+    // 매체별 KPI 행 — 매체에 target 이 설정된 KPI 만 노출
+    for (const mb of campaign.mediaBudgets) {
+      const a = aggByMedia.get(mb.media)
+      if (!a) continue
+      // 매체 자체 Budget 도 매체별 행으로 추가 (선택)
+      const mt = getMediaTotals(mb)
+      if (mt.totalSettingCost > 0) {
+        rows.push({ media: mb.media, label: 'Budget', target: mt.totalSettingCost, actual: a.spend, unit: '원' })
+      }
+      if (mb.ctrTarget != null) rows.push({ media: mb.media, label: 'CTR', target: +mb.ctrTarget.toFixed(3), actual: a.ctr, unit: '%' })
+      if (mb.vtrTarget != null) rows.push({ media: mb.media, label: 'VTR', target: +mb.vtrTarget.toFixed(3), actual: a.vtr, unit: '%' })
+      if (mb.cpcTarget != null) rows.push({ media: mb.media, label: 'CPC', target: Math.round(mb.cpcTarget), actual: a.cpc, unit: '원', lowerBetter: true })
+      if (mb.cpmTarget != null) rows.push({ media: mb.media, label: 'CPM', target: Math.round(mb.cpmTarget), actual: a.cpm, unit: '원', lowerBetter: true })
+    }
     return rows
-  },[campaign,totals,totalA])
+  }, [campaign, totals, totalA, filteredRows])
 
   // 요약 행 (선택 매체 내 캠페인별)
   const summaryRows = useMemo(()=>{
@@ -429,6 +448,7 @@ export default function CampaignDetailPage() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50 border-b border-gray-100"><tr>
+                        <th className={thCls}>매체</th>
                         <th className={thCls}>구분</th>
                         <th className={thRCls}>목표</th>
                         <th className={thRCls}>실적</th>
@@ -473,6 +493,11 @@ export default function CampaignDetailPage() {
                           }
                           return(
                             <tr key={i} className="hover:bg-gray-50">
+                              <td className={tdCls} style={r.media ? { borderLeft: `3px solid ${mColor(r.media)}` } : undefined}>
+                                {r.media
+                                  ? <span className="font-medium" style={{ color: mColor(r.media) }}>{r.media}</span>
+                                  : <span className="text-gray-400">전체</span>}
+                              </td>
                               <td className={`${tdCls} font-semibold text-gray-800 w-24`}>{r.label}</td>
                               <td className={tdRCls}>{hasTarget?`${fmt(Math.round(r.target!))}${r.unit}`:"-"}</td>
                               <td className={`${tdRCls} font-medium text-blue-700`}>{fmt(Math.round(r.actual))}{r.unit}</td>
