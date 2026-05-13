@@ -20,6 +20,9 @@ import {
   calcCTR, calcSR, calcPR, calcVTR,
   type UnifiedCampaignSnapshot,
 } from "@/lib/motivApi/statsMapper"
+import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
+import { useMotivStatsDaily } from "@/lib/hooks/useMotivStatsDaily"
+import { DailyCostChart } from "@/components/analysis/DailyCostChart"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 
 const f = (n: number) => Math.round(n).toLocaleString('ko-KR')
@@ -41,16 +44,21 @@ export default function CtCtvAnalysisPage() {
   const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot()
   const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
 
-  // MotivCampaign → UnifiedCampaignSnapshot
+  // MotivCampaign → UnifiedCampaignSnapshot (P1: 광고주 매핑 포함)
   const snapshots: UnifiedCampaignSnapshot[] = useMemo(() => {
     return motiv.data
       .filter(c => !isExcludedCampaign(c.title ?? ''))
       .map(c => {
         const adAccount = adAccountById.get(c.adaccount_id)
         const motivAgency = adAccount?.agency_id ? motivAgencyById.get(adAccount.agency_id) : undefined
-        const agencyName = motivAgency?.name ?? '—'
+        const agencyName = getAgencyDisplayName(motivAgency)
+        const advertiserName = getAdvertiserName(adAccount)
         const yStats = yesterdayStats.get(c.id)
-        return motivCampaignToSnapshot(c, agencyName, yStats ? motivStatsToMetrics(yStats) : undefined)
+        return motivCampaignToSnapshot(
+          c, agencyName,
+          yStats ? motivStatsToMetrics(yStats) : undefined,
+          advertiserName,
+        )
       })
   }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats])
 
@@ -58,6 +66,23 @@ export default function CtCtvAnalysisPage() {
   const sumT        = useMemo(() => aggregateMetrics(snapshots.map(s => s.today)),     [snapshots])
   const sumY        = useMemo(() => aggregateMetrics(snapshots.map(s => s.yesterday)), [snapshots])
   const totalBudget = useMemo(() => snapshots.reduce((a, c) => a + c.budget, 0), [snapshots])
+
+  // P3: 일별 비용 추세
+  const monthRange = useMemo(() => {
+    const [y, m] = month.split('-').map(Number)
+    if (!y || !m) return { start: '', end: '' }
+    const first = new Date(y, m - 1, 1)
+    const last  = new Date(y, m,     0)
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return { start: fmt(first), end: fmt(last) }
+  }, [month])
+  const snapshotCampaignIds = useMemo(() => snapshots.map(s => s.motivId), [snapshots])
+  const statsDaily = useMotivStatsDaily({
+    scope: { campaignIds: snapshotCampaignIds },
+    startDate: monthRange.start,
+    endDate:   monthRange.end,
+    enabled:   snapshotCampaignIds.length > 0,
+  })
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -144,6 +169,27 @@ export default function CtCtvAnalysisPage() {
           <SummaryCard label="총 매체비용" value={`₩${f(sumT.mediaCost)}`} />
         </section>
 
+        {/* P2: 비용 분해 — MOTIV stats 기준 */}
+        <section className="rounded-xl border border-gray-200 bg-white px-5 py-4">
+          <div className="flex items-baseline justify-between mb-3">
+            <h3 className="text-xs font-semibold text-gray-700">비용 분해</h3>
+            <span className="text-[10px] text-gray-400">MOTIV stats 기준</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <CostBreakdownCell label="매체비"      value={sumT.mediaCost} total={sumT.spend} tone="blue"   />
+            <CostBreakdownCell label="대행 수수료" value={sumT.agencyFee} total={sumT.spend} tone="purple" />
+            <CostBreakdownCell label="DMP 수수료"  value={sumT.dmpFee}    total={sumT.spend} tone="amber"  />
+            <CostBreakdownCell label="이익"
+              value={Math.max(0, sumT.spend - sumT.mediaCost - sumT.agencyFee - sumT.dmpFee)}
+              total={sumT.spend} tone="green" />
+          </div>
+        </section>
+
+        {/* P3: 일별 비용 추세 (MOTIV /stats/daily) */}
+        <section>
+          <DailyCostChart data={statsDaily.data} loading={statsDaily.loading} error={statsDaily.error} />
+        </section>
+
         {/* 캠페인 테이블 */}
         <section className="rounded-xl border border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-5 py-3">
@@ -171,6 +217,7 @@ export default function CtCtvAnalysisPage() {
                   <tr className="text-gray-500">
                     <th className="px-3 py-2 text-left font-medium">상태</th>
                     <th className="px-3 py-2 text-left font-medium">캠페인</th>
+                    <th className="px-3 py-2 text-left font-medium">광고주</th>
                     <th className="px-3 py-2 text-left font-medium">대행사</th>
                     <th className="px-3 py-2 text-right font-medium">예산</th>
                     <th className="px-3 py-2 text-right font-medium">소진</th>
@@ -188,6 +235,7 @@ export default function CtCtvAnalysisPage() {
                       <tr key={c.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2"><AlertIcon msgs={alerts} /></td>
                         <td className="px-3 py-2 font-medium text-gray-800">{c.name}</td>
+                        <td className="px-3 py-2 text-gray-700 font-medium">{c.advertiser}</td>
                         <td className="px-3 py-2 text-gray-600">{c.agency}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.budget)}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.today.spend)}</td>
@@ -222,6 +270,36 @@ export default function CtCtvAnalysisPage() {
           />
         </section>
       </main>
+    </div>
+  )
+}
+
+// P2: 비용 분해 셀 — 금액 + 총소진 대비 비율(%) + 진행바
+function CostBreakdownCell({
+  label, value, total, tone,
+}: {
+  label: string
+  value: number
+  total: number
+  tone: 'blue' | 'purple' | 'amber' | 'green'
+}) {
+  const pct = total > 0 ? Math.round((value / total) * 1000) / 10 : 0
+  const barCls = tone === 'blue' ? 'bg-blue-400'
+    : tone === 'purple' ? 'bg-purple-400'
+    : tone === 'amber'  ? 'bg-amber-400'
+    : 'bg-green-400'
+  const textCls = tone === 'blue' ? 'text-blue-700'
+    : tone === 'purple' ? 'text-purple-700'
+    : tone === 'amber'  ? 'text-amber-700'
+    : 'text-green-700'
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5">
+      <p className="text-[10px] text-gray-500 font-medium mb-0.5">{label}</p>
+      <p className={`text-sm font-bold tabular-nums ${textCls}`}>₩{value.toLocaleString('ko-KR')}</p>
+      <div className="mt-1.5 h-1 rounded-full bg-gray-200 overflow-hidden">
+        <div className={`h-full rounded-full ${barCls}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+      <p className="mt-0.5 text-[10px] text-gray-400 text-right tabular-nums">{pct.toFixed(1)}%</p>
     </div>
   )
 }

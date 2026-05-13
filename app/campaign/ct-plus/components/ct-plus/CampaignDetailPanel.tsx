@@ -154,10 +154,12 @@ export function CampaignDetailPanel({
   const progress = getCampaignProgress(campaign.startDate, campaign.endDate)
   const dday     = getDday(campaign.endDate)
 
-  // 소진율: raw CSV 데이터 기반 (1차 샘조)
-  const rawNetTotal = [...byMedia.values()].reduce((s, m) => s + m.netAmount, 0)
+  // 소진율: raw CSV 데이터 기반.
+  // R1 통일: 상세 분석 페이지(status/[id]/page.tsx)의 aggRows().spend(=executionAmount 합)
+  //          기준으로 분자를 executionAmount 합으로 변경 — 모달/상세 KPI 정합 확보.
+  const rawExecTotal = [...byMedia.values()].reduce((s, m) => s + m.executionAmount, 0)
   const rawSpendRate = totals.totalSettingCost > 0
-    ? Math.round((rawNetTotal / totals.totalSettingCost) * 1000) / 10
+    ? Math.round((rawExecTotal / totals.totalSettingCost) * 1000) / 10
     : 0
   const sc  = spendRateStyle(rawSpendRate)
   const lag = progress - rawSpendRate
@@ -218,10 +220,10 @@ export function CampaignDetailPanel({
           <div className="grid grid-cols-2 gap-2.5">
             <DetailKPICard label="부킹 금액"  value={fmt(totals.totalBudget) + "원"} />
             <DetailKPICard label="세팅 금액"  value={fmt(totals.totalSettingCost) + "원"} />
-            <DetailKPICard label="집행 금액 (CSV)"  value={fmt(rawNetTotal) + "원"}
+            <DetailKPICard label="집행 금액 (CSV)"  value={fmt(rawExecTotal) + "원"}
               color={rawSpendRate > 100 ? "red" : "blue"} />
             <DetailKPICard label="미소진 잔액"
-              value={fmt(Math.max(0, totals.totalSettingCost - rawNetTotal)) + "원"} />
+              value={fmt(Math.max(0, totals.totalSettingCost - rawExecTotal)) + "원"} />
           </div>
 
           {/* 진행률 vs 소진율 */}

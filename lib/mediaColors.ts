@@ -10,6 +10,8 @@ export const MEDIA_COLORS: Record<string, string> = {
   "카카오모먼트": "#FEE500",
   "Google":       "#4285F4",
   "META":         "#1877F2",
+  // CT/CTV 매체 — 공식 디자인 시스템 미공개로 임시 색 (운영팀 확인 후 보정).
+  "CrossTarget":  "#FF6B35",
 }
 
 const FALLBACK = "#94a3b8" // slate-400

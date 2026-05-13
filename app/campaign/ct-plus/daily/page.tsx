@@ -1,10 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback, Suspense } from "react"
-import DailyDataTable from "@/components/ct-plus/DailyDataTable"
 import type { RawRow } from "@/lib/rawDataParser"
-import { MEDIA_CONFIG } from "@/lib/reportTypes"
-import type { MediaType } from "@/lib/reportTypes"
 import { parseUnifiedCsv } from "@/lib/unifiedCsvParser"
 import type { RawBatch } from "@/lib/rawDataStore"
 import { useRawData } from "@/lib/hooks/useRawData"
@@ -19,13 +16,6 @@ function fmtDelta(n: number) {
   return { text: `${sign}${fmt(Math.round(n))}`, cls }
 }
 
-const MEDIA_LABEL_TO_TYPE: Record<string, MediaType> = {
-  "네이버 GFA": "naver",
-  "카카오모먼트": "kakao",
-  "Google": "google",
-  "META": "meta",
-}
-
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -37,8 +27,57 @@ function readFileAsText(file: File): Promise<string> {
 
 interface Preview {
   totalRows: number
-  byMedia: { label: string; count: number }[]
-  campaignNames: string[]
+  byMedia: { label: string; count: number; campaigns: string[] }[]
+  // 전체 캠페인명 (중복 제거, 정렬됨) — 입력 당시 검증용
+  allCampaigns: string[]
+}
+
+// 업로드 직전 사용자가 캠페인명·매체별 데이터를 확인할 수 있도록 강화된 패널.
+// 매체별 그룹 박스 + 전체 캠페인 토글 펼침.
+function PreviewPanel({ preview }: { preview: Preview }) {
+  const [showAll, setShowAll] = useState(false)
+  return (
+    <div className="mt-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-blue-900">파일 분석 결과</p>
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="text-blue-700 font-medium">총 {fmt(preview.totalRows)}행</span>
+          <span className="text-blue-300">·</span>
+          <span className="text-blue-700 font-medium">캠페인 {preview.allCampaigns.length}개</span>
+        </div>
+      </div>
+
+      {/* 매체별 카드 — 매체 헤더 + 캠페인명 리스트 */}
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {preview.byMedia.map(({ label, count, campaigns }) => (
+          <div key={label} className="rounded bg-white border border-blue-100 px-2.5 py-1.5">
+            <div className="flex items-baseline justify-between mb-1">
+              <span className="text-[11px] font-semibold text-blue-800">{label}</span>
+              <span className="text-[10px] text-blue-400">{fmt(count)}행 · {campaigns.length}개</span>
+            </div>
+            <div className="space-y-0.5">
+              {campaigns.slice(0, showAll ? campaigns.length : 3).map(name => (
+                <p key={name} className="text-[10px] text-gray-600 truncate" title={name}>{name}</p>
+              ))}
+              {!showAll && campaigns.length > 3 && (
+                <p className="text-[10px] text-blue-400">+{campaigns.length - 3}개 더</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {preview.allCampaigns.length > 3 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(v => !v)}
+          className="text-[11px] text-blue-600 hover:underline font-medium"
+        >
+          {showAll ? '캠페인명 접기 ▴' : `전체 캠페인명 ${preview.allCampaigns.length}개 펼치기 ▾`}
+        </button>
+      )}
+    </div>
+  )
 }
 
 // ── 전일/당일 비교 Row 타입 ─────────────────────────────
@@ -59,10 +98,9 @@ export default function CtPlusDailyPage() {
 }
 
 function CtPlusDailyContent() {
-  const { allRows, loading: rawLoading, addBatch, clearAll } = useRawData()
+  const { allRows, addBatch, clearAll } = useRawData()
   const { campaigns } = useMasterData()
 
-  const [activeTab,    setActiveTab]    = useState<MediaType | null>(null)
   const [loading,      setLoading]      = useState(false)
   const [parseError,   setParseError]   = useState<string | null>(null)
   const [uploadFile,   setUploadFile]   = useState<File | null>(null)
@@ -70,14 +108,6 @@ function CtPlusDailyContent() {
   const [toast,        setToast]        = useState<string | null>(null)
   const [clearConfirm, setClearConfirm] = useState(false)
   const [compareDate,  setCompareDate]  = useState<string>("")
-
-  // MongoDB 로드 후 첫 탭 자동 선택
-  useEffect(() => {
-    if (rawLoading || allRows.length === 0 || activeTab) return
-    const medias = [...new Set(allRows.map(r => r.media))]
-    const firstMediaType = MEDIA_LABEL_TO_TYPE[medias[0]]
-    if (firstMediaType) setActiveTab(firstMediaType)
-  }, [rawLoading, allRows, activeTab])
 
   // 최신 날짜로 비교 날짜 자동 세팅
   useEffect(() => {
@@ -105,11 +135,15 @@ function CtPlusDailyContent() {
       const text   = await readFileAsText(file)
       const result = parseUnifiedCsv(text, [])
       const rows   = Object.values(result.rowsByMedia).flat() as RawRow[]
+      // R2: 매체별로 캠페인명 묶기 + 전체 캠페인 (중복 제거 + 정렬) — 업로드 직전 검증용
       const byMedia = Object.entries(result.rowsByMedia)
         .filter(([, arr]) => arr.length > 0)
-        .map(([label, arr]) => ({ label, count: arr.length }))
-      const names = [...new Set(rows.map(r => r.campaignName).filter(Boolean))].slice(0, 8)
-      setPreview({ totalRows: rows.length, byMedia, campaignNames: names })
+        .map(([label, arr]) => {
+          const camps = [...new Set((arr as RawRow[]).map(r => r.campaignName).filter(Boolean))].sort()
+          return { label, count: arr.length, campaigns: camps }
+        })
+      const allCampaigns = [...new Set(rows.map(r => r.campaignName).filter(Boolean))].sort()
+      setPreview({ totalRows: rows.length, byMedia, allCampaigns })
     } catch (e) {
       setParseError(e instanceof Error ? e.message : "파싱 오류")
     }
@@ -131,11 +165,6 @@ function CtPlusDailyContent() {
         rows: newRows,
       }
       await addBatch(batch)
-      if (!activeTab) {
-        const firstLabel = preview.byMedia[0]?.label
-        const firstType  = firstLabel ? MEDIA_LABEL_TO_TYPE[firstLabel] : null
-        if (firstType) setActiveTab(firstType)
-      }
       setToast(`✓ ${fmt(newRows.length)}행이 추가되었습니다 (${uploadFile.name})`)
       setUploadFile(null)
       setPreview(null)
@@ -148,7 +177,6 @@ function CtPlusDailyContent() {
 
   async function handleClearAll() {
     await clearAll()
-    setActiveTab(null)
     setClearConfirm(false)
     setCompareDate("")
     setToast("전체 데이터가 초기화되었습니다")
@@ -202,20 +230,6 @@ function CtPlusDailyContent() {
       .sort((a, b) => b.today - a.today)
   }, [compareDate, allRows, campaigns])
 
-  // rowsByMedia 계산
-  const rowsByMedia = useMemo(() => {
-    const result: Partial<Record<MediaType, RawRow[]>> = {}
-    for (const row of allRows) {
-      const mt = MEDIA_LABEL_TO_TYPE[row.media]
-      if (!mt) continue
-      if (!result[mt]) result[mt] = []
-      result[mt]!.push(row)
-    }
-    return result
-  }, [allRows])
-
-  const activeMediaTypes = Object.keys(rowsByMedia) as MediaType[]
-  const activeRows = activeTab ? (rowsByMedia[activeTab] ?? []) : []
   const totalCount = allRows.length
 
   // 비교 날짜 범위 계산
@@ -311,25 +325,7 @@ function CtPlusDailyContent() {
           )}
 
           {preview && !parseError && (
-            <div className="mt-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-blue-900">파일 분석 결과</p>
-                <span className="text-xs text-blue-600 font-medium">{fmt(preview.totalRows)}행 감지됨</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {preview.byMedia.map(({ label, count }) => (
-                  <span key={label} className="inline-flex items-center gap-1 rounded-full bg-white border border-blue-200 px-2.5 py-0.5 text-[11px] font-medium text-blue-700">
-                    {label} <span className="text-blue-400">{fmt(count)}행</span>
-                  </span>
-                ))}
-              </div>
-              {preview.campaignNames.length > 0 && (
-                <div className="text-[11px] text-blue-600">
-                  캠페인명: {preview.campaignNames.join(", ")}
-                  {preview.campaignNames.length >= 8 && " …"}
-                </div>
-              )}
-            </div>
+            <PreviewPanel preview={preview} />
           )}
 
           {preview && !parseError && (
@@ -450,44 +446,9 @@ function CtPlusDailyContent() {
           </div>
         )}
 
-        {/* 데이터 테이블 */}
-        {allRows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="rounded-full bg-gray-100 p-6 mb-4">
-              <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <p className="text-sm font-medium text-gray-500">아직 업로드된 데이터가 없습니다</p>
-            <p className="text-xs text-gray-400 mt-1">위 영역에서 CSV 파일을 선택하면 자동으로 분석됩니다</p>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            {/* 매체 탭 */}
-            <div className="border-b border-gray-100 bg-white px-4 flex gap-1 pt-2">
-              {activeMediaTypes.map(mt => (
-                <button
-                  key={mt}
-                  onClick={() => setActiveTab(mt)}
-                  className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
-                    activeTab === mt
-                      ? "border-blue-600 text-blue-700 bg-blue-50"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-                  }`}
-                >
-                  {MEDIA_CONFIG[mt]?.label ?? mt}
-                  <span className="ml-1.5 text-xs text-gray-400">({fmt(rowsByMedia[mt]?.length ?? 0)})</span>
-                </button>
-              ))}
-            </div>
-            <div className="p-4">
-              {activeTab && (
-                <DailyDataTable rows={activeRows} media={activeTab} onRowUpdate={() => {}} />
-              )}
-            </div>
-          </div>
-        )}
+        {/* R2: 매체별 탭 + DailyDataTable 제거.
+            업로드 직전에 보이는 PreviewPanel + 상단 전일/당일 비교표 가 있어 raw 표시는 불필요.
+            전체 raw 데이터가 필요하면 캠페인 상세분석(status/[id]) 의 RAW 탭 이용. */}
       </main>
     </div>
   )
