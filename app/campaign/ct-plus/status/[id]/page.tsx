@@ -25,6 +25,17 @@ function fmtAbbr(n: number): string {
   return fmt(n)
 }
 
+// 광고 플랫폼 narrative 섹션 헤더 — 단계 번호 + 제목 + 짧은 안내.
+function SectionLabel({ step, title, hint }: { step: string; title: string; hint?: string }) {
+  return (
+    <div className="flex items-baseline gap-2 px-1">
+      <span className="text-[10px] font-bold text-gray-300 tabular-nums tracking-widest">{step}</span>
+      <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+      {hint && <span className="text-[10px] text-gray-400 ml-1 truncate">{hint}</span>}
+    </div>
+  )
+}
+
 type Tab = "summary" | "daily" | "weekly" | "creative" | "raw"
 
 function aggRows(rows: RawRow[]) {
@@ -235,6 +246,8 @@ export default function CampaignDetailPage() {
     }
     const out: Out[] = []
     for (const mb of campaign.mediaBudgets) {
+      // 매체 필터 적용 — 선택된 매체만 보여줌 (사용자 요청).
+      if (mediaFilter && mb.media !== mediaFilter) continue
       for (const sc of (mb.subCampaigns ?? [])) {
         const lowered = new Set(
           (sc.csvCampaignNames ?? []).map(n => n.trim().toLowerCase())
@@ -262,7 +275,7 @@ export default function CampaignDetailPage() {
       }
     }
     return out
-  }, [campaign, filteredRows])
+  }, [campaign, filteredRows, mediaFilter])
 
   // 소재별
   const creativeRows = useMemo(()=>{
@@ -487,7 +500,19 @@ export default function CampaignDetailPage() {
 
           {/* ===== 요약 탭 ===== */}
           {tab==="summary"&&(
-            <div className="space-y-3">
+            <div className="space-y-5">
+              {/* ─────────────────────────────────────────────────────────────
+                광고 플랫폼 표준 흐름 (사용자 요청 — '광고 플랫폼으로써 가져야
+                하는 흐름에 맞게 데이터 위치 조정'):
+                  ① 예산 · 페이싱   → 거시 진단: 얼마나 썼고 vs 계획
+                  ② 목표 달성도     → 분석 진단: 목표 대비 실적
+                  ③ 캠페인 구조     → 드릴다운: 매체 → 캠페인 → 세부 캠페인
+                각 단계마다 작은 섹션 헤더로 narrative 명시.
+              ────────────────────────────────────────────────────────────────*/}
+
+              {/* ① 예산 · 페이싱 */}
+              <SectionLabel step="01" title="예산 · 페이싱" hint="세팅금액 대비 현재 소진 상태 — raw 데이터와 광고주 대시보드 입력 비교" />
+
               {/* 대시보드 소진 비교 — 모달 기능을 본 페이지로 이식 (사용자 요청) */}
               {(() => {
                 const settingCost = totals.totalSettingCost
@@ -567,6 +592,9 @@ export default function CampaignDetailPage() {
                   </div>
                 )
               })()}
+
+              {/* ② 목표 달성도 */}
+              <SectionLabel step="02" title="목표 달성도" hint="매체별 KPI 목표 대비 실제 실적의 달성률 — 경고 임계값 초과 시 빨강 표시" />
 
               {/* KPI 달성률 */}
               {showThresholds && (
@@ -686,11 +714,15 @@ export default function CampaignDetailPage() {
                   </div>
                 )
               })()}
-              {/* 매체×캠페인 집계 테이블 */}
+              {/* ③ 캠페인 구조 — 매체 → 캠페인 → 세부 캠페인 드릴다운 */}
+              <SectionLabel step="03" title="캠페인 구조" hint="매체 단위 집계부터 세부 캠페인 드릴다운까지 — 매체 필터로 좁혀서 조회" />
+
+              {/* 매체×캠페인 집계 테이블 — 드릴다운 1단계 */}
               <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
                 <div className="px-4 py-2.5 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 flex items-center gap-2">
                   <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-700 text-white text-[10px] font-bold">∑</span>
                   <h3 className="text-xs font-semibold text-gray-800">매체 × 캠페인별 집계</h3>
+                  <span className="ml-auto text-[10px] text-gray-400">Level 1 · 매체 단위</span>
                 </div>
                 <div className="overflow-x-auto"><table className="w-full text-xs">
                   <thead className="bg-gray-50 border-b border-gray-100"><tr>
@@ -730,15 +762,20 @@ export default function CampaignDetailPage() {
                 </table></div>
               </div>
 
-              {/* 세부 설정한 캠페인 — subCampaign 별 분리 (사용자 요청) */}
+              {/* 세부 설정 캠페인 — 드릴다운 2단계. 매체 필터 적용됨 (사용자 요청). */}
               {subCampaignRows.length > 0 && (
-                <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50/40 via-white to-white overflow-hidden shadow-sm">
+                <div className="ml-3 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50/40 via-white to-white overflow-hidden shadow-sm relative">
+                  {/* 좌측 hierarchy 라인 — 부모(매체×캠페인)와 시각적 연결 */}
+                  <div className="absolute -left-3 top-0 h-full w-3 flex items-start pt-4">
+                    <div className="w-full h-px bg-violet-200" />
+                  </div>
                   <div className="px-4 py-2.5 border-b border-violet-100 flex items-center gap-2">
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-500 text-white text-[10px] font-bold">+</span>
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-500 text-white text-[10px] font-bold">↳</span>
                     <div>
                       <h3 className="text-xs font-semibold text-gray-800">세부 설정 캠페인 <span className="text-violet-600">({subCampaignRows.length})</span></h3>
                       <p className="text-[10px] text-gray-400 leading-tight">모달에서 매체 하위로 등록한 세부 캠페인 단위 집계 — CSV 캠페인명 매핑 기반</p>
                     </div>
+                    <span className="ml-auto text-[10px] text-violet-500">Level 2 · 드릴다운{mediaFilter ? ` · ${mediaFilter} 필터` : ""}</span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
