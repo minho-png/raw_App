@@ -4,10 +4,13 @@ import { Campaign, Agency, Advertiser, Operator, getCampaignTotals, getCampaignP
 import { fmt, spendRateStyle } from "./statusUtils"
 import { DailyDeltaCell } from "@/components/DailyDeltaCell"
 import type { DailySpendEntry } from "@/lib/hooks/useDailySpendMap"
+import type { RawRow } from "@/lib/rawDataParser"
+import { copyRawToClipboard, downloadRawXlsx } from "@/lib/campaignRawExport"
 
 export function CampaignTableSection({
   filtered, agencies, advertisers, operators, computedSpendMap, dailySpendMap,
-  onEdit, onDelete, onStatusToggle, onMemoSave, onDateSave,
+  rawRowsByCampaignId,
+  onEdit, onDelete, onStatusToggle, onMemoSave, onDateSave, onToast,
   selectedDetailId, setSelectedDetailId
 }: {
   filtered: Campaign[]
@@ -16,6 +19,8 @@ export function CampaignTableSection({
   operators: Operator[]
   computedSpendMap: Map<string, { netAmount: number; executionAmount: number; rowCount: number }>
   dailySpendMap?: Map<string, DailySpendEntry>
+  /** 신규 — 캠페인 ID 별 raw row. raw 복사/Excel 다운로드 버튼이 행에서 직접 호출. */
+  rawRowsByCampaignId?: Map<string, RawRow[]>
   onEdit: (c: Campaign) => void
   onDelete: (id: string) => void
   onStatusToggle: (id: string) => void
@@ -23,6 +28,8 @@ export function CampaignTableSection({
   onMemoSave: (c: Campaign, memo: string) => Promise<void>
   /** 신규 — 시작일/종료일 inline 수정 저장. 매번 호출되므로 status 페이지에서 throttle/upsert 처리. */
   onDateSave?: (c: Campaign, startDate: string, endDate: string) => Promise<void>
+  /** 토스트 표시 콜백 (raw 복사 결과 등) */
+  onToast?: (msg: string, type?: 'success' | 'error') => void
   selectedDetailId: string | null
   setSelectedDetailId: (id: string | null) => void
 }) {
@@ -55,6 +62,7 @@ export function CampaignTableSection({
                 <th className="px-4 py-3 text-right" title="당일 / 전일 소진 비교">전일 대비 소진</th>
                 <th className="px-4 py-3 text-left">메모</th>
                 <th className="px-4 py-3 text-center" title="연결된 CSV 캠페인 수 (DB)">연결</th>
+                <th className="px-4 py-3 text-center" title="이 캠페인의 raw 데이터를 클립보드 복사 또는 Excel(.xlsx) 다운로드">RAW</th>
                 <th className="px-4 py-3 text-center">관리</th>
               </tr>
             </thead>
@@ -198,6 +206,62 @@ export function CampaignTableSection({
                       ) : (
                         <span className="text-[10px] text-gray-400" aria-label="연결된 DB 없음">—</span>
                       )}
+                    </td>
+                    {/* RAW 내보내기 — 캠페인별 빠른 접근. 행 클릭(상세 토글)와 분리. */}
+                    <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                      {(() => {
+                        const rawRows = rawRowsByCampaignId?.get(c.id) ?? []
+                        const disabled = rawRows.length === 0
+                        return (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={disabled}
+                              onClick={async () => {
+                                const ok = await copyRawToClipboard(rawRows)
+                                onToast?.(ok ? `RAW 클립보드 복사됨 (${rawRows.length}건)` : 'RAW 복사 실패', ok ? 'success' : 'error')
+                              }}
+                              className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                                disabled
+                                  ? 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed'
+                                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                              }`}
+                              title={disabled ? '연결된 raw 데이터가 없습니다' : `이 캠페인의 raw ${rawRows.length}건을 TSV 로 클립보드 복사 (엑셀에 직접 paste 가능)`}
+                              aria-label="raw 복사"
+                            >
+                              <span className="inline-flex items-center gap-1">
+                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <rect x="8" y="8" width="12" height="12" rx="2" />
+                                  <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+                                </svg>
+                                복사
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={disabled}
+                              onClick={() => {
+                                downloadRawXlsx(c.campaignName, rawRows)
+                                onToast?.(`RAW Excel 다운로드 시작 (${rawRows.length}건)`, 'success')
+                              }}
+                              className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                                disabled
+                                  ? 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed'
+                                  : 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              }`}
+                              title={disabled ? '연결된 raw 데이터가 없습니다' : `이 캠페인의 raw ${rawRows.length}건을 Excel(.xlsx) 다운로드`}
+                              aria-label="Excel 다운로드"
+                            >
+                              <span className="inline-flex items-center gap-1">
+                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 10l5 5 5-5M12 15V3" />
+                                </svg>
+                                Excel
+                              </span>
+                            </button>
+                          </div>
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1">
