@@ -214,6 +214,55 @@ export default function CampaignDetailPage() {
     }).sort((a,b)=>a.media.localeCompare(b.media))
   },[filteredRows,campaign])
 
+  // 세부 설정한 캠페인 (subCampaign) 별 분리 집계
+  // 사용자 요청 — '세부 설정한 캠페인도 세부내역에서 분리 확인 가능하게'.
+  // 모달에서 mediaBudget.subCampaigns[].csvCampaignNames 로 매핑된 raw row 들을 묶어 집계.
+  const subCampaignRows = useMemo(() => {
+    if (!campaign) return []
+    type Out = {
+      media: string
+      subId: string
+      subName: string
+      budget: number
+      feeRate?: number
+      cpcTarget?: number
+      ctrTarget?: number
+      vtrTarget?: number
+      isVideo?: boolean
+      matchedCsvNames: string[]
+      rows: RawRow[]
+    }
+    const out: Out[] = []
+    for (const mb of campaign.mediaBudgets) {
+      for (const sc of (mb.subCampaigns ?? [])) {
+        const lowered = new Set(
+          (sc.csvCampaignNames ?? []).map(n => n.trim().toLowerCase())
+        )
+        if (lowered.size === 0) {
+          out.push({
+            media: mb.media, subId: sc.id, subName: sc.name,
+            budget: sc.budget ?? 0,
+            feeRate: sc.totalFeeRate, cpcTarget: sc.cpcTarget,
+            ctrTarget: sc.ctrTarget, vtrTarget: sc.vtrTarget, isVideo: sc.isVideo,
+            matchedCsvNames: [], rows: [],
+          })
+          continue
+        }
+        const rows = filteredRows.filter(r =>
+          r.media === mb.media && lowered.has(r.campaignName.trim().toLowerCase())
+        )
+        out.push({
+          media: mb.media, subId: sc.id, subName: sc.name,
+          budget: sc.budget ?? 0,
+          feeRate: sc.totalFeeRate, cpcTarget: sc.cpcTarget,
+          ctrTarget: sc.ctrTarget, vtrTarget: sc.vtrTarget, isVideo: sc.isVideo,
+          matchedCsvNames: sc.csvCampaignNames ?? [], rows,
+        })
+      }
+    }
+    return out
+  }, [campaign, filteredRows])
+
   // 소재별
   const creativeRows = useMemo(()=>{
     const map=new Map<string,RawRow[]>()
@@ -661,6 +710,66 @@ export default function CampaignDetailPage() {
                   </tbody>
                 </table></div>
               </div>
+
+              {/* 세부 설정한 캠페인 — subCampaign 별 분리 (사용자 요청) */}
+              {subCampaignRows.length > 0 && (
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                  <div className="px-4 py-2.5 bg-violet-50 border-b border-violet-100">
+                    <h3 className="text-[11px] font-semibold text-violet-700 uppercase tracking-wide">세부 설정 캠페인 ({subCampaignRows.length})</h3>
+                    <p className="text-[10px] text-gray-500 mt-0.5">모달에서 매체 하위로 등록한 세부 캠페인 단위 집계 — CSV 캠페인명 매핑 기반</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className={thCls}>매체</th>
+                          <th className={thCls}>세부캠페인</th>
+                          <th className={thRCls}>예산</th>
+                          <th className={thRCls}>순금액</th>
+                          <th className={thRCls}>소진율</th>
+                          <th className={thRCls}>노출</th>
+                          <th className={thRCls}>클릭</th>
+                          <th className={thRCls}>CTR</th>
+                          <th className={thRCls}>CPC</th>
+                          <th className={thRCls}>CPM</th>
+                          <th className={thCls}>매핑</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {subCampaignRows.map(sc => {
+                          const a = aggRows(sc.rows)
+                          const rate = sc.budget > 0 ? +(a.netAmount / sc.budget * 100).toFixed(1) : 0
+                          const rs = spendRateStyle(rate)
+                          const unmapped = sc.matchedCsvNames.length === 0
+                          return (
+                            <tr key={`${sc.media}|${sc.subId}`} className="border-b border-gray-100 hover:bg-violet-50/30">
+                              <td className={tdCls}>
+                                <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium" style={{ backgroundColor: mColor(sc.media) + '22', color: mColor(sc.media) }}>{sc.media}</span>
+                              </td>
+                              <td className={`${tdCls} font-semibold text-gray-800`}>
+                                {sc.subName}
+                                {sc.isVideo && <span className="ml-1 text-[9px] font-medium text-purple-600">[VIDEO]</span>}
+                                {sc.feeRate != null && <span className="ml-1 text-[9px] text-gray-500">수수료 {sc.feeRate}%</span>}
+                              </td>
+                              <td className={tdRCls}>{sc.budget > 0 ? fmt(sc.budget) : '-'}</td>
+                              <td className={`${tdRCls} font-medium text-blue-700`}>{fmt(Math.round(a.netAmount))}</td>
+                              <td className={`${tdRCls} font-bold ${rs.text}`}>{sc.budget > 0 ? `${rate}%` : '-'}</td>
+                              <td className={tdRCls}>{fmt(a.impressions)}</td>
+                              <td className={tdRCls}>{fmt(a.clicks)}</td>
+                              <td className={tdRCls}>{a.ctr}%</td>
+                              <td className={tdRCls}>{a.cpc > 0 ? fmt(a.cpc) : '-'}</td>
+                              <td className={tdRCls}>{a.cpm > 0 ? fmt(a.cpm) : '-'}</td>
+                              <td className={`px-3 py-2 text-[10px] ${unmapped ? 'text-orange-600' : 'text-gray-500'} max-w-[200px] truncate`} title={sc.matchedCsvNames.join(', ')}>
+                                {unmapped ? '⚠ CSV 매핑 없음' : `${sc.matchedCsvNames.length}개 · ${sc.rows.length}행`}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
