@@ -171,33 +171,58 @@ export function aggregateMetrics(list: UnifiedDailyMetrics[]): UnifiedDailyMetri
 }
 
 // MOTIV /v1/stats/campaign/breakdown 행 (dictionary[string,string]) → UnifiedDailyMetrics 변환.
-// 캠페인 ID 별로 일자 범위 집계된 stats 가 한 row 로 옴 (sort=campaign_id).
+// 한 캠페인이 다중 row 로 분리되어 응답될 가능성 (예: groupBy 차원 합쳐지지 않은 경우, 또는
+// 클라이언트가 페이지를 합친 경우) 이 있으므로 campaign_id 별 누적 합산으로 처리.
+// — 사용자 보고: "기간에 대한 매출 및 비용이 정확한 금액이 아니야"
+//   원인: 이전 map.set 덮어쓰기 구현은 한 캠페인의 다중 row 중 마지막만 남겨 합계 오류 유발.
 //
-// motivStatsToMetrics 와 동일한 회계 모델 (사용자 정정):
+// 회계 모델 (사용자 정정):
 //   mediaCost = cost            (매체비 raw)
 //   rawAgency = agency_fee      (대행+DMP 합)
 //   dmpFee    = data_fee
 //   agencyFee = rawAgency - dmpFee
 //   spend     = revenue         (없으면 mediaCost + rawAgency + profit 항등식 fallback)
 //
+// 합산 의미: 한 캠페인의 모든 row 의 raw 필드를 먼저 누적한 뒤 회계 모델 적용 — 반올림 손실 최소화.
 // impressions / clicks / completedViews 도 row 에 있으면 사용.
 export function rowsToCampaignMetricsMap(
   rows: ReadonlyArray<Record<string, string>>,
 ): Map<number, UnifiedDailyMetrics> {
-  const map = new Map<number, UnifiedDailyMetrics>()
+  // 누적 단계: raw 필드를 캠페인 ID 별로 합산.
+  type RawAcc = {
+    cost: number; revenue: number; agency_fee: number; data_fee: number; profit: number
+    v_impression: number; win: number; click: number; v_play100: number
+  }
+  const acc = new Map<number, RawAcc>()
   for (const r of rows) {
     const id = Number(r.campaign_id)
     if (!Number.isFinite(id) || id <= 0) continue
-    const mediaCost = Math.round(toNum(r.cost))
-    const rawAgency = Math.round(toNum(r.agency_fee))
-    const dmpFee    = Math.round(toNum(r.data_fee))
+    const cur = acc.get(id) ?? { cost: 0, revenue: 0, agency_fee: 0, data_fee: 0, profit: 0, v_impression: 0, win: 0, click: 0, v_play100: 0 }
+    cur.cost        += toNum(r.cost)
+    cur.revenue     += toNum(r.revenue)
+    cur.agency_fee  += toNum(r.agency_fee)
+    cur.data_fee    += toNum(r.data_fee)
+    cur.profit      += toNum(r.profit)
+    cur.v_impression += toNum(r.v_impression)
+    cur.win         += toNum(r.win)
+    cur.click       += toNum(r.click)
+    cur.v_play100   += toNum(r.v_play100)
+    acc.set(id, cur)
+  }
+
+  // 변환 단계: 회계 모델 적용.
+  const map = new Map<number, UnifiedDailyMetrics>()
+  for (const [id, a] of acc) {
+    const mediaCost = Math.round(a.cost)
+    const rawAgency = Math.round(a.agency_fee)
+    const dmpFee    = Math.round(a.data_fee)
     const agencyFee = Math.max(0, rawAgency - dmpFee)
-    const profit    = Math.round(toNum(r.profit))
-    const revenueRaw = Math.round(toNum(r.revenue))
+    const profit    = Math.round(a.profit)
+    const revenueRaw = Math.round(a.revenue)
     const spend     = revenueRaw > 0 ? revenueRaw : (mediaCost + rawAgency + profit)
-    const impressions    = Math.round(toNum(r.v_impression) || toNum(r.win))
-    const clicks         = Math.round(toNum(r.click))
-    const completedViews = Math.round(toNum(r.v_play100))
+    const impressions    = Math.round(a.v_impression || a.win)
+    const clicks         = Math.round(a.click)
+    const completedViews = Math.round(a.v_play100)
     map.set(id, { impressions, clicks, spend, agencyFee, dmpFee, mediaCost, completedViews })
   }
   return map

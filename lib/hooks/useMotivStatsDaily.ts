@@ -65,29 +65,46 @@ export function useMotivStatsDaily({
     setState(s => ({ ...s, loading: true, error: null }))
     ;(async () => {
       try {
-        const params = new URLSearchParams()
-        if (scope.campaignIds?.length)  params.set('campaign_id',  scope.campaignIds.join(','))
-        if (scope.adaccountIds?.length) params.set('adaccount_id', scope.adaccountIds.join(','))
-        if (scope.agencyId)             params.set('agency_id',    String(scope.agencyId))
-        if (scope.publisherIds?.length) params.set('publisher_id', scope.publisherIds.join(','))
-        if (startDate) params.set('start_date', startDate)
-        if (endDate)   params.set('end_date',   endDate)
-        params.set('include', 'totals')
-        params.set('per_page', '100')
-        params.set('sort', 'date')
+        // 페이지네이션 — 일자 범위가 길거나 캠페인이 많으면 row 가 per_page 초과해
+        // 누락될 수 있음 → 모든 페이지 순회 (최대 10페이지 = 1000 row 안전 캡).
+        const PER_PAGE = 100
+        const MAX_PAGES = 10
+        const allRows: Record<string, string>[] = []
+        let totals: Record<string, string> | null = null
 
-        const res = await fetch(`/api/motiv/stats/daily?${params.toString()}`, { cache: 'no-store' })
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}))
-          throw new Error((j as { error?: string }).error || `HTTP ${res.status}`)
+        for (let page = 1; page <= MAX_PAGES; page++) {
+          const params = new URLSearchParams()
+          if (scope.campaignIds?.length)  params.set('campaign_id',  scope.campaignIds.join(','))
+          if (scope.adaccountIds?.length) params.set('adaccount_id', scope.adaccountIds.join(','))
+          if (scope.agencyId)             params.set('agency_id',    String(scope.agencyId))
+          if (scope.publisherIds?.length) params.set('publisher_id', scope.publisherIds.join(','))
+          if (startDate) params.set('start_date', startDate)
+          if (endDate)   params.set('end_date',   endDate)
+          params.set('include', 'totals')
+          params.set('per_page', String(PER_PAGE))
+          params.set('page',     String(page))
+          params.set('sort', 'date')
+
+          const res = await fetch(`/api/motiv/stats/daily?${params.toString()}`, { cache: 'no-store' })
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}))
+            throw new Error((j as { error?: string }).error || `HTTP ${res.status}`)
+          }
+          const json = await res.json() as {
+            data?: Record<string, string>[]
+            totals?: Record<string, string>
+            meta?: { last_page?: number; total?: number }
+          }
+          const rows = json.data ?? []
+          allRows.push(...rows)
+          if (json.totals) totals = json.totals
+          const lastPage = json.meta?.last_page
+          if (lastPage != null ? page >= lastPage : rows.length < PER_PAGE) break
         }
-        const json = await res.json() as {
-          data?: Record<string, string>[]
-          totals?: Record<string, string>
-        }
+
         const { rowsToDailyPoints } = await import('@/lib/motivApi/statsService')
-        const points = rowsToDailyPoints(json.data ?? [])
-        if (!cancelled) setState({ data: points, totals: json.totals ?? null, loading: false, error: null })
+        const points = rowsToDailyPoints(allRows)
+        if (!cancelled) setState({ data: points, totals, loading: false, error: null })
       } catch (e) {
         if (cancelled) return
         const msg = e instanceof Error ? e.message : String(e)

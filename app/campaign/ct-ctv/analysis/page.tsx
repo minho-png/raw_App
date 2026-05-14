@@ -140,6 +140,32 @@ export default function CtCtvAnalysisPage() {
     refreshKey,
   })
 
+  // Dev 교차 검증 — campaign-sum vs daily-sum vs statsCampaign.totals (CT analysis 와 동일 패턴).
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return
+    if (typeof window === 'undefined') return
+    if (statsDaily.loading || statsDaily.data.length === 0) return
+    if (statsCampaign.loading) return
+    const dailySpendSum = statsDaily.data.reduce((s, p) => s + Math.round(p.revenue || p.cost), 0)
+    const campaignSpendSum = sumT.spend
+    const totalsSpend = statsCampaign.totals
+      ? Math.round(Number(statsCampaign.totals.revenue ?? statsCampaign.totals.cost ?? 0))
+      : null
+    const candidates = [campaignSpendSum, dailySpendSum, totalsSpend].filter((n): n is number => n != null && n > 0)
+    if (candidates.length < 2) return
+    const max = Math.max(...candidates), min = Math.min(...candidates)
+    const delta = max > 0 ? (max - min) / max : 0
+    if (delta > 0.01) {
+      console.warn('[CTV analysis] 매출 source 불일치 감지', {
+        period: `${rangeStart}~${rangeEnd}`,
+        campaignSum: campaignSpendSum,
+        dailySum: dailySpendSum,
+        statsTotals: totalsSpend,
+        deltaPct: +(delta * 100).toFixed(2),
+      })
+    }
+  }, [sumT.spend, statsDaily.data, statsDaily.loading, statsCampaign.totals, statsCampaign.loading, rangeStart, rangeEnd])
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white px-6 py-4">
