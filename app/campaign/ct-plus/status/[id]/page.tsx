@@ -1,9 +1,10 @@
 "use client"
 import React, { useMemo, useState, useCallback, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
+// daily/weekly 그래프 제거 (사용자 요청) — 소재 탭만 BarChart 사용.
 import {
-  LineChart, Line, BarChart, Bar,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, Cell,
+  BarChart, Bar,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
 } from "recharts"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
@@ -332,17 +333,7 @@ export default function CampaignDetailPage() {
     return { text: `${sign}${fmt(Math.round(n))}`, cls }
   }
 
-  const mediaNames=useMemo(()=>[...new Set(filteredRows.map(r=>r.media))].sort(),[filteredRows])
-  const dailyByMedia=useMemo(()=>{
-    const map=new Map<string,Record<string,number>>()
-    for(const r of filteredRows){
-      if(!r.date)continue
-      const cur=map.get(r.date)??{}
-      cur[r.media]=(cur[r.media]??0)+(r.netAmount??0)
-      map.set(r.date,cur)
-    }
-    return [...map.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([date,vals])=>({date:date.slice(5),...vals}))
-  },[filteredRows])
+  // mediaNames / dailyByMedia 제거 — 일별 매체 LineChart 가 함께 제거됨.
 
   // 주간
   const weeklyData=useMemo(()=>{
@@ -508,25 +499,37 @@ export default function CampaignDetailPage() {
                 const rsStyle = spendRateStyle(rawRate)
                 const dsStyle = spendRateStyle(dashRate)
                 return (
-                  <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                    <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-100">
-                      <h3 className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wide">대시보드 소진 비교</h3>
-                      <p className="text-[10px] text-gray-500 mt-0.5">광고주 대시보드 직접 입력 금액 vs raw 데이터 기반 소진 — 차이가 크면 검증 필요</p>
+                  <div className="rounded-2xl bg-gradient-to-br from-emerald-50/80 via-white to-white border border-emerald-100 p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white text-[10px] font-bold">₩</span>
+                        <h3 className="text-xs font-semibold text-gray-800">대시보드 소진 비교</h3>
+                      </div>
+                      <span className="text-[10px] text-gray-400">광고주 대시보드 입력 vs raw 데이터</span>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4">
-                      <div className="rounded-lg border border-gray-200 p-3">
-                        <p className="text-[10px] text-gray-500 uppercase">세팅금액</p>
-                        <p className="mt-1 text-sm font-bold tabular-nums text-gray-900">₩{fmt(settingCost)}</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* 세팅금액 — 슬레이트 */}
+                      <div className="rounded-xl bg-white border border-slate-200 px-3 py-2.5">
+                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">세팅금액</p>
+                        <p className="mt-1 text-base font-bold tabular-nums text-slate-800 leading-tight">₩{fmt(settingCost)}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">기준 예산</p>
                       </div>
-                      <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
-                        <p className="text-[10px] text-blue-700 uppercase">raw 소진 (CSV)</p>
-                        <p className="mt-1 text-sm font-bold tabular-nums text-blue-700">₩{fmt(rawSpend)}</p>
-                        <p className={`text-[10px] mt-0.5 ${rsStyle.text}`}>{rawRate}%</p>
+                      {/* raw 소진 — 블루 */}
+                      <div className="rounded-xl bg-gradient-to-br from-blue-50 to-blue-50/50 border border-blue-200 px-3 py-2.5">
+                        <p className="text-[10px] font-medium text-blue-500 uppercase tracking-wider">raw 소진 (CSV)</p>
+                        <p className="mt-1 text-base font-bold tabular-nums text-blue-700 leading-tight">₩{fmt(rawSpend)}</p>
+                        <div className="mt-0.5 flex items-center gap-1">
+                          <span className={`text-[10px] font-semibold ${rsStyle.text}`}>{rawRate}%</span>
+                          <div className="flex-1 h-1 rounded-full bg-blue-100 overflow-hidden">
+                            <div className={`h-full ${rsStyle.bar}`} style={{ width: `${Math.min(rawRate, 100)}%` }} />
+                          </div>
+                        </div>
                       </div>
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
-                        <p className="text-[10px] text-emerald-700 uppercase">대시보드 입력</p>
-                        <div className="mt-1 flex items-center gap-1">
-                          <span className="text-sm font-bold text-emerald-700">₩</span>
+                      {/* 대시보드 입력 — 에메랄드 */}
+                      <div className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-50/50 border border-emerald-200 px-3 py-2.5">
+                        <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wider">대시보드 입력</p>
+                        <div className="mt-1 flex items-baseline gap-0.5">
+                          <span className="text-base font-bold text-emerald-700 leading-tight">₩</span>
                           <input
                             type="number" min="0"
                             value={dashboardInput}
@@ -542,18 +545,23 @@ export default function CampaignDetailPage() {
                               }
                             }}
                             placeholder="0"
-                            className="flex-1 min-w-0 rounded border border-emerald-200 px-2 py-0.5 text-sm font-bold tabular-nums text-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                            className="flex-1 min-w-0 bg-transparent text-base font-bold tabular-nums text-emerald-700 leading-tight focus:outline-none placeholder:text-emerald-300"
                           />
                         </div>
-                        <p className={`text-[10px] mt-0.5 ${dsStyle.text}`}>{dashRate}%</p>
+                        <div className="mt-0.5 flex items-center gap-1">
+                          <span className={`text-[10px] font-semibold ${dsStyle.text}`}>{dashRate}%</span>
+                          <div className="flex-1 h-1 rounded-full bg-emerald-100 overflow-hidden">
+                            <div className={`h-full ${dsStyle.bar}`} style={{ width: `${Math.min(dashRate, 100)}%` }} />
+                          </div>
+                        </div>
                       </div>
                     </div>
                     {dashAmt > 0 && Math.abs(diff) >= 5 && (
-                      <div className={`mx-4 mb-4 rounded-lg px-3 py-2 text-xs ${
-                        diff > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      <div className={`mt-3 rounded-lg px-3 py-1.5 text-[11px] flex items-center justify-between ${
+                        diff > 0 ? 'bg-emerald-100/60 text-emerald-800' : 'bg-rose-100/60 text-rose-800'
                       }`}>
-                        <span className="font-semibold">{diff > 0 ? '대시보드 입력이 raw 보다 큼' : 'raw 가 대시보드 입력보다 큼'}</span>
-                        <span className="ml-2 opacity-80">차이 {Math.abs(diff).toFixed(1)}%p · ₩{fmt(Math.abs(dashAmt - rawSpend))}</span>
+                        <span className="font-semibold">{diff > 0 ? '↗ 대시보드 > raw' : '↘ raw > 대시보드'}</span>
+                        <span className="tabular-nums opacity-80">{Math.abs(diff).toFixed(1)}%p · ₩{fmt(Math.abs(dashAmt - rawSpend))}</span>
                       </div>
                     )}
                   </div>
@@ -564,114 +572,125 @@ export default function CampaignDetailPage() {
               {showThresholds && (
                 <KpiThresholdSettings thresholds={thresholds} onChange={updateThresholds} />
               )}
-              {kpiRows.length>0&&(
-                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                  <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
-                    <h3 className="text-[11px] font-semibold text-blue-700 uppercase tracking-wide">KPI 목표 대비 실적 달성률</h3>
-                    <button
-                      type="button"
-                      onClick={() => setShowThresholds(v => !v)}
-                      className={`text-[10px] font-medium rounded px-2 py-0.5 transition-colors ${
-                        showThresholds ? 'bg-blue-600 text-white' : 'text-blue-600 hover:bg-blue-100'
-                      }`}
-                    >경고 임계값 {showThresholds ? '닫기' : '설정'}</button>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead className="bg-gray-50 border-b border-gray-100"><tr>
-                        <th className={thCls}>매체</th>
-                        <th className={thCls}>구분</th>
-                        <th className={thRCls}>목표</th>
-                        <th className={thRCls}>실적</th>
-                        <th className={thRCls}>달성률</th>
-                        <th className={thRCls}>효율 차이</th>
-                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 w-40">달성률 현황</th>
-                      </tr></thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {kpiRows.map((r,i)=>{
-                          const hasTarget=r.target!==null&&r.target!==0
-                          const rate=hasTarget?(r.lowerBetter
-                            ?+(r.target!/r.actual*100).toFixed(1)
-                            :+(r.actual/r.target!*100).toFixed(1)):null
-                          const good=rate!==null&&rate>=100
-                          const barW=rate!==null?Math.min(rate,100):0
-                          // 효율 차이 — 단위와 lowerBetter 에 따라 분기
-                          //   %  지표(CTR/VTR): %p 차이
-                          //   원 지표(CPC/CPM/Budget): 금액 차이 + 절감/초과/잔여 라벨
-                          let diffLabel: string | null = null
-                          if (hasTarget) {
-                            if (r.unit === "%") {
-                              const dp = +(r.actual - r.target!).toFixed(2)
-                              diffLabel = `${dp>=0?"+":""}${dp.toFixed(2)}%p`
-                            } else if (r.unit === "원") {
-                              if (r.lowerBetter) {
-                                // CPC/CPM: 적게 쓸수록 좋음
-                                const saved = Math.round(r.target! - r.actual)
-                                diffLabel = saved >= 0
-                                  ? `₩${fmt(saved)} 절감`
-                                  : `₩${fmt(Math.abs(saved))} 초과`
-                              } else {
-                                // Budget: 소진 관점 — 100% 달성 이상부터는 초과 소진
-                                const diff = Math.round(r.actual - r.target!)
-                                diffLabel = diff >= 0
-                                  ? `₩${fmt(diff)} 초과`
-                                  : `₩${fmt(Math.abs(diff))} 잔여`
-                              }
-                            } else {
-                              const diff = Math.round(r.actual - r.target!)
-                              diffLabel = `${diff>=0?"+":""}${fmt(diff)}`
-                            }
-                          }
-                          // 사용자 임계값 기반 경고 판정
-                          let warn: KpiWarning | null = null
-                          if (r.label === 'Budget' && hasTarget) {
-                            const sr = +(r.actual / r.target! * 100).toFixed(1)
-                            // 진행률 — Budget(전체합계 행) 은 캠페인 progress, 매체별 행은 같은 progress (전체 동일)
-                            warn = checkBudgetWarning(sr, progress, thresholds)
-                          } else if (r.label === 'CTR' || r.label === 'VTR') {
-                            if (hasTarget) warn = checkRateWarning(r.label, r.target!, r.actual, thresholds)
-                          } else if (r.label === 'CPC' || r.label === 'CPM') {
-                            if (hasTarget) warn = checkCostWarning(r.label, r.target!, r.actual, thresholds)
-                          }
-                          const rowBg = warn ? 'bg-red-50/40 hover:bg-red-50' : 'hover:bg-gray-50'
-                          return(
-                            <tr key={i} className={rowBg}>
-                              <td className={tdCls} style={r.media ? { borderLeft: `3px solid ${mColor(r.media)}` } : undefined}>
-                                {r.media
-                                  ? <span className="font-medium" style={{ color: mColor(r.media) }}>{r.media}</span>
-                                  : <span className="text-gray-400">전체</span>}
-                              </td>
-                              <td className={`${tdCls} font-semibold text-gray-800 w-24`}>
-                                {r.label}
-                                {warn && <span className="ml-1 text-[9px] font-semibold text-red-600" title={warn.message}>⚠</span>}
-                              </td>
-                              <td className={tdRCls}>{hasTarget?`${fmt(Math.round(r.target!))}${r.unit}`:"-"}</td>
-                              <td className={`${tdRCls} font-medium text-blue-700`}>{fmt(Math.round(r.actual))}{r.unit}</td>
-                              <td className={`${tdRCls} font-bold ${good?"text-green-600":"text-orange-500"}`}>
-                                {rate!==null?`${rate}%`:"-"}
-                              </td>
-                              <td className={`${tdRCls} font-semibold ${warn ? 'text-red-600' : good?"text-green-600":"text-orange-500"}`}>
-                                {warn ? warn.message : (diffLabel ?? "-")}
-                              </td>
-                              <td className="px-3 py-2">
-                                {rate!==null&&(
-                                  <div className="h-2 w-full rounded-full bg-gray-100">
-                                    <div className={`h-full rounded-full transition-all ${good?"bg-green-400":"bg-orange-400"}`} style={{width:`${barW}%`}}/>
+              {kpiRows.length>0&&(() => {
+                // KPI 매체별 그룹핑 — 카드 그리드 형태로 모던 재디자인 (사용자 요청).
+                const byMedia = new Map<string, typeof kpiRows>()
+                for (const r of kpiRows) {
+                  const k = r.media ?? '__total__'
+                  const arr = byMedia.get(k) ?? []
+                  arr.push(r)
+                  byMedia.set(k, arr)
+                }
+                const groupOrder = [...byMedia.keys()]
+                return (
+                  <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/40 via-white to-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-white text-[10px] font-bold">✓</span>
+                        <h3 className="text-xs font-semibold text-gray-800">KPI 목표 대비 실적 달성률</h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowThresholds(v => !v)}
+                        className={`text-[10px] font-medium rounded-full px-2.5 py-0.5 transition-colors ${
+                          showThresholds ? 'bg-blue-600 text-white' : 'bg-white border border-blue-200 text-blue-600 hover:bg-blue-50'
+                        }`}
+                      >경고 임계값 {showThresholds ? '닫기' : '설정'}</button>
+                    </div>
+                    <div className="space-y-3">
+                      {groupOrder.map(k => {
+                        const rows = byMedia.get(k) ?? []
+                        const isTotal = k === '__total__'
+                        const mediaColor = isTotal ? '#64748b' : mColor(k)
+                        return (
+                          <div key={k} className="rounded-xl bg-white border border-gray-100 p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="inline-block w-1 h-4 rounded-full" style={{ backgroundColor: mediaColor }} />
+                              <span className="text-[11px] font-semibold" style={{ color: mediaColor }}>
+                                {isTotal ? '전체' : k}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                              {rows.map((r, i) => {
+                                const hasTarget = r.target !== null && r.target !== 0
+                                const rate = hasTarget ? (r.lowerBetter
+                                  ? +(r.target!/r.actual*100).toFixed(1)
+                                  : +(r.actual/r.target!*100).toFixed(1)) : null
+                                const good = rate !== null && rate >= 100
+                                const barW = rate !== null ? Math.min(rate, 100) : 0
+                                let diffLabel: string | null = null
+                                if (hasTarget) {
+                                  if (r.unit === "%") {
+                                    const dp = +(r.actual - r.target!).toFixed(2)
+                                    diffLabel = `${dp>=0?"+":""}${dp.toFixed(2)}%p`
+                                  } else if (r.unit === "원") {
+                                    if (r.lowerBetter) {
+                                      const saved = Math.round(r.target! - r.actual)
+                                      diffLabel = saved >= 0 ? `₩${fmt(saved)} 절감` : `₩${fmt(Math.abs(saved))} 초과`
+                                    } else {
+                                      const diff = Math.round(r.actual - r.target!)
+                                      diffLabel = diff >= 0 ? `₩${fmt(diff)} 초과` : `₩${fmt(Math.abs(diff))} 잔여`
+                                    }
+                                  } else {
+                                    const diff = Math.round(r.actual - r.target!)
+                                    diffLabel = `${diff>=0?"+":""}${fmt(diff)}`
+                                  }
+                                }
+                                let warn: KpiWarning | null = null
+                                if (r.label === 'Budget' && hasTarget) {
+                                  const sr = +(r.actual / r.target! * 100).toFixed(1)
+                                  warn = checkBudgetWarning(sr, progress, thresholds)
+                                } else if ((r.label === 'CTR' || r.label === 'VTR') && hasTarget) {
+                                  warn = checkRateWarning(r.label, r.target!, r.actual, thresholds)
+                                } else if ((r.label === 'CPC' || r.label === 'CPM') && hasTarget) {
+                                  warn = checkCostWarning(r.label, r.target!, r.actual, thresholds)
+                                }
+                                const tileBg = warn
+                                  ? 'bg-red-50 border-red-200'
+                                  : good
+                                  ? 'bg-emerald-50/40 border-emerald-200'
+                                  : 'bg-gray-50 border-gray-200'
+                                const rateColor = warn ? 'text-red-600' : good ? 'text-emerald-600' : 'text-orange-500'
+                                const barColor = warn ? 'bg-red-400' : good ? 'bg-emerald-400' : 'bg-orange-400'
+                                return (
+                                  <div key={i} className={`rounded-lg border ${tileBg} p-2 transition-colors`}>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-semibold text-gray-700">{r.label}</span>
+                                      {warn && <span className="text-[9px] font-bold text-red-600" title={warn.message}>⚠</span>}
+                                    </div>
+                                    <p className="mt-1 text-sm font-bold tabular-nums text-gray-900 leading-tight">
+                                      {fmt(Math.round(r.actual))}<span className="text-[10px] text-gray-400 ml-0.5">{r.unit}</span>
+                                    </p>
+                                    <p className="text-[10px] text-gray-400 tabular-nums">
+                                      목표 {hasTarget ? `${fmt(Math.round(r.target!))}${r.unit}` : '-'}
+                                    </p>
+                                    <div className="mt-1.5 flex items-center gap-1">
+                                      <span className={`text-[10px] font-bold ${rateColor}`}>{rate !== null ? `${rate}%` : '-'}</span>
+                                      <div className="flex-1 h-1 rounded-full bg-white/80 overflow-hidden">
+                                        <div className={`h-full ${barColor}`} style={{ width: `${barW}%` }} />
+                                      </div>
+                                    </div>
+                                    {diffLabel && (
+                                      <p className={`mt-0.5 text-[9px] font-medium tabular-nums ${warn ? 'text-red-500' : good ? 'text-emerald-600' : 'text-orange-500'}`}>
+                                        {warn ? warn.message : diffLabel}
+                                      </p>
+                                    )}
                                   </div>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
               {/* 매체×캠페인 집계 테이블 */}
-              <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                  <h3 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">매체 × 캠페인별 집계</h3>
+              <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+                <div className="px-4 py-2.5 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-700 text-white text-[10px] font-bold">∑</span>
+                  <h3 className="text-xs font-semibold text-gray-800">매체 × 캠페인별 집계</h3>
                 </div>
                 <div className="overflow-x-auto"><table className="w-full text-xs">
                   <thead className="bg-gray-50 border-b border-gray-100"><tr>
@@ -713,10 +732,13 @@ export default function CampaignDetailPage() {
 
               {/* 세부 설정한 캠페인 — subCampaign 별 분리 (사용자 요청) */}
               {subCampaignRows.length > 0 && (
-                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                  <div className="px-4 py-2.5 bg-violet-50 border-b border-violet-100">
-                    <h3 className="text-[11px] font-semibold text-violet-700 uppercase tracking-wide">세부 설정 캠페인 ({subCampaignRows.length})</h3>
-                    <p className="text-[10px] text-gray-500 mt-0.5">모달에서 매체 하위로 등록한 세부 캠페인 단위 집계 — CSV 캠페인명 매핑 기반</p>
+                <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50/40 via-white to-white overflow-hidden shadow-sm">
+                  <div className="px-4 py-2.5 border-b border-violet-100 flex items-center gap-2">
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-500 text-white text-[10px] font-bold">+</span>
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-800">세부 설정 캠페인 <span className="text-violet-600">({subCampaignRows.length})</span></h3>
+                      <p className="text-[10px] text-gray-400 leading-tight">모달에서 매체 하위로 등록한 세부 캠페인 단위 집계 — CSV 캠페인명 매핑 기반</p>
+                    </div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -855,51 +877,7 @@ export default function CampaignDetailPage() {
                 )}
               </div>
 
-              {/* 매체별 순금액 LineChart */}
-              <div className="rounded-xl border border-gray-200 bg-white p-4">
-                <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">일별 순금액 추이 (매체별)</h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={dailyByMedia} margin={{top:4,right:8,left:0,bottom:4}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
-                    <XAxis dataKey="date" tick={{fontSize:9,fill:"#9ca3af"}}/>
-                    <YAxis tickFormatter={fmtAbbr} tick={{fontSize:9,fill:"#9ca3af"}} width={44}/>
-                    <Tooltip formatter={(v:unknown)=>[fmt(v as number)+"원",""]} contentStyle={{fontSize:10,borderRadius:6}}/>
-                    <Legend iconType="circle" iconSize={7} wrapperStyle={{fontSize:10}}/>
-                    {mediaNames.map(m=>(<Line key={m} type="monotone" dataKey={m} name={m} stroke={mColor(m)} strokeWidth={2} dot={dailyByMedia.length<=31} connectNulls/>))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              {/* 누적 집행금액 */}
-              <div className="rounded-xl border border-gray-200 bg-white p-4">
-                <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">누적 집행금액 vs 세팅금액</h3>
-                <ResponsiveContainer width="100%" height={160}>
-                  <LineChart data={dailyData} margin={{top:4,right:8,left:0,bottom:4}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
-                    <XAxis dataKey="dateLabel" tick={{fontSize:9,fill:"#9ca3af"}}/>
-                    <YAxis tickFormatter={fmtAbbr} tick={{fontSize:9,fill:"#9ca3af"}} width={44}/>
-                    <Tooltip formatter={(v:unknown)=>[fmt(v as number)+"원",""]} contentStyle={{fontSize:10,borderRadius:6}}/>
-                    <Legend iconType="circle" iconSize={7} wrapperStyle={{fontSize:10}}/>
-                    <Line type="monotone" dataKey="cumSpend" name="누적 집행금액" stroke="#3b82f6" strokeWidth={2} dot={false}/>
-                    {totals.totalSettingCost>0&&(
-                      <Line type="monotone" dataKey={()=>totals.totalSettingCost} name="세팅금액" stroke="#e5e7eb" strokeWidth={1} strokeDasharray="4 4" dot={false}/>
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              {/* 일별 CTR */}
-              <div className="rounded-xl border border-gray-200 bg-white p-4">
-                <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">일별 CTR (%)</h3>
-                <ResponsiveContainer width="100%" height={140}>
-                  <BarChart data={dailyData} margin={{top:4,right:8,left:0,bottom:4}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
-                    <XAxis dataKey="dateLabel" tick={{fontSize:9,fill:"#9ca3af"}}/>
-                    <YAxis tickFormatter={(v:number)=>`${v}%`} tick={{fontSize:9,fill:"#9ca3af"}} width={36}/>
-                    <Tooltip formatter={(v:unknown)=>[`${v}%`,"CTR"]} contentStyle={{fontSize:10,borderRadius:6}}/>
-                    <Bar dataKey="ctr" fill="#a78bfa" radius={[2,2,0,0]} name="CTR"/>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              {/* 일별 테이블 */}
+              {/* 일별 테이블 — 사용자 요청 'daily/weekly 그래프 제거', 표만 유지 */}
               <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50"><h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">일별 상세</h3></div>
                 <div className="overflow-x-auto"><table className="w-full text-xs">
@@ -933,18 +911,7 @@ export default function CampaignDetailPage() {
           {/* ===== 주간 탭 ===== */}
           {tab==="weekly"&&(
             <div className="space-y-3">
-              <div className="rounded-xl border border-gray-200 bg-white p-4">
-                <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">주간별 순금액</h3>
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={weeklyData} margin={{top:4,right:8,left:0,bottom:4}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
-                    <XAxis dataKey="weekLabel" tick={{fontSize:10,fill:"#9ca3af"}}/>
-                    <YAxis tickFormatter={fmtAbbr} tick={{fontSize:9,fill:"#9ca3af"}} width={44}/>
-                    <Tooltip formatter={(v:unknown)=>[fmt(v as number)+"원",""]} contentStyle={{fontSize:10,borderRadius:6}}/>
-                    <Bar dataKey="netAmount" fill="#3b82f6" radius={[3,3,0,0]} name="순금액"/>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              {/* 주간 그래프 제거 (사용자 요청) — 표만 유지 */}
               <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                 <table className="w-full text-xs"><thead className="bg-gray-50 border-b border-gray-100"><tr>
                   <th className={thCls}>주차</th><th className={thRCls}>노출</th><th className={thRCls}>클릭</th>
