@@ -21,10 +21,10 @@ import {
   calcCTR, calcSR, calcPR, calcVTR,
   type UnifiedCampaignSnapshot,
 } from "@/lib/motivApi/statsMapper"
-import { aggregateDailyToMetrics } from "@/lib/motivApi/statsService"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
 import { useMotivStatsDaily } from "@/lib/hooks/useMotivStatsDaily"
+import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import { useRefreshControl } from "@/lib/hooks/useRefreshControl"
 import { RefreshControlBar } from "@/components/molecules/RefreshControl"
 import { DailyCostChart } from "@/components/analysis/DailyCostChart"
@@ -86,8 +86,23 @@ export default function CtAnalysisPage() {
   const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot(yesterdayDate, refreshKey)
   const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
 
+  // 캠페인별 일자 범위 stats — /v1/stats/campaign/breakdown.
+  // 표(today) 와 카드(daily 합) 가 동일한 source 에서 일치하도록 today override 용.
+  const motivCampaignIdsAll = useMemo(
+    () => motiv.data.filter(c => !isExcludedCampaign(c.title ?? '')).map(c => c.id),
+    [motiv.data],
+  )
+  const statsCampaign = useMotivStatsCampaign({
+    scope: { campaignIds: motivCampaignIdsAll },
+    startDate: rangeStart,
+    endDate:   rangeEnd,
+    enabled:   motivCampaignIdsAll.length > 0,
+    refreshKey,
+  })
+
   // MotivCampaign → UnifiedCampaignSnapshot (전일 스냅샷 + 광고주 매핑)
   // P1: getAdvertiserName / getAgencyDisplayName 헬퍼로 fallback chain 적용
+  // today 는 statsCampaign(일자 범위 집계) 가 있으면 override — 누적값 의존 제거.
   const snapshots: UnifiedCampaignSnapshot[] = useMemo(() => {
     // dev 환경 — 매핑 실패 케이스 진단
     const missingAd: number[] = []
@@ -105,11 +120,14 @@ export default function CtAnalysisPage() {
         const agencyName = getAgencyDisplayName(motivAgency)
         const advertiserName = getAdvertiserName(adAccount)
         const yStats = yesterdayStats.get(c.id)
-        return motivCampaignToSnapshot(
+        const snap = motivCampaignToSnapshot(
           c, agencyName,
           yStats ? motivStatsToMetrics(yStats) : undefined,
           advertiserName,
         )
+        const todayOverride = statsCampaign.byMotivId.get(c.id)
+        if (todayOverride) snap.today = todayOverride
+        return snap
       })
 
     // dev 환경 — 매핑 실패 케이스 가시화 (어떤 adaccount_id / agency_id 가 비어있는지)
@@ -126,7 +144,7 @@ export default function CtAnalysisPage() {
     }
 
     return result
-  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats])
+  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats, statsCampaign.byMotivId])
 
   // 카테고리 필터 (PARTNERS 는 합계에만 포함)
   const filtered = useMemo(() => {
@@ -134,50 +152,22 @@ export default function CtAnalysisPage() {
     return snapshots.filter(s => s.uiType === category)
   }, [snapshots, category])
 
-  // 합계
-  // 합계 (캠페인 stats 단위 — MOTIV /v1/campaigns 응답의 stats 합산).
-  const sumT_campaignBased = useMemo(() => aggregateMetrics(filtered.map(s => s.today)), [filtered])
+  // 합계 — snapshot.today 가 statsCampaign(일자 범위 집계) 로 override 되었으므로
+  // 카드/표가 모두 동일 source(/v1/stats/campaign/breakdown) 의 일자 범위 값으로 일치.
+  const sumT        = useMemo(() => aggregateMetrics(filtered.map(s => s.today)), [filtered])
   const sumY        = useMemo(() => aggregateMetrics(filtered.map(s => s.yesterday)), [filtered])
   const totalBudget = useMemo(() => filtered.reduce((a, c) => a + c.budget, 0), [filtered])
   const showVTR = category === 'video'
 
-  // P3: 일별 비용 추세 — 선택된 일자 범위 그대로 사용
-  const monthRange = useMemo(
-    () => ({ start: rangeStart, end: rangeEnd }),
-    [rangeStart, rangeEnd],
-  )
+  // 일별 비용 추세 차트 전용 — /stats/daily/breakdown
   const filteredCampaignIds = useMemo(() => filtered.map(s => s.motivId), [filtered])
   const statsDaily = useMotivStatsDaily({
     scope: { campaignIds: filteredCampaignIds },
-    startDate: monthRange.start,
-    endDate:   monthRange.end,
+    startDate: rangeStart,
+    endDate:   rangeEnd,
     enabled:   filteredCampaignIds.length > 0,
     refreshKey,
   })
-
-  // sumT: 매출/비용 항목은 /stats/daily/breakdown 의 일자 합으로 우선 적용(있을 때).
-  //       impressions/clicks/completedViews 는 daily 응답에 없으므로 캠페인 stats 합 유지.
-  //       캠페인 stats 는 누적값일 수 있어 선택 일자 범위와 일치하지 않을 수 있음 → daily 합이 정확.
-  const sumT = useMemo(() => {
-    if (statsDaily.data.length === 0) return sumT_campaignBased
-    const daily = aggregateDailyToMetrics(statsDaily.data)
-    // dev 진단 — 캠페인 stats 합 vs daily 합 차이 가시화
-    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
-      const cmp = sumT_campaignBased
-      console.info('[CT analysis] spend 비교', {
-        '캠페인 stats 합 (sumT)': { spend: cmp.spend, agencyFee: cmp.agencyFee, dmpFee: cmp.dmpFee, mediaCost: cmp.mediaCost },
-        '일자별 합 (daily)':     { spend: daily.spend, agencyFee: daily.agencyFee, dmpFee: daily.dmpFee, mediaCost: daily.mediaCost, profit: daily.profit },
-        '차이(daily-campaign)':  { spend: daily.spend - cmp.spend },
-      })
-    }
-    return {
-      ...sumT_campaignBased,
-      spend:     daily.spend,
-      agencyFee: daily.agencyFee,
-      dmpFee:    daily.dmpFee,
-      mediaCost: daily.mediaCost,
-    }
-  }, [sumT_campaignBased, statsDaily.data])
 
   // 카테고리 별 캠페인 수 (탭 배지)
   const countByCategory = useMemo(() => ({
@@ -329,11 +319,7 @@ export default function CtAnalysisPage() {
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <SummaryCard label="총 노출" value={f(sumT.impressions)} />
           <SummaryCard label="총 클릭" value={f(sumT.clicks)} />
-          <SummaryCard label="총 매출"
-            value={`₩${f(sumT.spend)}`}
-            sub={statsDaily.data.length > 0
-              ? `일자별 합 ₩${f(statsDaily.data.reduce((s, p) => s + p.cost, 0))}`
-              : undefined} />
+          <SummaryCard label="총 매출" value={`₩${f(sumT.spend)}`} />
           <SummaryCard label="총 비용"
             value={`₩${f(sumT.mediaCost + sumT.agencyFee + sumT.dmpFee)}`} />
         </section>

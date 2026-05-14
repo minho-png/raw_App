@@ -15,6 +15,7 @@
 import type { MotivCampaign, MotivCampaignStats } from './types'
 import type { MediaProductType } from './productMapping'
 import { motivTypeToProduct } from './productMapping'
+import { toNum } from './statsService'
 
 export interface UnifiedDailyMetrics {
   impressions: number
@@ -142,6 +143,38 @@ export function aggregateMetrics(list: UnifiedDailyMetrics[]): UnifiedDailyMetri
     mediaCost:      acc.mediaCost      + m.mediaCost,
     completedViews: acc.completedViews + m.completedViews,
   }), { ...ZERO_METRICS })
+}
+
+// MOTIV /v1/stats/campaign/breakdown 행 (dictionary[string,string]) → UnifiedDailyMetrics 변환.
+// 캠페인 ID 별로 일자 범위 집계된 stats 가 한 row 로 옴 (sort=campaign_id).
+//
+// motivStatsToMetrics 와 동일한 회계 모델:
+//   spend     = cost
+//   rawAgency = agency_fee   (Motiv 원본 — 대행+DMP 합)
+//   dmpFee    = data_fee
+//   agencyFee = rawAgency - dmpFee
+//   mediaCost = spend - rawAgency - profit
+//
+// impressions / clicks / completedViews 도 row 에 있으면 사용.
+export function rowsToCampaignMetricsMap(
+  rows: ReadonlyArray<Record<string, string>>,
+): Map<number, UnifiedDailyMetrics> {
+  const map = new Map<number, UnifiedDailyMetrics>()
+  for (const r of rows) {
+    const id = Number(r.campaign_id)
+    if (!Number.isFinite(id) || id <= 0) continue
+    const spend     = Math.round(toNum(r.cost))
+    const rawAgency = Math.round(toNum(r.agency_fee))
+    const dmpFee    = Math.round(toNum(r.data_fee))
+    const agencyFee = Math.max(0, rawAgency - dmpFee)
+    const profit    = Math.round(toNum(r.profit))
+    const mediaCost = Math.max(0, spend - rawAgency - profit)
+    const impressions    = Math.round(toNum(r.v_impression) || toNum(r.win))
+    const clicks         = Math.round(toNum(r.click))
+    const completedViews = Math.round(toNum(r.v_play100))
+    map.set(id, { impressions, clicks, spend, agencyFee, dmpFee, mediaCost, completedViews })
+  }
+  return map
 }
 
 // 계산식 (mock 페이지와 동일)

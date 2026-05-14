@@ -78,7 +78,8 @@ async function fetchStatsBreakdown(path: string, query: StatsQuery): Promise<Sta
   }
 }
 
-export const fetchStatsDaily   = (q: StatsQuery) => fetchStatsBreakdown('/v1/stats/daily/breakdown', q)
+export const fetchStatsDaily    = (q: StatsQuery) => fetchStatsBreakdown('/v1/stats/daily/breakdown', q)
+export const fetchStatsCampaign = (q: StatsQuery) => fetchStatsBreakdown('/v1/stats/campaign/breakdown', q)
 
 // 파싱 helper — dictionary[string,string] 의 숫자 필드 안전 변환
 export function toNum(v: string | number | null | undefined): number {
