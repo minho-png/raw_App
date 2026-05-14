@@ -50,9 +50,14 @@ export function CsvMappingPanel({
     [allReportCampaignNames, reportNameMeta]
   )
 
-  // 검색 + 매체 필터 적용
+  // 검색 + 매체 필터 + '다른 캠페인 사용 중' 항목 숨김 (사용자 결정).
+  // 현재 캠페인이 이미 선택한 항목(csvNames 에 포함된 것)은 계속 노출 — 해제 가능해야 하므로.
+  // 숨김 대상: takenCsvNames 에 있고 동시에 현재 csvNames 에는 없는 항목.
   const filtered = React.useMemo(() => {
     return allReportCampaignNames.filter(name => {
+      const isCheckedHere = csvNames.includes(name)
+      const isTakenElsewhere = takenCsvNames.includes(name) && !isCheckedHere
+      if (isTakenElsewhere) return false
       if (csvSearch && !name.toLowerCase().includes(csvSearch.toLowerCase())) return false
       if (csvMediaFilter) {
         const meta = reportNameMeta.get(name)
@@ -60,7 +65,7 @@ export function CsvMappingPanel({
       }
       return true
     })
-  }, [allReportCampaignNames, csvSearch, csvMediaFilter, reportNameMeta])
+  }, [allReportCampaignNames, csvSearch, csvMediaFilter, reportNameMeta, takenCsvNames, csvNames])
 
   return (
     <div>
