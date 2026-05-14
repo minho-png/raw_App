@@ -35,6 +35,8 @@ export function CampaignDetailPanel({
   onEdit: (c: Campaign) => void
   onUpdate?: (c: Campaign) => void
 }) {
+  // UX-08: 상세 분석 버튼 클릭 후 페이지 전환까지 약간 지연이 있어 사용자가 재클릭하는 문제 해소.
+  const [navigatingDetail, setNavigatingDetail] = React.useState(false)
   const [dashboardInput, setDashboardInput] = React.useState<string>(
     campaign.dashboardNetAmount != null ? String(campaign.dashboardNetAmount) : ""
   )
@@ -658,10 +660,25 @@ export function CampaignDetailPanel({
         {/* 푸터 */}
         <div className="border-t border-gray-100 px-5 py-3 flex items-center justify-between gap-2">
           <button
-            onClick={() => router.push(`/campaign/ct-plus/status/${campaign.id}`)}
-            className="rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors"
+            onClick={() => {
+              if (navigatingDetail) return
+              setNavigatingDetail(true)
+              router.push(`/campaign/ct-plus/status/${campaign.id}`)
+            }}
+            disabled={navigatingDetail}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+              navigatingDetail
+                ? 'border-purple-200 bg-purple-100 text-purple-400 cursor-wait'
+                : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
+            }`}
           >
-            상세 분석
+            {navigatingDetail && (
+              <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
+                <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+            )}
+            {navigatingDetail ? '이동 중…' : '상세 분석'}
           </button>
           <button
             onClick={() => onEdit(campaign)}

@@ -36,7 +36,14 @@ const ANOMALY_CFG: Record<AnomalyType, {
 }
 
 // ── 컴포넌트 ──────────────────────────────────────────
-export function AnomalyBanner({ anomalies }: { anomalies: CampaignAnomaly[] }) {
+export function AnomalyBanner({
+  anomalies,
+  onScrollToRow,
+}: {
+  anomalies: CampaignAnomaly[]
+  /** UX-07 — 배지 클릭 시 해당 캠페인 행으로 스크롤. */
+  onScrollToRow?: (campaignId: string) => void
+}) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   if (anomalies.length === 0) return null
@@ -56,8 +63,12 @@ export function AnomalyBanner({ anomalies }: { anomalies: CampaignAnomaly[] }) {
             return (
               <button
                 key={key}
-                onClick={() => setExpanded(expanded === key ? null : key)}
+                onClick={() => {
+                  setExpanded(expanded === key ? null : key)
+                  onScrollToRow?.(a.campaign.id)
+                }}
                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors hover:opacity-80 ${cfg.badge} ${expanded === key ? "ring-2 ring-orange-300" : ""}`}
+                title="클릭하면 해당 캠페인 행으로 이동합니다"
               >
                 {cfg.icon}
                 <span className="max-w-[140px] truncate">{a.campaign.campaignName}</span>

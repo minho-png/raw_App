@@ -38,18 +38,19 @@ export function CampaignTableSection({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-500">
+              {/* UX-06: 헤더 간소화 — 부연 설명은 title 툴팁으로 이동, 줄바꿈 제거. */}
+              <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-500 whitespace-nowrap">
                 <th className="px-4 py-3 text-left">캠페인명</th>
                 <th className="px-4 py-3 text-left">광고주</th>
                 <th className="px-4 py-3 text-left">대행사</th>
                 <th className="px-4 py-3 text-left">담당자</th>
                 <th className="px-4 py-3 text-left">기간</th>
-                <th className="px-4 py-3 text-center">진행률</th>
-                <th className="px-4 py-3 text-center">소진율 <span className="text-[9px] font-normal text-gray-400">(raw)</span></th>
-                <th className="px-4 py-3 text-right">집행금액 <span className="text-[9px] font-normal text-gray-400">(세팅금액)</span></th>
-                <th className="px-4 py-3 text-right">전일 대비 소진<br/><span className="text-[9px] font-normal text-gray-400">(당일 / 전일)</span></th>
+                <th className="px-4 py-3 text-center" title="운영 기간 대비 경과한 비율">진행률</th>
+                <th className="px-4 py-3 text-center" title="raw 데이터 기준 소진율 (실 소진 / 세팅금액)">소진율</th>
+                <th className="px-4 py-3 text-right" title="집행금액(세팅금액) — 매체별 총예산 합">집행금액</th>
+                <th className="px-4 py-3 text-right" title="당일 / 전일 소진 비교">전일 대비 소진</th>
                 <th className="px-4 py-3 text-left">메모</th>
-                <th className="px-4 py-3 text-center">연결</th>
+                <th className="px-4 py-3 text-center" title="연결된 CSV 캠페인 수 (DB)">연결</th>
                 <th className="px-4 py-3 text-center">관리</th>
               </tr>
             </thead>
@@ -70,6 +71,7 @@ export function CampaignTableSection({
                 return (
                   <tr
                     key={c.id}
+                    data-campaign-row={c.id}
                     className={`hover:bg-gray-50 transition-colors cursor-pointer ${isLagging ? "bg-yellow-50/60" : ""} ${selectedDetailId === c.id ? "ring-1 ring-inset ring-blue-200 bg-blue-50/60" : ""}`}
                     onClick={() => setSelectedDetailId(selectedDetailId === c.id ? null : c.id)}
                   >
