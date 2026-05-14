@@ -7,7 +7,7 @@ import {
 import { useRawData } from "@/lib/hooks/useRawData"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { ModalShell } from "@/components/atoms/ModalShell"
-import { inputCls, emptyMB, MF } from "./statusUtils"
+import { inputCls, emptyMB, MF, errClass } from "./statusUtils"
 import { MediaBudgetCard } from "./MediaBudgetCard"
 import { CsvMappingPanel } from "./CsvMappingPanel"
 import { genId } from "@/lib/idGen"
@@ -15,7 +15,7 @@ import { genId } from "@/lib/idGen"
 // VAT 포함 표시 매체 (실 세팅금액 자동계산 시 ×1.1)
 const VAT_INCLUDED_MEDIA = ['네이버 GFA', '카카오모먼트']
 
-export function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose, takenCsvNames = [] }: {
+export function CampaignModal({ initial, operators, agencies, advertisers, onSave, onClose, takenCsvNames = [], takenCsvOwners = {} }: {
   initial: Campaign | null
   operators: Operator[]
   agencies: Agency[]
@@ -23,6 +23,8 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   onSave: (c: Campaign) => void
   onClose: () => void
   takenCsvNames?: string[]
+  /** CSV 캠페인명 → 사용 중인 캠페인 이름 (UX-03 툴팁) */
+  takenCsvOwners?: Record<string, string>
 }) {
   const [agencyId,        setAgencyId]        = useState(initial?.agencyId        ?? "")
   const [advertiserId,    setAdvertiserId]    = useState(initial?.advertiserId    ?? "")
@@ -41,11 +43,21 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   const [csvMediaFilter,  setCsvMediaFilter]  = useState('')
   const { allRows: rawRows } = useRawData()
   const { upsertOperator, deleteOperator } = useMasterData()
-  const [confirmMode,     setConfirmMode]     = useState<null | "save" | "close">(null)
+  const [confirmMode,     setConfirmMode]     = useState<null | "close">(null)
   const [isDirty,         setIsDirty]         = useState(false)
   const [opDropOpen,      setOpDropOpen]      = useState(false)
   const [newOpName,       setNewOpName]       = useState("")
   const opDropRef = useRef<HTMLDivElement>(null)
+
+  // BUG-01: 필드별 유효성 에러 메시지.
+  type FieldKey = 'agencyId' | 'advertiserId' | 'campaignName' | 'managerId' | 'startDate' | 'endDate' | 'settlementMonth'
+  const [errors, setErrors] = useState<Partial<Record<FieldKey, string>>>({})
+  function clearError(k: FieldKey) {
+    setErrors(prev => {
+      if (!prev[k]) return prev
+      const next = { ...prev }; delete next[k]; return next
+    })
+  }
 
   // Close operator dropdown when clicking outside
   useEffect(() => {
@@ -177,15 +189,26 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
     return used
   }
 
+  // UX-02: 저장 이중 확인 제거. BUG-01: 빈 필드별 에러. BUG-02: 종료일 < 시작일 에러.
   function handleSaveClick() {
-    if (!campaignName.trim() || !agencyId || !advertiserId || !managerId || !startDate || !endDate || !settlementMonth) {
-      alert("필수 항목을 입력하세요.")
+    const next: Partial<Record<FieldKey, string>> = {}
+    if (!agencyId)            next.agencyId        = '대행사를 선택하세요'
+    if (!advertiserId)        next.advertiserId    = '광고주를 선택하세요'
+    if (!campaignName.trim()) next.campaignName    = '캠페인명을 입력하세요'
+    if (!managerId)           next.managerId       = '담당자를 선택하세요'
+    if (!startDate)           next.startDate       = '시작일을 선택하세요'
+    if (!endDate)             next.endDate         = '종료일을 선택하세요'
+    if (startDate && endDate && endDate < startDate) {
+      next.endDate = '종료일이 시작일보다 이전입니다'
+    }
+    if (!settlementMonth)     next.settlementMonth = '정산월을 선택하세요'
+    setErrors(next)
+    if (Object.keys(next).length > 0) {
+      const firstKey = Object.keys(next)[0] as FieldKey
+      const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
-    setConfirmMode("save")
-  }
-
-  function handleConfirmSave() {
     onSave({
       id: initial?.id ?? genId(),
       campaignName,
@@ -194,7 +217,6 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
       csvNames,
       dashboardNetAmount: dashboardNetAmount === "" ? undefined : dashboardNetAmount,
       createdAt: initial?.createdAt ?? new Date().toISOString() } as Campaign)
-    setConfirmMode(null)
   }
 
   function handleCloseClick() {
@@ -221,22 +243,38 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
       <div className="space-y-4">
 
         <div className="grid grid-cols-2 gap-4">
-          <MF label="대행사 *">
-            <select value={agencyId} onChange={e => handleAgencyChange(e.target.value)} className={inputCls}>
+          <MF label="대행사 *" error={errors.agencyId}>
+            <select
+              data-field="agencyId"
+              value={agencyId}
+              onChange={e => { handleAgencyChange(e.target.value); clearError('agencyId') }}
+              className={errClass(inputCls, errors.agencyId)}
+            >
               <option value="">선택하세요</option>
               {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </MF>
-          <MF label="광고주 *">
-            <select value={advertiserId} onChange={e => setAdvertiserId(e.target.value)} className={inputCls}>
+          <MF label="광고주 *" error={errors.advertiserId}>
+            <select
+              data-field="advertiserId"
+              value={advertiserId}
+              onChange={e => { setAdvertiserId(e.target.value); clearError('advertiserId') }}
+              className={errClass(inputCls, errors.advertiserId)}
+            >
               <option value="">선택하세요</option>
               {filteredAdvertisers.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </MF>
         </div>
 
-        <MF label="캠페인명 *">
-          <input type="text" value={campaignName} onChange={e => setCampaignName(e.target.value)} className={inputCls} />
+        <MF label="캠페인명 *" error={errors.campaignName}>
+          <input
+            data-field="campaignName"
+            type="text"
+            value={campaignName}
+            onChange={e => { setCampaignName(e.target.value); clearError('campaignName') }}
+            className={errClass(inputCls, errors.campaignName)}
+          />
         </MF>
 
         <div className="grid grid-cols-3 gap-4">
@@ -246,12 +284,12 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
               {CAMPAIGN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </MF>
-          <MF label="담당자 *">
-            <div ref={opDropRef} className="relative">
+          <MF label="담당자 *" error={errors.managerId}>
+            <div ref={opDropRef} className="relative" data-field="managerId">
               <button
                 type="button"
                 onClick={() => setOpDropOpen(v => !v)}
-                className={`${inputCls} flex items-center justify-between text-left`}
+                className={`${errClass(inputCls, errors.managerId)} flex items-center justify-between text-left`}
               >
                 <span className={managerId ? "text-gray-900" : "text-gray-400"}>
                   {operators.find(o => o.id === managerId)?.name ?? "선택하세요"}
@@ -271,7 +309,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
                         key={o.id}
                         className={`flex items-center justify-between px-3 py-2 cursor-pointer text-sm hover:bg-gray-50 ${managerId === o.id ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}
                       >
-                        <span onClick={() => { setManagerId(o.id); setOpDropOpen(false) }} className="flex-1">
+                        <span onClick={() => { setManagerId(o.id); setOpDropOpen(false); clearError('managerId') }} className="flex-1">
                           {o.name}
                         </span>
                         <button
@@ -299,6 +337,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
                         className="flex-shrink-0 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
                       >추가</button>
                     </div>
+                    <p className="mt-1.5 text-[10px] text-gray-400">※ 새 담당자는 시스템에 영구 등록됩니다</p>
                   </div>
                 </div>
               )}
@@ -313,16 +352,52 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
         </div>
 
         <div className="grid grid-cols-3 gap-4">
-          <MF label="시작일 *">
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputCls} />
+          <MF label="시작일 *" error={errors.startDate}>
+            <input
+              data-field="startDate"
+              type="date"
+              value={startDate}
+              onChange={e => { setStartDate(e.target.value); clearError('startDate') }}
+              className={errClass(inputCls, errors.startDate)}
+            />
           </MF>
-          <MF label="종료일 *">
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={inputCls} />
+          <MF label="종료일 *" error={errors.endDate}>
+            <input
+              data-field="endDate"
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={e => { setEndDate(e.target.value); clearError('endDate') }}
+              className={errClass(inputCls, errors.endDate)}
+            />
           </MF>
-          <MF label="정산월 *">
-            <input type="month" value={settlementMonth} onChange={e => setSettlementMonth(e.target.value)} className={inputCls} />
+          <MF label="정산월 *" error={errors.settlementMonth}>
+            <input
+              data-field="settlementMonth"
+              type="month"
+              value={settlementMonth}
+              onChange={e => { setSettlementMonth(e.target.value); clearError('settlementMonth') }}
+              className={errClass(inputCls, errors.settlementMonth)}
+            />
           </MF>
         </div>
+
+        {/* UX-04: DB 데이터 연결 — 매체 설정 위로 이동 (역방향 흐름 해소). */}
+        {rawRows.length > 0 && (
+          <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+            <CsvMappingPanel
+              rawRows={rawRows}
+              csvNames={csvNames}
+              csvSearch={csvSearch}
+              csvMediaFilter={csvMediaFilter}
+              takenCsvNames={takenCsvNames}
+              takenCsvOwners={takenCsvOwners}
+              onCsvSearchChange={setCsvSearch}
+              onCsvMediaFilterChange={setCsvMediaFilter}
+              onCsvNamesChange={setCsvNames}
+            />
+          </div>
+        )}
 
         <MF label="매체 선택">
           <div className="flex flex-wrap gap-2">
@@ -339,6 +414,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           <MediaBudgetCard
             key={mb.media}
             mb={mb}
+            rawRows={rawRows}
             onUpdateMBField={updateMBField}
             onAddSubCampaign={addSubCampaign}
             onUpdateSubCampaign={updateSubCampaign}
@@ -350,21 +426,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           />
         ))}
 
-        {/* DB 데이터 연결 */}
-        {rawRows.length > 0 && (
-          <CsvMappingPanel
-            rawRows={rawRows}
-            csvNames={csvNames}
-            csvSearch={csvSearch}
-            csvMediaFilter={csvMediaFilter}
-            takenCsvNames={takenCsvNames}
-            onCsvSearchChange={setCsvSearch}
-            onCsvMediaFilterChange={setCsvMediaFilter}
-            onCsvNamesChange={setCsvNames}
-          />
-        )}
-
-        <MF label={<span>대시보드 소진액 <span className="text-[11px] text-gray-400 font-normal">(대시보드 소진율 계산용 — 직접 입력)</span></span>}>
+        <MF label={<span>대시보드 소진액 <span className="text-[11px] text-gray-400 font-normal">(대시보드 소진율 계산용 — 직접 입력 / 부킹 금액은 매체별 &apos;총 예산&apos; 합으로 자동 계산됩니다)</span></span>}>
           <input
             type="number" min="0"
             value={dashboardNetAmount}
@@ -378,17 +440,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           <textarea value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} rows={3} />
         </MF>
 
-        {/* 확인 섹션 */}
-        {confirmMode === "save" && (
-          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 space-y-3">
-            <p className="text-sm font-semibold text-blue-900">저장하시겠습니까?</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmMode(null)} className="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors">취소</button>
-              <button onClick={handleConfirmSave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">확인</button>
-            </div>
-          </div>
-        )}
-
+        {/* 확인 섹션 — UX-02: 저장 확인 제거. 닫기는 dirty 시 확인 유지. */}
         {confirmMode === "close" && (
           <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4 space-y-3">
             <p className="text-sm font-semibold text-yellow-900">변경사항이 있습니다. 닫으시겠습니까?</p>

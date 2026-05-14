@@ -7,6 +7,7 @@ export function SubCampaignList({
   media,
   subCampaigns = [],
   csvNames = [],
+  allSelectedCsvCount = 0,
   takenCsvNames = [],
   usedInMedia,
   onAddSubCampaign,
@@ -16,7 +17,10 @@ export function SubCampaignList({
 }: {
   media: string
   subCampaigns?: SubCampaign[]
+  /** 이 매체에 매칭되는 CSV 캠페인명 (이미 매체별 필터 적용됨) */
   csvNames?: string[]
+  /** 상위에서 전체 선택된 CSV 캠페인 개수 — '없음' 안내 분기 */
+  allSelectedCsvCount?: number
   takenCsvNames?: string[]
   usedInMedia: Set<string>
   onAddSubCampaign: () => void
@@ -71,41 +75,56 @@ export function SubCampaignList({
               </div>
               {csvNames.length > 0 ? (
                 <div className="rounded border border-gray-200 p-2 space-y-1 max-h-28 overflow-y-auto bg-gray-50">
-                  <p className="text-[10px] text-gray-400 mb-1">CSV 캠페인명 매핑 (복수 선택 가능)</p>
+                  <p className="text-[10px] text-gray-400 mb-1">
+                    CSV 캠페인명 매핑 — <span className="font-medium text-gray-500">{media}</span> 매체에 잡힌 항목만 표시
+                  </p>
                   {csvNames.map(name => {
                     const checked = (sc.csvCampaignNames ?? []).includes(name)
                     const isTakenByOther = takenCsvNames.includes(name)
                     const isUsedInThisMedia = usedInMedia.has(name)
                     const isDisabled = isTakenByOther || (isUsedInThisMedia && !checked)
+                    const lockedTitle = isDisabled
+                      ? (isTakenByOther ? '다른 캠페인에서 사용 중' : '같은 매체의 다른 서브캠페인에서 사용 중')
+                      : undefined
 
                     return (
-                      <label key={name} className={`flex items-center gap-2 rounded px-2 py-1 cursor-${isDisabled ? 'not-allowed' : 'pointer'} text-[11px] transition-colors ${
+                      <label key={name} title={lockedTitle} className={`flex items-center gap-2 rounded px-2 py-1 text-[11px] transition-colors ${
                         isDisabled
-                          ? 'bg-gray-100 text-gray-400'
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                           : checked
-                          ? 'bg-blue-50 text-blue-700'
-                          : 'text-gray-600 hover:bg-white'
+                          ? 'bg-blue-50 text-blue-700 cursor-pointer'
+                          : 'text-gray-600 hover:bg-white cursor-pointer'
                       }`}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={isDisabled}
-                          onChange={e => {
-                            if (!isDisabled) {
+                        {isDisabled ? (
+                          <span className="flex-shrink-0 inline-flex h-3 w-3 items-center justify-center text-gray-400" aria-label="사용 중">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className="h-3 w-3">
+                              <rect x="5" y="11" width="14" height="9" rx="1.5" />
+                              <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
+                            </svg>
+                          </span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={e => {
                               const cur = sc.csvCampaignNames ?? []
                               const next = e.target.checked ? [...cur, name] : cur.filter(n => n !== name)
                               onSetSubCampaignCsvNames(idx, next)
-                            }
-                          }}
-                          className="rounded flex-shrink-0"
-                        />
+                            }}
+                            className="rounded flex-shrink-0"
+                          />
+                        )}
                         <span className="truncate">{name}</span>
                         {isTakenByOther && <span className="text-[10px] text-gray-400">(사용 중)</span>}
-                        {isUsedInThisMedia && !checked && <span className="text-[10px] text-gray-400">(다른 서브캠에서 사용)</span>}
+                        {isUsedInThisMedia && !checked && <span className="text-[10px] text-gray-400">(다른 서브캠)</span>}
                       </label>
                     )
                   })}
                 </div>
+              ) : allSelectedCsvCount > 0 ? (
+                <p className="text-[11px] text-amber-600 italic">
+                  위 &apos;DB 데이터 연결&apos;에서 선택한 CSV 캠페인 중 <span className="font-medium">{media}</span> 매체에 잡힌 항목이 없습니다.
+                </p>
               ) : (
                 <p className="text-[11px] text-gray-400 italic">위 &apos;DB 데이터 연결&apos;에서 CSV 캠페인명을 먼저 선택하세요</p>
               )}

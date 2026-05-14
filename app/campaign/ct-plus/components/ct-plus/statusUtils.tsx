@@ -66,13 +66,23 @@ export function SCard({ label, value, sub, color }: {
   )
 }
 
-export function MF({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+export function MF({ label, children, error }: { label: React.ReactNode; children: React.ReactNode; error?: string }) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs font-medium text-gray-700">{label}</label>
       {children}
+      {error && (
+        <p className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
+          <span aria-hidden>⚠</span>{error}
+        </p>
+      )}
     </div>
   )
+}
+
+/** 에러 시 input 테두리를 강조하는 헬퍼 클래스 — BUG-01. */
+export function errClass(base: string, error?: string): string {
+  return error ? `${base} !border-rose-400 !ring-rose-200` : base
 }
 
 export { btnPrimary, selectCls, inputCls, emptyTB, emptyMB, fmt, spendRateStyle, getDailySuggestion }

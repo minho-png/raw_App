@@ -9,6 +9,7 @@ export function CsvMappingPanel({
   csvSearch,
   csvMediaFilter,
   takenCsvNames = [],
+  takenCsvOwners = {},
   onCsvSearchChange,
   onCsvMediaFilterChange,
   onCsvNamesChange,
@@ -18,6 +19,8 @@ export function CsvMappingPanel({
   csvSearch: string
   csvMediaFilter: string
   takenCsvNames?: string[]
+  /** CSV 캠페인명 → 사용 중인 캠페인 표시명 (UX-03 툴팁용) */
+  takenCsvOwners?: Record<string, string>
   onCsvSearchChange: (search: string) => void
   onCsvMediaFilterChange: (filter: string) => void
   onCsvNamesChange: (names: string[]) => void
@@ -92,29 +95,53 @@ export function CsvMappingPanel({
           const meta = reportNameMeta.get(name)
           const mediaTags = meta ? Array.from(meta.media) : []
           const isTaken = takenCsvNames.includes(name)
+          const ownerName = takenCsvOwners[name]
+          const lockedTitle = isTaken && !checked
+            ? `이미 사용 중${ownerName ? ` — ${ownerName}` : ''}`
+            : undefined
 
+          // UX-03: 사용 중인 항목은 체크박스 대신 잠금 아이콘 표시 + 호버 툴팁.
           return (
-            <label key={name} className={`flex items-start gap-2 rounded-md px-2 py-1.5 cursor-${isTaken && !checked ? 'not-allowed' : 'pointer'} transition-colors ${
-              isTaken && !checked
-                ? 'bg-gray-100'
-                : checked
-                ? "bg-blue-50"
-                : "hover:bg-gray-50"
-            }`}>
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={isTaken && !checked}
-                onChange={e => {
-                  if (e.target.checked) onCsvNamesChange([...csvNames, name])
-                  else onCsvNamesChange(csvNames.filter(n => n !== name))
-                }}
-                className="rounded mt-0.5 flex-shrink-0"
-              />
+            <label
+              key={name}
+              title={lockedTitle}
+              className={`flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors ${
+                isTaken && !checked
+                  ? 'bg-gray-100 cursor-not-allowed'
+                  : checked
+                  ? 'bg-blue-50 cursor-pointer'
+                  : 'hover:bg-gray-50 cursor-pointer'
+              }`}
+            >
+              {isTaken && !checked ? (
+                <span
+                  className="mt-0.5 flex-shrink-0 inline-flex h-3.5 w-3.5 items-center justify-center text-gray-400"
+                  aria-label="사용 중 — 선택 불가"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className="h-3 w-3">
+                    <rect x="5" y="11" width="14" height="9" rx="1.5" />
+                    <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
+                  </svg>
+                </span>
+              ) : (
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={e => {
+                    if (e.target.checked) onCsvNamesChange([...csvNames, name])
+                    else onCsvNamesChange(csvNames.filter(n => n !== name))
+                  }}
+                  className="rounded mt-0.5 flex-shrink-0"
+                />
+              )}
               <div className="min-w-0">
-                <span className={`text-xs block truncate ${isTaken && !checked ? 'text-gray-400' : checked ? "text-blue-700 font-medium" : "text-gray-700"}`}>
+                <span className={`text-xs block truncate ${isTaken && !checked ? 'text-gray-400' : checked ? 'text-blue-700 font-medium' : 'text-gray-700'}`}>
                   {name}
-                  {isTaken && !checked && ' (사용 중)'}
+                  {isTaken && !checked && (
+                    <span className="ml-1 text-[10px] text-gray-400">
+                      {ownerName ? `(${ownerName} 사용)` : '(사용 중)'}
+                    </span>
+                  )}
                 </span>
                 {mediaTags.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-0.5">

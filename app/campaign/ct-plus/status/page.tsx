@@ -88,6 +88,17 @@ export default function CampaignStatusPage() {
     () => campaigns.filter(c => c.id !== editTarget?.id).flatMap(c => c.csvNames ?? []),
     [campaigns, editTarget]
   )
+  // UX-03 — CSV 캠페인명 → 사용 중인 캠페인 표시명 (모달 툴팁용)
+  const takenCsvOwners = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const c of campaigns) {
+      if (c.id === editTarget?.id) continue
+      for (const name of c.csvNames ?? []) {
+        if (!map[name]) map[name] = c.campaignName
+      }
+    }
+    return map
+  }, [campaigns, editTarget])
 
   const [computedSpendMap, setComputedSpendMap] = useState<
     Map<string, { netAmount: number; executionAmount: number; rowCount: number }>
@@ -258,7 +269,17 @@ export default function CampaignStatusPage() {
           </p>
         )}
         <CampaignSummaryBanner summary={summary} />
-        <AnomalyBanner anomalies={anomalies} />
+        <AnomalyBanner
+          anomalies={anomalies}
+          onScrollToRow={(id) => {
+            const el = document.querySelector<HTMLElement>(`[data-campaign-row="${id}"]`)
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              el.classList.add('ring-2', 'ring-orange-300')
+              setTimeout(() => el.classList.remove('ring-2', 'ring-orange-300'), 2000)
+            }
+          }}
+        />
         <CampaignFilterBar
           filterStatus={filterStatus} setFilterStatus={setFilterStatus}
           filterMonth={filterMonth}   setFilterMonth={setFilterMonth}
@@ -295,9 +316,11 @@ export default function CampaignStatusPage() {
           initial={editTarget} operators={operators}
           agencies={agencies} advertisers={advertisers}
           takenCsvNames={takenCsvNames}
+          takenCsvOwners={takenCsvOwners}
           onSave={(c) => {
             upsertCampaign(editTarget ? c : { ...c, id: genId() })
             setModalOpen(false)
+            setToast({ message: editTarget ? '캠페인이 수정되었습니다' : '캠페인이 추가되었습니다', type: 'success' })
           }}
           onClose={() => setModalOpen(false)}
         />
