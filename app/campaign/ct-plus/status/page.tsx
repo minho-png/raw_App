@@ -108,6 +108,19 @@ export default function CampaignStatusPage() {
     Map<string, { netAmount: number; executionAmount: number; rowCount: number }>
   >(new Map())
 
+  // 캠페인 ID → 매칭된 raw rows (행에 표시되는 RAW 복사/Excel 버튼이 사용).
+  const rawRowsByCampaignId = useMemo(() => {
+    const map = new Map<string, typeof computedRows>()
+    for (const r of computedRows) {
+      const id = r.matchedCampaignId
+      if (!id) continue
+      const cur = map.get(id) ?? []
+      cur.push(r)
+      map.set(id, cur)
+    }
+    return map
+  }, [computedRows])
+
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null)
   const selectedDetailCampaign = useMemo(
     () => campaigns.find(c => c.id === selectedDetailId) ?? null,
@@ -312,6 +325,7 @@ export default function CampaignStatusPage() {
           agencies={agencies} advertisers={advertisers} operators={operators}
           computedSpendMap={computedSpendMap}
           dailySpendMap={dailySpendMap}
+          rawRowsByCampaignId={rawRowsByCampaignId}
           onEdit={(c) => { setEditTarget(c); setModalOpen(true) }}
           onDelete={handleDelete}
           onStatusToggle={handleStatusToggle}
@@ -323,6 +337,7 @@ export default function CampaignStatusPage() {
             await upsertCampaign({ ...c, startDate, endDate })
             setToast({ message: '일정이 수정되었습니다', type: 'success' })
           }}
+          onToast={(message, type = 'success') => setToast({ message, type })}
           selectedDetailId={selectedDetailId}
           setSelectedDetailId={setSelectedDetailId}
         />

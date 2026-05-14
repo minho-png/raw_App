@@ -14,55 +14,6 @@ import { fmt, spendRateStyle, getDailySuggestion } from "./statusUtils"
 import { mColor } from "@/lib/mediaColors"
 import { MetricCard as DetailKPICard } from "@/components/atoms/MetricCard"
 
-// ── raw 내보내기 헬퍼 ──────────────────────────────────────────
-// 사용자 결정 — 노출 / 클릭 / 캠페인 소재 / 매체 / 마크업단가 컬럼.
-// 마크업단가 = 노출당 grossCost (executionAmount/impressions) — 매체사 단가 의미.
-const RAW_EXPORT_HEADERS = ['매체', '캠페인명', '소재명', '노출', '클릭', '마크업단가'] as const
-
-function rowsToExportMatrix(rows: RawRow[]): (string | number)[][] {
-  const m: (string | number)[][] = []
-  for (const r of rows) {
-    const cpm = r.impressions > 0 ? Math.round((r.executionAmount ?? 0) / r.impressions * 1000) / 1000 : 0
-    m.push([
-      r.media,
-      r.campaignName,
-      r.creativeName ?? '',
-      r.impressions,
-      r.clicks,
-      cpm,
-    ])
-  }
-  return m
-}
-
-function safeFileName(name: string): string {
-  return name.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 60)
-}
-
-async function copyRawToClipboard(campaignName: string, rows: RawRow[]): Promise<boolean> {
-  const matrix = rowsToExportMatrix(rows)
-  const lines = [
-    RAW_EXPORT_HEADERS.join('\t'),
-    ...matrix.map(r => r.join('\t')),
-  ]
-  const text = lines.join('\n')
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function downloadRawXlsx(campaignName: string, rows: RawRow[]): Promise<void> {
-  const XLSX = await import('xlsx')
-  const aoa: (string | number)[][] = [[...RAW_EXPORT_HEADERS], ...rowsToExportMatrix(rows)]
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'raw')
-  XLSX.writeFile(wb, `${safeFileName(campaignName)}_raw.xlsx`)
-}
-
 function fmtAbbr(n: number): string {
   if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}억`
   if (n >= 10_000)      return `${(n / 10_000).toFixed(0)}만`
@@ -86,8 +37,6 @@ export function CampaignDetailPanel({
 }) {
   // UX-08: 상세 분석 버튼 클릭 후 페이지 전환까지 약간 지연이 있어 사용자가 재클릭하는 문제 해소.
   const [navigatingDetail, setNavigatingDetail] = React.useState(false)
-  // raw export 복사 토스트 — 외부 toast 컴포넌트 없이 inline 표시.
-  const [exportToast, setExportToast] = React.useState<string | null>(null)
   const [dashboardInput, setDashboardInput] = React.useState<string>(
     campaign.dashboardNetAmount != null ? String(campaign.dashboardNetAmount) : ""
   )
@@ -731,35 +680,12 @@ export function CampaignDetailPanel({
             )}
             {navigatingDetail ? '이동 중…' : '상세 분석'}
           </button>
-          <div className="flex items-center gap-2">
-            {exportToast && (
-              <span className="text-[11px] text-emerald-600 font-medium">{exportToast}</span>
-            )}
-            <button
-              onClick={async () => {
-                const ok = await copyRawToClipboard(campaign.campaignName, campRows)
-                setExportToast(ok ? '클립보드에 복사됨' : '복사 실패')
-                setTimeout(() => setExportToast(null), 2000)
-              }}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-              title="매체 / 캠페인명 / 소재 / 노출 / 클릭 / 마크업단가 컬럼을 TSV 로 복사 (엑셀에 붙여넣기 가능)"
-            >
-              raw 복사
-            </button>
-            <button
-              onClick={() => downloadRawXlsx(campaign.campaignName, campRows)}
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
-              title="raw 데이터를 Excel(.xlsx) 파일로 다운로드"
-            >
-              Excel 다운로드
-            </button>
-            <button
-              onClick={() => onEdit(campaign)}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-            >
-              캠페인 수정
-            </button>
-          </div>
+          <button
+            onClick={() => onEdit(campaign)}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          >
+            캠페인 수정
+          </button>
         </div>
       </div>
       </div>
