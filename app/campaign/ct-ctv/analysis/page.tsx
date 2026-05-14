@@ -21,6 +21,7 @@ import {
   calcCTR, calcSR, calcPR, calcVTR,
   type UnifiedCampaignSnapshot,
 } from "@/lib/motivApi/statsMapper"
+import { aggregateDailyToMetrics } from "@/lib/motivApi/statsService"
 import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
 import { useMotivStatsDaily } from "@/lib/hooks/useMotivStatsDaily"
 import { useRefreshControl } from "@/lib/hooks/useRefreshControl"
@@ -87,8 +88,8 @@ export default function CtCtvAnalysisPage() {
       })
   }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats])
 
-  // 합계
-  const sumT        = useMemo(() => aggregateMetrics(snapshots.map(s => s.today)),     [snapshots])
+  // 합계 (캠페인 stats 단위 — MOTIV /v1/campaigns 응답의 stats 합산).
+  const sumT_campaignBased = useMemo(() => aggregateMetrics(snapshots.map(s => s.today)), [snapshots])
   const sumY        = useMemo(() => aggregateMetrics(snapshots.map(s => s.yesterday)), [snapshots])
   const totalBudget = useMemo(() => snapshots.reduce((a, c) => a + c.budget, 0), [snapshots])
 
@@ -105,6 +106,28 @@ export default function CtCtvAnalysisPage() {
     enabled:   snapshotCampaignIds.length > 0,
     refreshKey,
   })
+
+  // sumT: 매출/비용 항목은 /stats/daily/breakdown 의 일자 합으로 우선 적용 (있을 때).
+  //       impressions/clicks/completedViews 는 daily 응답에 없으므로 캠페인 stats 합 유지.
+  const sumT = useMemo(() => {
+    if (statsDaily.data.length === 0) return sumT_campaignBased
+    const daily = aggregateDailyToMetrics(statsDaily.data)
+    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+      const cmp = sumT_campaignBased
+      console.info('[CTV analysis] spend 비교', {
+        '캠페인 stats 합 (sumT)': { spend: cmp.spend, agencyFee: cmp.agencyFee, dmpFee: cmp.dmpFee, mediaCost: cmp.mediaCost },
+        '일자별 합 (daily)':     { spend: daily.spend, agencyFee: daily.agencyFee, dmpFee: daily.dmpFee, mediaCost: daily.mediaCost, profit: daily.profit },
+        '차이(daily-campaign)':  { spend: daily.spend - cmp.spend },
+      })
+    }
+    return {
+      ...sumT_campaignBased,
+      spend:     daily.spend,
+      agencyFee: daily.agencyFee,
+      dmpFee:    daily.dmpFee,
+      mediaCost: daily.mediaCost,
+    }
+  }, [sumT_campaignBased, statsDaily.data])
 
   return (
     <div className="min-h-screen bg-gray-50">
