@@ -38,16 +38,35 @@ const btnPrimary = "inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4
 const selectCls = "rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:border-gray-400 transition-colors"
 const inputCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
 
-export function ConfirmModal({ title, message, onConfirm, onCancel }: {
-  title: string; message: string; onConfirm: () => void; onCancel: () => void
+type ConfirmTone = 'default' | 'danger' | 'warning'
+
+const CONFIRM_TONE: Record<ConfirmTone, string> = {
+  default: 'bg-blue-600 hover:bg-blue-700',
+  danger:  'bg-red-600 hover:bg-red-700',
+  warning: 'bg-amber-600 hover:bg-amber-700',
+}
+
+export function ConfirmModal({
+  title, message, onConfirm, onCancel,
+  tone = 'danger',
+  confirmLabel = '확인',
+  cancelLabel = '취소',
+}: {
+  title: string
+  message: string
+  onConfirm: () => void
+  onCancel: () => void
+  tone?: ConfirmTone
+  confirmLabel?: string
+  cancelLabel?: string
 }) {
   return (
     <ModalShell open={true} onClose={onCancel} title={title}>
       <div className="space-y-4">
         <p className="text-sm text-gray-600 whitespace-pre-wrap">{message}</p>
         <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
-          <button onClick={onCancel} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
-          <button onClick={onConfirm} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors">확인</button>
+          <button onClick={onCancel} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">{cancelLabel}</button>
+          <button onClick={onConfirm} className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors ${CONFIRM_TONE[tone]}`}>{confirmLabel}</button>
         </div>
       </div>
     </ModalShell>

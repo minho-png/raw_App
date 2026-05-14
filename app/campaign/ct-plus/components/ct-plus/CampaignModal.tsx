@@ -7,7 +7,7 @@ import {
 import { useRawData } from "@/lib/hooks/useRawData"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { ModalShell } from "@/components/atoms/ModalShell"
-import { inputCls, emptyMB, MF, errClass } from "./statusUtils"
+import { inputCls, emptyMB, MF, errClass, ConfirmModal } from "./statusUtils"
 import { MediaBudgetCard } from "./MediaBudgetCard"
 import { CsvMappingPanel } from "./CsvMappingPanel"
 import { genId } from "@/lib/idGen"
@@ -440,22 +440,23 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           <textarea value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} rows={3} />
         </MF>
 
-        {/* 확인 섹션 — UX-02: 저장 확인 제거. 닫기는 dirty 시 확인 유지. */}
-        {confirmMode === "close" && (
-          <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4 space-y-3">
-            <p className="text-sm font-semibold text-yellow-900">변경사항이 있습니다. 닫으시겠습니까?</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmMode(null)} className="rounded-lg border border-yellow-300 bg-white px-4 py-2 text-sm font-medium text-yellow-700 hover:bg-yellow-50 transition-colors">계속 편집</button>
-              <button onClick={handleConfirmClose} className="rounded-lg bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 transition-colors">닫기</button>
-            </div>
-          </div>
-        )}
-
         <div className="flex gap-2 justify-end pt-4 border-t border-gray-200">
           <button onClick={handleCloseClick} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
           <button onClick={handleSaveClick} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">저장</button>
         </div>
       </div>
+      {/* 닫기 확인 — 모달 위에 nested ConfirmModal 로 표시 (사용자 요청: 모달 형식 통일). */}
+      {confirmMode === "close" && (
+        <ConfirmModal
+          title="변경사항이 저장되지 않았습니다"
+          message="작성 중인 변경사항이 있습니다. 정말 닫으시겠습니까?"
+          tone="warning"
+          confirmLabel="닫기"
+          cancelLabel="계속 편집"
+          onConfirm={handleConfirmClose}
+          onCancel={() => setConfirmMode(null)}
+        />
+      )}
     </ModalShell>
   )
 }
