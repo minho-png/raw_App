@@ -112,12 +112,12 @@ export function rowsToDailyPoints(rows: Record<string, string>[]): DailyCostPoin
 // 일자별 stats 합계 → UnifiedDailyMetrics 호환 객체.
 // 캠페인 stats 의 누적값 의존을 피하고 선택 일자 범위의 정확한 합산을 제공.
 //
-// 같은 회계 규약 적용 (사용자 확인):
-//   매출(spend)  = cost
-//   대행+DMP합   = agency_fee (Motiv 원본은 합산)
-//   DMP 수수료   = data_fee
-//   순수 대행    = agency_fee - data_fee
-//   매체비       = cost - agency_fee - profit
+// 회계 규약 (사용자 정정 — 2026-05-14):
+//   매체비(mediaCost) = cost          (매체비 raw)
+//   대행+DMP합        = agency_fee
+//   DMP 수수료        = data_fee
+//   순수 대행         = agency_fee - data_fee
+//   매출(spend)       = revenue       (없으면 cost + agency_fee + profit 항등식 fallback)
 //
 // impressions/clicks/completedViews 는 daily 응답에 없으므로 0 (호출부가 캠페인
 // stats 합으로 보강해야 함).
@@ -129,18 +129,20 @@ export interface DailyAggregateMetrics {
   profit: number
 }
 export function aggregateDailyToMetrics(points: ReadonlyArray<DailyCostPoint>): DailyAggregateMetrics {
-  let cost = 0, rawAgency = 0, dmpFee = 0, profit = 0
+  let cost = 0, revenue = 0, rawAgency = 0, dmpFee = 0, profit = 0
   for (const p of points) {
     cost      += p.cost
+    revenue   += p.revenue
     rawAgency += p.agency_fee
     dmpFee    += p.data_fee
     profit    += p.profit
   }
-  const spend     = Math.round(cost)
+  const mediaCost = Math.round(cost)
   const rawA      = Math.round(rawAgency)
   const dmpF      = Math.round(dmpFee)
   const agencyFee = Math.max(0, rawA - dmpF)
   const prf       = Math.round(profit)
-  const mediaCost = Math.max(0, spend - rawA - prf)
+  const revRaw    = Math.round(revenue)
+  const spend     = revRaw > 0 ? revRaw : (mediaCost + rawA + prf)
   return { spend, agencyFee, dmpFee: dmpF, mediaCost, profit: prf }
 }

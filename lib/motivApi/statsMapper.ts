@@ -1,13 +1,24 @@
 // MOTIV API stats → 분석 페이지가 사용하는 통합 메트릭으로 변환.
 // CT (DISPLAY/VIDEO/PARTNERS) 와 CTV (TV) 페이지가 공통으로 사용.
 //
+// 회계 모델 (사용자 확인 — 2026-05-14):
+//   stats.cost      = 매체비 (mediaCost) — 매체사에 지불할 금액 raw
+//   stats.revenue   = 매출 (spend)       — 광고주 청구액 raw
+//   stats.agency_fee= 대행 + DMP 합
+//   stats.data_fee  = DMP 단독
+//   stats.profit    = Motiv 이익
+//
+// 항등식 (검증용):
+//   revenue = cost + agency_fee + profit
+//   ↔ spend = mediaCost + rawAgency + profit
+//
 // 매핑 규칙:
 //   impressions    ← v_impression (없으면 win 폴백)
 //   clicks         ← click
-//   spend          ← cost              (실제 매체 소진액)
-//   agencyFee      ← agency_fee
+//   spend          ← revenue            (매출 raw)
+//   mediaCost      ← cost               (매체비 raw — 사용자 정정)
+//   agencyFee      ← agency_fee - data_fee  (순수 대행)
 //   dmpFee         ← data_fee
-//   mediaCost      ← cost - agency_fee - data_fee - profit
 //   completedViews ← v_play100         (VTR 분자)
 //   ctr            ← ctr               (직접 제공)
 //   profitRate     ← profit_rate       (직접 제공)
@@ -62,36 +73,34 @@ let _statsLogged = false
 export function motivStatsToMetrics(stats: MotivCampaignStats | null | undefined): UnifiedDailyMetrics {
   if (!stats) return { ...ZERO_METRICS }
 
-  // MOTIV API stats 매핑 (재정정):
-  //   확인된 사실 — Motiv stats.agency_fee 필드는 '대행 수수료 + DMP 수수료(data_fee)' 합산값.
-  //   초기 매핑은 agency_fee 를 그대로 대행수수료로 노출하고 mediaCost 산식에서 data_fee 를
-  //   한 번 더 빼고 있었음 → 화면의 대행수수료 = 실 대행+DMP, 매체비는 과소 계산되던 문제.
+  // MOTIV API stats 매핑 (사용자 정정 — 2026-05-14):
+  //   cost = 매체비 (raw), revenue = 매출 (raw). agency_fee 는 대행+DMP 합.
+  //   이전 derivation (mediaCost = spend - rawAgency - profit) 을 raw 필드 직접 사용으로 변경.
   //
-  // 정정 항등식 (Motiv 회계 — 사용자 확인):
-  //   cost (매출)  =  mediaCost (매체비)  +  agency_fee (대행+DMP 합)  +  profit (이익)
-  //   ↔  spend    =  mediaCost           +  rawAgency                 +  profit
+  // 항등식 (검증용):
+  //   revenue = cost + agency_fee + profit
+  //   ↔ spend = mediaCost + (agencyFee + dmpFee) + profit
   //
-  // 따라서:
-  //   순수 대행 수수료  = rawAgency - data_fee
-  //   DMP 수수료       = data_fee
-  //   매체비           = spend - rawAgency - profit          (rawAgency 한 번만 차감)
-  //   이익             = profit
-  //   sum check       = mediaCost + agencyFee + dmpFee + profit = spend  ✓
-  const spend     = Math.round(stats.cost ?? 0)
-  const rawAgency = Math.round(stats.agency_fee ?? 0)  // Motiv 의 agency_fee (대행+DMP 합 추정)
+  // revenue 가 0/누락이면 항등식으로 fallback 보정.
+  const mediaCost = Math.round(stats.cost ?? 0)
+  const rawAgency = Math.round(stats.agency_fee ?? 0)
   const dmpFee    = Math.round(stats.data_fee ?? 0)
-  const agencyFee = Math.max(0, rawAgency - dmpFee)    // 순수 대행 수수료
+  const agencyFee = Math.max(0, rawAgency - dmpFee)
   const profit    = Math.round(stats.profit ?? 0)
-  const mediaCost = Math.max(0, spend - rawAgency - profit)
+  const revenueRaw = Math.round(stats.revenue ?? 0)
+  const spend     = revenueRaw > 0 ? revenueRaw : (mediaCost + rawAgency + profit)
 
   // dev 환경 진단 — 한 캠페인의 stats 첫 한 번만 출력. 화면 값이 의도와 다르면 콘솔 확인.
   if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production' && !_statsLogged && spend > 0) {
     _statsLogged = true
+    const sum = mediaCost + agencyFee + dmpFee + profit
     console.info('[motivStatsToMetrics] 첫 캠페인 stats 진단', {
-      cost: stats.cost, revenue: stats.revenue,
-      agency_fee: stats.agency_fee, data_fee: stats.data_fee, profit: stats.profit,
-      derived: { spend, agencyFee, dmpFee, mediaCost, profit },
-      check: { sum: mediaCost + agencyFee + dmpFee + profit, equalsSpend: mediaCost + agencyFee + dmpFee + profit === spend },
+      raw: {
+        cost: stats.cost, revenue: stats.revenue,
+        agency_fee: stats.agency_fee, data_fee: stats.data_fee, profit: stats.profit,
+      },
+      derived: { spend, mediaCost, agencyFee, dmpFee, profit },
+      check: { sum, equalsSpend: sum === spend, delta: spend - sum },
     })
   }
 
@@ -164,12 +173,12 @@ export function aggregateMetrics(list: UnifiedDailyMetrics[]): UnifiedDailyMetri
 // MOTIV /v1/stats/campaign/breakdown 행 (dictionary[string,string]) → UnifiedDailyMetrics 변환.
 // 캠페인 ID 별로 일자 범위 집계된 stats 가 한 row 로 옴 (sort=campaign_id).
 //
-// motivStatsToMetrics 와 동일한 회계 모델:
-//   spend     = cost
-//   rawAgency = agency_fee   (Motiv 원본 — 대행+DMP 합)
+// motivStatsToMetrics 와 동일한 회계 모델 (사용자 정정):
+//   mediaCost = cost            (매체비 raw)
+//   rawAgency = agency_fee      (대행+DMP 합)
 //   dmpFee    = data_fee
 //   agencyFee = rawAgency - dmpFee
-//   mediaCost = spend - rawAgency - profit
+//   spend     = revenue         (없으면 mediaCost + rawAgency + profit 항등식 fallback)
 //
 // impressions / clicks / completedViews 도 row 에 있으면 사용.
 export function rowsToCampaignMetricsMap(
@@ -179,12 +188,13 @@ export function rowsToCampaignMetricsMap(
   for (const r of rows) {
     const id = Number(r.campaign_id)
     if (!Number.isFinite(id) || id <= 0) continue
-    const spend     = Math.round(toNum(r.cost))
+    const mediaCost = Math.round(toNum(r.cost))
     const rawAgency = Math.round(toNum(r.agency_fee))
     const dmpFee    = Math.round(toNum(r.data_fee))
     const agencyFee = Math.max(0, rawAgency - dmpFee)
     const profit    = Math.round(toNum(r.profit))
-    const mediaCost = Math.max(0, spend - rawAgency - profit)
+    const revenueRaw = Math.round(toNum(r.revenue))
+    const spend     = revenueRaw > 0 ? revenueRaw : (mediaCost + rawAgency + profit)
     const impressions    = Math.round(toNum(r.v_impression) || toNum(r.win))
     const clicks         = Math.round(toNum(r.click))
     const completedViews = Math.round(toNum(r.v_play100))
