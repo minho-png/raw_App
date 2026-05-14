@@ -11,8 +11,10 @@ import { applyMarkupToRows } from "@/lib/markupService"
 import { getCampaignTotals, getCampaignProgress, getMediaTotals } from "@/lib/campaignTypes"
 import { fmt, spendRateStyle } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { RawRow } from "@/lib/rawDataParser"
-import { mColor, mediaTint, contrastOn } from "@/lib/mediaColors"
+import { mColor } from "@/lib/mediaColors"
 import { useKpiThresholds, checkBudgetWarning, checkRateWarning, checkCostWarning, type KpiWarning } from "@/lib/kpiThresholds"
+import { useFilterPersistence } from "@/lib/hooks/useFilterPersistence"
+import { FilterBar, FilterChipGroup, FilterSearch, FilterReset } from "@/components/atoms/filters"
 import { KpiThresholdSettings } from "@/components/molecules/KpiThresholdSettings"
 
 const CREATIVE_COLORS = ["#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"]
@@ -48,12 +50,12 @@ export default function CampaignDetailPage() {
   const id = typeof params?.id === "string" ? params.id : ""
   const { campaigns, operators, agencies, advertisers } = useMasterData()
   const { batches, allRows: rawRows, updateBatch } = useRawData()
-  const [tab, setTab] = useState<Tab>("summary")
-  const [mediaFilter, setMediaFilter] = useState<string>("")
-  // 기간·검색 필터 (모든 기능 탭 공통)
+  const [tab, setTab] = useFilterPersistence<Tab>(`ct-plus-detail:${id}:tab`, "summary")
+  const [mediaFilter, setMediaFilter] = useFilterPersistence<string>(`ct-plus-detail:${id}:media`, "")
+  // 기간·검색 필터 (모든 기능 탭 공통). sessionStorage 영속화.
   type DateRange = "all"|"7d"|"30d"
-  const [dateRange, setDateRange] = useState<DateRange>("all")
-  const [creativeQuery, setCreativeQuery] = useState("")
+  const [dateRange, setDateRange] = useFilterPersistence<DateRange>(`ct-plus-detail:${id}:dateRange`, "all")
+  const [creativeQuery, setCreativeQuery] = useFilterPersistence<string>(`ct-plus-detail:${id}:creativeQuery`, "")
   const [saving, setSaving] = useState(false)
   const [toast,  setToast]  = useState<string|null>(null)
   const [edits, setEdits]   = useState<Map<string,Partial<RawRow>>>(new Map())
@@ -383,25 +385,14 @@ export default function CampaignDetailPage() {
       <main className="p-4 max-w-6xl mx-auto space-y-3">
         {/* 1차 — 매체 탭 */}
         {MEDIA_TABS.length>0 && (
-          <div className="flex gap-1 flex-wrap rounded-xl bg-white px-2 py-2 border border-gray-200">
-            <span className="text-[10px] text-gray-400 self-center pl-1 pr-1">매체</span>
-            {MEDIA_TABS.map(m=>{
-              const active = mediaFilter===m
-              const c = mColor(m)
-              return (
-                <button
-                  key={m}
-                  onClick={()=>setMediaFilter(m)}
-                  className="px-3 py-1 rounded-full text-xs font-medium transition-colors border hover:opacity-90"
-                  style={{
-                    backgroundColor: active ? c : mediaTint(m),
-                    color: active ? contrastOn(c) : c,
-                    borderColor: active ? c : "transparent",
-                  }}
-                >{m}</button>
-              )
-            })}
-          </div>
+          <FilterBar label="매체">
+            <FilterChipGroup<string>
+              variant="separate"
+              options={MEDIA_TABS.map(m => ({ value: m, label: m, color: mColor(m) }))}
+              value={mediaFilter}
+              onChange={setMediaFilter}
+            />
+          </FilterBar>
         )}
 
         {/* 2차 — 기능 탭 */}
@@ -414,36 +405,29 @@ export default function CampaignDetailPage() {
         </div>
 
         {/* 필터 바 — 기능 탭별로 표시 항목 다름 */}
-        <div className="flex items-center gap-2 flex-wrap rounded-lg bg-white border border-gray-200 px-3 py-2">
-          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">필터</span>
-          <span className="text-[11px] text-gray-500">기간</span>
-          <div className="inline-flex rounded-md border border-gray-200 overflow-hidden">
-            {([
-              {k:"all" as DateRange, label:"전체"},
-              {k:"7d" as DateRange,  label:"최근 7일"},
-              {k:"30d" as DateRange, label:"최근 30일"},
-            ]).map(o=>(
-              <button key={o.k} onClick={()=>setDateRange(o.k)}
-                className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${dateRange===o.k?"bg-blue-600 text-white":"bg-white text-gray-600 hover:bg-gray-50"}`}
-              >{o.label}</button>
-            ))}
-          </div>
+        <FilterBar label="필터">
+          <FilterChipGroup<DateRange>
+            label="기간"
+            options={[
+              { value: "all", label: "전체" },
+              { value: "7d",  label: "최근 7일" },
+              { value: "30d", label: "최근 30일" },
+            ]}
+            value={dateRange}
+            onChange={setDateRange}
+          />
           {(tab==="creative" || tab==="raw") && (
-            <input
-              type="text"
+            <FilterSearch
               value={creativeQuery}
-              onChange={e=>setCreativeQuery(e.target.value)}
-              placeholder="🔍 소재명 검색"
-              className="ml-1 rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 min-w-[180px]"
+              onChange={setCreativeQuery}
+              placeholder="소재명 검색"
             />
           )}
-          {(dateRange!=="all" || creativeQuery) && (
-            <button
-              onClick={()=>{setDateRange("all");setCreativeQuery("")}}
-              className="ml-auto text-[11px] text-gray-500 hover:text-gray-800 underline"
-            >초기화</button>
-          )}
-        </div>
+          <FilterReset
+            visible={dateRange !== "all" || creativeQuery !== ""}
+            onClick={() => { setDateRange("all"); setCreativeQuery("") }}
+          />
+        </FilterBar>
 
         {filteredRows.length===0&&tab!=="raw"?(
           <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">

@@ -1,6 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
+import { useFilterPersistence } from "@/lib/hooks/useFilterPersistence"
+import { FilterChipGroup } from "@/components/atoms/filters"
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts"
@@ -10,7 +12,6 @@ import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAgencies } from "@/lib/hooks/useMotivAgencies"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
-import { motivTypeToProduct } from "@/lib/motivApi/productMapping"
 import type { MotivCampaign } from "@/lib/motivApi/types"
 
 // ── 타입 ────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ function sumMetrics(arr: MotivCampaign[]): Metrics {
 // ─────────────────────────────────────────────────────────────
 
 export default function CtStatusPage() {
-  const [category, setCategory] = useState<Category>('total')
+  const [category, setCategory] = useFilterPersistence<Category>('ct-status:category', 'total')
 
   const { agencies, advertisers, operators } = useMasterData()
   const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
@@ -127,19 +128,13 @@ export default function CtStatusPage() {
               Motiv 운영데스크 API 실시간 데이터 · CT (DISPLAY · VIDEO · PARTNERS)
             </p>
           </div>
-          <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
-            {(['total', 'display', 'video', 'partners'] as Category[]).map(cat => (
-              <button
-                key={cat}
-                onClick={() => setCategory(cat)}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  category === cat ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                {CATEGORY_LABEL[cat]}
-              </button>
-            ))}
-          </div>
+          <FilterChipGroup<Category>
+            options={(['total', 'display', 'video', 'partners'] as Category[]).map(cat => ({
+              value: cat, label: CATEGORY_LABEL[cat],
+            }))}
+            value={category}
+            onChange={setCategory}
+          />
         </div>
       </header>
 

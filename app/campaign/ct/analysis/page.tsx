@@ -1,6 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useEffect } from "react"
+import { useFilterPersistence } from "@/lib/hooks/useFilterPersistence"
+import { FilterToggle, FilterChipGroup, FilterDateRange } from "@/components/atoms/filters"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
@@ -63,12 +65,15 @@ function monthEnd(s: string): string {
 }
 
 export default function CtAnalysisPage() {
-  // 일자 범위 — 기본: 시작일=종료일=오늘 (당일)
-  const [rangeStart, setRangeStart]     = useState<string>(todayStr())
-  const [rangeEnd, setRangeEnd]         = useState<string>(todayStr())
-  const [category, setCategory]         = useState<Category>('total')
-  const [showSettings, setShowSettings] = useState(false)
-  const [settings, setSettings]         = useState<AnalysisSettings>(DEFAULT_ANALYSIS_SETTINGS)
+  // 일자 범위 — 기본: 시작일=종료일=오늘 (당일). sessionStorage 로 세션 유지.
+  const [rangeStart, setRangeStart] = useFilterPersistence<string>('ct-analysis:rangeStart', todayStr())
+  const [rangeEnd, setRangeEnd]     = useFilterPersistence<string>('ct-analysis:rangeEnd',   todayStr())
+  const [category, setCategory]     = useFilterPersistence<Category>('ct-analysis:category', 'total')
+  const [showSettings, setShowSettings] = useFilterPersistence<boolean>('ct-analysis:showSettings', false)
+  const [settings, setSettings]         = useFilterPersistence<AnalysisSettings>('ct-analysis:settings', DEFAULT_ANALYSIS_SETTINGS)
+  // 활성 캠페인(status='Y') 필터 — 당일 단일 모드일 때 기본 ON, 그 외 OFF.
+  // 사용자가 수동 토글해도 일자 범위가 바뀌면 자동 재동기화.
+  const [activeOnly, setActiveOnly] = useFilterPersistence<boolean>('ct-analysis:activeOnly', true)
 
   // ── 실시간 갱신 제어 ────────────────────────────────────
   const refreshControl = useRefreshControl()
@@ -106,6 +111,9 @@ export default function CtAnalysisPage() {
   // 사용자 결정 — daily_spent 가 실시간성이 우수, stats 는 기간 집계용으로 분리.
   const isTodayOnly = rangeStart === rangeEnd && rangeStart === todayStr()
 
+  // 일자 범위가 바뀔 때 activeOnly 기본값 재동기화 — 당일 단일=ON, 그 외=OFF.
+  useEffect(() => { setActiveOnly(isTodayOnly) }, [isTodayOnly])
+
   // MotivCampaign → UnifiedCampaignSnapshot (전일 스냅샷 + 광고주 매핑)
   // P1: getAdvertiserName / getAgencyDisplayName 헬퍼로 fallback chain 적용
   // today 는 statsCampaign(일자 범위 집계) 가 있으면 override — 누적값 의존 제거.
@@ -116,6 +124,7 @@ export default function CtAnalysisPage() {
 
     const result = motiv.data
       .filter(c => !isExcludedCampaign(c.title ?? ''))
+      .filter(c => !activeOnly || c.status === 'Y')
       .map(c => {
         const adAccount = adAccountById.get(c.adaccount_id)
         if (!adAccount && adAccountById.size > 0) missingAd.push(c.adaccount_id)
@@ -159,7 +168,7 @@ export default function CtAnalysisPage() {
     }
 
     return result
-  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats, statsCampaign.byMotivId, isTodayOnly])
+  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats, statsCampaign.byMotivId, isTodayOnly, activeOnly])
 
   // 카테고리 필터 (PARTNERS 는 합계에만 포함)
   const filtered = useMemo(() => {
@@ -201,48 +210,29 @@ export default function CtAnalysisPage() {
             <p className="text-xs text-gray-400 mt-0.5">자체 DA 매체 (DISPLAY / VIDEO / PARTNERS) · MOTIV API 실시간</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {/* 일자 범위 메인 입력 — 기본: 시작=종료=오늘 */}
-            <div className="flex items-center gap-1">
-              <input
-                type="date"
-                value={rangeStart}
-                max={rangeEnd || undefined}
-                onChange={e => setRangeStart(e.target.value)}
-                className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
-              />
-              <span className="text-gray-300 text-xs">~</span>
-              <input
-                type="date"
-                value={rangeEnd}
-                min={rangeStart || undefined}
-                onChange={e => setRangeEnd(e.target.value)}
-                className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
-              />
-            </div>
-            {/* 빠른 선택 (월별 등 하위 기능) */}
-            <div className="inline-flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
-              {([
-                { label: '오늘',    s: () => todayStr(),                e: () => todayStr() },
-                { label: '어제',    s: () => addDays(todayStr(), -1),    e: () => addDays(todayStr(), -1) },
-                { label: '최근 7일', s: () => addDays(todayStr(), -6),    e: () => todayStr() },
-                { label: '이번 달',  s: () => monthStart(todayStr()),     e: () => todayStr() },
-                { label: '지난 달',  s: () => monthStart(addDays(monthStart(todayStr()), -1)),
-                                    e: () => monthEnd(addDays(monthStart(todayStr()), -1)) },
-              ] as const).map(({ label, s, e }) => {
-                const ss = s(); const ee = e()
-                const active = rangeStart === ss && rangeEnd === ee
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => { setRangeStart(ss); setRangeEnd(ee) }}
-                    className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
-                      active ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >{label}</button>
-                )
-              })}
-            </div>
+            <FilterDateRange
+              start={rangeStart}
+              end={rangeEnd}
+              onStartChange={setRangeStart}
+              onEndChange={setRangeEnd}
+              presets={[
+                { label: '오늘',    onClick: () => { const t = todayStr(); setRangeStart(t); setRangeEnd(t) } },
+                { label: '어제',    onClick: () => { const y = addDays(todayStr(), -1); setRangeStart(y); setRangeEnd(y) } },
+                { label: '최근 7일', onClick: () => { setRangeStart(addDays(todayStr(), -6)); setRangeEnd(todayStr()) } },
+                { label: '이번 달',  onClick: () => { setRangeStart(monthStart(todayStr())); setRangeEnd(todayStr()) } },
+                { label: '지난 달',  onClick: () => {
+                  const lastStart = monthStart(addDays(monthStart(todayStr()), -1))
+                  setRangeStart(lastStart); setRangeEnd(monthEnd(lastStart))
+                } },
+              ]}
+            />
+            <FilterToggle
+              label="활성만"
+              active={activeOnly}
+              onChange={setActiveOnly}
+              tone="emerald"
+              title="status='Y' 캠페인만 표시. 당일 단일 모드에서 자동 ON."
+            />
             <RefreshControlBar control={refreshControl} loading={motiv.loading} />
             {yesterdayAvailable ? (
               <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11px] text-green-700 font-medium">
@@ -270,24 +260,18 @@ export default function CtAnalysisPage() {
         {showSettings && <SettingsPanel settings={settings} onChange={setSettings} variant="CT" />}
 
         {/* 카테고리 토글 */}
-        <div className="flex items-center gap-1.5">
-          {(['total', 'display', 'video'] as const).map(c => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setCategory(c)}
-              className={`rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                category === c ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              {c === 'total' ? '총 합계' : TYPE_LABEL[c]}
-              <span className="ml-1.5 opacity-70">({countByCategory[c]})</span>
-            </button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <FilterChipGroup<Category>
+            options={[
+              { value: 'total',   label: `총 합계 (${countByCategory.total})` },
+              { value: 'display', label: `${TYPE_LABEL.display} (${countByCategory.display})` },
+              { value: 'video',   label: `${TYPE_LABEL.video} (${countByCategory.video})` },
+            ]}
+            value={category}
+            onChange={setCategory}
+          />
           {category === 'total' && (
-            <span className="ml-2 text-[11px] text-gray-400">
-              ※ 합계에는 PARTNERS 포함
-            </span>
+            <span className="text-[11px] text-gray-400">※ 합계에는 PARTNERS 포함</span>
           )}
         </div>
 

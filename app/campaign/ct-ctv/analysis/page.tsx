@@ -1,6 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useEffect } from "react"
+import { useFilterPersistence } from "@/lib/hooks/useFilterPersistence"
+import { FilterToggle, FilterDateRange } from "@/components/atoms/filters"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
@@ -48,11 +50,13 @@ function monthEnd(s: string): string {
 // CTV(TV) 매체 분석 — Motiv API 의 campaign_type='TV' 캠페인만.
 // AUD-005 fix: 이전에는 mock 데이터로 채워져 있었으나 실 MOTIV 데이터 연결.
 export default function CtCtvAnalysisPage() {
-  // 일자 범위 — 기본: 시작=종료=오늘 (당일)
-  const [rangeStart, setRangeStart]     = useState<string>(todayStr())
-  const [rangeEnd, setRangeEnd]         = useState<string>(todayStr())
-  const [showSettings, setShowSettings] = useState(false)
-  const [settings, setSettings]         = useState<AnalysisSettings>(DEFAULT_ANALYSIS_SETTINGS)
+  // 일자 범위 — 기본: 시작=종료=오늘 (당일). sessionStorage 영속화.
+  const [rangeStart, setRangeStart] = useFilterPersistence<string>('ctv-analysis:rangeStart', todayStr())
+  const [rangeEnd, setRangeEnd]     = useFilterPersistence<string>('ctv-analysis:rangeEnd',   todayStr())
+  const [showSettings, setShowSettings] = useFilterPersistence<boolean>('ctv-analysis:showSettings', false)
+  const [settings, setSettings]         = useFilterPersistence<AnalysisSettings>('ctv-analysis:settings', DEFAULT_ANALYSIS_SETTINGS)
+  // 활성 캠페인(status='Y') 필터 — 당일 단일 모드일 때 기본 ON, 그 외 OFF.
+  const [activeOnly, setActiveOnly] = useFilterPersistence<boolean>('ctv-analysis:activeOnly', true)
 
   // ── 실시간 갱신 제어 ────────────────────────────────────
   const refreshControl = useRefreshControl()
@@ -87,11 +91,15 @@ export default function CtCtvAnalysisPage() {
   // 매출(소진) source 하이브리드: 오늘 단일이면 daily_spent, 그 외 stats.cost.
   const isTodayOnly = rangeStart === rangeEnd && rangeStart === todayStr()
 
+  // 일자 범위가 바뀔 때 activeOnly 기본값 재동기화 — 당일 단일=ON, 그 외=OFF.
+  useEffect(() => { setActiveOnly(isTodayOnly) }, [isTodayOnly])
+
   // MotivCampaign → UnifiedCampaignSnapshot (P1: 광고주 매핑 포함)
   // today 는 statsCampaign(일자 범위 집계) 가 있으면 override — 누적값 의존 제거.
   const snapshots: UnifiedCampaignSnapshot[] = useMemo(() => {
     return motiv.data
       .filter(c => !isExcludedCampaign(c.title ?? ''))
+      .filter(c => !activeOnly || c.status === 'Y')
       .map(c => {
         const adAccount = adAccountById.get(c.adaccount_id)
         const motivAgency = adAccount?.agency_id ? motivAgencyById.get(adAccount.agency_id) : undefined
@@ -115,7 +123,7 @@ export default function CtCtvAnalysisPage() {
         }
         return snap
       })
-  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats, statsCampaign.byMotivId, isTodayOnly])
+  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats, statsCampaign.byMotivId, isTodayOnly, activeOnly])
 
   // 합계 — snapshot.today 가 일자 범위 집계로 override 되어 카드/표가 동일 source 로 일치.
   const sumT        = useMemo(() => aggregateMetrics(snapshots.map(s => s.today)), [snapshots])
@@ -141,48 +149,29 @@ export default function CtCtvAnalysisPage() {
             <p className="text-xs text-gray-400 mt-0.5">TV 매체 (Connected TV) · MOTIV API 실시간</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {/* 일자 범위 메인 입력 — 기본: 시작=종료=오늘 */}
-            <div className="flex items-center gap-1">
-              <input
-                type="date"
-                value={rangeStart}
-                max={rangeEnd || undefined}
-                onChange={e => setRangeStart(e.target.value)}
-                className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
-              />
-              <span className="text-gray-300 text-xs">~</span>
-              <input
-                type="date"
-                value={rangeEnd}
-                min={rangeStart || undefined}
-                onChange={e => setRangeEnd(e.target.value)}
-                className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 focus:border-blue-400 focus:outline-none"
-              />
-            </div>
-            {/* 빠른 선택 (월별 등 하위 기능) */}
-            <div className="inline-flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
-              {([
-                { label: '오늘',    s: () => todayStr(),                e: () => todayStr() },
-                { label: '어제',    s: () => addDays(todayStr(), -1),    e: () => addDays(todayStr(), -1) },
-                { label: '최근 7일', s: () => addDays(todayStr(), -6),    e: () => todayStr() },
-                { label: '이번 달',  s: () => monthStart(todayStr()),     e: () => todayStr() },
-                { label: '지난 달',  s: () => monthStart(addDays(monthStart(todayStr()), -1)),
-                                    e: () => monthEnd(addDays(monthStart(todayStr()), -1)) },
-              ] as const).map(({ label, s, e }) => {
-                const ss = s(); const ee = e()
-                const active = rangeStart === ss && rangeEnd === ee
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => { setRangeStart(ss); setRangeEnd(ee) }}
-                    className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
-                      active ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >{label}</button>
-                )
-              })}
-            </div>
+            <FilterDateRange
+              start={rangeStart}
+              end={rangeEnd}
+              onStartChange={setRangeStart}
+              onEndChange={setRangeEnd}
+              presets={[
+                { label: '오늘',    onClick: () => { const t = todayStr(); setRangeStart(t); setRangeEnd(t) } },
+                { label: '어제',    onClick: () => { const y = addDays(todayStr(), -1); setRangeStart(y); setRangeEnd(y) } },
+                { label: '최근 7일', onClick: () => { setRangeStart(addDays(todayStr(), -6)); setRangeEnd(todayStr()) } },
+                { label: '이번 달',  onClick: () => { setRangeStart(monthStart(todayStr())); setRangeEnd(todayStr()) } },
+                { label: '지난 달',  onClick: () => {
+                  const lastStart = monthStart(addDays(monthStart(todayStr()), -1))
+                  setRangeStart(lastStart); setRangeEnd(monthEnd(lastStart))
+                } },
+              ]}
+            />
+            <FilterToggle
+              label="활성만"
+              active={activeOnly}
+              onChange={setActiveOnly}
+              tone="emerald"
+              title="status='Y' 캠페인만 표시. 당일 단일 모드에서 자동 ON."
+            />
             <RefreshControlBar control={refreshControl} loading={motiv.loading} />
             {yesterdayAvailable ? (
               <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11px] text-green-700 font-medium">
