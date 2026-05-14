@@ -193,6 +193,34 @@ export default function CtAnalysisPage() {
     refreshKey,
   })
 
+  // Dev 교차 검증 — campaign-sum vs daily-sum vs statsCampaign.totals.
+  // 사용자 보고 '기간에 대한 매출/비용이 정확하지 않음' 의 회귀 방지용.
+  // 3 source 합이 어긋나면 console.warn — 어느 단계에서 누락 발생했는지 진단 가능.
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return
+    if (typeof window === 'undefined') return
+    if (statsDaily.loading || statsDaily.data.length === 0) return
+    if (statsCampaign.loading) return
+    const dailySpendSum = statsDaily.data.reduce((s, p) => s + Math.round(p.revenue || p.cost), 0)
+    const campaignSpendSum = sumT.spend
+    const totalsSpend = statsCampaign.totals
+      ? Math.round(Number(statsCampaign.totals.revenue ?? statsCampaign.totals.cost ?? 0))
+      : null
+    const candidates = [campaignSpendSum, dailySpendSum, totalsSpend].filter((n): n is number => n != null && n > 0)
+    if (candidates.length < 2) return
+    const max = Math.max(...candidates), min = Math.min(...candidates)
+    const delta = max > 0 ? (max - min) / max : 0
+    if (delta > 0.01) {
+      console.warn('[CT analysis] 매출 source 불일치 감지', {
+        period: `${rangeStart}~${rangeEnd}`,
+        campaignSum: campaignSpendSum,
+        dailySum: dailySpendSum,
+        statsTotals: totalsSpend,
+        deltaPct: +(delta * 100).toFixed(2),
+      })
+    }
+  }, [sumT.spend, statsDaily.data, statsDaily.loading, statsCampaign.totals, statsCampaign.loading, rangeStart, rangeEnd])
+
   // 카테고리 별 캠페인 수 (탭 배지)
   const countByCategory = useMemo(() => ({
     total:   snapshots.length,
