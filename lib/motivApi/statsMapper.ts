@@ -37,6 +37,12 @@ export interface UnifiedCampaignSnapshot {
   motivCampaignType: string   // 'DISPLAY' | 'VIDEO' | 'TV' | 'PARTNERS' (원본)
   uiType: 'display' | 'video' | 'partners' | 'ctv'
   budget: number
+  /** 무료 캠페인 — 광고주 비용 0. 매출은 잡지 않고 비용만 잡음. */
+  isFree: boolean
+  /** 일 예산 (₩). null/0 이면 일예산 미설정. */
+  dailyBudget: number
+  /** 오늘 누적 소진 (₩). MOTIV Campaign.daily_spent — 실시간. */
+  dailySpent: number
   startDate: string
   endDate: string
   today: UnifiedDailyMetrics
@@ -114,6 +120,13 @@ export function motivCampaignToSnapshot(
   advertiserName?: string,
 ): UnifiedCampaignSnapshot {
   const product = motivTypeToProduct(c.campaign_type) ?? 'CT'
+  const isFree = c.is_free === true
+  // 무료 캠페인: 매출(spend) 은 0 처리 (광고주 청구 없음). 비용 항목은 그대로 유지.
+  const todayMetrics = motivStatsToMetrics(c.stats)
+  const today = isFree ? { ...todayMetrics, spend: 0 } : todayMetrics
+  const yesterday = yesterdayMetrics
+    ? (isFree ? { ...yesterdayMetrics, spend: 0 } : yesterdayMetrics)
+    : { ...ZERO_METRICS }
   return {
     id: String(c.id),
     motivId: c.id,
@@ -124,10 +137,13 @@ export function motivCampaignToSnapshot(
     motivCampaignType: c.campaign_type,
     uiType: motivTypeToUiType(c.campaign_type),
     budget: c.total_budget ?? 0,
+    isFree,
+    dailyBudget: c.daily_budget ?? 0,
+    dailySpent: c.daily_spent ?? 0,
     startDate: c.start_date ?? '',
     endDate: c.end_date ?? '',
-    today: motivStatsToMetrics(c.stats),
-    yesterday: yesterdayMetrics ?? { ...ZERO_METRICS },
+    today,
+    yesterday,
     ctr: c.stats?.ctr ?? 0,
     profitRate: c.stats?.profit_rate ?? 0,
   }
