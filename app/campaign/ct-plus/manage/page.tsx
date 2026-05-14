@@ -6,6 +6,7 @@ import { useCtGroups } from "@/lib/hooks/useCtGroups"
 import { useReports } from "@/lib/hooks/useReports"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import type { CtPlusGroup, CtGroupMediaMarkup } from "@/lib/ctGroupTypes"
+import { ConfirmModal } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { SavedReport } from "@/lib/hooks/useReports"
 import type { Campaign } from "@/lib/campaignTypes"
 import { MEDIA_CONFIG } from "@/lib/reportTypes"
@@ -688,50 +689,40 @@ export default function CtPlusManagePage() {
       </main>
       )}
 
-      {/* 그룹 삭제 확인 모달 */}
+      {/* 그룹 삭제 확인 — 공통 ConfirmModal 사용 (사용자 요청: 모달 형식 통일) */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="rounded-xl bg-white shadow-xl p-6 w-80">
-            <p className="text-sm font-semibold text-gray-800">그룹을 삭제하시겠습니까?</p>
-            <p className="mt-1 text-xs text-gray-400">
-              &ldquo;{groups.find(g => g.id === deleteConfirm)?.name ?? ''}&rdquo; 그룹이 삭제됩니다.
-            </p>
-            <div className="mt-4 flex gap-2 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50">취소</button>
-              <button onClick={() => handleDelete(deleteConfirm)} className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700">삭제</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="그룹 삭제"
+          message={`"${groups.find(g => g.id === deleteConfirm)?.name ?? ''}" 그룹이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`}
+          tone="danger"
+          confirmLabel="삭제"
+          onConfirm={() => handleDelete(deleteConfirm)}
+          onCancel={() => setDeleteConfirm(null)}
+        />
       )}
 
-      {/* 리포트 삭제 확인 모달 */}
+      {/* 리포트 삭제 확인 */}
       {deleteReportConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="rounded-xl bg-white shadow-xl p-6 w-80">
-            <p className="text-sm font-semibold text-gray-800">리포트를 삭제하시겠습니까?</p>
-            <p className="mt-1 text-xs text-gray-400">삭제된 리포트는 복구할 수 없습니다.</p>
-            <div className="mt-4 flex gap-2 justify-end">
-              <button onClick={() => setDeleteReportConfirm(null)} className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50">취소</button>
-              <button onClick={() => handleDeleteReport(deleteReportConfirm)} className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700">삭제</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="리포트 삭제"
+          message="삭제된 리포트는 복구할 수 없습니다. 정말 삭제하시겠습니까?"
+          tone="danger"
+          confirmLabel="삭제"
+          onConfirm={() => handleDeleteReport(deleteReportConfirm)}
+          onCancel={() => setDeleteReportConfirm(null)}
+        />
       )}
 
-      {/* 월별 전체 삭제 확인 모달 */}
+      {/* 월별 전체 삭제 확인 */}
       {deleteMonthConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="rounded-xl bg-white shadow-xl p-6 w-80">
-            <p className="text-sm font-semibold text-gray-800">{deleteMonthConfirm} 데이터를 모두 삭제하시겠습니까?</p>
-            <p className="mt-1 text-xs text-gray-400">
-              {groupedReports[deleteMonthConfirm]?.length ?? 0}건의 리포트가 삭제됩니다.
-            </p>
-            <div className="mt-4 flex gap-2 justify-end">
-              <button onClick={() => setDeleteMonthConfirm(null)} className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs text-gray-600 hover:bg-gray-50">취소</button>
-              <button onClick={() => handleDeleteMonth(deleteMonthConfirm, groupedReports[deleteMonthConfirm] ?? [])} className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700">삭제</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title={`${deleteMonthConfirm} 데이터 일괄 삭제`}
+          message={`${deleteMonthConfirm} 데이터(${groupedReports[deleteMonthConfirm]?.length ?? 0}건)를 모두 삭제합니다. 이 작업은 되돌릴 수 없습니다.`}
+          tone="danger"
+          confirmLabel="모두 삭제"
+          onConfirm={() => handleDeleteMonth(deleteMonthConfirm, groupedReports[deleteMonthConfirm] ?? [])}
+          onCancel={() => setDeleteMonthConfirm(null)}
+        />
       )}
     </div>
   )
