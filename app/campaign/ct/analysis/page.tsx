@@ -100,6 +100,11 @@ export default function CtAnalysisPage() {
     refreshKey,
   })
 
+  // 매출(소진) source 하이브리드: 일자 범위 = 오늘 단일이면 Campaign.daily_spent (실시간 당일 소진),
+  // 아닐 때는 stats.cost (statsCampaign 기반 일자 범위 합).
+  // 사용자 결정 — daily_spent 가 실시간성이 우수, stats 는 기간 집계용으로 분리.
+  const isTodayOnly = rangeStart === rangeEnd && rangeStart === todayStr()
+
   // MotivCampaign → UnifiedCampaignSnapshot (전일 스냅샷 + 광고주 매핑)
   // P1: getAdvertiserName / getAgencyDisplayName 헬퍼로 fallback chain 적용
   // today 는 statsCampaign(일자 범위 집계) 가 있으면 override — 누적값 의존 제거.
@@ -127,6 +132,11 @@ export default function CtAnalysisPage() {
         )
         const todayOverride = statsCampaign.byMotivId.get(c.id)
         if (todayOverride) snap.today = todayOverride
+        // 오늘 단일 모드: spend 만 daily_spent 로 재정의 (다른 메트릭은 stats 유지).
+        // 비용 분해(매체비/대행/DMP/이익) 합산 = stats 기준이므로 spend 와 ±α 차이 발생 가능 (사용자 선택).
+        if (isTodayOnly && c.daily_spent != null) {
+          snap.today = { ...snap.today, spend: Math.round(c.daily_spent) }
+        }
         return snap
       })
 
@@ -144,7 +154,7 @@ export default function CtAnalysisPage() {
     }
 
     return result
-  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats, statsCampaign.byMotivId])
+  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats, statsCampaign.byMotivId, isTodayOnly])
 
   // 카테고리 필터 (PARTNERS 는 합계에만 포함)
   const filtered = useMemo(() => {
@@ -319,7 +329,8 @@ export default function CtAnalysisPage() {
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <SummaryCard label="총 노출" value={f(sumT.impressions)} />
           <SummaryCard label="총 클릭" value={f(sumT.clicks)} />
-          <SummaryCard label="총 매출" value={`₩${f(sumT.spend)}`} />
+          <SummaryCard label="총 매출" value={`₩${f(sumT.spend)}`}
+            sub={isTodayOnly ? 'source: Campaign.daily_spent' : 'source: stats.cost (기간 합)'} />
           <SummaryCard label="총 비용"
             value={`₩${f(sumT.mediaCost + sumT.agencyFee + sumT.dmpFee)}`} />
         </section>

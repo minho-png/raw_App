@@ -83,6 +83,9 @@ export default function CtCtvAnalysisPage() {
     refreshKey,
   })
 
+  // 매출(소진) source 하이브리드: 오늘 단일이면 daily_spent, 그 외 stats.cost.
+  const isTodayOnly = rangeStart === rangeEnd && rangeStart === todayStr()
+
   // MotivCampaign → UnifiedCampaignSnapshot (P1: 광고주 매핑 포함)
   // today 는 statsCampaign(일자 범위 집계) 가 있으면 override — 누적값 의존 제거.
   const snapshots: UnifiedCampaignSnapshot[] = useMemo(() => {
@@ -101,9 +104,13 @@ export default function CtCtvAnalysisPage() {
         )
         const todayOverride = statsCampaign.byMotivId.get(c.id)
         if (todayOverride) snap.today = todayOverride
+        // 오늘 단일: spend 만 daily_spent 로 재정의 (사용자 결정).
+        if (isTodayOnly && c.daily_spent != null) {
+          snap.today = { ...snap.today, spend: Math.round(c.daily_spent) }
+        }
         return snap
       })
-  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats, statsCampaign.byMotivId])
+  }, [motiv.data, adAccountById, motivAgencyById, yesterdayStats, statsCampaign.byMotivId, isTodayOnly])
 
   // 합계 — snapshot.today 가 일자 범위 집계로 override 되어 카드/표가 동일 source 로 일치.
   const sumT        = useMemo(() => aggregateMetrics(snapshots.map(s => s.today)), [snapshots])
@@ -238,7 +245,8 @@ export default function CtCtvAnalysisPage() {
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <SummaryCard label="총 노출" value={f(sumT.impressions)} />
           <SummaryCard label="완료 시청" value={f(sumT.completedViews)} />
-          <SummaryCard label="총 매출" value={`₩${f(sumT.spend)}`} />
+          <SummaryCard label="총 매출" value={`₩${f(sumT.spend)}`}
+            sub={isTodayOnly ? 'source: Campaign.daily_spent' : 'source: stats.cost (기간 합)'} />
           <SummaryCard label="총 비용"
             value={`₩${f(sumT.mediaCost + sumT.agencyFee + sumT.dmpFee)}`} />
         </section>
