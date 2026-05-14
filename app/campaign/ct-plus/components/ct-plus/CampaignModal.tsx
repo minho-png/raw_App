@@ -236,7 +236,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
     <ModalShell
       open={true}
       onClose={handleCloseClick}
-      title={initial ? "캠페인 수정" : "캠페인 추가"}
+      title={initial ? "광고주 운영 수정" : "광고주 운영 추가"}
       maxWidth="2xl"
       scrollable
     >

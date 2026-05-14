@@ -1,6 +1,5 @@
 "use client"
 import { CampaignModal } from "@/app/campaign/ct-plus/components/ct-plus/CampaignModal"
-import { CampaignDetailPanel } from "@/app/campaign/ct-plus/components/ct-plus/CampaignDetailPanel"
 import { CampaignFilterBar } from "@/app/campaign/ct-plus/components/ct-plus/CampaignFilterBar"
 import { CampaignSummaryBanner } from "@/app/campaign/ct-plus/components/ct-plus/CampaignSummaryBanner"
 import { CampaignTableSection } from "@/app/campaign/ct-plus/components/ct-plus/CampaignTableSection"
@@ -9,6 +8,7 @@ import { CsvUploadButton } from "@/components/ct-plus/CsvUploadButton"
 import type { CampaignAnomaly } from "@/app/campaign/ct-plus/components/ct-plus/AnomalyBanner"
 import { ConfirmModal, FilterStatus, btnPrimary, getDailySuggestion, fmt } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { ConfirmCfg } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
+import { useRouter } from "next/navigation"
 
 import React, { useState, useMemo, useEffect } from "react"
 
@@ -121,11 +121,7 @@ export default function CampaignStatusPage() {
     return map
   }, [computedRows])
 
-  const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null)
-  const selectedDetailCampaign = useMemo(
-    () => campaigns.find(c => c.id === selectedDetailId) ?? null,
-    [campaigns, selectedDetailId]
-  )
+  const router = useRouter()
 
   useEffect(() => {
     if (campaigns.length === 0 || rawRows.length === 0) return
@@ -263,15 +259,15 @@ export default function CampaignStatusPage() {
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">집행 관리</h1>
-            <p className="text-xs text-gray-400 mt-0.5">캠페인 현황 및 관리</p>
+            <h1 className="text-base font-semibold text-gray-900">광고주 운영 관리</h1>
+            <p className="text-xs text-gray-400 mt-0.5">광고주별 운영 현황 — 행 클릭 시 세부 내역 페이지로 이동</p>
           </div>
           <div className="flex items-center gap-2">
             <CsvUploadButton
               onResult={r => setToast({ message: r.message, type: r.type })}
             />
             <button onClick={() => { setEditTarget(null); setModalOpen(true) }} className={btnPrimary}>
-              + 캠페인 추가
+              + 광고주 운영 추가
             </button>
           </div>
         </div>
@@ -338,8 +334,7 @@ export default function CampaignStatusPage() {
             setToast({ message: '일정이 수정되었습니다', type: 'success' })
           }}
           onToast={(message, type = 'success') => setToast({ message, type })}
-          selectedDetailId={selectedDetailId}
-          setSelectedDetailId={setSelectedDetailId}
+          onRowClick={(c) => router.push(`/campaign/ct-plus/status/${c.id}`)}
         />
       </main>
 
@@ -361,16 +356,6 @@ export default function CampaignStatusPage() {
         <ConfirmModal
           title={confirmCfg.title} message={confirmCfg.message}
           onConfirm={confirmCfg.onConfirm} onCancel={() => setConfirmCfg(null)}
-        />
-      )}
-      {selectedDetailCampaign && (
-        <CampaignDetailPanel
-          campaign={selectedDetailCampaign}
-          operators={operators} agencies={agencies} advertisers={advertisers}
-          rawRows={computedRows}
-          onClose={() => setSelectedDetailId(null)}
-          onEdit={(c) => { setEditTarget(c); setModalOpen(true); setSelectedDetailId(null) }}
-          onUpdate={(c) => upsertCampaign(c)}
         />
       )}
     </div>

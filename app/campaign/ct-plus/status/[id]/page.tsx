@@ -48,7 +48,7 @@ export default function CampaignDetailPage() {
   const params = useParams()
   const router = useRouter()
   const id = typeof params?.id === "string" ? params.id : ""
-  const { campaigns, operators, agencies, advertisers } = useMasterData()
+  const { campaigns, operators, agencies, advertisers, upsertCampaign } = useMasterData()
   const { batches, allRows: rawRows, updateBatch } = useRawData()
   const [tab, setTab] = useFilterPersistence<Tab>(`ct-plus-detail:${id}:tab`, "summary")
   const [mediaFilter, setMediaFilter] = useFilterPersistence<string>(`ct-plus-detail:${id}:media`, "")
@@ -132,6 +132,15 @@ export default function CampaignDetailPage() {
   const totals   = campaign ? getCampaignTotals(campaign) : null
   const progress = campaign ? getCampaignProgress(campaign.startDate, campaign.endDate) : 0
   const totalA   = useMemo(()=>aggRows(filteredRows),[filteredRows])
+
+  // 대시보드 소진 비교 — 모달 / DetailPanel 의 기능을 본 페이지로 이식.
+  // 사용자 결정 — '클릭시 모달이 아닌 세부 내역으로 가되 대시보드 금액 비교 등의 기능이 세부 내역에서 확인 가능'.
+  const [dashboardInput, setDashboardInput] = useState<string>(
+    campaign?.dashboardNetAmount != null ? String(campaign.dashboardNetAmount) : ""
+  )
+  useEffect(() => {
+    setDashboardInput(campaign?.dashboardNetAmount != null ? String(campaign.dashboardNetAmount) : "")
+  }, [campaign?.id, campaign?.dashboardNetAmount])
 
   const rawSpendRate = totals && totals.totalSettingCost>0
     ? +(totalA.spend/totals.totalSettingCost*100).toFixed(1) : 0
@@ -439,6 +448,69 @@ export default function CampaignDetailPage() {
           {/* ===== 요약 탭 ===== */}
           {tab==="summary"&&(
             <div className="space-y-3">
+              {/* 대시보드 소진 비교 — 모달 기능을 본 페이지로 이식 (사용자 요청) */}
+              {(() => {
+                const settingCost = totals.totalSettingCost
+                const rawSpend = totalA.spend
+                const dashAmt = parseFloat(dashboardInput) || 0
+                const rawRate = settingCost > 0 ? +(rawSpend / settingCost * 100).toFixed(1) : 0
+                const dashRate = settingCost > 0 ? +(dashAmt / settingCost * 100).toFixed(1) : 0
+                const diff = +(dashRate - rawRate).toFixed(1)
+                const rsStyle = spendRateStyle(rawRate)
+                const dsStyle = spendRateStyle(dashRate)
+                return (
+                  <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                    <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-100">
+                      <h3 className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wide">대시보드 소진 비교</h3>
+                      <p className="text-[10px] text-gray-500 mt-0.5">광고주 대시보드 직접 입력 금액 vs raw 데이터 기반 소진 — 차이가 크면 검증 필요</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4">
+                      <div className="rounded-lg border border-gray-200 p-3">
+                        <p className="text-[10px] text-gray-500 uppercase">세팅금액</p>
+                        <p className="mt-1 text-sm font-bold tabular-nums text-gray-900">₩{fmt(settingCost)}</p>
+                      </div>
+                      <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+                        <p className="text-[10px] text-blue-700 uppercase">raw 소진 (CSV)</p>
+                        <p className="mt-1 text-sm font-bold tabular-nums text-blue-700">₩{fmt(rawSpend)}</p>
+                        <p className={`text-[10px] mt-0.5 ${rsStyle.text}`}>{rawRate}%</p>
+                      </div>
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                        <p className="text-[10px] text-emerald-700 uppercase">대시보드 입력</p>
+                        <div className="mt-1 flex items-center gap-1">
+                          <span className="text-sm font-bold text-emerald-700">₩</span>
+                          <input
+                            type="number" min="0"
+                            value={dashboardInput}
+                            onChange={e => {
+                              const v = e.target.value
+                              setDashboardInput(v)
+                              const num = parseFloat(v)
+                              if (campaign) {
+                                upsertCampaign({
+                                  ...campaign,
+                                  dashboardNetAmount: Number.isFinite(num) && num > 0 ? num : undefined,
+                                })
+                              }
+                            }}
+                            placeholder="0"
+                            className="flex-1 min-w-0 rounded border border-emerald-200 px-2 py-0.5 text-sm font-bold tabular-nums text-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                          />
+                        </div>
+                        <p className={`text-[10px] mt-0.5 ${dsStyle.text}`}>{dashRate}%</p>
+                      </div>
+                    </div>
+                    {dashAmt > 0 && Math.abs(diff) >= 5 && (
+                      <div className={`mx-4 mb-4 rounded-lg px-3 py-2 text-xs ${
+                        diff > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      }`}>
+                        <span className="font-semibold">{diff > 0 ? '대시보드 입력이 raw 보다 큼' : 'raw 가 대시보드 입력보다 큼'}</span>
+                        <span className="ml-2 opacity-80">차이 {Math.abs(diff).toFixed(1)}%p · ₩{fmt(Math.abs(dashAmt - rawSpend))}</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
               {/* KPI 달성률 */}
               {showThresholds && (
                 <KpiThresholdSettings thresholds={thresholds} onChange={updateThresholds} />

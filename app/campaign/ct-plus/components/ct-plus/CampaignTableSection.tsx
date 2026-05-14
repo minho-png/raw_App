@@ -10,8 +10,7 @@ import { copyRawToClipboard, downloadRawXlsx } from "@/lib/campaignRawExport"
 export function CampaignTableSection({
   filtered, agencies, advertisers, operators, computedSpendMap, dailySpendMap,
   rawRowsByCampaignId,
-  onEdit, onDelete, onStatusToggle, onMemoSave, onDateSave, onToast,
-  selectedDetailId, setSelectedDetailId
+  onEdit, onDelete, onStatusToggle, onMemoSave, onDateSave, onToast, onRowClick,
 }: {
   filtered: Campaign[]
   agencies: Agency[]
@@ -19,19 +18,15 @@ export function CampaignTableSection({
   operators: Operator[]
   computedSpendMap: Map<string, { netAmount: number; executionAmount: number; rowCount: number }>
   dailySpendMap?: Map<string, DailySpendEntry>
-  /** 신규 — 캠페인 ID 별 raw row. raw 복사/Excel 다운로드 버튼이 행에서 직접 호출. */
   rawRowsByCampaignId?: Map<string, RawRow[]>
   onEdit: (c: Campaign) => void
   onDelete: (id: string) => void
   onStatusToggle: (id: string) => void
-  // 캠페인 현황 인라인 메모 저장
   onMemoSave: (c: Campaign, memo: string) => Promise<void>
-  /** 신규 — 시작일/종료일 inline 수정 저장. 매번 호출되므로 status 페이지에서 throttle/upsert 처리. */
   onDateSave?: (c: Campaign, startDate: string, endDate: string) => Promise<void>
-  /** 토스트 표시 콜백 (raw 복사 결과 등) */
   onToast?: (msg: string, type?: 'success' | 'error') => void
-  selectedDetailId: string | null
-  setSelectedDetailId: (id: string | null) => void
+  /** 신규 — 행 클릭 시 호출. status 페이지에서 /status/[id] 로 이동. */
+  onRowClick?: (c: Campaign) => void
 }) {
   // 인라인 수정 — { [campaignId]: 'start' | 'end' } 형태로 어느 날짜 셀이 열려있는지 추적.
   const [editingDate, setEditingDate] = useState<{ id: string; field: 'start' | 'end' } | null>(null)
@@ -50,9 +45,10 @@ export function CampaignTableSection({
           <table className="w-full text-sm">
             <thead>
               {/* UX-06: 헤더 간소화 — 부연 설명은 title 툴팁으로 이동, 줄바꿈 제거. */}
+              {/* 광고주 중심 재구조화 — 광고주를 1번째 컬럼으로 승격, 운영명(구 캠페인명)은 보조 컬럼. */}
               <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-500 whitespace-nowrap">
-                <th className="px-4 py-3 text-left">캠페인명</th>
                 <th className="px-4 py-3 text-left">광고주</th>
+                <th className="px-4 py-3 text-left">운영명</th>
                 <th className="px-4 py-3 text-left">대행사</th>
                 <th className="px-4 py-3 text-left">담당자</th>
                 <th className="px-4 py-3 text-left">기간</th>
@@ -84,11 +80,13 @@ export function CampaignTableSection({
                   <tr
                     key={c.id}
                     data-campaign-row={c.id}
-                    className={`hover:bg-gray-50 transition-colors cursor-pointer ${isLagging ? "bg-yellow-50/60" : ""} ${selectedDetailId === c.id ? "ring-1 ring-inset ring-blue-200 bg-blue-50/60" : ""}`}
-                    onClick={() => setSelectedDetailId(selectedDetailId === c.id ? null : c.id)}
+                    className={`hover:bg-gray-50 transition-colors ${isLagging ? "bg-yellow-50/60" : ""} ${onRowClick ? "cursor-pointer" : ""}`}
+                    onClick={() => onRowClick?.(c)}
                   >
                     <td className="px-4 py-3 max-w-[200px]">
-                      <div className="font-medium text-gray-900 truncate" title={c.campaignName}>{c.campaignName}</div>
+                      <div className="font-semibold text-gray-900 truncate" title={advName(c.advertiserId)}>
+                        {advName(c.advertiserId)}
+                      </div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         {c.campaignType && (
                           <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-700">
@@ -106,8 +104,8 @@ export function CampaignTableSection({
                         {isLagging && <span className="text-[10px] font-semibold text-yellow-700">⚠ 지연</span>}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-600 max-w-[120px] truncate" title={advName(c.advertiserId)}>
-                      {advName(c.advertiserId)}
+                    <td className="px-4 py-3 text-xs text-gray-700 max-w-[200px] truncate" title={c.campaignName}>
+                      {c.campaignName}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600 max-w-[120px] truncate" title={agName(c.agencyId)}>
                       {agName(c.agencyId)}
