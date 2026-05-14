@@ -64,6 +64,9 @@ export default function CampaignDetailPage() {
   const { batches, allRows: rawRows, updateBatch } = useRawData()
   const [tab, setTab] = useFilterPersistence<Tab>(`ct-plus-detail:${id}:tab`, "summary")
   const [mediaFilter, setMediaFilter] = useFilterPersistence<string>(`ct-plus-detail:${id}:media`, "")
+  // 세부 캠페인 필터 — subCampaign.id 저장. mediaFilter 변경 시 reset.
+  // 모든 탭(요약/일별/주간/소재/RAW)에 반영 — filteredRows 단계에서 적용.
+  const [subCampaignFilter, setSubCampaignFilter] = useFilterPersistence<string>(`ct-plus-detail:${id}:subCampaign`, "")
   // 기간·검색 필터 (모든 기능 탭 공통). sessionStorage 영속화.
   type DateRange = "all"|"7d"|"30d"
   const [dateRange, setDateRange] = useFilterPersistence<DateRange>(`ct-plus-detail:${id}:dateRange`, "all")
@@ -76,6 +79,23 @@ export default function CampaignDetailPage() {
   const { thresholds, update: updateThresholds } = useKpiThresholds()
 
   const campaign = useMemo(()=>campaigns.find(c=>c.id===id)??null,[campaigns,id])
+
+  // subCampaign 매핑 — id → { name, csvNamesLower, media }. 모든 탭의 필터/표시에 사용.
+  const subCampaignMap = useMemo(() => {
+    const m = new Map<string, { name: string; csvNamesLower: string[]; media: string }>()
+    if (!campaign) return m
+    for (const mb of campaign.mediaBudgets) {
+      for (const sc of (mb.subCampaigns ?? [])) {
+        m.set(sc.id, {
+          name: sc.name,
+          csvNamesLower: (sc.csvCampaignNames ?? []).map(n => n.trim().toLowerCase()),
+          media: mb.media,
+        })
+      }
+    }
+    return m
+  }, [campaign])
+
   const campRows = useMemo(()=>{
     if(!campaign) return []
     return applyMarkupToRows(rawRows,campaigns).filter(r=>r.matchedCampaignId===campaign.id)
@@ -99,14 +119,29 @@ export default function CampaignDetailPage() {
       const q = creativeQuery.trim().toLowerCase()
       rs = rs.filter(r => (r.creativeName ?? "").toLowerCase().includes(q))
     }
+    // 세부 캠페인 필터 — 선택된 subCampaign 의 csvCampaignNames 와 매체가 일치하는 행만
+    if (subCampaignFilter) {
+      const sc = subCampaignMap.get(subCampaignFilter)
+      if (sc) {
+        const set = new Set(sc.csvNamesLower)
+        rs = rs.filter(r => r.media === sc.media && set.has(r.campaignName.trim().toLowerCase()))
+      }
+    }
     return rs
-  },[campRows,mediaFilter,dateRange,creativeQuery])
+  },[campRows,mediaFilter,dateRange,creativeQuery,subCampaignFilter,subCampaignMap])
   // 캠페인 로딩 후 첫 매체로 초기화
   useEffect(()=>{
     if(!campaign) return
     const firstMedia = campaign.mediaBudgets[0]?.media
     if(firstMedia && !mediaFilter) setMediaFilter(firstMedia)
   },[campaign, mediaFilter])
+
+  // 매체가 바뀌면 세부 캠페인 필터 reset — 매체 불일치 상태 방지.
+  useEffect(() => {
+    if (!subCampaignFilter) return
+    const sc = subCampaignMap.get(subCampaignFilter)
+    if (!sc || (mediaFilter && sc.media !== mediaFilter)) setSubCampaignFilter("")
+  }, [mediaFilter, subCampaignFilter, subCampaignMap, setSubCampaignFilter])
 
   // RAW 편집
   const getVal = useCallback(<K extends keyof RawRow>(r:RawRow,key:K):RawRow[K]=>{
@@ -478,6 +513,27 @@ export default function CampaignDetailPage() {
             value={dateRange}
             onChange={setDateRange}
           />
+          {/* 세부 캠페인 chip — 선택된 매체의 subCampaign 목록 (사용자 요청: 모든 탭에 반영) */}
+          {(() => {
+            if (!campaign) return null
+            const opts = campaign.mediaBudgets
+              .filter(mb => !mediaFilter || mb.media === mediaFilter)
+              .flatMap(mb => (mb.subCampaigns ?? []).map(sc => ({
+                value: sc.id,
+                label: sc.name,
+                color: mColor(mb.media),
+              })))
+            if (opts.length === 0) return null
+            return (
+              <FilterChipGroup<string>
+                label="세부 캠페인"
+                variant="separate"
+                options={opts}
+                value={subCampaignFilter}
+                onChange={setSubCampaignFilter}
+              />
+            )
+          })()}
           {(tab==="creative" || tab==="raw") && (
             <FilterSearch
               value={creativeQuery}
@@ -486,8 +542,8 @@ export default function CampaignDetailPage() {
             />
           )}
           <FilterReset
-            visible={dateRange !== "all" || creativeQuery !== ""}
-            onClick={() => { setDateRange("all"); setCreativeQuery("") }}
+            visible={dateRange !== "all" || creativeQuery !== "" || subCampaignFilter !== ""}
+            onClick={() => { setDateRange("all"); setCreativeQuery(""); setSubCampaignFilter("") }}
           />
         </FilterBar>
 
@@ -1060,6 +1116,7 @@ export default function CampaignDetailPage() {
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50 border-b border-gray-100 sticky top-0"><tr>
                       <th className={thCls}>날짜</th><th className={thCls}>매체</th>
+                      <th className={thCls}>세부캠페인</th>
                       <th className={thCls}>캠페인명</th><th className={thCls}>소재</th>
                       <th className={thRCls}>노출</th><th className={thRCls}>조회</th>
                       <th className={thRCls}>클릭</th><th className={thRCls}>집행금액</th>
@@ -1067,10 +1124,24 @@ export default function CampaignDetailPage() {
                     <tbody className="divide-y divide-gray-50">
                       {filteredRows.map((r,i)=>{
                         const changed=edits.has(rowKey(r))
+                        // 이 행이 속한 subCampaign 추론 — (media, campaignName) 매칭.
+                        // RAW 편집에서도 세부 캠페인 식별 가능하게 (사용자 요청).
+                        const subName = (() => {
+                          const cn = r.campaignName.trim().toLowerCase()
+                          for (const [, sc] of subCampaignMap) {
+                            if (sc.media === r.media && sc.csvNamesLower.includes(cn)) return sc.name
+                          }
+                          return null
+                        })()
                         return(
                           <tr key={i} className={changed?"bg-yellow-50":"hover:bg-gray-50"}>
                             <td className={`${tdCls} font-mono text-gray-600`}>{r.date}</td>
                             <td className={`${tdCls} font-medium`} style={{ borderLeft: `3px solid ${mColor(r.media)}`, color: mColor(r.media) }}>{r.media}</td>
+                            <td className={`${tdCls} max-w-[120px] truncate`} title={subName ?? "(미매핑)"}>
+                              {subName
+                                ? <span className="inline-flex items-center rounded-full bg-violet-50 text-violet-700 px-1.5 py-0.5 text-[10px] font-medium border border-violet-100">{subName}</span>
+                                : <span className="text-gray-300 text-[10px]">미매핑</span>}
+                            </td>
                             <td className={`${tdCls} max-w-[140px] truncate`} title={r.campaignName}>{r.campaignName}</td>
                             <td className={`${tdCls} max-w-[100px] truncate`} title={r.creativeName}>{r.creativeName}</td>
                             {(["impressions","views","clicks"] as const).map(key=>(
