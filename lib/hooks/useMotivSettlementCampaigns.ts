@@ -72,35 +72,50 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
     ;(async () => {
       setState(s => ({ ...s, loading: true, error: null }))
       try {
+        // 사용자 보고 — '캠페인을 불러오지 못하는 경우' 의 주된 원인은
+        // 첫 페이지(per_page=200)만 조회하던 동작. 한 type 의 캠페인이 200개를 넘으면
+        // 나머지가 누락됨. 모든 페이지 순회로 전환 (최대 10페이지 = 2000건 안전 캡).
+        const MAX_PAGES = 10
         const results = await Promise.all(types.map(async t => {
-          const params = new URLSearchParams()
-          params.set('campaign_type', t)
-          params.set('per_page', String(perPage))
-          params.set('page', '1')
-          params.set('sort', '-created_at')
-          if (range) {
-            params.set('start_date', range.start)
-            params.set('end_date',   range.end)
+          // 페이지 합산용 — 부분 응답이라 strict 타입을 쓰지 않음.
+          const merged: { data: MotivCampaign[]; meta?: { last_page?: number; total?: number }; exchange_rate?: number } = {
+            data: [],
           }
-          // QA BUG-004: 응답이 끊긴 채로 멈추면 무한 '로딩 중…' 이 됨.
-          //              30초 timeout 으로 명시적 에러 전환 → 페이지가 에러 분기로 이동.
-          const ac = new AbortController()
-          const timer = setTimeout(() => ac.abort(), 30_000)
-          let res: Response
-          try {
-            res = await fetch(`/api/motiv/campaigns?${params.toString()}`, {
-              cache: 'no-store', signal: ac.signal,
-            })
-          } catch (e) {
-            if ((e as Error).name === 'AbortError') {
-              throw new Error(`Motiv ${t} 응답 시간 초과 (30s)`)
+          for (let page = 1; page <= MAX_PAGES; page++) {
+            const params = new URLSearchParams()
+            params.set('campaign_type', t)
+            params.set('per_page', String(perPage))
+            params.set('page', String(page))
+            params.set('sort', '-created_at')
+            if (range) {
+              params.set('start_date', range.start)
+              params.set('end_date',   range.end)
             }
-            throw e
-          } finally {
-            clearTimeout(timer)
+            const ac = new AbortController()
+            const timer = setTimeout(() => ac.abort(), 30_000)
+            let res: Response
+            try {
+              res = await fetch(`/api/motiv/campaigns?${params.toString()}`, {
+                cache: 'no-store', signal: ac.signal,
+              })
+            } catch (e) {
+              if ((e as Error).name === 'AbortError') {
+                throw new Error(`Motiv ${t} 응답 시간 초과 (30s)`)
+              }
+              throw e
+            } finally {
+              clearTimeout(timer)
+            }
+            if (!res.ok) throw new Error(`Motiv ${t} ${res.status}`)
+            const json = (await res.json()) as MotivCampaignListResponse
+            merged.data.push(...json.data)
+            if (json.exchange_rate) merged.exchange_rate = json.exchange_rate
+            merged.meta = json.meta
+            // 마지막 페이지 도달 — last_page 가 응답에 있으면 그 기준, 없으면 데이터 < per_page 로 판단.
+            const lastPage = json.meta?.last_page
+            if (lastPage != null ? page >= lastPage : json.data.length < perPage) break
           }
-          if (!res.ok) throw new Error(`Motiv ${t} ${res.status}`)
-          return (await res.json()) as MotivCampaignListResponse
+          return merged
         }))
 
         // 병합 + 제외 리스트 필터

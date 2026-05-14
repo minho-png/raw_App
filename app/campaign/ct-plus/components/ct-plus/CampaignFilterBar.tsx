@@ -12,6 +12,8 @@ export function CampaignFilterBar({
   filterMonth, setFilterMonth,
   filterOperator, setFilterOperator,
   filterMedia, setFilterMedia,
+  filterDateStart, setFilterDateStart,
+  filterDateEnd, setFilterDateEnd,
   searchQuery, setSearchQuery,
   isFiltered, onReset,
   campaigns, operators,
@@ -24,6 +26,11 @@ export function CampaignFilterBar({
   setFilterOperator: (o: string) => void
   filterMedia: string
   setFilterMedia: (m: string) => void
+  /** 신규: 캠페인 운영 기간 overlap 필터 (시작일/종료일). 빈 값이면 무필터. */
+  filterDateStart: string
+  setFilterDateStart: (d: string) => void
+  filterDateEnd: string
+  setFilterDateEnd: (d: string) => void
   searchQuery: string
   setSearchQuery: (q: string) => void
   isFiltered: boolean
@@ -61,6 +68,26 @@ export function CampaignFilterBar({
         <option value="">매체 전체</option>
         {AVAILABLE_MEDIA.map(m => <option key={m} value={m}>{m}</option>)}
       </select>
+      <FilterDivider />
+      {/* 운영 기간 필터 — 입력된 범위와 overlap 있는 캠페인만 표시 */}
+      <div className="flex items-center gap-1" title="캠페인 운영 기간이 이 범위와 겹치는 항목만 표시">
+        <span className="text-[11px] text-gray-500">기간</span>
+        <input
+          type="date"
+          value={filterDateStart}
+          max={filterDateEnd || undefined}
+          onChange={e => setFilterDateStart(e.target.value)}
+          className="rounded-md border border-gray-200 px-2 py-1 text-xs"
+        />
+        <span className="text-gray-300 text-xs">~</span>
+        <input
+          type="date"
+          value={filterDateEnd}
+          min={filterDateStart || undefined}
+          onChange={e => setFilterDateEnd(e.target.value)}
+          className="rounded-md border border-gray-200 px-2 py-1 text-xs"
+        />
+      </div>
       <FilterSearch
         value={searchQuery}
         onChange={setSearchQuery}

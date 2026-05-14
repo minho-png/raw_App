@@ -7,7 +7,7 @@ import type { DailySpendEntry } from "@/lib/hooks/useDailySpendMap"
 
 export function CampaignTableSection({
   filtered, agencies, advertisers, operators, computedSpendMap, dailySpendMap,
-  onEdit, onDelete, onStatusToggle, onMemoSave,
+  onEdit, onDelete, onStatusToggle, onMemoSave, onDateSave,
   selectedDetailId, setSelectedDetailId
 }: {
   filtered: Campaign[]
@@ -21,9 +21,13 @@ export function CampaignTableSection({
   onStatusToggle: (id: string) => void
   // 캠페인 현황 인라인 메모 저장
   onMemoSave: (c: Campaign, memo: string) => Promise<void>
+  /** 신규 — 시작일/종료일 inline 수정 저장. 매번 호출되므로 status 페이지에서 throttle/upsert 처리. */
+  onDateSave?: (c: Campaign, startDate: string, endDate: string) => Promise<void>
   selectedDetailId: string | null
   setSelectedDetailId: (id: string | null) => void
 }) {
+  // 인라인 수정 — { [campaignId]: 'start' | 'end' } 형태로 어느 날짜 셀이 열려있는지 추적.
+  const [editingDate, setEditingDate] = useState<{ id: string; field: 'start' | 'end' } | null>(null)
   const opName = (id: string) => operators.find(o => o.id === id)?.name ?? "-"
   const agName = (id: string) => agencies.find(a => a.id === id)?.name ?? "-"
   const advName = (id: string) => advertisers.find(a => a.id === id)?.name ?? "-"
@@ -101,9 +105,54 @@ export function CampaignTableSection({
                       {agName(c.agencyId)}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{opName(c.managerId)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap tabular-nums">
-                      <div>{c.startDate.slice(2)}</div>
-                      <div>{c.endDate.slice(2)}</div>
+                    <td
+                      className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap tabular-nums"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      {editingDate?.id === c.id && editingDate.field === 'start' ? (
+                        <input
+                          type="date"
+                          autoFocus
+                          defaultValue={c.startDate}
+                          max={c.endDate || undefined}
+                          onBlur={e => {
+                            const v = e.target.value
+                            if (v && v !== c.startDate && onDateSave) onDateSave(c, v, c.endDate)
+                            setEditingDate(null)
+                          }}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingDate(null) }}
+                          className="rounded border border-blue-300 px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onDateSave && setEditingDate({ id: c.id, field: 'start' })}
+                          className={`block w-full text-left ${onDateSave ? 'hover:text-blue-600 hover:underline cursor-text' : ''}`}
+                          title={onDateSave ? '클릭하여 시작일 수정' : c.startDate}
+                        >{c.startDate.slice(2)}</button>
+                      )}
+                      {editingDate?.id === c.id && editingDate.field === 'end' ? (
+                        <input
+                          type="date"
+                          autoFocus
+                          defaultValue={c.endDate}
+                          min={c.startDate || undefined}
+                          onBlur={e => {
+                            const v = e.target.value
+                            if (v && v !== c.endDate && onDateSave) onDateSave(c, c.startDate, v)
+                            setEditingDate(null)
+                          }}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingDate(null) }}
+                          className="rounded border border-blue-300 px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onDateSave && setEditingDate({ id: c.id, field: 'end' })}
+                          className={`block w-full text-left ${onDateSave ? 'hover:text-blue-600 hover:underline cursor-text' : ''}`}
+                          title={onDateSave ? '클릭하여 종료일 수정' : c.endDate}
+                        >{c.endDate.slice(2)}</button>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="text-xs font-semibold text-blue-600">{progress}%</div>

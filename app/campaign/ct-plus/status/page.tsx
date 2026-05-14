@@ -40,7 +40,7 @@ export default function CampaignStatusPage() {
   // R5: 메인의 이상 알림에서 ?alert=overspend|underspend|expiring 진입 시 1회 override.
   //     querystring 우선, 그 후 사용자 조작은 sessionStorage 로 정상 저장.
   const SS_KEY = 'ctplus-status-filters-v1'
-  type Saved = { status?: FilterStatus; month?: string; operator?: string; media?: string; q?: string }
+  type Saved = { status?: FilterStatus; month?: string; operator?: string; media?: string; q?: string; dateStart?: string; dateEnd?: string }
   const loadInitial = (): Saved => {
     if (typeof window === 'undefined') return {}
     const qs = new URLSearchParams(window.location.search)
@@ -57,14 +57,18 @@ export default function CampaignStatusPage() {
   const [filterOperator, setFilterOperator] = useState(savedRef.operator ?? "")
   const [filterMedia,    setFilterMedia]    = useState(savedRef.media    ?? "")
   const [searchQuery,    setSearchQuery]    = useState(savedRef.q        ?? "")
+  // 신규: 캠페인 운영 기간 필터 (overlap)
+  const [filterDateStart, setFilterDateStart] = useState(savedRef.dateStart ?? "")
+  const [filterDateEnd,   setFilterDateEnd]   = useState(savedRef.dateEnd   ?? "")
 
   // 필터 변경 시 즉시 저장 (페이지 이탈 후 복귀해도 동일 상태 유지)
   useEffect(() => {
     if (typeof window === 'undefined') return
     sessionStorage.setItem(SS_KEY, JSON.stringify({
       status: filterStatus, month: filterMonth, operator: filterOperator, media: filterMedia, q: searchQuery,
+      dateStart: filterDateStart, dateEnd: filterDateEnd,
     }))
-  }, [filterStatus, filterMonth, filterOperator, filterMedia, searchQuery])
+  }, [filterStatus, filterMonth, filterOperator, filterMedia, searchQuery, filterDateStart, filterDateEnd])
 
   // 스크롤 위치 보존
   useEffect(() => {
@@ -131,6 +135,12 @@ export default function CampaignStatusPage() {
     if (filterMonth  && c.settlementMonth !== filterMonth) return false
     if (filterOperator && c.managerId !== filterOperator) return false
     if (filterMedia  && !c.mediaBudgets.some(mb => mb.media === filterMedia)) return false
+    // 기간 overlap 필터 — 캠페인 [start, end] 가 [filterDateStart, filterDateEnd] 와 겹치는지
+    if (filterDateStart || filterDateEnd) {
+      const cs = c.startDate, ce = c.endDate
+      if (filterDateStart && ce && ce < filterDateStart) return false
+      if (filterDateEnd   && cs && cs > filterDateEnd)   return false
+    }
     if (searchQuery) {
       const q   = searchQuery.toLowerCase()
       const ag  = agencies.find(a => a.id === c.agencyId)?.name ?? ""
@@ -138,7 +148,7 @@ export default function CampaignStatusPage() {
       if (!adv.toLowerCase().includes(q) && !c.campaignName.toLowerCase().includes(q) && !ag.toLowerCase().includes(q)) return false
     }
     return true
-  }), [campaigns, filterStatus, filterMonth, filterOperator, filterMedia, searchQuery, agencies, advertisers])
+  }), [campaigns, filterStatus, filterMonth, filterOperator, filterMedia, filterDateStart, filterDateEnd, searchQuery, agencies, advertisers])
 
   const summary = useMemo(() => {
     let totalBudget = 0, totalSettingCost = 0
@@ -204,7 +214,7 @@ export default function CampaignStatusPage() {
     return result
   }, [filtered, computedSpendMap])
 
-  const isFiltered = !!(filterStatus !== "전체" || filterMonth || filterOperator || filterMedia || searchQuery)
+  const isFiltered = !!(filterStatus !== "전체" || filterMonth || filterOperator || filterMedia || searchQuery || filterDateStart || filterDateEnd)
 
   function confirm(cfg: ConfirmCfg) { setConfirmCfg(cfg) }
   function showToast(message: string, type: "success" | "error" = "success") {
@@ -285,11 +295,14 @@ export default function CampaignStatusPage() {
           filterMonth={filterMonth}   setFilterMonth={setFilterMonth}
           filterOperator={filterOperator} setFilterOperator={setFilterOperator}
           filterMedia={filterMedia}   setFilterMedia={setFilterMedia}
+          filterDateStart={filterDateStart} setFilterDateStart={setFilterDateStart}
+          filterDateEnd={filterDateEnd}     setFilterDateEnd={setFilterDateEnd}
           searchQuery={searchQuery}   setSearchQuery={setSearchQuery}
           isFiltered={isFiltered}
           onReset={() => {
             setFilterStatus("전체" as FilterStatus)
             setFilterMonth(""); setFilterOperator(""); setFilterMedia(""); setSearchQuery("")
+            setFilterDateStart(""); setFilterDateEnd("")
           }}
           campaigns={campaigns} operators={operators}
           agencies={agencies}   advertisers={advertisers}
@@ -305,6 +318,10 @@ export default function CampaignStatusPage() {
           onMemoSave={async (c, memo) => {
             await upsertCampaign({ ...c, memo })
             setToast({ message: '메모가 저장되었습니다', type: 'success' })
+          }}
+          onDateSave={async (c, startDate, endDate) => {
+            await upsertCampaign({ ...c, startDate, endDate })
+            setToast({ message: '일정이 수정되었습니다', type: 'success' })
           }}
           selectedDetailId={selectedDetailId}
           setSelectedDetailId={setSelectedDetailId}
