@@ -66,6 +66,7 @@ export const EXCLUDED_MOTIV_CAMPAIGN_NAMES: readonly string[] = [
   'publica광고 테스트(삼성+뉴아이디)_250411',
   '엑셀비드 VOD 테스트 캠페인_230509 (CTV광고사업본부)',
   '엑셀비드_테스트',
+  '엑셀비드_비디오 지면 테스트',
   '영상 게재면 캠페인',
 ] as const
 

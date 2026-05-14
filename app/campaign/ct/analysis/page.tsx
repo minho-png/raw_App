@@ -25,6 +25,7 @@ import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
 import { useMotivStatsDaily } from "@/lib/hooks/useMotivStatsDaily"
 import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
+import { pacingStatus, pacingToneClasses } from "@/lib/motivApi/pacingHelper"
 import { useRefreshControl } from "@/lib/hooks/useRefreshControl"
 import { RefreshControlBar } from "@/components/molecules/RefreshControl"
 import { DailyCostChart } from "@/components/analysis/DailyCostChart"
@@ -136,6 +137,10 @@ export default function CtAnalysisPage() {
         // 비용 분해(매체비/대행/DMP/이익) 합산 = stats 기준이므로 spend 와 ±α 차이 발생 가능 (사용자 선택).
         if (isTodayOnly && c.daily_spent != null) {
           snap.today = { ...snap.today, spend: Math.round(c.daily_spent) }
+        }
+        // 무료 캠페인: 매출은 잡지 않음 (override 이후에도 강제 0).
+        if (snap.isFree) {
+          snap.today = { ...snap.today, spend: 0 }
         }
         return snap
       })
@@ -385,6 +390,8 @@ export default function CtAnalysisPage() {
                     <th className="px-3 py-2 text-left font-medium">대행사</th>
                     <th className="px-3 py-2 text-right font-medium">예산</th>
                     <th className="px-3 py-2 text-right font-medium">소진</th>
+                    <th className="px-3 py-2 text-right font-medium">일예산 소진율</th>
+                    <th className="px-3 py-2 text-center font-medium">페이싱</th>
                     <th className="px-3 py-2 text-right font-medium">CTR</th>
                     <th className="px-3 py-2 text-right font-medium">수익률</th>
                     <th className="px-3 py-2 text-center font-medium">D-day</th>
@@ -394,10 +401,20 @@ export default function CtAnalysisPage() {
                   {filtered.map(c => {
                     const alerts = buildAlerts(c, settings, { yesterdayMissing: !yesterdayAvailable })
                     const dd = dDay(c.endDate)
+                    const pacing = pacingStatus(c.dailySpent, c.dailyBudget)
+                    const ptone = pacingToneClasses(pacing.level)
+                    const dailyRate = c.dailyBudget > 0
+                      ? (c.dailySpent / c.dailyBudget) * 100
+                      : 0
                     return (
                       <tr key={c.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2"><AlertIcon msgs={alerts} /></td>
-                        <td className="px-3 py-2 font-medium text-gray-800">{c.name}</td>
+                        <td className="px-3 py-2 font-medium text-gray-800">
+                          {c.name}
+                          {c.isFree && (
+                            <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-500">무료</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2">
                           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${TYPE_COLOR[c.uiType]}`}>
                             {TYPE_LABEL[c.uiType]}
@@ -407,6 +424,29 @@ export default function CtAnalysisPage() {
                         <td className="px-3 py-2 text-gray-600">{c.agency}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.budget)}</td>
                         <td className="px-3 py-2 text-right text-gray-700">₩{f(c.today.spend)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700 tabular-nums">
+                          {c.dailyBudget > 0 ? (
+                            <span>
+                              {dailyRate.toFixed(1)}%
+                              <span className="ml-1 text-[10px] text-gray-400">
+                                (₩{f(c.dailySpent)}/{f(c.dailyBudget)})
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${ptone.bg} ${ptone.text}`}
+                            title={pacing.level === 'no_budget'
+                              ? '일예산 미설정'
+                              : `시간 진행률 ${(pacing.timeProgress * 100).toFixed(1)}% vs 소진율 ${(pacing.spendRate * 100).toFixed(1)}%`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${ptone.dot}`} />
+                            {pacing.label}
+                          </span>
+                        </td>
                         <td className="px-3 py-2 text-right text-gray-700">{c.ctr.toFixed(2)}%</td>
                         <td className="px-3 py-2 text-right text-gray-700">{c.profitRate.toFixed(2)}%</td>
                         <td className={`px-3 py-2 text-center ${dd.color}`}>{dd.label}</td>
