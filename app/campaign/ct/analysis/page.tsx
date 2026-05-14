@@ -21,6 +21,7 @@ import {
   calcCTR, calcSR, calcPR, calcVTR,
   type UnifiedCampaignSnapshot,
 } from "@/lib/motivApi/statsMapper"
+import { aggregateDailyToMetrics } from "@/lib/motivApi/statsService"
 import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
 import { useMotivStatsDaily } from "@/lib/hooks/useMotivStatsDaily"
@@ -135,9 +136,7 @@ export default function CtAnalysisPage() {
 
   // 합계
   // 합계 (캠페인 stats 단위 — MOTIV /v1/campaigns 응답의 stats 합산).
-  // 참고: stats.cost 는 캠페인 누적값일 수 있어 선택 일자 범위와 정확히 일치하지 않을 수 있음.
-  //       정확한 일자 범위 매출이 필요하면 statsDaily.data 의 합산을 별도로 사용.
-  const sumT        = useMemo(() => aggregateMetrics(filtered.map(s => s.today)),     [filtered])
+  const sumT_campaignBased = useMemo(() => aggregateMetrics(filtered.map(s => s.today)), [filtered])
   const sumY        = useMemo(() => aggregateMetrics(filtered.map(s => s.yesterday)), [filtered])
   const totalBudget = useMemo(() => filtered.reduce((a, c) => a + c.budget, 0), [filtered])
   const showVTR = category === 'video'
@@ -155,6 +154,30 @@ export default function CtAnalysisPage() {
     enabled:   filteredCampaignIds.length > 0,
     refreshKey,
   })
+
+  // sumT: 매출/비용 항목은 /stats/daily/breakdown 의 일자 합으로 우선 적용(있을 때).
+  //       impressions/clicks/completedViews 는 daily 응답에 없으므로 캠페인 stats 합 유지.
+  //       캠페인 stats 는 누적값일 수 있어 선택 일자 범위와 일치하지 않을 수 있음 → daily 합이 정확.
+  const sumT = useMemo(() => {
+    if (statsDaily.data.length === 0) return sumT_campaignBased
+    const daily = aggregateDailyToMetrics(statsDaily.data)
+    // dev 진단 — 캠페인 stats 합 vs daily 합 차이 가시화
+    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+      const cmp = sumT_campaignBased
+      console.info('[CT analysis] spend 비교', {
+        '캠페인 stats 합 (sumT)': { spend: cmp.spend, agencyFee: cmp.agencyFee, dmpFee: cmp.dmpFee, mediaCost: cmp.mediaCost },
+        '일자별 합 (daily)':     { spend: daily.spend, agencyFee: daily.agencyFee, dmpFee: daily.dmpFee, mediaCost: daily.mediaCost, profit: daily.profit },
+        '차이(daily-campaign)':  { spend: daily.spend - cmp.spend },
+      })
+    }
+    return {
+      ...sumT_campaignBased,
+      spend:     daily.spend,
+      agencyFee: daily.agencyFee,
+      dmpFee:    daily.dmpFee,
+      mediaCost: daily.mediaCost,
+    }
+  }, [sumT_campaignBased, statsDaily.data])
 
   // 카테고리 별 캠페인 수 (탭 배지)
   const countByCategory = useMemo(() => ({

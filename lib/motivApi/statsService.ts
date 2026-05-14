@@ -107,3 +107,39 @@ export function rowsToDailyPoints(rows: Record<string, string>[]): DailyCostPoin
     data_fee:   toNum(r.data_fee),
   }))
 }
+
+// 일자별 stats 합계 → UnifiedDailyMetrics 호환 객체.
+// 캠페인 stats 의 누적값 의존을 피하고 선택 일자 범위의 정확한 합산을 제공.
+//
+// 같은 회계 규약 적용 (사용자 확인):
+//   매출(spend)  = cost
+//   대행+DMP합   = agency_fee (Motiv 원본은 합산)
+//   DMP 수수료   = data_fee
+//   순수 대행    = agency_fee - data_fee
+//   매체비       = cost - agency_fee - profit
+//
+// impressions/clicks/completedViews 는 daily 응답에 없으므로 0 (호출부가 캠페인
+// stats 합으로 보강해야 함).
+export interface DailyAggregateMetrics {
+  spend: number
+  agencyFee: number
+  dmpFee: number
+  mediaCost: number
+  profit: number
+}
+export function aggregateDailyToMetrics(points: ReadonlyArray<DailyCostPoint>): DailyAggregateMetrics {
+  let cost = 0, rawAgency = 0, dmpFee = 0, profit = 0
+  for (const p of points) {
+    cost      += p.cost
+    rawAgency += p.agency_fee
+    dmpFee    += p.data_fee
+    profit    += p.profit
+  }
+  const spend     = Math.round(cost)
+  const rawA      = Math.round(rawAgency)
+  const dmpF      = Math.round(dmpFee)
+  const agencyFee = Math.max(0, rawA - dmpF)
+  const prf       = Math.round(profit)
+  const mediaCost = Math.max(0, spend - rawA - prf)
+  return { spend, agencyFee, dmpFee: dmpF, mediaCost, profit: prf }
+}
