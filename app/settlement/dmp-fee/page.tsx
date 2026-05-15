@@ -335,20 +335,20 @@ export default function DmpFeePage() {
                           sameAdv ? 'text-gray-300' : 'text-gray-800'
                         }`} title={r.advertiserName}>
                           {sameAdv ? '·' : r.advertiserName}
-                          {r.isUnmapped && !sameAdv && (
-                            <span className="ml-1.5 rounded px-1.5 py-0.5 text-[9px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200" title="targeting_product_id 미매핑 — productMapping.TARGETING_PRODUCT_LABEL 추가 필요">
-                              매핑 필요
-                            </span>
-                          )}
                         </td>
                         <td className="px-3 py-1.5 text-center">
                           <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${productChipClass(r.product)}`}>{r.product}</span>
                         </td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{r.campaignCount}</td>
                         {DMP_COLS.map(v => (
-                          <td key={v} className="px-3 py-1.5 text-right tabular-nums">
+                          <td key={v} className={`px-3 py-1.5 text-right tabular-nums ${
+                            v === 'ETC' && r.dmpFees[v] > 0 ? 'bg-yellow-50' : ''
+                          }`}>
                             {r.dmpFees[v] > 0
-                              ? <span className={v === 'ETC' ? 'text-gray-500' : 'text-violet-700 font-medium'}>{fmt(r.dmpFees[v])}</span>
+                              ? <span
+                                  className={v === 'ETC' ? 'text-yellow-700 font-medium' : 'text-violet-700 font-medium'}
+                                  title={v === 'ETC' ? 'targeting_product_id 미매핑 — TARGETING_PRODUCT_LABEL 에 추가 필요' : ''}
+                                >{fmt(r.dmpFees[v])}</span>
                               : <span className="text-gray-300">-</span>
                             }
                           </td>
