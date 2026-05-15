@@ -25,6 +25,14 @@ export function buildAlerts(
   const y = c.yesterday
   const yesterdayMissing = opts.yesterdayMissing ?? false
 
+  // 사용자 요청 — '집행일이 다가오지 않은 캠페인은 경고 X'.
+  // startDate > today (시작 전) → 모든 알림 skip. critical/warn 모두.
+  if (c.startDate) {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const start = new Date(c.startDate); start.setHours(0, 0, 0, 0)
+    if (start.getTime() > today.getTime()) return msgs
+  }
+
   // CTR 비교 (전일 미연동 시 skip)
   if (!yesterdayMissing) {
     const ctrT = calcCTR(t.clicks, t.impressions)
