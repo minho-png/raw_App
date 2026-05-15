@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
@@ -302,36 +302,48 @@ export default function DmpFeeClient() {
         <SettlementFilterBar
           month={month} onMonthChange={setMonth}
           product={product} onProductChange={setProduct}
-          rightSlot={
-            <div className="flex items-center gap-2 text-[11px] text-gray-500">
-              {showCtPlus && <span>CT+ {ctPlusRows.length}</span>}
-              {motivProduct && (() => {
-                const d = motivFetch.diag
-                const dropped = d.fetched - d.final  // 클라이언트 단에서 빠진 수
-                const hint = `Motiv 진단 (사용자 보고: '빠지는 캠페인이 많음')
-서버 총: ${d.serverTotal}
-실제 받은(fetched): ${d.fetched}
-  - 제외 리스트(EXCLUDED): ${d.excluded}
-  - dedup 손실: ${d.fetched - d.excluded - d.final - d.outOfRange}
-  - 기간 outOfRange: ${d.outOfRange}
-최종 노출: ${d.final}
-페이지 한계 도달: ${d.truncated ? '예 (한 type 5000건 초과 가능)' : '아니오'}
-광고그룹: ${adGroups.rows.length}건 (캠페인 ${motivCampaignIds.length}개 fetch)`
-                return (
-                  <span title={hint} className="cursor-help">
-                    Motiv {motivRows.length}
-                    <span className="text-gray-400 ml-1">
-                      (캠페인 {d.final}/{d.serverTotal}
-                      {dropped > 0 && <span className="text-amber-600"> · -{dropped}</span>}
-                      {d.truncated && <span className="text-rose-600 font-semibold"> · 한계!</span>}
-                      )
-                    </span>
-                  </span>
-                )
-              })()}
-            </div>
-          }
         />
+
+        {/* 진단 카드 — 항상 노출. 사용자 보고 '힐스펫 못 가져옴' 진단용. */}
+        {motivProduct && (() => {
+          const d = motivFetch.diag
+          const dropped = d.fetched - d.final
+          return (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-[11px] text-gray-700">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="font-bold text-amber-700">Motiv 진단:</span>
+                <span>서버 <b>{d.serverTotal}</b></span>
+                <span>→ 받은 <b>{d.fetched}</b></span>
+                <span>- 제외 <b className="text-rose-600">{d.excluded}</b></span>
+                <span>- 기간외 <b className="text-rose-600">{d.outOfRange}</b></span>
+                <span>= 통과 <b className="text-emerald-700">{d.final}</b></span>
+                <span className="mx-1 text-gray-300">|</span>
+                <span>광고그룹 <b>{adGroups.rows.length}</b> ({motivCampaignIds.length} 캠페인 fetch)</span>
+                {d.truncated && <span className="text-rose-700 font-bold">⚠ 페이지 한계 도달!</span>}
+                {dropped > d.excluded + d.outOfRange && <span className="text-amber-700">⚠ dedup 손실 {dropped - d.excluded - d.outOfRange}</span>}
+              </div>
+              <div className="mt-1.5 text-[10px] text-gray-500">
+                ?debug=ALL → 콘솔에 통과 캠페인 전체 dump. ?debug=힐스펫 → 매칭만.
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* 통과 캠페인 콘솔 dump — ?debug=ALL 시 (페이지 mount 후 1회). */}
+        <DiagCampaignDump campaigns={motivFetch.data} />
+
+        <div className="flex items-center gap-2 text-[11px] text-gray-500 -mt-2">
+          {showCtPlus && <span>CT+ {ctPlusRows.length}</span>}
+          {motivProduct && (() => {
+            const d = motivFetch.diag
+            const dropped = d.fetched - d.final
+            return (
+              <span title={`서버 ${d.serverTotal} / fetched ${d.fetched} / dropped ${dropped}`}>
+                Motiv {motivRows.length}
+              </span>
+            )
+          })()}
+        </div>
 
         {/* 합계 카드 — 전체 / CT+ / CT / CTV (사용자 요청) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -488,4 +500,28 @@ export default function DmpFeeClient() {
       </main>
     </div>
   )
+}
+
+// 진단 — ?debug=KEYWORD 또는 ALL 시 캠페인 list 콘솔에 dump.
+function DiagCampaignDump({ campaigns }: { campaigns: import('@/lib/motivApi/types').MotivCampaign[] }) {
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const kw = (new URLSearchParams(window.location.search).get('debug')
+      || window.sessionStorage.getItem('dmp-debug') || '').trim()
+    if (!kw) return
+    if (kw.toUpperCase() === 'ALL') {
+      console.log('[DMP debug] ALL — ' + campaigns.length + ' campaigns passed:')
+      for (const c of campaigns) {
+        console.log('  - id=' + c.id + ' type=' + c.campaign_type + ' status=' + c.status + ' start=' + c.start_date + ' end=' + c.end_date + ' title=' + c.title)
+      }
+    } else {
+      const low = kw.toLowerCase()
+      const matched = campaigns.filter(c => (c.title || '').toLowerCase().includes(low))
+      console.log('[DMP debug] keyword="' + kw + '" — ' + matched.length + ' matched of ' + campaigns.length)
+      for (const c of matched) {
+        console.log('  - id=' + c.id + ' type=' + c.campaign_type + ' status=' + c.status + ' start=' + c.start_date + ' end=' + c.end_date + ' title=' + c.title)
+      }
+    }
+  }, [campaigns])
+  return null
 }
