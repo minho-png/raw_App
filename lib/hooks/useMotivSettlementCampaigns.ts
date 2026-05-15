@@ -118,18 +118,20 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
           return merged
         }))
 
-        // 병합 + 제외 리스트 필터
-        let data: MotivCampaign[] = []
+        // 병합 + 제외 리스트 필터 + id dedup.
+        // dedup — sort 가 -created_at 만이라 동일 시각 경계에서 중복 가능 (검증 결과).
+        const byId = new Map<number, MotivCampaign>()
         let total = 0
         let exchangeRate = 0
         for (const r of results) {
           for (const c of r.data) {
             if (isExcludedCampaign(c.title)) continue
-            data.push(c)
+            byId.set(c.id, c)
           }
           total += r.meta?.total ?? r.data.length
           if (r.exchange_rate) exchangeRate = r.exchange_rate
         }
+        let data: MotivCampaign[] = Array.from(byId.values())
 
         // 클라이언트 재검증: 기간 overlap 없는 캠페인 제외 (서버 필터 불확실성 대비)
         if (range) {
@@ -138,8 +140,9 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
           data = data.filter(c => {
             const s = c.start_date ? new Date(c.start_date) : null
             const e = c.end_date   ? new Date(c.end_date)   : null
-            // 양쪽 날짜 모두 없는 캠페인은 월별 정산 대상에서 제외
-            if (!s && !e) return false
+            // 사용자 정책 (검증) — 양쪽 날짜 NULL 은 서버 필터를 신뢰하고 keep.
+            // 이전엔 둘 다 NULL 시 false 로 빼서 캠페인 누락의 주 원인.
+            if (!s && !e) return true
             const cs = s ?? new Date(0)
             const ce = e ?? new Date(9e13)
             return cs <= mEnd && ce >= mStart
