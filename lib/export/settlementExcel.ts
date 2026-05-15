@@ -263,6 +263,9 @@ export interface PurchaseRow {
   공급가액: number
   세액: number
   합계금액: number
+  // 사용자 요청 — 매입 행에 거래처별 대행 수수료(agency_fee) + DMP 비용(data_fee) 표시.
+  '대행 수수료': number
+  '데이터(DMP) 비용': number
   IMC: number
   TV: number
   CT: number
@@ -313,6 +316,9 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
         공급가액: net,
         세액: vat,
         합계금액: net + vat,
+        // CT+ 는 RAW CSV 기반 — agency_fee/data_fee API 분해 없음. 표시 0.
+        '대행 수수료': 0,
+        '데이터(DMP) 비용': 0,
         IMC: net,
         TV: 0,
         CT: 0,
@@ -354,6 +360,9 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
       공급가액: net,
       세액: vat,
       합계금액: net + vat,
+      // 사용자 결정 — 대행 수수료 = agency_fee, DMP 비용 = data_fee.
+      '대행 수수료': agencyFee,
+      '데이터(DMP) 비용': dataFee,
       IMC: 0,
       TV: product === 'CTV' ? net : 0,
       CT: product === 'CT' ? net : 0,
@@ -382,6 +391,7 @@ const PURCHASE_HEADERS: (keyof PurchaseRow)[] = [
   '년월', '담당자', '구분', '일자',
   '거래처명 (세금계산서 기준)', '광고주명',
   '캠페인명', '공급가액', '세액', '합계금액',
+  '대행 수수료', '데이터(DMP) 비용',
   'IMC', 'TV', 'CT',
   '송금일 기준', '송금기한',
 ]
