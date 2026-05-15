@@ -33,15 +33,15 @@ const DMP_COLS = ["SKP", "TG360", "LOTTE", "KB", "WIFI", "ETC"] as const
 type DmpVendor = typeof DMP_COLS[number]
 
 interface UnifiedDmpRow {
-  key: string
+  key: string                  // `${product}::${advertiserName}`
   product: 'CT+' | 'CT' | 'CTV'
   advertiserName: string
-  agencyName: string
-  campaignName: string
+  /** 광고주 단위 통합이라 캠페인 수만 카운트 (그룹화된 캠페인 수). */
+  campaignCount: number
   dmpFees: Record<DmpVendor, number>
   dmpTotal: number
   source: 'CT_PLUS' | 'MOTIV'
-  isUnmapped?: boolean   // Motiv targeting_product_id 매핑 누락
+  isUnmapped?: boolean
 }
 
 function toMonthStr(d: Date) {
@@ -94,27 +94,29 @@ export default function DmpFeePage() {
   const ctPlusRows = useMemo((): UnifiedDmpRow[] => {
     if (!showCtPlus) return []
     const map = new Map<string, UnifiedDmpRow>()
+    const seenCampaign = new Map<string, Set<string>>() // key → campaignIds
     for (const row of monthRows) {
       const cId = row.matchedCampaignId
       if (!cId) continue
       const camp = campaigns.find(c => c.id === cId)
       if (!camp) continue
+      // 사용자 결정 — 광고주 단위로 행 통합. 캠페인/대행사 컬럼 제거.
+      // 매칭은 캠페인 ID → advertiserId → advertiserName 으로 정확히 가져옴.
       const adv = advertisers.find(a => a.id === camp.advertiserId)
-      const ag  = agencies.find(a => a.id === (adv?.agencyId ?? camp.agencyId))
-      const key = `CT_PLUS::${cId}`
+      const advertiserName = adv?.name ?? '—'
+      const key = `CT+::${advertiserName}`
       if (!map.has(key)) {
         map.set(key, {
           key, product: 'CT+',
-          advertiserName: adv?.name ?? '—',
-          agencyName:     ag?.name ?? '—',
-          campaignName:   camp.campaignName,
+          advertiserName,
+          campaignCount: 0,
           dmpFees: emptyFees(), dmpTotal: 0,
           source: 'CT_PLUS',
         })
+        seenCampaign.set(key, new Set())
       }
       const entry = map.get(key)!
-      // row.dmpType 은 'SKP'|'TG360'|'LOTTE'|'KB'|'WIFI' 등을 포함하나 'ETC' 는 없음 (raw 파서 정의).
-      // DMP 사 5개만 카운트 — DIRECT/MEDIA_TARGETING/HyperLocal/BC/SH 등 0% 는 제외.
+      seenCampaign.get(key)!.add(cId)
       const dt = row.dmpType as string | undefined
       const net = row.netAmount ?? 0
       if (dt && (dt === 'SKP' || dt === 'TG360' || dt === 'LOTTE' || dt === 'KB' || dt === 'WIFI')) {
@@ -124,8 +126,11 @@ export default function DmpFeePage() {
         entry.dmpTotal += fee
       }
     }
+    for (const [k, ids] of seenCampaign) {
+      const r = map.get(k); if (r) r.campaignCount = ids.size
+    }
     return Array.from(map.values()).filter(r => r.dmpTotal > 0)
-  }, [showCtPlus, monthRows, campaigns, advertisers, agencies])
+  }, [showCtPlus, monthRows, campaigns, advertisers])
 
   // === Motiv 행 — /v1/adgroups (활성 캠페인만) ===
   const monthRange = useMemo(() => {
@@ -151,46 +156,51 @@ export default function DmpFeePage() {
     if (!motivProduct) return []
     const asgById = new Map(assignments.map(a => [a.motivCampaignId, a]))
     const map = new Map<string, UnifiedDmpRow>()
+    const seenCampaign = new Map<string, Set<number>>()
     for (const ag of adGroups.rows) {
+      // 캠페인 ID 로 캠페인 → 제품/광고주 매칭 (사용자: '캠페인 번호 활용해서 데이터 맞추기').
       const camp = motivFetch.data.find(c => c.id === ag.campaignId)
       if (!camp) continue
       const product = motivTypeToProduct(camp.campaign_type)
       if (product !== 'CT' && product !== 'CTV') continue
-      // 광고주/대행사 매핑 fallback chain — 검증 결과 따라.
+
+      // 광고주 매핑 fallback — internal assignment → adAccount → '—'.
       const asg = asgById.get(camp.id)
       const internalAdv = asg?.advertiserId ? advertisers.find(a => a.id === asg.advertiserId) : undefined
-      const internalAg  = asg?.agencyId     ? agencies.find(a => a.id === asg.agencyId)       : undefined
       const adAccount   = adAccountById.get(camp.adaccount_id)
       const advertiserName = internalAdv?.name || getAdvertiserName(adAccount) || '—'
-      const agencyName     = internalAg?.name  || '—'
 
-      const key = `${product}::${camp.id}`
-      let isUnmapped = false
+      // 광고주 단위 통합 키 — 같은 광고주는 모든 캠페인을 하나로 합침.
+      const key = `${product}::${advertiserName}`
       if (!map.has(key)) {
         map.set(key, {
           key, product,
-          advertiserName, agencyName,
-          campaignName: camp.title ?? `#${camp.id}`,
+          advertiserName,
+          campaignCount: 0,
           dmpFees: emptyFees(), dmpTotal: 0,
           source: 'MOTIV',
         })
+        seenCampaign.set(key, new Set())
       }
       const entry = map.get(key)!
+      seenCampaign.get(key)!.add(camp.id)
+
       const vendor = labelForTargetingProductId(ag.targetingProductId)
       const fee = Math.round(ag.dataFee)
       if (fee <= 0) continue
       if (vendor === 'SKP' || vendor === 'TG360' || vendor === 'LOTTE' || vendor === 'KB' || vendor === 'WIFI') {
         entry.dmpFees[vendor] += fee
       } else {
-        // 매핑 안된 라벨 ('ID {n}' / '미분류') → ETC 로 흡수 + 표시
         entry.dmpFees.ETC += fee
-        isUnmapped = true
+        entry.isUnmapped = true
       }
       entry.dmpTotal += fee
-      if (isUnmapped) entry.isUnmapped = true
+    }
+    for (const [k, ids] of seenCampaign) {
+      const r = map.get(k); if (r) r.campaignCount = ids.size
     }
     return Array.from(map.values()).filter(r => r.dmpTotal > 0)
-  }, [motivProduct, adGroups.rows, motivFetch.data, assignments, advertisers, agencies, adAccountById])
+  }, [motivProduct, adGroups.rows, motivFetch.data, assignments, advertisers, adAccountById])
 
   const allRows = useMemo(
     () => [...ctPlusRows, ...motivRows].sort((a, b) => b.dmpTotal - a.dmpTotal),
@@ -210,13 +220,13 @@ export default function DmpFeePage() {
   }, [allRows])
 
   function copyTsv() {
-    const header = ["광고주", "대행사", "캠페인", "제품", ...DMP_COLS, "DMP합계"].join("\t")
+    const header = ["광고주", "제품", "캠페인 수", ...DMP_COLS, "DMP합계"].join("\t")
     const data = allRows.map(r => [
-      r.advertiserName, r.agencyName, r.campaignName, r.product,
+      r.advertiserName, r.product, r.campaignCount,
       ...DMP_COLS.map(v => Math.round(r.dmpFees[v])),
       Math.round(r.dmpTotal),
     ].join("\t"))
-    const total = ["합계", "", "", "전체",
+    const total = ["합계", "전체", allRows.reduce((s, r) => s + r.campaignCount, 0),
       ...DMP_COLS.map(v => Math.round(totals.byVendor[v])),
       Math.round(totals.byProduct['전체']),
     ].join("\t")
@@ -307,9 +317,8 @@ export default function DmpFeePage() {
                 <thead className="bg-gray-50 border-b border-gray-200 text-gray-500">
                   <tr>
                     <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium whitespace-nowrap shadow-[2px_0_0_0_rgba(0,0,0,0.05)]">광고주</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">대행사</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">캠페인</th>
                     <th className="px-3 py-2 text-center font-medium whitespace-nowrap">제품</th>
+                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-gray-400">캠페인 수</th>
                     {DMP_COLS.map(v => (
                       <th key={v} className="px-3 py-2 text-right font-medium whitespace-nowrap">{v}</th>
                     ))}
@@ -322,17 +331,11 @@ export default function DmpFeePage() {
                     const sameAdv = prev?.advertiserName === r.advertiserName
                     return (
                       <tr key={r.key} className="group hover:bg-gray-50/70 transition-colors">
-                        <td className={`sticky left-0 z-[1] bg-white group-hover:bg-gray-50/70 px-3 py-1.5 font-medium whitespace-nowrap max-w-[180px] truncate shadow-[2px_0_0_0_rgba(0,0,0,0.05)] ${
+                        <td className={`sticky left-0 z-[1] bg-white group-hover:bg-gray-50/70 px-3 py-1.5 font-medium whitespace-nowrap max-w-[200px] truncate shadow-[2px_0_0_0_rgba(0,0,0,0.05)] ${
                           sameAdv ? 'text-gray-300' : 'text-gray-800'
                         }`} title={r.advertiserName}>
                           {sameAdv ? '·' : r.advertiserName}
-                        </td>
-                        <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap max-w-[140px] truncate" title={r.agencyName}>
-                          {r.agencyName}
-                        </td>
-                        <td className="px-3 py-1.5 text-gray-700 max-w-[260px] truncate" title={r.campaignName}>
-                          {r.campaignName}
-                          {r.isUnmapped && (
+                          {r.isUnmapped && !sameAdv && (
                             <span className="ml-1.5 rounded px-1.5 py-0.5 text-[9px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200" title="targeting_product_id 미매핑 — productMapping.TARGETING_PRODUCT_LABEL 추가 필요">
                               매핑 필요
                             </span>
@@ -341,6 +344,7 @@ export default function DmpFeePage() {
                         <td className="px-3 py-1.5 text-center">
                           <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${productChipClass(r.product)}`}>{r.product}</span>
                         </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{r.campaignCount}</td>
                         {DMP_COLS.map(v => (
                           <td key={v} className="px-3 py-1.5 text-right tabular-nums">
                             {r.dmpFees[v] > 0
@@ -356,8 +360,8 @@ export default function DmpFeePage() {
                 </tbody>
                 <tfoot className="bg-gray-100 border-t border-gray-200">
                   <tr className="text-gray-800 font-semibold">
-                    <td className="sticky left-0 z-[1] bg-gray-100 px-3 py-2 whitespace-nowrap shadow-[2px_0_0_0_rgba(0,0,0,0.05)]" colSpan={4}>
-                      합계 ({allRows.length})
+                    <td className="sticky left-0 z-[1] bg-gray-100 px-3 py-2 whitespace-nowrap shadow-[2px_0_0_0_rgba(0,0,0,0.05)]" colSpan={3}>
+                      합계 ({allRows.length} 광고주)
                     </td>
                     {DMP_COLS.map(v => (
                       <td key={v} className="px-3 py-2 text-right tabular-nums">{fmt(totals.byVendor[v])}</td>
