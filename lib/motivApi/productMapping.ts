@@ -26,10 +26,41 @@ export const TARGETING_PRODUCT_LABEL: Record<string, string> = {
   // 사용자가 ID 확인 후 채울 자리.
 }
 
-export function labelForTargetingProductId(id: string | number | null | undefined): string {
-  if (id == null || id === '') return '미분류'
-  const key = String(id)
-  return TARGETING_PRODUCT_LABEL[key] ?? `ID ${key}`
+/**
+ * 광고그룹 정보로 DMP 사 식별 — 사용자 결정: '캠페인과 backend 에서 맞춰 가져오게'.
+ *
+ * 우선순위:
+ *   1) TARGETING_PRODUCT_LABEL 매핑 (id → 라벨)
+ *   2) 광고그룹 title 토큰 매칭 (SKP / TG360 / LOTTE / KB / WIFI)
+ *      — Motiv 측이 광고그룹 이름에 DMP 사를 명시하는 컨벤션이 있으면 자동 식별.
+ *   3) ID {n} (식별 가능한 ID 가 있음)
+ *   4) 미분류 (ID null)
+ */
+const DMP_TOKEN_LIST = ['SKP', 'TG360', 'LOTTE', 'KB', 'WIFI'] as const
+type DmpToken = typeof DMP_TOKEN_LIST[number]
+
+export function labelForTargetingProductId(
+  id: string | number | null | undefined,
+  adGroupTitle?: string | null,
+): string {
+  if (id != null && id !== '') {
+    // 사용자 결정 — targeting_product_id 값 자체가 SKP/TG360/LOTTE/KB/WIFI 일 수 있음.
+    // upper-case 후 직접 vendor 매칭.
+    const upperKey = String(id).trim().toUpperCase()
+    if ((DMP_TOKEN_LIST as readonly string[]).includes(upperKey)) return upperKey as DmpToken
+    // 명시 매핑 표 (수동 등록 — 숫자 ID 등)
+    const key = String(id)
+    if (TARGETING_PRODUCT_LABEL[key]) return TARGETING_PRODUCT_LABEL[key]
+  }
+  // title 토큰 fallback — 'KB STAR SKP 리타게팅' 같은 패턴 자동 식별
+  if (adGroupTitle) {
+    const upper = adGroupTitle.toUpperCase()
+    for (const tok of DMP_TOKEN_LIST) {
+      if (upper.includes(tok)) return tok
+    }
+  }
+  if (id != null && id !== '') return `ID ${id}`
+  return '미분류'
 }
 
 export const MEDIA_PRODUCT_FILTERS: { value: MediaProductFilter; label: string }[] = [
