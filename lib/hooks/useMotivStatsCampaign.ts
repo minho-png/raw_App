@@ -3,11 +3,6 @@ import { useEffect, useState } from "react"
 import type { UnifiedDailyMetrics } from "@/lib/motivApi/statsMapper"
 
 // MOTIV /v1/stats/campaign/breakdown 결과를 캠페인 ID → UnifiedDailyMetrics 매핑으로 가져옴.
-// 분석 페이지의 표(snapshot.today) 와 카드(daily 합계) 가 동일한 일자 범위에서 일치하도록
-// 캠페인 단위로 일자 범위 집계 stats 를 받아 today 를 override 하기 위함.
-//
-// scope 4종(campaign_id / adaccount_id / agency_id / publisher_id) 중 하나는 필수 —
-// useMotivStatsDaily 와 동일한 가드.
 
 export interface CampaignStatsScope {
   campaignIds?: number[]
@@ -18,10 +13,9 @@ export interface CampaignStatsScope {
 
 export interface UseMotivStatsCampaignArgs {
   scope: CampaignStatsScope
-  startDate?: string         // YYYY-MM-DD
+  startDate?: string
   endDate?: string
   enabled?: boolean
-  /** useRefreshControl().key — 증가 시 재호출 */
   refreshKey?: number
 }
 
@@ -68,8 +62,6 @@ export function useMotivStatsCampaign({
     setState(s => ({ ...s, loading: true, error: null }))
     ;(async () => {
       try {
-        // 페이지네이션 — 한 type 의 캠페인이 per_page 초과 시 row 누락되어
-        // 기간 합계 부정확. 모든 페이지 순회 (최대 10페이지 / 1000건 안전 캡).
         const PER_PAGE = 100
         const MAX_PAGES = 10
         const allRows: Record<string, string>[] = []

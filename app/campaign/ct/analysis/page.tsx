@@ -70,6 +70,7 @@ export default function CtAnalysisPage() {
   const [rangeEnd, setRangeEnd]     = useFilterPersistence<string>('ct-analysis:rangeEnd',   todayStr())
   const [category, setCategory]     = useFilterPersistence<Category>('ct-analysis:category', 'total')
   const [showSettings, setShowSettings] = useFilterPersistence<boolean>('ct-analysis:showSettings', false)
+  // 사용자 요청 — API 필드 진단 토글 (payprice/cost/revenue/agency_fee/data_fee/profit/profit_rate)
   const [settings, setSettings]         = useFilterPersistence<AnalysisSettings>('ct-analysis:settings', DEFAULT_ANALYSIS_SETTINGS)
   // 활성 캠페인(status='Y') 필터 — 당일 단일 모드일 때 기본 ON, 그 외 OFF.
   // 사용자가 수동 토글해도 일자 범위가 바뀌면 자동 재동기화.
