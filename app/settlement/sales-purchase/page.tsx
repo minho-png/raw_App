@@ -26,6 +26,7 @@ import {
 } from "@/lib/export/settlementExcel"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
+import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import { useSettlementOverrides, applyOverride, isOverrideStale } from "@/lib/hooks/useSettlementOverrides"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { ModalShell } from "@/components/atoms/ModalShell"
@@ -88,6 +89,39 @@ export default function SalesPurchasePage() {
   const motivFetch = useMotivSettlementCampaignsByProduct(motivProduct ?? 'CT', month, motivProduct !== null)
   const { data: assignments } = useMotivAssignments()
 
+  // ── 매출/매입 정확성 보정 — campaigns.index 의 stats 는 lifetime 누적 가능성. ──
+  // /stats/campaign/breakdown 으로 해당 월의 정확한 기간 stats 를 별도 fetch.
+  // 이 결과를 build*Rows 에 전달하면 c.stats?.revenue/cost 를 override.
+  const monthRange = useMemo(() => {
+    const [yy, mm] = month.split('-').map(n => parseInt(n, 10))
+    if (!yy || !mm) return null
+    const startDate = `${month}-01`
+    const endDate = `${month}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`
+    return { startDate, endDate }
+  }, [month])
+  const motivCampaignIds = useMemo(
+    () => motivFetch.data.map(c => c.id),
+    [motivFetch.data],
+  )
+  const periodStats = useMotivStatsCampaign({
+    scope:     { campaignIds: motivCampaignIds },
+    startDate: monthRange?.startDate,
+    endDate:   monthRange?.endDate,
+    enabled:   motivCampaignIds.length > 0 && !!monthRange,
+  })
+  const statsByMotivId = useMemo(() => {
+    const m = new Map<number, { spend: number; mediaCost: number; agencyFee: number; dmpFee: number }>()
+    for (const [id, mtx] of periodStats.byMotivId) {
+      m.set(id, {
+        spend:     mtx.spend,
+        mediaCost: mtx.mediaCost,
+        agencyFee: mtx.agencyFee,
+        dmpFee:    mtx.dmpFee,
+      })
+    }
+    return m
+  }, [periodStats.byMotivId])
+
   // CT+ settlement 빌드 (월별)
   const allComputed = useMemo(
     () => rawRows.length > 0 && campaigns.length > 0 ? applyMarkupToRows(rawRows, campaigns) : [],
@@ -100,16 +134,16 @@ export default function SalesPurchasePage() {
       .map(c => buildCtPlusSettlement(c, allComputed, agencies, advertisers))
   }, [showCtPlus, campaigns, month, allComputed, agencies, advertisers])
 
-  // 매출/매입 행
+  // 매출/매입 행 — periodStats 가 도착하면 자동 재계산.
   const salesRows: SalesRow[] = useMemo(() => buildSalesRows({
     month, ctPlus: ctPlusSettlements, motivCampaigns: motivFetch.data,
-    assignments, agencies, advertisers, operators,
-  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators])
+    assignments, agencies, advertisers, operators, statsByMotivId,
+  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators, statsByMotivId])
 
   const purchaseRows: PurchaseRow[] = useMemo(() => buildPurchaseRows({
     month, ctPlus: ctPlusSettlements, motivCampaigns: motivFetch.data,
-    assignments, agencies, advertisers, operators,
-  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators])
+    assignments, agencies, advertisers, operators, statsByMotivId,
+  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators, statsByMotivId])
 
   // overrides — type 별로 분리 조회 후 행에 머지
   const salesOv    = useSettlementOverrides('sales',    month)
