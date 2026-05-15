@@ -87,8 +87,12 @@ export function motivStatsToMetrics(stats: MotivCampaignStats | null | undefined
   const dmpFee    = Math.round(stats.data_fee ?? 0)
   const agencyFee = Math.max(0, rawAgency - dmpFee)
   const profit    = Math.round(stats.profit ?? 0)
+  // 사용자 정책 — '해당 기간에 발생한 정확한 매출 SPEND 만 표시'.
+  // c.stats.revenue 가 lifetime 누적일 가능성, 그리고 항등식 폴백
+  // (cost+agency_fee+profit) 이 부풀림을 유발했음. → fallback 제거.
+  // 분석/정산 페이지는 별도로 /stats/campaign/breakdown 결과로 spend 를 override 함.
   const revenueRaw = Math.round(stats.revenue ?? 0)
-  const spend     = revenueRaw > 0 ? revenueRaw : (mediaCost + rawAgency + profit)
+  const spend     = revenueRaw
 
   // dev 환경 진단 — 한 캠페인의 stats 첫 한 번만 출력. 화면 값이 의도와 다르면 콘솔 확인.
   if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production' && !_statsLogged && spend > 0) {
@@ -133,14 +137,14 @@ export function motivCampaignToSnapshot(
 ): UnifiedCampaignSnapshot {
   const product = motivTypeToProduct(c.campaign_type) ?? 'CT'
   const isFree = c.is_free === true
-  // 사용자 결정 — 매출(spend) = MotivCampaign.total_spent.
-  // 진단 카드(StatsRawDiagnostic) 로 확인한 결과 total_spent 가 실제 매출과 일치.
-  // stats.revenue 는 다른 의미였음 (수익 또는 항등식 라이프타임 누적).
+  // 사용자 정책 — '해당 기간에 발생한 정확한 매출 SPEND 만 표시'.
+  // c.stats.revenue / c.total_spent 모두 lifetime 누적이라 부정확.
+  // motivStatsToMetrics(c.stats).spend 는 기본값일 뿐 — 분석/정산 페이지가
+  // /stats/campaign/breakdown 결과(statsCampaign)로 spend 를 override 한다.
   // 무료 캠페인: 광고주 청구 없으므로 0.
-  const rawSpend     = isFree ? 0 : Math.round(c.total_spent ?? 0)
-  const todayMetrics = { ...motivStatsToMetrics(c.stats), spend: rawSpend }
-  const today        = todayMetrics
-  const yesterday    = yesterdayMetrics
+  const todayMetrics = motivStatsToMetrics(c.stats)
+  const today = isFree ? { ...todayMetrics, spend: 0 } : todayMetrics
+  const yesterday = yesterdayMetrics
     ? (isFree ? { ...yesterdayMetrics, spend: 0 } : yesterdayMetrics)
     : { ...ZERO_METRICS }
   return {
@@ -225,9 +229,11 @@ export function rowsToCampaignMetricsMap(
     const dmpFee    = Math.round(a.data_fee)
     const agencyFee = Math.max(0, rawAgency - dmpFee)
     const profit    = Math.round(a.profit)
+    // 사용자 정책 — fallback 없이 API revenue 만 사용 (정확 기간 매출).
     const revenueRaw = Math.round(a.revenue)
-    const spend     = revenueRaw > 0 ? revenueRaw : (mediaCost + rawAgency + profit)
-    const impressions    = Math.round(a.v_impression || a.win)
+    const spend     = revenueRaw
+    // 사용자 정책 — 노출은 v_impression 만 (win 폴백 제거).
+    const impressions    = Math.round(a.v_impression)
     const clicks         = Math.round(a.click)
     const completedViews = Math.round(a.v_play100)
     map.set(id, { impressions, clicks, spend, agencyFee, dmpFee, mediaCost, completedViews })
