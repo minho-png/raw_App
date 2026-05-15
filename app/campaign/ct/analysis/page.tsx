@@ -27,6 +27,7 @@ import { isExcludedCampaign } from "@/lib/motivApi/productMapping"
 import { getAdvertiserName, getAgencyDisplayName } from "@/lib/motivApi/advertiserHelpers"
 import { useMotivStatsDaily } from "@/lib/hooks/useMotivStatsDaily"
 import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
+import { StatsRawDiagnostic, type RawStatsCampaign } from "@/components/analysis/StatsRawDiagnostic"
 import { pacingStatus, pacingToneClasses } from "@/lib/motivApi/pacingHelper"
 import { useRefreshControl } from "@/lib/hooks/useRefreshControl"
 import { RefreshControlBar } from "@/components/molecules/RefreshControl"
@@ -70,6 +71,8 @@ export default function CtAnalysisPage() {
   const [rangeEnd, setRangeEnd]     = useFilterPersistence<string>('ct-analysis:rangeEnd',   todayStr())
   const [category, setCategory]     = useFilterPersistence<Category>('ct-analysis:category', 'total')
   const [showSettings, setShowSettings] = useFilterPersistence<boolean>('ct-analysis:showSettings', false)
+  // 사용자 요청 — API 필드 진단 토글 (payprice/cost/revenue/agency_fee/data_fee/profit/profit_rate)
+  const [showStatsDiagnostic, setShowStatsDiagnostic] = useFilterPersistence<boolean>('ct-analysis:showStatsDiagnostic', false)
   const [settings, setSettings]         = useFilterPersistence<AnalysisSettings>('ct-analysis:settings', DEFAULT_ANALYSIS_SETTINGS)
   // 활성 캠페인(status='Y') 필터 — 당일 단일 모드일 때 기본 ON, 그 외 OFF.
   // 사용자가 수동 토글해도 일자 범위가 바뀌면 자동 재동기화.
@@ -299,12 +302,48 @@ export default function CtAnalysisPage() {
             >
               기준 수치 설정
             </button>
+            <button
+              type="button"
+              onClick={() => setShowStatsDiagnostic(v => !v)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                showStatsDiagnostic ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              API raw 진단
+            </button>
           </div>
         </div>
       </header>
 
       <main className="p-6 space-y-5">
         {showSettings && <SettingsPanel settings={settings} onChange={setSettings} variant="CT" />}
+
+        {/* API raw 진단 — 사용자 제공 필드 기준 (사용자 요청). */}
+        {showStatsDiagnostic && (() => {
+          const rawMap = new Map<number, RawStatsCampaign>()
+          for (const [id, raw] of statsCampaign.rawByMotivId) {
+            rawMap.set(id, {
+              motivId: id,
+              title: motiv.data.find(c => c.id === id)?.title ?? '',
+              payprice:    Number(raw.payprice ?? 0),
+              cost:        Number(raw.cost ?? 0),
+              revenue:     Number(raw.revenue ?? 0),
+              agency_fee:  Number(raw.agency_fee ?? 0),
+              data_fee:    Number(raw.data_fee ?? 0),
+              profit:      Number(raw.profit ?? 0),
+              profit_rate: raw.profit_rate != null ? Number(raw.profit_rate) : undefined,
+            })
+          }
+          return (
+            <StatsRawDiagnostic
+              campaigns={motiv.data}
+              rawStatsByMotivId={rawMap}
+              mappedSpendByMotivId={new Map(snapshots.map(s => [s.motivId, s.today.spend]))}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+            />
+          )
+        })()}
 
         {/* 카테고리 토글 */}
         <div className="flex items-center gap-2 flex-wrap">
