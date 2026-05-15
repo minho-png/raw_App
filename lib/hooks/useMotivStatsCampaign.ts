@@ -27,12 +27,15 @@ export interface UseMotivStatsCampaignArgs {
 
 interface State {
   byMotivId: Map<number, UnifiedDailyMetrics>
+  /** 진단용 raw 응답 — campaignId 별로 누적 (mapping 전 원본 필드). */
+  rawByMotivId: Map<number, Record<string, string>>
   totals: Record<string, string> | null
   loading: boolean
   error: string | null
 }
 
 const EMPTY_MAP: Map<number, UnifiedDailyMetrics> = new Map()
+const EMPTY_RAW: Map<number, Record<string, string>> = new Map()
 
 function hasScope(s: CampaignStatsScope): boolean {
   return !!(
@@ -56,12 +59,12 @@ function scopeKey(s: CampaignStatsScope, start?: string, end?: string): string {
 export function useMotivStatsCampaign({
   scope, startDate, endDate, enabled = true, refreshKey = 0,
 }: UseMotivStatsCampaignArgs) {
-  const [state, setState] = useState<State>({ byMotivId: EMPTY_MAP, totals: null, loading: false, error: null })
+  const [state, setState] = useState<State>({ byMotivId: EMPTY_MAP, rawByMotivId: EMPTY_RAW, totals: null, loading: false, error: null })
   const key = scopeKey(scope, startDate, endDate)
 
   useEffect(() => {
     if (!enabled || !hasScope(scope)) {
-      setState({ byMotivId: EMPTY_MAP, totals: null, loading: false, error: null })
+      setState({ byMotivId: EMPTY_MAP, rawByMotivId: EMPTY_RAW, totals: null, loading: false, error: null })
       return
     }
     let cancelled = false
@@ -107,11 +110,25 @@ export function useMotivStatsCampaign({
 
         const { rowsToCampaignMetricsMap } = await import('@/lib/motivApi/statsMapper')
         const map = rowsToCampaignMetricsMap(allRows)
-        if (!cancelled) setState({ byMotivId: map, totals, loading: false, error: null })
+        // 진단용 — campaign_id 별 row 누적 (숫자 필드만 합).
+        const rawMap = new Map<number, Record<string, string>>()
+        for (const r of allRows) {
+          const id = Number(r.campaign_id)
+          if (!Number.isFinite(id) || id <= 0) continue
+          const cur = rawMap.get(id) ?? {}
+          for (const k of ['payprice','cost','revenue','agency_fee','data_fee','profit'] as const) {
+            const v = Number(r[k] ?? 0)
+            cur[k] = String((Number(cur[k] ?? 0)) + (Number.isFinite(v) ? v : 0))
+          }
+          // profit_rate 는 누적이 의미 없음 — 마지막 값 채택.
+          if (r.profit_rate != null) cur.profit_rate = String(r.profit_rate)
+          rawMap.set(id, cur)
+        }
+        if (!cancelled) setState({ byMotivId: map, rawByMotivId: rawMap, totals, loading: false, error: null })
       } catch (e) {
         if (cancelled) return
         const msg = e instanceof Error ? e.message : String(e)
-        setState({ byMotivId: EMPTY_MAP, totals: null, loading: false, error: msg })
+        setState({ byMotivId: EMPTY_MAP, rawByMotivId: EMPTY_RAW, totals: null, loading: false, error: msg })
       }
     })()
     return () => { cancelled = true }
