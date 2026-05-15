@@ -87,12 +87,10 @@ export function motivStatsToMetrics(stats: MotivCampaignStats | null | undefined
   const dmpFee    = Math.round(stats.data_fee ?? 0)
   const agencyFee = Math.max(0, rawAgency - dmpFee)
   const profit    = Math.round(stats.profit ?? 0)
-  // 사용자 정책 — '해당 기간에 발생한 정확한 매출 SPEND 만 표시'.
-  // c.stats.revenue 가 lifetime 누적일 가능성, 그리고 항등식 폴백
-  // (cost+agency_fee+profit) 이 부풀림을 유발했음. → fallback 제거.
-  // 분석/정산 페이지는 별도로 /stats/campaign/breakdown 결과로 spend 를 override 함.
-  const revenueRaw = Math.round(stats.revenue ?? 0)
-  const spend     = revenueRaw
+  // 사용자 결정 — 매출(spend) = payprice. (진단 카드 비교 결과)
+  // revenue/cost 는 의미가 달랐고, payprice 가 실제 광고주 지불액과 일치.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const spend = Math.round(((stats as any).payprice ?? stats.revenue ?? 0))
 
   // dev 환경 진단 — 한 캠페인의 stats 첫 한 번만 출력. 화면 값이 의도와 다르면 콘솔 확인.
   if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production' && !_statsLogged && spend > 0) {
@@ -201,16 +199,17 @@ export function rowsToCampaignMetricsMap(
 ): Map<number, UnifiedDailyMetrics> {
   // 누적 단계: raw 필드를 캠페인 ID 별로 합산.
   type RawAcc = {
-    cost: number; revenue: number; agency_fee: number; data_fee: number; profit: number
+    cost: number; revenue: number; payprice: number; agency_fee: number; data_fee: number; profit: number
     v_impression: number; win: number; click: number; v_play100: number
   }
   const acc = new Map<number, RawAcc>()
   for (const r of rows) {
     const id = Number(r.campaign_id)
     if (!Number.isFinite(id) || id <= 0) continue
-    const cur = acc.get(id) ?? { cost: 0, revenue: 0, agency_fee: 0, data_fee: 0, profit: 0, v_impression: 0, win: 0, click: 0, v_play100: 0 }
+    const cur = acc.get(id) ?? { cost: 0, revenue: 0, payprice: 0, agency_fee: 0, data_fee: 0, profit: 0, v_impression: 0, win: 0, click: 0, v_play100: 0 }
     cur.cost        += toNum(r.cost)
     cur.revenue     += toNum(r.revenue)
+    cur.payprice    += toNum(r.payprice)
     cur.agency_fee  += toNum(r.agency_fee)
     cur.data_fee    += toNum(r.data_fee)
     cur.profit      += toNum(r.profit)
@@ -229,9 +228,8 @@ export function rowsToCampaignMetricsMap(
     const dmpFee    = Math.round(a.data_fee)
     const agencyFee = Math.max(0, rawAgency - dmpFee)
     const profit    = Math.round(a.profit)
-    // 사용자 정책 — fallback 없이 API revenue 만 사용 (정확 기간 매출).
-    const revenueRaw = Math.round(a.revenue)
-    const spend     = revenueRaw
+    // 사용자 결정 — 매출(spend) = payprice (진단 카드로 확인).
+    const spend = Math.round(a.payprice || a.revenue)
     // 사용자 정책 — 노출은 v_impression 만 (win 폴백 제거).
     const impressions    = Math.round(a.v_impression)
     const clicks         = Math.round(a.click)
