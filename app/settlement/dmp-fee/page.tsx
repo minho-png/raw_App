@@ -133,7 +133,9 @@ export default function DmpFeePage() {
       const net = row.netAmount ?? 0
       if (dt && (dt === 'SKP' || dt === 'TG360' || dt === 'LOTTE' || dt === 'KB' || dt === 'WIFI')) {
         const rate = (DMP_FEE_RATES_DECIMAL as Record<string, number>)[dt] ?? 0
-        const fee = Math.round(net * rate)
+        // raw float 으로 누적 — 사용자 보고 'DMP 비용 소폭 다름' fix.
+        // 이전엔 row 단위 Math.round 후 누적 → 반올림 오차 누적.
+        const fee = net * rate
         entry.dmpFees[dt] += fee
         entry.dmpTotal += fee
       }
@@ -141,7 +143,7 @@ export default function DmpFeePage() {
     for (const [k, ids] of seenCampaign) {
       const r = map.get(k); if (r) r.campaignCount = ids.size
     }
-    return Array.from(map.values()).filter(r => r.dmpTotal > 0)
+    return Array.from(map.values()).filter(r => Math.round(r.dmpTotal) > 0)
   }, [showCtPlus, monthRows, campaigns, advertisers])
 
   // === Motiv 행 — /v1/adgroups ===
@@ -194,7 +196,8 @@ export default function DmpFeePage() {
 
       // 사용자 결정 — DMP 식별은 targeting_product_id 만으로.
       const vendor = labelForTargetingProductId(ag.targetingProductId)
-      const fee = Math.round(ag.dataFee)
+      // raw float 누적 — round 는 표시 시점에만. (사용자 보고: '소폭 차이')
+      const fee = ag.dataFee
       if (fee <= 0) continue
       if (vendor === 'SKP' || vendor === 'TG360' || vendor === 'LOTTE' || vendor === 'KB' || vendor === 'WIFI') {
         entry.dmpFees[vendor] += fee
@@ -207,7 +210,7 @@ export default function DmpFeePage() {
     for (const [k, ids] of seenCampaign) {
       const r = map.get(k); if (r) r.campaignCount = ids.size
     }
-    return Array.from(map.values()).filter(r => r.dmpTotal > 0)
+    return Array.from(map.values()).filter(r => Math.round(r.dmpTotal) > 0)
   }, [motivProduct, adGroups.rows, motivFetch.data, assignments, advertisers, adAccountById])
 
   const allRows = useMemo(
