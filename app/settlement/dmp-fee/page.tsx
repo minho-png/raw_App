@@ -10,6 +10,7 @@ import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettle
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAdGroups } from "@/lib/hooks/useMotivAdGroups"
+import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import { labelForTargetingProductId, motivTypeToProduct, type MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { getAdvertiserName } from "@/lib/motivApi/advertiserHelpers"
 
@@ -146,10 +147,15 @@ export default function DmpFeePage() {
     return Array.from(map.values()).filter(r => Math.round(r.dmpTotal) > 0)
   }, [showCtPlus, monthRows, campaigns, advertisers])
 
-  // === Motiv 행 — /v1/adgroups ===
+  // === Motiv 행 — /v1/adgroups + /v1/stats/campaign/breakdown ===
   // 사용자 결정 — '활성 캠페인이 아니라 기간에 대해 존재하는 캠페인 전부'.
-  // motivFetch.data 가 이미 dateRange overlap 으로 필터됨 (useMotivSettlementCampaigns).
-  // status === 'Y' 추가 필터 제거 — 종료/일시정지 캠페인도 그 기간 내 비용은 포함.
+  // motivFetch.data 가 이미 dateRange overlap 으로 필터됨.
+  //
+  // 사용자 보고 — 'Hill's Pet Nutrition 캠페인 CTV 에서 보이는데 DMP 에서 안 보임'.
+  // 원인: useMotivAdGroups 의 list 응답 stats 는 lifetime 일 가능성 (서버측 dateRange
+  // filter 가 작동 안 함). 4월 data_fee 가 실제 발생했어도 list stats 에는 0 일 수 있음.
+  // → CTV 분석 페이지와 동일 source(stats/campaign/breakdown) 로 캠페인 단위 정확한
+  //    기간 dmpFee 를 받아 fallback. 광고그룹 list 는 DMP 사 분류용으로만 사용.
   const motivCampaignIds = useMemo(
     () => motivFetch.data.map(c => c.id),
     [motivFetch.data],
@@ -161,25 +167,58 @@ export default function DmpFeePage() {
     enabled:   motivCampaignIds.length > 0,
   })
 
+  // 정확 기간 stats — CTV 분석 페이지와 동일 source.
+  // dmpFee 를 캠페인 단위로 받아 광고그룹 lifetime stats 의 부정확성 보완.
+  const periodStats = useMotivStatsCampaign({
+    scope:     { campaignIds: motivCampaignIds },
+    startDate: dateRange?.start,
+    endDate:   dateRange?.end,
+    enabled:   motivCampaignIds.length > 0,
+  })
+
   const motivRows = useMemo((): UnifiedDmpRow[] => {
     if (!motivProduct) return []
     const asgById = new Map(assignments.map(a => [a.motivCampaignId, a]))
     const map = new Map<string, UnifiedDmpRow>()
     const seenCampaign = new Map<string, Set<number>>()
+
+    // 광고그룹 row 를 캠페인 ID 별로 그룹화 (vendor 비율 계산용).
+    const adGroupsByCampaign = new Map<number, typeof adGroups.rows>()
     for (const ag of adGroups.rows) {
-      // 캠페인 ID 로 캠페인 → 제품/광고주 매칭 (사용자: '캠페인 번호 활용해서 데이터 맞추기').
-      const camp = motivFetch.data.find(c => c.id === ag.campaignId)
-      if (!camp) continue
+      const arr = adGroupsByCampaign.get(ag.campaignId) ?? []
+      arr.push(ag)
+      adGroupsByCampaign.set(ag.campaignId, arr)
+    }
+
+    // 사용자 제안 — '캠페인을 거르고 거기에 해당하는 adgroups를 불러오는 식으로'.
+    // 캠페인 단위로 순회 (motivFetch.data — dateRange overlap 통과한 것).
+    // dmpFee 정확값: periodStats(stats/campaign/breakdown).dmpFee 우선 — CTV 분석과 같은 source.
+    // 광고그룹 lifetime stats 의 부정확성으로 누락되던 캠페인(예: 힐스펫) 도 복구.
+    for (const camp of motivFetch.data) {
       const product = motivTypeToProduct(camp.campaign_type)
       if (product !== 'CT' && product !== 'CTV') continue
 
-      // 광고주 매핑 fallback — internal assignment → adAccount → '—'.
+      // 광고주 매핑.
       const asg = asgById.get(camp.id)
       const internalAdv = asg?.advertiserId ? advertisers.find(a => a.id === asg.advertiserId) : undefined
       const adAccount   = adAccountById.get(camp.adaccount_id)
       const advertiserName = internalAdv?.name || getAdvertiserName(adAccount) || '—'
 
-      // 광고주 단위 통합 키 — 같은 광고주는 모든 캠페인을 하나로 합침.
+      // 정확 기간 dmpFee 우선, 폴백으로 광고그룹 합.
+      const campAdGroups = adGroupsByCampaign.get(camp.id) ?? []
+      const adGroupTotal = campAdGroups.reduce((s, r) => s + r.dataFee, 0)
+      const accurateDmpFee = periodStats.byMotivId.get(camp.id)?.dmpFee ?? adGroupTotal
+      if (accurateDmpFee <= 0) continue
+
+      // 광고그룹 vendor 분포 계산 — accurateDmpFee 를 vendor 별 비율로 분배.
+      const vendorWeight: Record<DmpVendor, number> = emptyFees()
+      for (const r of campAdGroups) {
+        const v = labelForTargetingProductId(r.targetingProductId)
+        const key2 = (v === 'SKP' || v === 'TG360' || v === 'LOTTE' || v === 'KB' || v === 'WIFI') ? v : 'ETC'
+        vendorWeight[key2] += r.dataFee
+      }
+
+      // 광고주 단위 통합.
       const key = `${product}::${advertiserName}`
       if (!map.has(key)) {
         map.set(key, {
@@ -194,24 +233,24 @@ export default function DmpFeePage() {
       const entry = map.get(key)!
       seenCampaign.get(key)!.add(camp.id)
 
-      // 사용자 결정 — DMP 식별은 targeting_product_id 만으로.
-      const vendor = labelForTargetingProductId(ag.targetingProductId)
-      // raw float 누적 — round 는 표시 시점에만. (사용자 보고: '소폭 차이')
-      const fee = ag.dataFee
-      if (fee <= 0) continue
-      if (vendor === 'SKP' || vendor === 'TG360' || vendor === 'LOTTE' || vendor === 'KB' || vendor === 'WIFI') {
-        entry.dmpFees[vendor] += fee
+      // vendor 별 비용 — 광고그룹 분포가 있으면 비율로 분배, 없으면 ETC 전체.
+      if (adGroupTotal > 0) {
+        for (const v of DMP_COLS) {
+          entry.dmpFees[v] += (vendorWeight[v] / adGroupTotal) * accurateDmpFee
+        }
       } else {
-        entry.dmpFees.ETC += fee
+        // 광고그룹 data_fee=0 (lifetime stats) 인데 정확 periodStats 는 양수.
+        // DMP 사 분류 불가 → ETC 로. 광고그룹 매핑 후 매핑 필요 배지.
+        entry.dmpFees.ETC += accurateDmpFee
         entry.isUnmapped = true
       }
-      entry.dmpTotal += fee
+      entry.dmpTotal += accurateDmpFee
     }
     for (const [k, ids] of seenCampaign) {
       const r = map.get(k); if (r) r.campaignCount = ids.size
     }
     return Array.from(map.values()).filter(r => Math.round(r.dmpTotal) > 0)
-  }, [motivProduct, adGroups.rows, motivFetch.data, assignments, advertisers, adAccountById])
+  }, [motivProduct, adGroups.rows, motivFetch.data, assignments, advertisers, adAccountById, periodStats.byMotivId])
 
   const allRows = useMemo(
     () => [...ctPlusRows, ...motivRows].sort((a, b) => b.dmpTotal - a.dmpTotal),
