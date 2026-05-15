@@ -15,6 +15,7 @@ import { applyMarkupToRows } from "@/lib/markupService"
 import { MediaConsoleMenu } from "@/components/MediaConsoleMenu"
 import { DomainStatusCard, type MediaDistribution } from "@/components/molecules/DomainStatusCard"
 import { AlertCard } from "@/components/molecules/AlertCard"
+import { MotivAlertsTable } from "@/components/molecules/MotivAlertsTable"
 import { isActiveMotivCampaign, motivLifeSpendRate } from "@/lib/motivApi/campaignFilters"
 import { useKpiThresholds, checkBudgetWarning } from "@/lib/kpiThresholds"
 import { useRefreshControl } from "@/lib/hooks/useRefreshControl"
@@ -266,6 +267,10 @@ export default function DashboardPage() {
             />
           </div>
         )}
+
+        {/* Motiv 캠페인 통합 알림 테이블 — 사용자 요청 '첫 화면 경고 모아보기'.
+            행 우측 '열기' 버튼이 매체 콘솔(crosstarget)의 캠페인 페이지로 이동. */}
+        <MotivAlertsTable ct={motivCt.data} ctv={motivCtv.data} />
 
         {/* ── 캠페인 현황 — CT+ / CT / CTV 도메인 카드 ───────────── */}
         <div>
