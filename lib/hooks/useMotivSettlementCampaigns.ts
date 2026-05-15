@@ -147,6 +147,15 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
         }))
 
         // 진단 카운트 — 어디서 빠지는지 가시화 (사용자 보고).
+        // 디버그 키워드 — URL ?debug=KEYWORD 또는 sessionStorage 'dmp-debug' 로 설정.
+        // 매칭 캠페인의 단계별 흐름을 console 로 출력.
+        const debugKw = (typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('debug')
+            || window.sessionStorage.getItem('dmp-debug') || ''
+          : '').toLowerCase().trim()
+        const matchKw = (s: string | null | undefined) =>
+          !!debugKw && !!s && s.toLowerCase().includes(debugKw)
+
         let serverTotal = 0
         let fetched = 0
         let excluded = 0
@@ -156,7 +165,13 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
           serverTotal += r.meta?.total ?? r.data.length
           fetched += r.data.length
           for (const c of r.data) {
-            if (isExcludedCampaign(c.title)) { excluded += 1; continue }
+            const matched = matchKw(c.title)
+            if (isExcludedCampaign(c.title)) {
+              excluded += 1
+              if (matched) console.warn(`[DMP debug] '${c.title}' (id=${c.id}) → EXCLUDED 리스트로 제외`)
+              continue
+            }
+            if (matched) console.info(`[DMP debug] '${c.title}' (id=${c.id}, type=${c.campaign_type}, start=${c.start_date}, end=${c.end_date}) ← campaign fetch 통과`)
             byId.set(c.id, c)
           }
           if (r.exchange_rate) exchangeRate = r.exchange_rate
@@ -175,9 +190,27 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
             const cs = s ?? new Date(0)
             const ce = e ?? new Date(9e13)
             const keep = cs <= mEnd && ce >= mStart
-            if (!keep) outOfRange += 1
+            if (!keep) {
+              outOfRange += 1
+              if (matchKw(c.title)) {
+                console.warn(`[DMP debug] '${c.title}' (id=${c.id}) → outOfRange 제외 (운영 ${c.start_date}~${c.end_date} vs range ${range.start}~${range.end})`)
+              }
+            } else if (matchKw(c.title)) {
+              console.info(`[DMP debug] '${c.title}' (id=${c.id}) ← outOfRange 통과 (운영 ${c.start_date}~${c.end_date})`)
+            }
             return keep
           })
+        }
+
+        if (debugKw) {
+          const matched = data.filter(c => matchKw(c.title))
+          console.group(`[DMP debug] keyword='${debugKw}' — 최종 ${matched.length}개 통과`)
+          for (const c of matched) console.log(`  ✓ ${c.title} (id=${c.id}, type=${c.campaign_type}, status=${c.status})`)
+          if (matched.length === 0) {
+            console.warn('  ⚠ 통과한 캠페인 0건 — 위 로그 검토. 또는 ?debug= URL/sessionStorage 키워드 확인.')
+            console.log('  진단:', { serverTotal, fetched, excluded, outOfRange, final: data.length, truncated })
+          }
+          console.groupEnd()
         }
 
         const diag = {
