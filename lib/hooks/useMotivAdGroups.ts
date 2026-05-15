@@ -18,6 +18,8 @@ export interface AdGroupRow {
   startDate: string | null
   endDate: string | null
   status: string
+  /** DMP 사별 분류 키 — 사용자 결정. */
+  targetingProductId: string | null
   cost: number
   revenue: number
   agencyFee: number
@@ -81,6 +83,7 @@ export function useMotivAdGroups({
                 startDate: ag.start_date,
                 endDate: ag.end_date,
                 status: ag.status,
+                targetingProductId: ag.targeting_product_id != null ? String(ag.targeting_product_id) : null,
                 cost:       Number(s?.cost ?? 0),
                 revenue:    Number(s?.revenue ?? 0),
                 agencyFee:  Number(s?.agency_fee ?? 0),

@@ -114,6 +114,8 @@ export interface MotivAdGroup {
   daily_budget?: number | null;
   daily_spent?: number | null;
   created_at?: string | null;
+  /** DMP 타겟팅 식별자 — 사용자 결정 (DMP 사별 data_fee 분류 키). */
+  targeting_product_id?: string | number | null;
   stats?: MotivCampaignStats;  // 동일 스키마 추정
 }
 

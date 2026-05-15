@@ -14,6 +14,24 @@ export const MEDIA_PRODUCT_LABEL: Record<MediaProductType, string> = {
   CTV:     'CTV',
 }
 
+/**
+ * 광고그룹 targeting_product_id → DMP 사 라벨.
+ *
+ * 사용자 결정 — adgroup_title 토큰 추정이 아닌 targeting_product_id 로 분류.
+ * 실제 ID 값은 Motiv 응답을 확인하며 점진적으로 채움 — 매핑 안 된 ID 는
+ * 화면에 ID 자체가 표시되어 사용자가 식별 후 여기에 추가 가능.
+ */
+export const TARGETING_PRODUCT_LABEL: Record<string, string> = {
+  // 예: '1': 'SKP', '2': 'TG360', ...
+  // 사용자가 ID 확인 후 채울 자리.
+}
+
+export function labelForTargetingProductId(id: string | number | null | undefined): string {
+  if (id == null || id === '') return '미분류'
+  const key = String(id)
+  return TARGETING_PRODUCT_LABEL[key] ?? `ID ${key}`
+}
+
 export const MEDIA_PRODUCT_FILTERS: { value: MediaProductFilter; label: string }[] = [
   { value: 'ALL',     label: '전체' },
   { value: 'CT_PLUS', label: 'CT+'   },
