@@ -141,10 +141,21 @@ export interface SalesRowsParams {
   agencies: Agency[]
   advertisers: Advertiser[]
   operators: Operator[]
+  /**
+   * 기간 정확 stats — /v1/stats/campaign/breakdown 결과 (campaignId → metrics).
+   * Motiv list 응답의 c.stats 는 lifetime 누적이라 월별 매출이 부정확.
+   * 이 map 의 값을 우선 사용, 없으면 c.stats 폴백.
+   *
+   * statsByMotivId.get(c.id)?.spend  = 해당 기간의 매출 (revenue)
+   * statsByMotivId.get(c.id)?.mediaCost = 매체비 (cost)
+   * statsByMotivId.get(c.id)?.agencyFee + dmpFee = 대행+DMP (agency_fee)
+   * statsByMotivId.get(c.id)?.dmpFee = DMP (data_fee)
+   */
+  statsByMotivId?: Map<number, { spend: number; mediaCost: number; agencyFee: number; dmpFee: number }>
 }
 
 export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
-  const { month, ctPlus, motivCampaigns, assignments, agencies, advertisers, operators } = params
+  const { month, ctPlus, motivCampaigns, assignments, agencies, advertisers, operators, statsByMotivId } = params
   const agById = new Map(agencies.map(a => [a.id, a]))
   const advById = new Map(advertisers.map(a => [a.id, a]))
   const opById = new Map(operators.map(o => [o.id, o]))
@@ -198,8 +209,16 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
     const ag = a?.agencyId ? agById.get(a.agencyId) : undefined
     const adv = a?.advertiserId ? advById.get(a.advertiserId) : undefined
     const op = a?.operatorId ? opById.get(a.operatorId) : undefined
-    const agencyFee = Math.round(Number(c.stats?.agency_fee ?? 0))
-    const revenue = Math.round(Number(c.stats?.revenue ?? c.stats?.cost ?? 0))
+    // 기간 stats 우선 — campaigns.index 의 c.stats 는 lifetime 누적이라
+    // 월별 매출이 부정확 (사용자 보고). /stats/campaign/breakdown 결과가 있으면
+    // 그 값으로 override.
+    const periodStats = statsByMotivId?.get(c.id)
+    const agencyFee = periodStats
+      ? periodStats.agencyFee + periodStats.dmpFee  // raw agency_fee = 대행+DMP 합
+      : Math.round(Number(c.stats?.agency_fee ?? 0))
+    const revenue = periodStats
+      ? periodStats.spend
+      : Math.round(Number(c.stats?.revenue ?? c.stats?.cost ?? 0))
     const net = revenue
     if (net <= 0) continue
     const vat = Math.round(net * 0.1)
@@ -265,10 +284,12 @@ export interface PurchaseRowsParams {
   agencies: Agency[]
   advertisers: Advertiser[]
   operators: Operator[]
+  /** SalesRowsParams 와 동일 — 매입(매체비)도 기간 stats 로 정확히 계산. */
+  statsByMotivId?: Map<number, { spend: number; mediaCost: number; agencyFee: number; dmpFee: number }>
 }
 
 export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
-  const { month, ctPlus, motivCampaigns, assignments, agencies, advertisers, operators } = params
+  const { month, ctPlus, motivCampaigns, assignments, agencies, advertisers, operators, statsByMotivId } = params
   const advById = new Map(advertisers.map(a => [a.id, a]))
   const agById = new Map(agencies.map(a => [a.id, a]))
   const opById = new Map(operators.map(o => [o.id, o]))
@@ -313,10 +334,15 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
     const ag = a?.agencyId ? agById.get(a.agencyId) : undefined
     const adv = a?.advertiserId ? advById.get(a.advertiserId) : undefined
     const op = a?.operatorId ? opById.get(a.operatorId) : undefined
-    const cost = Math.round(Number(c.stats?.cost ?? 0))
-    const agencyFee = Math.round(Number(c.stats?.agency_fee ?? 0))
-    const dataFee = Math.round(Number(c.stats?.data_fee ?? 0))
-    const net = Math.max(0, cost - agencyFee - dataFee)
+    // 기간 stats 우선 — list 응답 c.stats 는 lifetime 누적 가능성.
+    const periodStats = statsByMotivId?.get(c.id)
+    const cost      = periodStats ? periodStats.mediaCost : Math.round(Number(c.stats?.cost ?? 0))
+    const agencyFee = periodStats ? periodStats.agencyFee : Math.round(Number(c.stats?.agency_fee ?? 0))
+    const dataFee   = periodStats ? periodStats.dmpFee    : Math.round(Number(c.stats?.data_fee ?? 0))
+    // 매입 공급가액 = 매체비 (cost) — 매체사 실 집행 기준. agency_fee/data_fee 차감 안 함.
+    // 기존 계산식(cost - agencyFee - dataFee) 은 sale 누적 stats 의 부정확성 보정 흔적으로,
+    // 기간 stats 직접 사용 시 raw cost 가 곧 매체비.
+    const net = periodStats ? cost : Math.max(0, cost - agencyFee - dataFee)
     if (net <= 0) continue
     const vat = Math.round(net * 0.1)
     const label = MEDIA_PRODUCT_LABEL[product]
