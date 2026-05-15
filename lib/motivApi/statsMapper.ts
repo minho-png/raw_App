@@ -105,8 +105,11 @@ export function motivStatsToMetrics(stats: MotivCampaignStats | null | undefined
   }
 
   return {
-    impressions: Math.round(stats.v_impression || stats.win || 0),
-    clicks: Math.round(stats.click ?? 0),
+    // 사용자 정책 — '클릭 및 노출은 API로 불러오는 값만 활용'.
+    // 이전: stats.v_impression || stats.win (win 폴백). 'win' 은 입찰 성공 카운트로
+    // 노출과 다른 의미이므로 폴백 제거. API 명시 필드만 사용.
+    impressions: Math.round(stats.v_impression ?? 0),
+    clicks:      Math.round(stats.click ?? 0),
     spend, agencyFee, dmpFee, mediaCost,
     completedViews: Math.round(stats.v_play100 ?? 0),
   }

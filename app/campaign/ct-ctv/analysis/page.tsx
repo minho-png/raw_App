@@ -14,6 +14,7 @@ import { KpiCard } from "@/components/analysis/KpiCard"
 import { SummaryCard } from "@/components/molecules/SummaryCard"
 import { AlertIcon } from "@/components/analysis/AlertIcon"
 import { SettingsPanel } from "@/components/analysis/SettingsPanel"
+import { StatsRawDiagnostic } from "@/components/analysis/StatsRawDiagnostic"
 import { buildAlerts, dDay } from "@/components/analysis/alertEngine"
 import { DEFAULT_ANALYSIS_SETTINGS, type AnalysisSettings } from "@/components/analysis/types"
 import {
@@ -54,6 +55,7 @@ export default function CtCtvAnalysisPage() {
   const [rangeStart, setRangeStart] = useFilterPersistence<string>('ctv-analysis:rangeStart', todayStr())
   const [rangeEnd, setRangeEnd]     = useFilterPersistence<string>('ctv-analysis:rangeEnd',   todayStr())
   const [showSettings, setShowSettings] = useFilterPersistence<boolean>('ctv-analysis:showSettings', false)
+  const [showStatsDiagnostic, setShowStatsDiagnostic] = useFilterPersistence<boolean>('ctv-analysis:showStatsDiagnostic', false)
   const [settings, setSettings]         = useFilterPersistence<AnalysisSettings>('ctv-analysis:settings', DEFAULT_ANALYSIS_SETTINGS)
   // 활성 캠페인(status='Y') 필터 — 당일 단일 모드일 때 기본 ON, 그 외 OFF.
   const [activeOnly, setActiveOnly] = useFilterPersistence<boolean>('ctv-analysis:activeOnly', true)
@@ -231,12 +233,31 @@ export default function CtCtvAnalysisPage() {
             >
               기준 수치 설정
             </button>
+            <button
+              type="button"
+              onClick={() => setShowStatsDiagnostic(v => !v)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                showStatsDiagnostic ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              API raw 진단
+            </button>
           </div>
         </div>
       </header>
 
       <main className="p-6 space-y-5">
         {showSettings && <SettingsPanel settings={settings} onChange={setSettings} variant="CTV" />}
+
+        {showStatsDiagnostic && (
+          <StatsRawDiagnostic
+            campaigns={motiv.data}
+            periodStatsByMotivId={statsCampaign.byMotivId}
+            mappedSpendByMotivId={new Map(snapshots.map(s => [s.motivId, s.today.spend]))}
+            rangeStart={rangeStart}
+            rangeEnd={rangeEnd}
+          />
+        )}
 
         {/* KPI 카드 — TV 단일이라 카테고리 토글 없음 */}
         <section>
