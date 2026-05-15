@@ -285,12 +285,30 @@ export default function DmpFeePage() {
           rightSlot={
             <div className="flex items-center gap-2 text-[11px] text-gray-500">
               {showCtPlus && <span>CT+ {ctPlusRows.length}</span>}
-              {motivProduct && (
-                <span title={`활성 캠페인 ${motivCampaignIds.length} / 광고그룹 ${adGroups.rows.length}`}>
-                  Motiv {motivRows.length}
-                  <span className="text-gray-400 ml-1">(캠페인 {motivCampaignIds.length} · 광고그룹 {adGroups.rows.length})</span>
-                </span>
-              )}
+              {motivProduct && (() => {
+                const d = motivFetch.diag
+                const dropped = d.fetched - d.final  // 클라이언트 단에서 빠진 수
+                const hint = `Motiv 진단 (사용자 보고: '빠지는 캠페인이 많음')
+서버 총: ${d.serverTotal}
+실제 받은(fetched): ${d.fetched}
+  - 제외 리스트(EXCLUDED): ${d.excluded}
+  - dedup 손실: ${d.fetched - d.excluded - d.final - d.outOfRange}
+  - 기간 outOfRange: ${d.outOfRange}
+최종 노출: ${d.final}
+페이지 한계 도달: ${d.truncated ? '예 (한 type 5000건 초과 가능)' : '아니오'}
+광고그룹: ${adGroups.rows.length}건 (캠페인 ${motivCampaignIds.length}개 fetch)`
+                return (
+                  <span title={hint} className="cursor-help">
+                    Motiv {motivRows.length}
+                    <span className="text-gray-400 ml-1">
+                      (캠페인 {d.final}/{d.serverTotal}
+                      {dropped > 0 && <span className="text-amber-600"> · -{dropped}</span>}
+                      {d.truncated && <span className="text-rose-600 font-semibold"> · 한계!</span>}
+                      )
+                    </span>
+                  </span>
+                )
+              })()}
             </div>
           }
         />
