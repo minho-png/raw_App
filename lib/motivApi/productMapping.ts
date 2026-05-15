@@ -39,28 +39,19 @@ export const TARGETING_PRODUCT_LABEL: Record<string, string> = {
 const DMP_TOKEN_LIST = ['SKP', 'TG360', 'LOTTE', 'KB', 'WIFI'] as const
 type DmpToken = typeof DMP_TOKEN_LIST[number]
 
+/**
+ * 사용자 결정 — DMP 식별은 'targeting_product_id' 값만으로 결정.
+ * title 토큰 fallback 제거 (혼동 방지).
+ */
 export function labelForTargetingProductId(
   id: string | number | null | undefined,
-  adGroupTitle?: string | null,
 ): string {
-  if (id != null && id !== '') {
-    // 사용자 결정 — targeting_product_id 값 자체가 SKP/TG360/LOTTE/KB/WIFI 일 수 있음.
-    // upper-case 후 직접 vendor 매칭.
-    const upperKey = String(id).trim().toUpperCase()
-    if ((DMP_TOKEN_LIST as readonly string[]).includes(upperKey)) return upperKey as DmpToken
-    // 명시 매핑 표 (수동 등록 — 숫자 ID 등)
-    const key = String(id)
-    if (TARGETING_PRODUCT_LABEL[key]) return TARGETING_PRODUCT_LABEL[key]
-  }
-  // title 토큰 fallback — 'KB STAR SKP 리타게팅' 같은 패턴 자동 식별
-  if (adGroupTitle) {
-    const upper = adGroupTitle.toUpperCase()
-    for (const tok of DMP_TOKEN_LIST) {
-      if (upper.includes(tok)) return tok
-    }
-  }
-  if (id != null && id !== '') return `ID ${id}`
-  return '미분류'
+  if (id == null || id === '') return '미분류'
+  const upperKey = String(id).trim().toUpperCase()
+  if ((DMP_TOKEN_LIST as readonly string[]).includes(upperKey)) return upperKey as DmpToken
+  const key = String(id)
+  if (TARGETING_PRODUCT_LABEL[key]) return TARGETING_PRODUCT_LABEL[key]
+  return `ID ${id}`
 }
 
 export const MEDIA_PRODUCT_FILTERS: { value: MediaProductFilter; label: string }[] = [

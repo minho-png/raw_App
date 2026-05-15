@@ -185,9 +185,8 @@ export default function DmpFeePage() {
       const entry = map.get(key)!
       seenCampaign.get(key)!.add(camp.id)
 
-      // 사용자 결정 — API 캠페인 + 광고그룹 title 토큰까지 활용해 DMP 사 자동 식별.
-      // 'KB STAR SKP 리타게팅' 같은 명명 컨벤션을 자동 매칭.
-      const vendor = labelForTargetingProductId(ag.targetingProductId, ag.title)
+      // 사용자 결정 — DMP 식별은 targeting_product_id 만으로.
+      const vendor = labelForTargetingProductId(ag.targetingProductId)
       const fee = Math.round(ag.dataFee)
       if (fee <= 0) continue
       if (vendor === 'SKP' || vendor === 'TG360' || vendor === 'LOTTE' || vendor === 'KB' || vendor === 'WIFI') {
@@ -381,7 +380,7 @@ export default function DmpFeePage() {
         {(() => {
           const unmapped = adGroups.rows.filter(r => {
             if (r.dataFee <= 0) return false
-            const v = labelForTargetingProductId(r.targetingProductId, r.title)
+            const v = labelForTargetingProductId(r.targetingProductId)
             return v !== 'SKP' && v !== 'TG360' && v !== 'LOTTE' && v !== 'KB' && v !== 'WIFI'
           })
           if (unmapped.length === 0) return null
@@ -421,7 +420,7 @@ export default function DmpFeePage() {
               </div>
               <p className="px-4 py-2 text-[10px] text-gray-500 border-t border-yellow-100">
                 매핑 추가 위치: <code className="bg-white px-1 rounded">lib/motivApi/productMapping.ts</code> 의
-                <code className="bg-white px-1 rounded ml-1">TARGETING_PRODUCT_LABEL</code>. 또는 광고그룹 title 안에 SKP/TG360/LOTTE/KB/WIFI 토큰이 있으면 자동 인식.
+                <code className="bg-white px-1 rounded ml-1">TARGETING_PRODUCT_LABEL</code> — 위 ID 를 SKP/TG360/LOTTE/KB/WIFI 에 매핑.
               </p>
             </div>
           )
