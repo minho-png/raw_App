@@ -8,7 +8,7 @@ import { MEDIA_MARKUP_RATE, DMP_FEE_RATES } from "@/lib/campaignTypes"
 import { DMP_FEE_RATES_DECIMAL } from "@/lib/calculationService"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
-import { useMotivAdGroupStats } from "@/lib/hooks/useMotivAdGroupStats"
+import { useMotivAdGroups } from "@/lib/hooks/useMotivAdGroups"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 
 // DMP 컬럼 순서 (표에 표시할 유형만)
@@ -362,34 +362,35 @@ function MotivDmpSection({
     }
   }, [month])
 
-  const ids = useMemo(() => campaigns.map(c => c.id), [campaigns])
-  const stats = useMotivAdGroupStats({
+  // 활성 캠페인만 — 비활성/종료된 건 광고그룹도 의미 없음.
+  const ids = useMemo(
+    () => campaigns.filter(c => c.status === 'Y').map(c => c.id).slice(0, 30),
+    [campaigns],
+  )
+  const adGroups = useMotivAdGroups({
     campaignIds: ids,
     startDate: monthRange?.startDate,
     endDate:   monthRange?.endDate,
     enabled:   ids.length > 0 && !!monthRange,
   })
 
-  // adgroup 단위 row → (캠페인, 광고그룹, DMP 사 추정, data_fee)
   const rows = useMemo(() => {
     const campMap = new Map(campaigns.map(c => [c.id, c.title ?? `#${c.id}`]))
-    return stats.rows.map(r => {
-      const title = r.adgroup_title ?? `#${r.adgroup_id}`
-      // DMP 사 추정 — adgroup_title 안에 토큰 매칭. 없으면 'ETC'.
-      const upper = title.toUpperCase()
+    return adGroups.rows.map(r => {
+      const upper = r.title.toUpperCase()
       const vendor: DmpCol | 'ETC' = DMP_COLS.find(v => upper.includes(v)) ?? 'ETC'
       return {
-        campaignId: r.campaign_id,
-        campaign: campMap.get(r.campaign_id) ?? `#${r.campaign_id}`,
-        adgroup: title,
+        campaignId: r.campaignId,
+        campaign:   campMap.get(r.campaignId) ?? `#${r.campaignId}`,
+        adgroup:    r.title,
         vendor,
-        dataFee: Math.round(r.data_fee),
-        cost:    Math.round(r.cost),
-        agencyFee: Math.round(r.agency_fee),
+        dataFee:    Math.round(r.dataFee),
+        cost:       Math.round(r.cost),
+        agencyFee:  Math.round(r.agencyFee),
       }
     }).filter(r => r.dataFee > 0)
       .sort((a, b) => b.dataFee - a.dataFee)
-  }, [stats.rows, campaigns])
+  }, [adGroups.rows, campaigns])
 
   const totals = useMemo(() => {
     const byVendor: Record<string, number> = {}
@@ -401,35 +402,72 @@ function MotivDmpSection({
     return { byVendor, total }
   }, [rows])
 
+  // 에러 단순화 — 사용자 화면 잘림 방지. 자세한 메시지는 콘솔/title.
+  const errorBrief = adGroups.error
+    ? (/404/.test(adGroups.error) ? 'Motiv API 미지원 (404)'
+       : /401/.test(adGroups.error) ? '인증 실패 (401)'
+       : /504|시간 초과/.test(adGroups.error) ? '응답 시간 초과'
+       : 'API 호출 실패')
+    : null
+
   return (
-    <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/40 via-white to-white shadow-sm overflow-hidden">
-      <div className="px-4 py-2.5 bg-gradient-to-r from-violet-50 to-white border-b border-violet-100 flex items-center justify-between">
+    <div className="rounded-2xl border border-violet-100 bg-white shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-violet-50/60 to-white flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-500 text-white text-[10px] font-bold">D</span>
-          <h3 className="text-sm font-semibold text-gray-900">Motiv DMP 비용 <span className="text-violet-600">({rows.length})</span></h3>
-          <span className="text-[10px] text-gray-400 ml-1">광고그룹 단위 data_fee — DMP 사 추정</span>
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-violet-500 text-white text-xs font-bold">D</span>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">
+              Motiv DMP 비용
+              {!adGroups.loading && rows.length > 0 && <span className="text-violet-600 ml-1.5 font-bold">{rows.length}</span>}
+            </h3>
+            <p className="text-[10px] text-gray-400 leading-tight mt-0.5">광고그룹 단위 data_fee · DMP 사 추정 (제목 토큰 기반)</p>
+          </div>
         </div>
-        <div className="text-[10px] text-gray-500">합계 <span className="font-bold text-violet-700 tabular-nums">₩{fmtNum(totals.total)}</span></div>
+        <div className="text-right">
+          <p className="text-[10px] text-gray-400">합계</p>
+          <p className="text-sm font-bold text-violet-700 tabular-nums leading-tight">₩{fmtNum(totals.total)}</p>
+        </div>
       </div>
 
-      {stats.loading ? (
-        <div className="px-4 py-8 text-center text-xs text-gray-400">로딩 중…</div>
-      ) : stats.error ? (
-        <div className="px-4 py-6 text-center text-xs text-rose-600">
-          광고그룹 API 호출 실패 — {stats.error}
-          <p className="mt-1 text-gray-500">/v1/stats/adgroup/breakdown 엔드포인트가 응답 가능한지 Motiv 측 확인 필요.</p>
+      {adGroups.loading ? (
+        <div className="flex items-center justify-center gap-2 px-4 py-10 text-xs text-gray-400">
+          <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+          </svg>
+          광고그룹 정보 가져오는 중…
+        </div>
+      ) : errorBrief ? (
+        <div className="px-4 py-6">
+          <div className="rounded-xl bg-rose-50/60 border border-rose-200 p-3 text-xs text-rose-800 flex items-start gap-2">
+            <span className="text-base leading-none">⚠</span>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold">{errorBrief}</p>
+              <p className="mt-1 text-rose-600/80 truncate" title={adGroups.error ?? ''}>{adGroups.error}</p>
+              <p className="mt-1 text-gray-500">/v1/adgroups 응답 권한·형식을 Motiv 측에 확인하세요.</p>
+            </div>
+          </div>
         </div>
       ) : rows.length === 0 ? (
-        <div className="px-4 py-8 text-center text-xs text-gray-400">해당 월에 DMP 비용(data_fee) 데이터가 없습니다.</div>
+        <div className="px-4 py-10 text-center text-xs text-gray-400">
+          해당 월의 DMP 비용(data_fee) 데이터가 없습니다.
+        </div>
       ) : (
         <>
-          {/* DMP 사별 합계 칩 */}
-          <div className="px-4 py-2 border-b border-gray-100 flex flex-wrap gap-2">
-            {Object.entries(totals.byVendor).sort((a, b) => b[1] - a[1]).map(([v, sum]) => (
-              <span key={v} className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 text-violet-800 px-2 py-0.5 text-[10px] font-semibold">
-                {v} <span className="tabular-nums">₩{fmtNum(sum)}</span>
-              </span>
-            ))}
+          {/* DMP 사별 합계 칩 — 모던/단순 */}
+          <div className="px-4 py-2.5 border-b border-gray-100 flex flex-wrap gap-1.5">
+            {Object.entries(totals.byVendor).sort((a, b) => b[1] - a[1]).map(([v, sum]) => {
+              const pct = totals.total > 0 ? Math.round(sum / totals.total * 100) : 0
+              return (
+                <span key={v} className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-medium ${
+                  v === 'ETC' ? 'bg-gray-100 text-gray-700' : 'bg-violet-100 text-violet-800'
+                }`}>
+                  <span className="font-bold">{v}</span>
+                  <span className="tabular-nums">₩{fmtNum(sum)}</span>
+                  <span className="text-[9px] opacity-60">{pct}%</span>
+                </span>
+              )
+            })}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -439,23 +477,23 @@ function MotivDmpSection({
                   <th className="px-3 py-2 text-left font-medium">광고그룹</th>
                   <th className="px-3 py-2 text-center font-medium">DMP 사</th>
                   <th className="px-3 py-2 text-right font-medium">data_fee</th>
-                  <th className="px-3 py-2 text-right font-medium">cost</th>
-                  <th className="px-3 py-2 text-right font-medium">agency_fee</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-400">cost</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-400">agency_fee</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {rows.map((r, i) => (
-                  <tr key={`${r.campaignId}-${i}`} className="hover:bg-violet-50/30">
+                  <tr key={`${r.campaignId}-${i}`} className="hover:bg-violet-50/30 transition-colors">
                     <td className="px-3 py-1.5 text-gray-800 max-w-[220px] truncate" title={r.campaign}>{r.campaign}</td>
                     <td className="px-3 py-1.5 text-gray-600 max-w-[260px] truncate" title={r.adgroup}>{r.adgroup}</td>
                     <td className="px-3 py-1.5 text-center">
-                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                      <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
                         r.vendor === 'ETC' ? 'bg-gray-100 text-gray-500' : 'bg-violet-100 text-violet-700'
                       }`}>{r.vendor}</span>
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums font-bold text-violet-700">{fmtNum(r.dataFee)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{fmtNum(r.cost)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{fmtNum(r.agencyFee)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{fmtNum(r.cost)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{fmtNum(r.agencyFee)}</td>
                   </tr>
                 ))}
               </tbody>

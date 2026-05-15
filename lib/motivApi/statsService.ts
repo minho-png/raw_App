@@ -80,9 +80,8 @@ async function fetchStatsBreakdown(path: string, query: StatsQuery): Promise<Sta
 
 export const fetchStatsDaily    = (q: StatsQuery) => fetchStatsBreakdown('/v1/stats/daily/breakdown', q)
 export const fetchStatsCampaign = (q: StatsQuery) => fetchStatsBreakdown('/v1/stats/campaign/breakdown', q)
-// 광고그룹별 — DMP 사별 데이터 분리용 (사용자 요청).
-// 가설: adgroup 응답 row 가 (campaign_id, adgroup_id, dmp_name?, ...) 와 data_fee 포함.
-export const fetchStatsAdGroup  = (q: StatsQuery) => fetchStatsBreakdown('/v1/stats/adgroup/breakdown', q)
+// 광고그룹 단위 stats — 사용자 요청. /v1/stats/adgroup/breakdown 은 404(미존재)이므로
+// /v1/adgroups (list+stats) 를 사용 (lib/hooks/useMotivAdGroups).
 
 // 파싱 helper — dictionary[string,string] 의 숫자 필드 안전 변환
 export function toNum(v: string | number | null | undefined): number {
