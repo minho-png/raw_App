@@ -337,15 +337,12 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
     const ag = a?.agencyId ? agById.get(a.agencyId) : undefined
     const adv = a?.advertiserId ? advById.get(a.advertiserId) : undefined
     const op = a?.operatorId ? opById.get(a.operatorId) : undefined
-    // 기간 stats 우선 — list 응답 c.stats 는 lifetime 누적 가능성.
     const periodStats = statsByMotivId?.get(c.id)
-    const cost      = periodStats ? periodStats.mediaCost : Math.round(Number(c.stats?.cost ?? 0))
     const agencyFee = periodStats ? periodStats.agencyFee : Math.round(Number(c.stats?.agency_fee ?? 0))
     const dataFee   = periodStats ? periodStats.dmpFee    : Math.round(Number(c.stats?.data_fee ?? 0))
-    // 매입 공급가액 = 매체비 (cost) — 매체사 실 집행 기준. agency_fee/data_fee 차감 안 함.
-    // 기존 계산식(cost - agencyFee - dataFee) 은 sale 누적 stats 의 부정확성 보정 흔적으로,
-    // 기간 stats 직접 사용 시 raw cost 가 곧 매체비.
-    const net = periodStats ? cost : Math.max(0, cost - agencyFee - dataFee)
+    // 사용자 결정 — '매입 공급가액 = 대행 수수료(agency_fee)'.
+    // DMP 비용(data_fee) 은 별도로 DMP 수수료 페이지에서 집계.
+    const net = agencyFee
     if (net <= 0) continue
     const vat = Math.round(net * 0.1)
     const label = MEDIA_PRODUCT_LABEL[product]
@@ -360,9 +357,9 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
       공급가액: net,
       세액: vat,
       합계금액: net + vat,
-      // 사용자 결정 — 대행 수수료 = agency_fee, DMP 비용 = data_fee.
+      // 사용자 결정 — 매입 공급가액 = agency_fee (= 대행 수수료). DMP 비용은 별도 페이지.
       '대행 수수료': agencyFee,
-      '데이터(DMP) 비용': dataFee,
+      '데이터(DMP) 비용': dataFee,  // 호환 유지 — 매입 표에서는 숨김, DMP 페이지에서 활용
       IMC: 0,
       TV: product === 'CTV' ? net : 0,
       CT: product === 'CT' ? net : 0,
