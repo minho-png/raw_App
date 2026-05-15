@@ -4,6 +4,7 @@ import { motivCampaignToSnapshot } from "@/lib/motivApi/statsMapper"
 import { buildAlerts, dDay } from "@/components/analysis/alertEngine"
 import { DEFAULT_ANALYSIS_SETTINGS, type AlertMsg } from "@/components/analysis/types"
 import { motivCampaignAdGroupUrl } from "@/lib/motivApi/consoleLinks"
+import { isActiveMotivCampaign } from "@/lib/motivApi/campaignFilters"
 
 interface Row {
   motivId: number
@@ -39,6 +40,10 @@ export function MotivAlertsTable({
   const rows: Row[] = []
   const collect = (cs: MotivCampaign[], product: 'CT' | 'CTV') => {
     for (const c of cs) {
+      // 사용자 요청 — '비활성화 캠페인 / 집행일 도래 안한 캠페인은 알림 제외'.
+      // isActiveMotivCampaign = status==='Y' AND 오늘이 [start_date, end_date] 안.
+      // → 비활성(status!=='Y'), 시작 전(start>today), 종료 후(end<today) 모두 제외.
+      if (!isActiveMotivCampaign(c)) continue
       const snap = motivCampaignToSnapshot(c, '—')
       const alerts = buildAlerts(snap, DEFAULT_ANALYSIS_SETTINGS, { yesterdayMissing: true })
       // critical/warn 만 노출 — '상승' 은 첫 화면에서 노이즈.
