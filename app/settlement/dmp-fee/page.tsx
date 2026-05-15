@@ -69,10 +69,8 @@ export default function DmpFeePage() {
   const showCtv    = product === 'ALL' || product === 'CTV'
   const motivProduct = showCt && showCtv ? 'CT_CTV_BOTH' : showCtv ? 'CTV' : showCt ? 'CT' : null
 
-  // 사용자 결정 — '분석 페이지(CT/CTV) 의 날짜 로직과 동일하게'.
-  // month → [1일, 말일] 일자 범위 로 변환해 dateRange 형식으로 통일.
-  // 분석 페이지가 useMotivSettlementCampaignsByProduct(product, { dateRange }) 패턴을
-  // 사용하므로 DMP 페이지도 같은 형식으로 호출.
+  // 사용자 결정 — '분석 페이지(CT/CTV) 의 dateRange 호출 패턴 사용 / UI 는 월별만'.
+  // month → [1일, 말일] dateRange 변환. month 도 함께 넘겨 캐시 키 명확화.
   const dateRange = useMemo(() => {
     const [y, m] = month.split('-').map(Number)
     if (!y || !m) return undefined
@@ -83,7 +81,7 @@ export default function DmpFeePage() {
 
   const motivFetch = useMotivSettlementCampaignsByProduct(
     motivProduct ?? 'CT',
-    { dateRange, enabled: motivProduct !== null },
+    { month, dateRange, enabled: motivProduct !== null },
   )
 
   // 광고주/대행사 매핑 — Motiv 행 채울 때 fallback chain 에 사용.
