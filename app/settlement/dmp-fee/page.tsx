@@ -185,7 +185,9 @@ export default function DmpFeePage() {
       const entry = map.get(key)!
       seenCampaign.get(key)!.add(camp.id)
 
-      const vendor = labelForTargetingProductId(ag.targetingProductId)
+      // 사용자 결정 — API 캠페인 + 광고그룹 title 토큰까지 활용해 DMP 사 자동 식별.
+      // 'KB STAR SKP 리타게팅' 같은 명명 컨벤션을 자동 매칭.
+      const vendor = labelForTargetingProductId(ag.targetingProductId, ag.title)
       const fee = Math.round(ag.dataFee)
       if (fee <= 0) continue
       if (vendor === 'SKP' || vendor === 'TG360' || vendor === 'LOTTE' || vendor === 'KB' || vendor === 'WIFI') {
@@ -373,6 +375,57 @@ export default function DmpFeePage() {
             </div>
           )}
         </div>
+
+        {/* ETC 진단 — 매핑 못 한 광고그룹을 raw 그대로 노출.
+            사용자가 화면에서 targeting_product_id 또는 title 패턴을 확인 → 매핑 추가. */}
+        {(() => {
+          const unmapped = adGroups.rows.filter(r => {
+            if (r.dataFee <= 0) return false
+            const v = labelForTargetingProductId(r.targetingProductId, r.title)
+            return v !== 'SKP' && v !== 'TG360' && v !== 'LOTTE' && v !== 'KB' && v !== 'WIFI'
+          })
+          if (unmapped.length === 0) return null
+          const sorted = [...unmapped].sort((a, b) => b.dataFee - a.dataFee).slice(0, 20)
+          return (
+            <div className="rounded-2xl border border-yellow-200 bg-yellow-50/40 overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-yellow-200 flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-yellow-500 text-white text-[10px] font-bold">?</span>
+                <h3 className="text-sm font-semibold text-gray-900">매핑 누락 광고그룹 <span className="text-yellow-700 font-bold ml-1">({unmapped.length})</span></h3>
+                <p className="text-[10px] text-gray-500 ml-auto">아래 광고그룹의 targeting_product_id 또는 title 을 확인 후 매핑 추가 → ETC → 정상 컬럼으로 자동 분류</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-yellow-100/50 text-gray-600">
+                    <tr>
+                      <th className="px-3 py-1.5 text-left font-medium">캠페인 ID</th>
+                      <th className="px-3 py-1.5 text-left font-medium">광고그룹</th>
+                      <th className="px-3 py-1.5 text-center font-medium">targeting_product_id</th>
+                      <th className="px-3 py-1.5 text-right font-medium">data_fee</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-yellow-100/40">
+                    {sorted.map(r => (
+                      <tr key={r.adGroupId} className="hover:bg-yellow-100/30">
+                        <td className="px-3 py-1 text-gray-500 font-mono">#{r.campaignId}</td>
+                        <td className="px-3 py-1 text-gray-800 max-w-[400px] truncate" title={r.title}>{r.title}</td>
+                        <td className="px-3 py-1 text-center">
+                          <code className="rounded bg-white px-1.5 py-0.5 text-[10px] border border-gray-200">
+                            {r.targetingProductId ?? 'null'}
+                          </code>
+                        </td>
+                        <td className="px-3 py-1 text-right tabular-nums font-medium text-yellow-700">{fmtNum(r.dataFee)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="px-4 py-2 text-[10px] text-gray-500 border-t border-yellow-100">
+                매핑 추가 위치: <code className="bg-white px-1 rounded">lib/motivApi/productMapping.ts</code> 의
+                <code className="bg-white px-1 rounded ml-1">TARGETING_PRODUCT_LABEL</code>. 또는 광고그룹 title 안에 SKP/TG360/LOTTE/KB/WIFI 토큰이 있으면 자동 인식.
+              </p>
+            </div>
+          )
+        })()}
 
         {adGroups.error && motivProduct && (
           <div className="rounded-xl bg-rose-50/60 border border-rose-200 p-3 text-xs text-rose-800">
