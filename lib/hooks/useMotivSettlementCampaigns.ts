@@ -22,6 +22,16 @@ interface State {
   error: string | null
   exchangeRate: number
   total: number
+  /** 진단 — 사용자 보고 '빠지는 캠페인이 많아'. 어디서 빠지는지 가시화. */
+  diag: {
+    serverTotal: number          // Motiv 서버가 보고한 총 캠페인 수 (meta.total)
+    fetched: number              // 실제 page 순회로 받은 raw 캠페인 수
+    excluded: number             // isExcludedCampaign 으로 제외된 수
+    outOfRange: number           // 클라이언트 dateRange overlap 으로 제외된 수
+    final: number                // 최종 노출 수 (data.length)
+    /** 페이지 한계(MAX_PAGES) 도달했는지 — 추가 캠페인 누락 가능성 신호 */
+    truncated: boolean
+  }
 }
 
 /**
@@ -52,8 +62,10 @@ function monthToRange(month: string): { start: string; end: string } | null {
  *
  * 주의: per_page 200, 첫 페이지만 조회 (향후 무한 스크롤/페이지네이션 고려).
  */
+const EMPTY_DIAG = { serverTotal: 0, fetched: 0, excluded: 0, outOfRange: 0, final: 0, truncated: false }
+
 export function useMotivSettlementCampaigns({ types, month, dateRange, perPage = 200, enabled = true, refreshKey = 0 }: Options) {
-  const [state, setState] = useState<State>({ data: [], loading: true, error: null, exchangeRate: 0, total: 0 })
+  const [state, setState] = useState<State>({ data: [], loading: true, error: null, exchangeRate: 0, total: 0, diag: { ...EMPTY_DIAG } })
 
   // deps 안정화: dateRange 객체 자체는 매 렌더 새 참조라 primitive 로 분해
   const rangeStart = dateRange?.start
@@ -61,7 +73,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
 
   useEffect(() => {
     if (!enabled || types.length === 0) {
-      setState({ data: [], loading: false, error: null, exchangeRate: 0, total: 0 })
+      setState({ data: [], loading: false, error: null, exchangeRate: 0, total: 0, diag: { ...EMPTY_DIAG } })
       return
     }
     // 우선순위: dateRange > month
@@ -72,17 +84,13 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
     ;(async () => {
       setState(s => ({ ...s, loading: true, error: null }))
       try {
-        // 사용자 보고 — '캠페인을 불러오지 못하는 경우' 의 주된 원인은
-        // 첫 페이지(per_page=200)만 조회하던 동작. 한 type 의 캠페인이 200개를 넘으면
-        // 나머지가 누락됨. 모든 페이지 순회로 전환 (최대 10페이지 = 2000건 안전 캡).
-        // 사용자 보고 — '캠페인이 다 안 불러와짐'. 한 type 의 캠페인이 2000(=200×10)
-        // 초과 시 누락되던 문제. 5000건까지 끌어올림 (per_page 200 × 25 page).
         const MAX_PAGES = 25
+        let truncated = false
         const results = await Promise.all(types.map(async t => {
-          // 페이지 합산용 — 부분 응답이라 strict 타입을 쓰지 않음.
           const merged: { data: MotivCampaign[]; meta?: { last_page?: number; total?: number }; exchange_rate?: number } = {
             data: [],
           }
+          let reachedMax = true
           for (let page = 1; page <= MAX_PAGES; page++) {
             const params = new URLSearchParams()
             params.set('campaign_type', t)
@@ -113,45 +121,59 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
             merged.data.push(...json.data)
             if (json.exchange_rate) merged.exchange_rate = json.exchange_rate
             merged.meta = json.meta
-            // 마지막 페이지 도달 — last_page 가 응답에 있으면 그 기준, 없으면 데이터 < per_page 로 판단.
             const lastPage = json.meta?.last_page
-            if (lastPage != null ? page >= lastPage : json.data.length < perPage) break
+            if (lastPage != null ? page >= lastPage : json.data.length < perPage) {
+              reachedMax = false
+              break
+            }
           }
+          if (reachedMax) truncated = true
           return merged
         }))
 
-        // 병합 + 제외 리스트 필터 + id dedup.
-        // dedup — sort 가 -created_at 만이라 동일 시각 경계에서 중복 가능 (검증 결과).
+        // 진단 카운트 — 어디서 빠지는지 가시화 (사용자 보고).
+        let serverTotal = 0
+        let fetched = 0
+        let excluded = 0
         const byId = new Map<number, MotivCampaign>()
-        let total = 0
         let exchangeRate = 0
         for (const r of results) {
+          serverTotal += r.meta?.total ?? r.data.length
+          fetched += r.data.length
           for (const c of r.data) {
-            if (isExcludedCampaign(c.title)) continue
+            if (isExcludedCampaign(c.title)) { excluded += 1; continue }
             byId.set(c.id, c)
           }
-          total += r.meta?.total ?? r.data.length
           if (r.exchange_rate) exchangeRate = r.exchange_rate
         }
         let data: MotivCampaign[] = Array.from(byId.values())
+        const afterDedup = data.length
 
-        // 클라이언트 재검증: 기간 overlap 없는 캠페인 제외 (서버 필터 불확실성 대비)
+        let outOfRange = 0
         if (range) {
           const mStart = new Date(`${range.start}T00:00:00`)
           const mEnd   = new Date(`${range.end}T23:59:59`)
           data = data.filter(c => {
             const s = c.start_date ? new Date(c.start_date) : null
             const e = c.end_date   ? new Date(c.end_date)   : null
-            // 사용자 정책 (검증) — 양쪽 날짜 NULL 은 서버 필터를 신뢰하고 keep.
-            // 이전엔 둘 다 NULL 시 false 로 빼서 캠페인 누락의 주 원인.
             if (!s && !e) return true
             const cs = s ?? new Date(0)
             const ce = e ?? new Date(9e13)
-            return cs <= mEnd && ce >= mStart
+            const keep = cs <= mEnd && ce >= mStart
+            if (!keep) outOfRange += 1
+            return keep
           })
         }
 
-        if (!cancelled) setState({ data, loading: false, error: null, exchangeRate, total })
+        const diag = {
+          serverTotal, fetched, excluded, outOfRange,
+          final: data.length,
+          truncated,
+        }
+        if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+          console.info('[useMotivSettlementCampaigns] diag', diag, { types, range, dedupLost: fetched - excluded - afterDedup })
+        }
+        if (!cancelled) setState({ data, loading: false, error: null, exchangeRate, total: serverTotal, diag })
       } catch (e) {
         if (cancelled) return
         const msg = e instanceof Error ? e.message : String(e)
