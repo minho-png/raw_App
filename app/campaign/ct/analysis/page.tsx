@@ -8,7 +8,6 @@ import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettle
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAgencies } from "@/lib/hooks/useMotivAgencies"
-import { useMotivDailySnapshot } from "@/lib/hooks/useMotivDailySnapshot"
 import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import { KpiCard } from "@/components/analysis/KpiCard"
 import { SummaryCard } from "@/components/molecules/SummaryCard"
@@ -88,10 +87,10 @@ export default function CtAnalysisPage() {
   const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
   const { byId: adAccountById }   = useMotivAdAccounts(true, refreshKey)
   const { byId: motivAgencyById } = useMotivAgencies(true, refreshKey)
-  // 선택한 일자(시작일)의 전일자 스냅샷과 비교
-  const yesterdayDate = useMemo(() => addDays(rangeStart, -1), [rangeStart])
-  const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot(yesterdayDate, refreshKey)
-  const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
+  // 사용자 결정 — '전일 스냅샷 기능 삭제 / 비교 기능 없이 작동 / 미소진은
+  // 현재 시간 대비 소진 현황으로 경고만'. yesterday 변수들은 더미 (호환 유지).
+  const yesterdayStats = useMemo(() => new Map<number, never>(), [])
+  const yesterdayAvailable = false
 
   // 캠페인별 일자 범위 stats — /v1/stats/campaign/breakdown.
   // 표(today) 와 카드(daily 합) 가 동일한 source 에서 일치하도록 today override 용.
@@ -282,15 +281,7 @@ export default function CtAnalysisPage() {
               title="status='Y' 캠페인만 표시. 당일 단일 모드에서 자동 ON."
             />
             <RefreshControlBar control={refreshControl} loading={motiv.loading} />
-            {yesterdayAvailable ? (
-              <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11px] text-green-700 font-medium">
-                {snapshot?.date} 비교 데이터 연결됨
-              </span>
-            ) : (
-              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] text-amber-700 font-medium">
-                {yesterdayDate} 비교 데이터 없음
-              </span>
-            )}
+            {/* 전일 스냅샵 상태 표시 제거 (사용자 결정) */}
             <button
               type="button"
               onClick={() => setShowSettings(v => !v)}

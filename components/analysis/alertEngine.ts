@@ -112,8 +112,30 @@ export function buildAlerts(
     })
   }
 
-  // 어제 데이터 미연동 — 비교 경고가 모두 skip 되어 사용자가 '경고가 안 나옴'
-  // 으로 인지하던 케이스 (사용자 보고). 명시적 안내 메시지로 가시화.
+  // 사용자 결정 — '전일 스냅샵 비교 제거 / 미소진은 현재 시간 vs 소진 현황 비교로 경고'.
+  // 일예산이 있고, 캠페인이 진행중(D-day>0)이며, 현재 시각 대비 페이싱이 부족하면 warn.
+  //   기대 페이싱 = daily_budget × (현재까지 경과한 시간 비율)
+  //   실제 페이싱 = dailySpent
+  //   실제 / 기대 < 0.5 (절반 미만) → 미소진 경고.
+  if (dd.diff > 0 && c.dailyBudget > 0 && !c.isFree) {
+    const now = new Date()
+    const elapsedFrac = (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) / 86400
+    const expected = c.dailyBudget * elapsedFrac
+    // 하루 시작 직후(elapsedFrac < 0.05)는 데이터가 빈약하므로 skip.
+    if (elapsedFrac >= 0.05 && expected > 0) {
+      const pacing = c.dailySpent / expected
+      if (pacing < 0.5) {
+        const pct = Math.round(pacing * 100)
+        msgs.push({
+          kind: 'critical',
+          cat: 'spend',
+          text: `미소진 — 현재 시각 기준 ${pct}% (예상 ₩${Math.round(expected).toLocaleString('ko-KR')} / 실제 ₩${Math.round(c.dailySpent).toLocaleString('ko-KR')})`,
+        })
+      }
+    }
+  }
+
+  // (호환 유지) 이전엔 yesterdayMissing 경고가 있었으나 전일 비교 제거됨 — 항상 false.
   if (yesterdayMissing && t.spend > 0) {
     msgs.push({
       kind: 'warn',
