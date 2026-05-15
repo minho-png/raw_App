@@ -168,10 +168,10 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
             const matched = matchKw(c.title)
             if (isExcludedCampaign(c.title)) {
               excluded += 1
-              if (matched) console.warn(`[DMP debug] '${c.title}' (id=${c.id}) → EXCLUDED 리스트로 제외`)
+              if (matched) console.log(`[DMP debug] '${c.title}' (id=${c.id}) → EXCLUDED 리스트로 제외`)
               continue
             }
-            if (matched) console.info(`[DMP debug] '${c.title}' (id=${c.id}, type=${c.campaign_type}, start=${c.start_date}, end=${c.end_date}) ← campaign fetch 통과`)
+            if (matched) console.log(`[DMP debug] '${c.title}' (id=${c.id}, type=${c.campaign_type}, start=${c.start_date}, end=${c.end_date}) ← campaign fetch 통과`)
             byId.set(c.id, c)
           }
           if (r.exchange_rate) exchangeRate = r.exchange_rate
@@ -193,10 +193,10 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
             if (!keep) {
               outOfRange += 1
               if (matchKw(c.title)) {
-                console.warn(`[DMP debug] '${c.title}' (id=${c.id}) → outOfRange 제외 (운영 ${c.start_date}~${c.end_date} vs range ${range.start}~${range.end})`)
+                console.log(`[DMP debug] '${c.title}' (id=${c.id}) → outOfRange 제외 (운영 ${c.start_date}~${c.end_date} vs range ${range.start}~${range.end})`)
               }
             } else if (matchKw(c.title)) {
-              console.info(`[DMP debug] '${c.title}' (id=${c.id}) ← outOfRange 통과 (운영 ${c.start_date}~${c.end_date})`)
+              console.log(`[DMP debug] '${c.title}' (id=${c.id}) ← outOfRange 통과 (운영 ${c.start_date}~${c.end_date})`)
             }
             return keep
           })
@@ -204,10 +204,10 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
 
         if (debugKw) {
           const matched = data.filter(c => matchKw(c.title))
-          console.group(`[DMP debug] keyword='${debugKw}' — 최종 ${matched.length}개 통과`)
+          console.log(`[DMP debug] keyword='${debugKw}' — 최종 ${matched.length}개 통과`)
           for (const c of matched) console.log(`  ✓ ${c.title} (id=${c.id}, type=${c.campaign_type}, status=${c.status})`)
           if (matched.length === 0) {
-            console.warn('  ⚠ 통과한 캠페인 0건 — 위 로그 검토. 또는 ?debug= URL/sessionStorage 키워드 확인.')
+            console.log('  ⚠ 통과한 캠페인 0건 — 위 로그 검토. 또는 ?debug= URL/sessionStorage 키워드 확인.')
             console.log('  진단:', { serverTotal, fetched, excluded, outOfRange, final: data.length, truncated })
           }
           console.groupEnd()
@@ -219,7 +219,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
           truncated,
         }
         if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
-          console.info('[useMotivSettlementCampaigns] diag', diag, { types, range, dedupLost: fetched - excluded - afterDedup })
+          console.log('[useMotivSettlementCampaigns] diag', diag, { types, range, dedupLost: fetched - excluded - afterDedup })
         }
         if (!cancelled) setState({ data, loading: false, error: null, exchangeRate, total: serverTotal, diag })
       } catch (e) {
