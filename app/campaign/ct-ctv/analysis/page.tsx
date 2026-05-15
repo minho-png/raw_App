@@ -8,7 +8,6 @@ import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettle
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAgencies } from "@/lib/hooks/useMotivAgencies"
-import { useMotivDailySnapshot } from "@/lib/hooks/useMotivDailySnapshot"
 import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import { KpiCard } from "@/components/analysis/KpiCard"
 import { SummaryCard } from "@/components/molecules/SummaryCard"
@@ -71,9 +70,10 @@ export default function CtCtvAnalysisPage() {
   const { byId: adAccountById }   = useMotivAdAccounts(true, refreshKey)
   const { byId: motivAgencyById } = useMotivAgencies(true, refreshKey)
   // 선택한 일자(시작일)의 전일자 스냅샷과 비교
-  const yesterdayDate = useMemo(() => addDays(rangeStart, -1), [rangeStart])
-  const { byMotivId: yesterdayStats, snapshot } = useMotivDailySnapshot(yesterdayDate, refreshKey)
-  const yesterdayAvailable = snapshot !== null && yesterdayStats.size > 0
+  // 사용자 결정 — '전일 스냅샵 기능 삭제'. 미소진 경고는 alertEngine 의
+  // 'daily_budget × 경과 시간 비율 vs dailySpent' 비교로 처리.
+  const yesterdayStats = useMemo(() => new Map<number, never>(), [])
+  const yesterdayAvailable = false
 
   // 캠페인별 일자 범위 stats — 표/카드 source 일치용 (today override).
   const motivCampaignIdsAll = useMemo(
@@ -212,15 +212,7 @@ export default function CtCtvAnalysisPage() {
               title="status='Y' 캠페인만 표시. 당일 단일 모드에서 자동 ON."
             />
             <RefreshControlBar control={refreshControl} loading={motiv.loading} />
-            {yesterdayAvailable ? (
-              <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11px] text-green-700 font-medium">
-                {snapshot?.date} 비교 데이터 연결됨
-              </span>
-            ) : (
-              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] text-amber-700 font-medium">
-                {yesterdayDate} 비교 데이터 없음
-              </span>
-            )}
+            {/* 전일 스냅샵 상태 표시 제거 (사용자 결정) */}
             <button
               type="button"
               onClick={() => setShowSettings(v => !v)}
