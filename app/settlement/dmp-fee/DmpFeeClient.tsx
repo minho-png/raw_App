@@ -332,6 +332,11 @@ export default function DmpFeeClient() {
         {/* 통과 캠페인 콘솔 dump — ?debug=ALL 시 (페이지 mount 후 1회). */}
         <DiagCampaignDump campaigns={motivFetch.data} />
 
+        {/* 통과 89개 캠페인 list — 화면에서 검색 가능 (사용자: '힐스펫이 있는지 확인'). */}
+        {motivProduct && motivFetch.data.length > 0 && (
+          <DiagCampaignList campaigns={motivFetch.data} adGroups={adGroups.rows} />
+        )}
+
         <div className="flex items-center gap-2 text-[11px] text-gray-500 -mt-2">
           {showCtPlus && <span>CT+ {ctPlusRows.length}</span>}
           {motivProduct && (() => {
@@ -524,4 +529,97 @@ function DiagCampaignDump({ campaigns }: { campaigns: import('@/lib/motivApi/typ
     }
   }, [campaigns])
   return null
+}
+
+// 통과 캠페인 검색 패널 — 사용자가 힐스펫 등 특정 캠페인이 통과했는지 직접 확인.
+function DiagCampaignList({
+  campaigns, adGroups,
+}: {
+  campaigns: import('@/lib/motivApi/types').MotivCampaign[]
+  adGroups: import('@/lib/hooks/useMotivAdGroups').AdGroupRow[]
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const adGroupsByCampaign = useMemo(() => {
+    const m = new Map<number, typeof adGroups>()
+    for (const ag of adGroups) {
+      const arr = m.get(ag.campaignId) ?? []
+      arr.push(ag)
+      m.set(ag.campaignId, arr)
+    }
+    return m
+  }, [adGroups])
+
+  const filtered = useMemo(() => {
+    const low = q.trim().toLowerCase()
+    if (!low) return campaigns
+    return campaigns.filter(c => (c.title || '').toLowerCase().includes(low))
+  }, [campaigns, q])
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-[11px] text-gray-600 hover:bg-gray-50"
+      >
+        <span>
+          <b className="text-emerald-700">{campaigns.length}</b>개 통과 캠페인 list — 클릭으로 펼침/닫기 (검색 가능)
+        </span>
+        <span>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 p-3">
+          <input
+            type="text"
+            placeholder="캠페인 이름 검색 (예: 힐스펫)"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            className="w-full mb-2 rounded border border-gray-300 px-2 py-1 text-[11px]"
+          />
+          <div className="max-h-72 overflow-y-auto text-[10px] tabular-nums">
+            <table className="w-full">
+              <thead className="bg-gray-50 text-gray-500 sticky top-0">
+                <tr>
+                  <th className="px-2 py-1 text-left">id</th>
+                  <th className="px-2 py-1 text-left">type</th>
+                  <th className="px-2 py-1 text-left">status</th>
+                  <th className="px-2 py-1 text-left">start</th>
+                  <th className="px-2 py-1 text-left">end</th>
+                  <th className="px-2 py-1 text-left">광고그룹/dataFee 합</th>
+                  <th className="px-2 py-1 text-left">title</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map(c => {
+                  const ags = adGroupsByCampaign.get(c.id) ?? []
+                  const sum = ags.reduce((s, a) => s + a.dataFee, 0)
+                  return (
+                    <tr key={c.id} className="hover:bg-gray-50">
+                      <td className="px-2 py-0.5 font-mono">{c.id}</td>
+                      <td className="px-2 py-0.5">{c.campaign_type}</td>
+                      <td className="px-2 py-0.5">{c.status}</td>
+                      <td className="px-2 py-0.5">{c.start_date ?? '-'}</td>
+                      <td className="px-2 py-0.5">{c.end_date ?? '-'}</td>
+                      <td className="px-2 py-0.5">
+                        <span className={ags.length === 0 ? 'text-rose-600' : 'text-gray-700'}>
+                          {ags.length} / {Math.round(sum).toLocaleString('ko-KR')}
+                        </span>
+                      </td>
+                      <td className="px-2 py-0.5 max-w-[420px] truncate" title={c.title ?? ''}>
+                        {c.title}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {filtered.length === 0 && (
+              <p className="px-2 py-2 text-rose-600">검색 매칭 없음 — 이 캠페인은 통과 89개 안에 없음. 기간외(outOfRange) 로 빠짐.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
