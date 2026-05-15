@@ -128,40 +128,20 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
           const lastPage = Math.min(lastPageServer, MAX_PAGES)
           if (lastPageServer > MAX_PAGES) truncated = true
 
-          // 사용자 통찰 — '25페이지를 다 검사할 필요 없음. 기간 안 맞으면 안 가져와도 됨'.
-          // sort=-created_at 이라 페이지가 진행할수록 더 옛 캠페인. 한 페이지의 모든
-          // 캠페인이 end_date < range.start (이미 종료된 옛 캠페인) 이면 이후 페이지는
-          // 더 옛이므로 안 받음 → early-exit.
-          //
-          // 보수적 조건 — end_date 가 null 인 캠페인이 한 개라도 있으면 운영 중 가능성,
-          // 또는 end_date 가 range.start 보다 미래/내부면 overlap 가능성 — 그러면 계속.
-          const mStartTime = range ? new Date(`${range.start}T00:00:00`).getTime() : 0
-          const isAllOld = (rows: MotivCampaign[]) => {
-            if (!range || rows.length === 0) return false
-            return rows.every(c => {
-              if (!c.end_date) return false  // 종료 미정 → 계속 운영 가능
-              return new Date(c.end_date).getTime() < mStartTime
-            })
-          }
-          if (isAllOld(first.data)) {
-            // 첫 페이지부터 이미 옛 캠페인만 — 더 안 받음.
-            return merged
-          }
-
-          // 2..lastPage 를 PAGE_PARALLEL 씩 batch 로 병렬 fetch + early-exit.
+          // 사용자 보고 '4월 힐스펫 캠페인이 안 보임' — 이전 PR 의 early-exit 휴리스틱
+          // (한 페이지 모두 end_date < range.start 이면 break) 가 잘못된 가정 기반이었음.
+          // 가정: 'sort=-created_at 이라 페이지가 진행할수록 옛 캠페인' — 그러나
+          // created_at(생성일) 과 end_date(종료일) 는 다른 필드. 오래 전 생성된
+          // 캠페인이 최근까지 운영될 수 있어서, 한 페이지가 모두 옛 종료여도
+          // 다음 페이지에 4월 운영 캠페인이 있을 수 있음. → early-exit 제거.
+          // 2..lastPage 를 PAGE_PARALLEL 씩 batch 로 병렬 fetch — 전체 페이지 끝까지.
           for (let start = 2; start <= lastPage; start += PAGE_PARALLEL) {
             const batch: Promise<MotivCampaignListResponse>[] = []
             for (let p = start; p < start + PAGE_PARALLEL && p <= lastPage; p++) {
               batch.push(fetchPage(t, p))
             }
             const pages = await Promise.all(batch)
-            let stop = false
-            for (const pg of pages) {
-              merged.data.push(...pg.data)
-              if (isAllOld(pg.data)) stop = true
-            }
-            // 한 batch 안 어떤 페이지든 '모두 옛 캠페인' 이면 이후 페이지 안 받음.
-            if (stop) break
+            for (const pg of pages) merged.data.push(...pg.data)
           }
           return merged
         }))
