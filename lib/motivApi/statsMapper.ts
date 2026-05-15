@@ -133,10 +133,14 @@ export function motivCampaignToSnapshot(
 ): UnifiedCampaignSnapshot {
   const product = motivTypeToProduct(c.campaign_type) ?? 'CT'
   const isFree = c.is_free === true
-  // 무료 캠페인: 매출(spend) 은 0 처리 (광고주 청구 없음). 비용 항목은 그대로 유지.
-  const todayMetrics = motivStatsToMetrics(c.stats)
-  const today = isFree ? { ...todayMetrics, spend: 0 } : todayMetrics
-  const yesterday = yesterdayMetrics
+  // 사용자 결정 — 매출(spend) = MotivCampaign.total_spent.
+  // 진단 카드(StatsRawDiagnostic) 로 확인한 결과 total_spent 가 실제 매출과 일치.
+  // stats.revenue 는 다른 의미였음 (수익 또는 항등식 라이프타임 누적).
+  // 무료 캠페인: 광고주 청구 없으므로 0.
+  const rawSpend     = isFree ? 0 : Math.round(c.total_spent ?? 0)
+  const todayMetrics = { ...motivStatsToMetrics(c.stats), spend: rawSpend }
+  const today        = todayMetrics
+  const yesterday    = yesterdayMetrics
     ? (isFree ? { ...yesterdayMetrics, spend: 0 } : yesterdayMetrics)
     : { ...ZERO_METRICS }
   return {

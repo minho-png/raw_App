@@ -209,16 +209,14 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
     const ag = a?.agencyId ? agById.get(a.agencyId) : undefined
     const adv = a?.advertiserId ? advById.get(a.advertiserId) : undefined
     const op = a?.operatorId ? opById.get(a.operatorId) : undefined
-    // 기간 stats 우선 — campaigns.index 의 c.stats 는 lifetime 누적이라
-    // 월별 매출이 부정확 (사용자 보고). /stats/campaign/breakdown 결과가 있으면
-    // 그 값으로 override.
+    // 사용자 결정 — 매출 공급가액 = c.total_spent (진단 카드로 확인됨).
+    // stats.revenue 가 아닌 MotivCampaign 객체의 total_spent 사용.
+    // 수수료(agency_fee) 는 기간 stats 가 있으면 정확치, 없으면 c.stats 폴백.
     const periodStats = statsByMotivId?.get(c.id)
     const agencyFee = periodStats
-      ? periodStats.agencyFee + periodStats.dmpFee  // raw agency_fee = 대행+DMP 합
+      ? periodStats.agencyFee + periodStats.dmpFee
       : Math.round(Number(c.stats?.agency_fee ?? 0))
-    const revenue = periodStats
-      ? periodStats.spend
-      : Math.round(Number(c.stats?.revenue ?? c.stats?.cost ?? 0))
+    const revenue = Math.round(Number(c.total_spent ?? 0))
     const net = revenue
     if (net <= 0) continue
     const vat = Math.round(net * 0.1)
