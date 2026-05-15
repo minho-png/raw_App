@@ -247,10 +247,26 @@ export default function CtAnalysisPage() {
                 { label: '오늘',    onClick: () => { const t = todayStr(); setRangeStart(t); setRangeEnd(t) } },
                 { label: '어제',    onClick: () => { const y = addDays(todayStr(), -1); setRangeStart(y); setRangeEnd(y) } },
                 { label: '최근 7일', onClick: () => { setRangeStart(addDays(todayStr(), -6)); setRangeEnd(todayStr()) } },
-                { label: '이번 달',  onClick: () => { setRangeStart(monthStart(todayStr())); setRangeEnd(todayStr()) } },
+                // 월별 — campaigns.index 규칙 따라 해당 월 1일~말일 자동 설정 (사용자 요청).
+                { label: '이번 달',  onClick: () => { const t = todayStr(); setRangeStart(monthStart(t)); setRangeEnd(monthEnd(t)) } },
                 { label: '지난 달',  onClick: () => {
                   const lastStart = monthStart(addDays(monthStart(todayStr()), -1))
                   setRangeStart(lastStart); setRangeEnd(monthEnd(lastStart))
+                } },
+                // 캠페인 실 운영기간 — 현재 표시되는 캠페인들의 [min start_date, max end_date(or today)] 자동 설정.
+                // campaigns.index 의 start_date/end_date 를 그대로 활용 (사용자 요청).
+                { label: '캠페인 운영기간', onClick: () => {
+                  const starts = motiv.data.map(c => c.start_date).filter((s): s is string => !!s)
+                  const ends   = motiv.data.map(c => c.end_date).filter((s): s is string => !!s)
+                  if (starts.length === 0) return
+                  const minStart = starts.reduce((a, b) => a < b ? a : b)
+                  const t = todayStr()
+                  const maxEnd  = ends.length > 0
+                    ? ends.reduce((a, b) => a > b ? a : b)
+                    : t
+                  // 미래일은 오늘로 capping (당일까지의 실집계만 의미 있음).
+                  const cappedEnd = maxEnd > t ? t : maxEnd
+                  setRangeStart(minStart); setRangeEnd(cappedEnd)
                 } },
               ]}
             />

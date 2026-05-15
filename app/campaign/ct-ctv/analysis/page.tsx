@@ -184,10 +184,24 @@ export default function CtCtvAnalysisPage() {
                 { label: '오늘',    onClick: () => { const t = todayStr(); setRangeStart(t); setRangeEnd(t) } },
                 { label: '어제',    onClick: () => { const y = addDays(todayStr(), -1); setRangeStart(y); setRangeEnd(y) } },
                 { label: '최근 7일', onClick: () => { setRangeStart(addDays(todayStr(), -6)); setRangeEnd(todayStr()) } },
-                { label: '이번 달',  onClick: () => { setRangeStart(monthStart(todayStr())); setRangeEnd(todayStr()) } },
+                // 월별 — 해당 월 1일~말일 자동 설정 (campaigns.index 규칙).
+                { label: '이번 달',  onClick: () => { const t = todayStr(); setRangeStart(monthStart(t)); setRangeEnd(monthEnd(t)) } },
                 { label: '지난 달',  onClick: () => {
                   const lastStart = monthStart(addDays(monthStart(todayStr()), -1))
                   setRangeStart(lastStart); setRangeEnd(monthEnd(lastStart))
+                } },
+                // 캠페인 실 운영기간 — campaigns.index 의 start_date/end_date 기준 (사용자 요청).
+                { label: '캠페인 운영기간', onClick: () => {
+                  const starts = motiv.data.map(c => c.start_date).filter((s): s is string => !!s)
+                  const ends   = motiv.data.map(c => c.end_date).filter((s): s is string => !!s)
+                  if (starts.length === 0) return
+                  const minStart = starts.reduce((a, b) => a < b ? a : b)
+                  const t = todayStr()
+                  const maxEnd  = ends.length > 0
+                    ? ends.reduce((a, b) => a > b ? a : b)
+                    : t
+                  const cappedEnd = maxEnd > t ? t : maxEnd
+                  setRangeStart(minStart); setRangeEnd(cappedEnd)
                 } },
               ]}
             />
