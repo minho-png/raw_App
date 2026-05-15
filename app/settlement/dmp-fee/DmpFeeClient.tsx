@@ -10,6 +10,7 @@ import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettle
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAdGroups } from "@/lib/hooks/useMotivAdGroups"
+import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import { labelForTargetingProductId, motivTypeToProduct, type MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { getAdvertiserName } from "@/lib/motivApi/advertiserHelpers"
 
@@ -166,28 +167,48 @@ export default function DmpFeeClient() {
     enabled:   motivCampaignIds.length > 0,
   })
 
-  // 사용자 결정 — 'CT/CTV 캠페인 현황과 동일 형식. 캠페인 fetch → 그 ID 로 광고그룹 fetch.
-  // 이상한 fallback 로직 없이 단순하게'. periodStats 의존 제거. 광고그룹 단위 합산만.
+  // 사용자 진단 결과 — 힐스펫(id=20038, TV) 의 광고그룹 10개 / dataFee 합 = 0.
+  // /v1/adgroups list 응답 stats 는 lifetime → 4월 dmpFee 없으면 0 으로 응답.
+  // 정확한 기간 dmpFee 는 /v1/stats/campaign/breakdown (CTV 분석과 같은 source).
+  const periodStats = useMotivStatsCampaign({
+    scope:     { campaignIds: motivCampaignIds },
+    startDate: dateRange?.start,
+    endDate:   dateRange?.end,
+    enabled:   motivCampaignIds.length > 0,
+  })
+
+  // 캠페인 단위 순회 — accurateDmpFee 우선, 광고그룹 비율로 vendor 분배.
   const motivRows = useMemo((): UnifiedDmpRow[] => {
     if (!motivProduct) return []
     const asgById = new Map(assignments.map(a => [a.motivCampaignId, a]))
-    const campById = new Map(motivFetch.data.map(c => [c.id, c]))
     const map = new Map<string, UnifiedDmpRow>()
     const seenCampaign = new Map<string, Set<number>>()
 
+    // 광고그룹을 캠페인별로 그룹화 — vendor 비율 계산용.
+    const adGroupsByCampaign = new Map<number, typeof adGroups.rows>()
     for (const ag of adGroups.rows) {
-      const camp = campById.get(ag.campaignId)
-      if (!camp) continue
+      const arr = adGroupsByCampaign.get(ag.campaignId) ?? []
+      arr.push(ag)
+      adGroupsByCampaign.set(ag.campaignId, arr)
+    }
+
+    // 캠페인 단위 순회 — periodStats(기간 정확) 의 dmpFee 우선, 광고그룹 vendor 비율로 분배.
+    for (const camp of motivFetch.data) {
       const product = motivTypeToProduct(camp.campaign_type)
       if (product !== 'CT' && product !== 'CTV') continue
 
-      // 광고주 매핑.
       const asg = asgById.get(camp.id)
       const internalAdv = asg?.advertiserId ? advertisers.find(a => a.id === asg.advertiserId) : undefined
       const adAccount   = adAccountById.get(camp.adaccount_id)
       const advertiserName = internalAdv?.name || getAdvertiserName(adAccount) || '—'
 
-      // 광고주 단위 통합 키.
+      // accurateDmpFee — /v1/stats/campaign/breakdown 의 dmpFee (기간 정확).
+      // 광고그룹 list 의 dataFee 는 lifetime 일 가능성 (사용자 진단: 힐스펫 광고그룹 10개 dataFee=0).
+      const campAdGroups = adGroupsByCampaign.get(camp.id) ?? []
+      const adGroupTotal = campAdGroups.reduce((s, r) => s + r.dataFee, 0)
+      const accurateDmpFee = periodStats.byMotivId.get(camp.id)?.dmpFee ?? adGroupTotal
+      if (accurateDmpFee <= 0) continue
+
       const key = `${product}::${advertiserName}`
       if (!map.has(key)) {
         map.set(key, {
@@ -202,17 +223,24 @@ export default function DmpFeeClient() {
       const entry = map.get(key)!
       seenCampaign.get(key)!.add(camp.id)
 
-      // DMP 식별 — targeting_product_id 만.
-      const vendor = labelForTargetingProductId(ag.targetingProductId)
-      const fee = ag.dataFee
-      if (fee <= 0) continue
-      if (vendor === 'SKP' || vendor === 'TG360' || vendor === 'LOTTE' || vendor === 'KB' || vendor === 'WIFI') {
-        entry.dmpFees[vendor] += fee
+      // vendor 비율 분배 — 광고그룹 dataFee 분포로 accurateDmpFee 분배.
+      if (adGroupTotal > 0) {
+        const vendorWeight: Record<DmpVendor, number> = emptyFees()
+        for (const r of campAdGroups) {
+          const v = labelForTargetingProductId(r.targetingProductId)
+          const k2 = (v === 'SKP' || v === 'TG360' || v === 'LOTTE' || v === 'KB' || v === 'WIFI') ? v : 'ETC'
+          vendorWeight[k2] += r.dataFee
+        }
+        for (const v of DMP_COLS) {
+          entry.dmpFees[v] += (vendorWeight[v] / adGroupTotal) * accurateDmpFee
+        }
       } else {
-        entry.dmpFees.ETC += fee
+        // 광고그룹 dataFee 모두 0 (lifetime) 이지만 periodStats 가 양수.
+        // vendor 분류 불가 → ETC + 매핑 필요.
+        entry.dmpFees.ETC += accurateDmpFee
         entry.isUnmapped = true
       }
-      entry.dmpTotal += fee
+      entry.dmpTotal += accurateDmpFee
     }
     for (const [k, ids] of seenCampaign) {
       const r = map.get(k); if (r) r.campaignCount = ids.size
@@ -231,7 +259,7 @@ export default function DmpFeeClient() {
       }
     }
     return result
-  }, [motivProduct, adGroups.rows, motivFetch.data, assignments, advertisers, adAccountById])
+  }, [motivProduct, adGroups.rows, motivFetch.data, assignments, advertisers, adAccountById, periodStats.byMotivId])
 
   const allRows = useMemo(
     () => [...ctPlusRows, ...motivRows].sort((a, b) => b.dmpTotal - a.dmpTotal),
