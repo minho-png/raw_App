@@ -141,10 +141,11 @@ export default function CtAnalysisPage() {
           advertiserName,
         )
         const todayOverride = statsCampaign.byMotivId.get(c.id)
-        // 사용자 결정 — 매출(spend) = c.total_spent (motivCampaignToSnapshot 에서 적용됨).
-        // statsCampaign override 는 비용 분해(mediaCost/agencyFee/dmpFee)·impressions/clicks 만 받고,
-        // spend 는 total_spent 값 유지.
-        if (todayOverride) snap.today = { ...todayOverride, spend: snap.today.spend }
+        // 사용자 정책 — '해당 기간에 발생한 정확한 매출 SPEND 만 표시'.
+        // /stats/campaign/breakdown 의 결과(statsCampaign)가 기간 명시 정확치이므로
+        // spend 포함 모든 메트릭을 그 값으로 override. c.stats / c.total_spent 의 lifetime
+        // 누적 의존 제거.
+        if (todayOverride) snap.today = todayOverride
         // 오늘 단일 모드: spend 만 daily_spent 로 재정의 (실시간성).
         if (isTodayOnly && c.daily_spent != null) {
           snap.today = { ...snap.today, spend: Math.round(c.daily_spent) }

@@ -112,9 +112,8 @@ export default function CtCtvAnalysisPage() {
           advertiserName,
         )
         const todayOverride = statsCampaign.byMotivId.get(c.id)
-        // 사용자 결정 — 매출 = c.total_spent (motivCampaignToSnapshot 적용).
-        // statsCampaign override 는 비용 분해/노출/클릭만 받고 spend 는 total_spent 보존.
-        if (todayOverride) snap.today = { ...todayOverride, spend: snap.today.spend }
+        // 사용자 정책 — '해당 기간에 발생한 정확한 매출 SPEND'. breakdown 정확치로 모두 override.
+        if (todayOverride) snap.today = todayOverride
         if (isTodayOnly && c.daily_spent != null) {
           snap.today = { ...snap.today, spend: Math.round(c.daily_spent) }
         }
