@@ -145,9 +145,11 @@ export default function DmpFeePage() {
   }, [showCtPlus, monthRows, campaigns, advertisers])
 
   // === Motiv 행 — /v1/adgroups (활성 캠페인만) ===
-  // 분석 페이지와 동일 dateRange 활용 (사용자 요청).
+  // 사용자 보고 — '캠페인이 다 불러와지지 않음'. 이전 .slice(0, 30) 으로
+  // 활성 캠페인 중 30개만 광고그룹 fetch 됐던 문제 (사용자 환경엔 30 초과).
+  // 제한 제거 — useMotivAdGroups 가 캠페인 ID 별로 병렬 호출.
   const motivCampaignIds = useMemo(
-    () => motivFetch.data.filter(c => c.status === 'Y').map(c => c.id).slice(0, 30),
+    () => motivFetch.data.filter(c => c.status === 'Y').map(c => c.id),
     [motivFetch.data],
   )
   const adGroups = useMotivAdGroups({
@@ -280,7 +282,12 @@ export default function DmpFeePage() {
           rightSlot={
             <div className="flex items-center gap-2 text-[11px] text-gray-500">
               {showCtPlus && <span>CT+ {ctPlusRows.length}</span>}
-              {motivProduct && <span>Motiv {motivRows.length}</span>}
+              {motivProduct && (
+                <span title={`활성 캠페인 ${motivCampaignIds.length} / 광고그룹 ${adGroups.rows.length}`}>
+                  Motiv {motivRows.length}
+                  <span className="text-gray-400 ml-1">(캠페인 {motivCampaignIds.length} · 광고그룹 {adGroups.rows.length})</span>
+                </span>
+              )}
             </div>
           }
         />

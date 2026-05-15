@@ -75,7 +75,9 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
         // 사용자 보고 — '캠페인을 불러오지 못하는 경우' 의 주된 원인은
         // 첫 페이지(per_page=200)만 조회하던 동작. 한 type 의 캠페인이 200개를 넘으면
         // 나머지가 누락됨. 모든 페이지 순회로 전환 (최대 10페이지 = 2000건 안전 캡).
-        const MAX_PAGES = 10
+        // 사용자 보고 — '캠페인이 다 안 불러와짐'. 한 type 의 캠페인이 2000(=200×10)
+        // 초과 시 누락되던 문제. 5000건까지 끌어올림 (per_page 200 × 25 page).
+        const MAX_PAGES = 25
         const results = await Promise.all(types.map(async t => {
           // 페이지 합산용 — 부분 응답이라 strict 타입을 쓰지 않음.
           const merged: { data: MotivCampaign[]; meta?: { last_page?: number; total?: number }; exchange_rate?: number } = {
