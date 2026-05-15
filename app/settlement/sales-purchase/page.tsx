@@ -397,10 +397,12 @@ function PurchaseTable({ rows, onEdit }: { rows: PurchaseRow[]; onEdit: (r: Purc
     net: acc.net + Number(r.공급가액 ?? 0),
     vat: acc.vat + Number(r.세액 ?? 0),
     total: acc.total + Number(r.합계금액 ?? 0),
+    agency: acc.agency + Number(r['대행 수수료'] ?? 0),
+    dmp:    acc.dmp    + Number(r['데이터(DMP) 비용'] ?? 0),
     imc: acc.imc + Number(r.IMC ?? 0),
     tv: acc.tv + Number(r.TV ?? 0),
     ct: acc.ct + Number(r.CT ?? 0),
-  }), { net: 0, vat: 0, total: 0, imc: 0, tv: 0, ct: 0 })
+  }), { net: 0, vat: 0, total: 0, agency: 0, dmp: 0, imc: 0, tv: 0, ct: 0 })
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
       <table className="min-w-full text-xs">
@@ -416,6 +418,8 @@ function PurchaseTable({ rows, onEdit }: { rows: PurchaseRow[]; onEdit: (r: Purc
             <th className="px-2 py-2 text-right font-semibold">공급가액</th>
             <th className="px-2 py-2 text-right font-semibold">세액</th>
             <th className="px-2 py-2 text-right font-semibold">합계금액</th>
+            <th className="px-2 py-2 text-right font-semibold" title="agency_fee — 거래처별 대행 수수료">대행 수수료</th>
+            <th className="px-2 py-2 text-right font-semibold" title="data_fee — 데이터(DMP) 비용">DMP 비용</th>
             <th className="px-2 py-2 text-right font-semibold">IMC</th>
             <th className="px-2 py-2 text-right font-semibold">TV</th>
             <th className="px-2 py-2 text-right font-semibold">CT</th>
@@ -448,6 +452,8 @@ function PurchaseTable({ rows, onEdit }: { rows: PurchaseRow[]; onEdit: (r: Purc
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-800">{fmt(r.공급가액)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{fmt(r.세액)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">{fmt(r.합계금액)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-amber-700">{r['대행 수수료'] > 0 ? fmt(r['대행 수수료']) : '-'}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-violet-700">{r['데이터(DMP) 비용'] > 0 ? fmt(r['데이터(DMP) 비용']) : '-'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{r.IMC > 0 ? fmt(r.IMC) : '-'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-indigo-600">{r.TV > 0 ? fmt(r.TV) : '-'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{r.CT > 0 ? fmt(r.CT) : '-'}</td>
@@ -462,6 +468,8 @@ function PurchaseTable({ rows, onEdit }: { rows: PurchaseRow[]; onEdit: (r: Purc
             <td className="px-2 py-2 text-right tabular-nums font-bold text-gray-900">{fmt(totals.net)}</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-gray-700">{fmt(totals.vat)}</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-gray-900">{fmt(totals.total)}</td>
+            <td className="px-2 py-2 text-right tabular-nums font-bold text-amber-800">{fmt(totals.agency)}</td>
+            <td className="px-2 py-2 text-right tabular-nums font-bold text-violet-800">{fmt(totals.dmp)}</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-blue-700">{fmt(totals.imc)}</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-indigo-700">{fmt(totals.tv)}</td>
             <td className="px-2 py-2 text-right tabular-nums font-bold text-blue-700">{fmt(totals.ct)}</td>
@@ -512,6 +520,8 @@ const PURCHASE_EDITABLE_FIELDS: { key: keyof PurchaseRow; label: string; type: '
   { key: '공급가액',                        label: '공급가액',                     type: 'number' },
   { key: '세액',                            label: '세액',                         type: 'number' },
   { key: '합계금액',                        label: '합계금액',                     type: 'number' },
+  { key: '대행 수수료',                     label: '대행 수수료',                  type: 'number' },
+  { key: '데이터(DMP) 비용',                label: '데이터(DMP) 비용',             type: 'number' },
   { key: 'IMC',                             label: 'IMC',                          type: 'number' },
   { key: 'TV',                              label: 'TV',                           type: 'number' },
   { key: 'CT',                              label: 'CT',                           type: 'number' },
