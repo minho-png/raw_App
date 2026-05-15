@@ -84,50 +84,58 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
     ;(async () => {
       setState(s => ({ ...s, loading: true, error: null }))
       try {
-        const MAX_PAGES = 25
+        // 사용자 진단 결과 — 서버 총 18,950 중 MAX_PAGES=25 로 8,713 만 받아
+        // 25페이지 밖 10,237 누락. 사용자 결정: '기간은 노출/비용 발생일 기준'.
+        // 캠페인 lifetime 만으로 못 거르므로 모든 캠페인을 받아 광고그룹 단의
+        // data_fee 발생 여부로 최종 필터해야 함 → MAX_PAGES 대폭 확장 + 페이지 병렬.
+        const MAX_PAGES = 100   // per_page 200 × 100 = 20,000건 (18,950 충분)
+        const PAGE_PARALLEL = 5 // 5 페이지 동시 fetch
         let truncated = false
+
+        async function fetchPage(t: string, page: number): Promise<MotivCampaignListResponse> {
+          const params = new URLSearchParams()
+          params.set('campaign_type', t)
+          params.set('per_page', String(perPage))
+          params.set('page', String(page))
+          params.set('sort', '-created_at')
+          if (range) {
+            params.set('start_date', range.start)
+            params.set('end_date',   range.end)
+          }
+          const ac = new AbortController()
+          const timer = setTimeout(() => ac.abort(), 30_000)
+          try {
+            const res = await fetch(`/api/motiv/campaigns?${params.toString()}`, {
+              cache: 'no-store', signal: ac.signal,
+            })
+            if (!res.ok) throw new Error(`Motiv ${t} ${res.status}`)
+            return (await res.json()) as MotivCampaignListResponse
+          } finally {
+            clearTimeout(timer)
+          }
+        }
+
         const results = await Promise.all(types.map(async t => {
           const merged: { data: MotivCampaign[]; meta?: { last_page?: number; total?: number }; exchange_rate?: number } = {
             data: [],
           }
-          let reachedMax = true
-          for (let page = 1; page <= MAX_PAGES; page++) {
-            const params = new URLSearchParams()
-            params.set('campaign_type', t)
-            params.set('per_page', String(perPage))
-            params.set('page', String(page))
-            params.set('sort', '-created_at')
-            if (range) {
-              params.set('start_date', range.start)
-              params.set('end_date',   range.end)
+          // 첫 페이지 호출 → last_page 확인 → 나머지 페이지 병렬 fetch.
+          const first = await fetchPage(t, 1)
+          merged.data.push(...first.data)
+          if (first.exchange_rate) merged.exchange_rate = first.exchange_rate
+          merged.meta = first.meta
+          const lastPageServer = first.meta?.last_page ?? 1
+          const lastPage = Math.min(lastPageServer, MAX_PAGES)
+          if (lastPageServer > MAX_PAGES) truncated = true
+          // 2..lastPage 를 PAGE_PARALLEL 씩 batch 로 병렬 호출.
+          for (let start = 2; start <= lastPage; start += PAGE_PARALLEL) {
+            const batch: Promise<MotivCampaignListResponse>[] = []
+            for (let p = start; p < start + PAGE_PARALLEL && p <= lastPage; p++) {
+              batch.push(fetchPage(t, p))
             }
-            const ac = new AbortController()
-            const timer = setTimeout(() => ac.abort(), 30_000)
-            let res: Response
-            try {
-              res = await fetch(`/api/motiv/campaigns?${params.toString()}`, {
-                cache: 'no-store', signal: ac.signal,
-              })
-            } catch (e) {
-              if ((e as Error).name === 'AbortError') {
-                throw new Error(`Motiv ${t} 응답 시간 초과 (30s)`)
-              }
-              throw e
-            } finally {
-              clearTimeout(timer)
-            }
-            if (!res.ok) throw new Error(`Motiv ${t} ${res.status}`)
-            const json = (await res.json()) as MotivCampaignListResponse
-            merged.data.push(...json.data)
-            if (json.exchange_rate) merged.exchange_rate = json.exchange_rate
-            merged.meta = json.meta
-            const lastPage = json.meta?.last_page
-            if (lastPage != null ? page >= lastPage : json.data.length < perPage) {
-              reachedMax = false
-              break
-            }
+            const pages = await Promise.all(batch)
+            for (const pg of pages) merged.data.push(...pg.data)
           }
-          if (reachedMax) truncated = true
           return merged
         }))
 
