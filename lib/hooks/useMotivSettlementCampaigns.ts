@@ -119,7 +119,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
           const merged: { data: MotivCampaign[]; meta?: { last_page?: number; total?: number }; exchange_rate?: number } = {
             data: [],
           }
-          // 첫 페이지 호출 → last_page 확인 → 나머지 페이지 병렬 fetch.
+          // 첫 페이지 호출 → last_page 확인.
           const first = await fetchPage(t, 1)
           merged.data.push(...first.data)
           if (first.exchange_rate) merged.exchange_rate = first.exchange_rate
@@ -127,14 +127,41 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
           const lastPageServer = first.meta?.last_page ?? 1
           const lastPage = Math.min(lastPageServer, MAX_PAGES)
           if (lastPageServer > MAX_PAGES) truncated = true
-          // 2..lastPage 를 PAGE_PARALLEL 씩 batch 로 병렬 호출.
+
+          // 사용자 통찰 — '25페이지를 다 검사할 필요 없음. 기간 안 맞으면 안 가져와도 됨'.
+          // sort=-created_at 이라 페이지가 진행할수록 더 옛 캠페인. 한 페이지의 모든
+          // 캠페인이 end_date < range.start (이미 종료된 옛 캠페인) 이면 이후 페이지는
+          // 더 옛이므로 안 받음 → early-exit.
+          //
+          // 보수적 조건 — end_date 가 null 인 캠페인이 한 개라도 있으면 운영 중 가능성,
+          // 또는 end_date 가 range.start 보다 미래/내부면 overlap 가능성 — 그러면 계속.
+          const mStartTime = range ? new Date(`${range.start}T00:00:00`).getTime() : 0
+          const isAllOld = (rows: MotivCampaign[]) => {
+            if (!range || rows.length === 0) return false
+            return rows.every(c => {
+              if (!c.end_date) return false  // 종료 미정 → 계속 운영 가능
+              return new Date(c.end_date).getTime() < mStartTime
+            })
+          }
+          if (isAllOld(first.data)) {
+            // 첫 페이지부터 이미 옛 캠페인만 — 더 안 받음.
+            return merged
+          }
+
+          // 2..lastPage 를 PAGE_PARALLEL 씩 batch 로 병렬 fetch + early-exit.
           for (let start = 2; start <= lastPage; start += PAGE_PARALLEL) {
             const batch: Promise<MotivCampaignListResponse>[] = []
             for (let p = start; p < start + PAGE_PARALLEL && p <= lastPage; p++) {
               batch.push(fetchPage(t, p))
             }
             const pages = await Promise.all(batch)
-            for (const pg of pages) merged.data.push(...pg.data)
+            let stop = false
+            for (const pg of pages) {
+              merged.data.push(...pg.data)
+              if (isAllOld(pg.data)) stop = true
+            }
+            // 한 batch 안 어떤 페이지든 '모두 옛 캠페인' 이면 이후 페이지 안 받음.
+            if (stop) break
           }
           return merged
         }))
