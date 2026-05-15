@@ -456,28 +456,60 @@ export default function CampaignDetailPage() {
         </div>
       </header>
 
-      {/* KPI 스트립 */}
-      <div className="bg-white border-b border-gray-100 px-6 py-3">
-        <div className="flex gap-6 overflow-x-auto">
-          {[
-            {label:"세팅금액",v:fmtAbbr(totals.totalSettingCost)+"원",c:""},
-            {label:"집행금액",v:fmtAbbr(totalA.spend)+"원",c:"text-blue-600"},
-            {label:"노출",v:fmt(totalA.impressions),c:""},
-            {label:"조회",v:fmt(totalA.views),c:""},
-            {label:"클릭",v:fmt(totalA.clicks),c:""},
-            {label:"CTR",v:`${totalA.ctr}%`,c:totalA.ctr>1?"text-green-600":""},
-            {label:"VTR",v:`${totalA.vtr}%`,c:""},
-            {label:"CPM",v:`${fmt(totalA.cpm)}원`,c:""},
-            {label:"CPC",v:`${fmt(totalA.cpc)}원`,c:""},
-            {label:"CPV",v:totalA.cpv>0?`${fmt(totalA.cpv)}원`:"-",c:""},
-          ].map(({label,v,c})=>(
-            <div key={label} className="flex-shrink-0 text-center">
-              <div className="text-[10px] text-gray-400">{label}</div>
-              <div className={`text-xs font-semibold mt-0.5 ${c||"text-gray-800"}`}>{v}</div>
+      {/* KPI 스트립 — 사용자 요청 — '눈에 더 띄게 + 매체/세부캠페인 선택 시 그 값으로 갱신'.
+          totalA 는 이미 filteredRows 기반(매체/세부/날짜 필터 자동 반영).
+          세팅금액은 매체 / 세부캠페인 필터에 따라 동적 계산. */}
+      {(() => {
+        let settingCost = totals.totalSettingCost
+        let label = '세팅금액'
+        if (subCampaignFilter) {
+          for (const mb of campaign.mediaBudgets) {
+            const sc = mb.subCampaigns?.find(s => s.id === subCampaignFilter)
+            if (sc) { settingCost = sc.budget ?? 0; label = '세부 예산'; break }
+          }
+        } else if (mediaFilter) {
+          const mb = campaign.mediaBudgets.find(m => m.media === mediaFilter)
+          if (mb) { settingCost = getMediaTotals(mb).totalSettingCost; label = `${mediaFilter} 세팅금액` }
+        }
+        const items: { label: string; v: string; tone: 'primary' | 'accent' | 'good' | 'muted' | 'default' }[] = [
+          { label, v: `₩${fmtAbbr(settingCost)}`, tone: 'primary' },
+          { label: '집행금액', v: `₩${fmtAbbr(totalA.spend)}`, tone: 'accent' },
+          { label: '소진율', v: settingCost > 0 ? `${(totalA.spend/settingCost*100).toFixed(1)}%` : '-', tone: 'muted' },
+          { label: '노출', v: fmt(totalA.impressions), tone: 'default' },
+          { label: '조회', v: fmt(totalA.views), tone: 'default' },
+          { label: '클릭', v: fmt(totalA.clicks), tone: 'default' },
+          { label: 'CTR', v: `${totalA.ctr}%`, tone: totalA.ctr > 1 ? 'good' : 'default' },
+          { label: 'VTR', v: `${totalA.vtr}%`, tone: 'default' },
+          { label: 'CPM', v: `₩${fmt(totalA.cpm)}`, tone: 'muted' },
+          { label: 'CPC', v: `₩${fmt(totalA.cpc)}`, tone: 'muted' },
+          { label: 'CPV', v: totalA.cpv > 0 ? `₩${fmt(totalA.cpv)}` : '-', tone: 'muted' },
+        ]
+        const toneClass = (t: typeof items[number]['tone']) => {
+          if (t === 'primary') return { box: 'bg-slate-50 border-slate-200', label: 'text-slate-500', value: 'text-slate-900' }
+          if (t === 'accent')  return { box: 'bg-blue-50 border-blue-200',   label: 'text-blue-600',  value: 'text-blue-700' }
+          if (t === 'good')    return { box: 'bg-emerald-50 border-emerald-200', label: 'text-emerald-600', value: 'text-emerald-700' }
+          if (t === 'muted')   return { box: 'bg-gray-50 border-gray-200',   label: 'text-gray-500',  value: 'text-gray-700' }
+          return { box: 'bg-white border-gray-200', label: 'text-gray-500', value: 'text-gray-900' }
+        }
+        return (
+          <div className="bg-gradient-to-b from-white to-gray-50/60 border-b border-gray-200 px-6 py-3.5">
+            <div className="flex gap-2 overflow-x-auto">
+              {items.map(({ label, v, tone }) => {
+                const cls = toneClass(tone)
+                return (
+                  <div
+                    key={label}
+                    className={`flex-shrink-0 rounded-xl border px-3 py-2 min-w-[88px] ${cls.box} transition-shadow hover:shadow-sm`}
+                  >
+                    <div className={`text-[10px] font-medium uppercase tracking-wider ${cls.label}`}>{label}</div>
+                    <div className={`text-sm font-bold tabular-nums mt-1 ${cls.value}`}>{v}</div>
+                  </div>
+                )
+              })}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+        )
+      })()}
 
       <main className="p-4 max-w-6xl mx-auto space-y-3">
         {/* 1차 — 매체 탭 */}
