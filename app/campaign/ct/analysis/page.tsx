@@ -439,7 +439,7 @@ export default function CtAnalysisPage() {
                       : 0
                     return (
                       <tr key={c.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2"><AlertIcon msgs={alerts} /></td>
+                        <td className="px-3 py-2"><AlertIcon msgs={alerts} motivId={c.motivId} startDate={rangeStart} endDate={rangeEnd} /></td>
                         <td className="px-3 py-2 font-medium text-gray-800">
                           {c.name}
                           {c.isFree && (

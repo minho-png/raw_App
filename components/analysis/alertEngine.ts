@@ -80,25 +80,37 @@ export function buildAlerts(
     }
   }
 
-  // 광고 미게재 감지 (오늘 spend 0 — critical)
-  if (t.spend === 0 && t.impressions === 0 && c.budget > 0) {
-    const d = dDay(c.endDate)
-    if (d.diff > 0) {  // 진행 중인데 노출이 전혀 없는 경우만
-      msgs.push({
-        kind: 'critical',
-        cat: 'spend',
-        text: '오늘 노출/소진 데이터 없음',
-      })
-    }
+  // 광고 미게재 감지 — '경고가 제대로 출력 안 되는 문제' 사용자 보고.
+  // 이전 조건이 (spend=0 AND impressions=0 AND budget>0) 로 너무 엄격해
+  // budget 이 0/null 이거나 노출만 있는 케이스가 모두 누락됐음. 완화:
+  //   - 진행중 캠페인(D-day>0) 인데 spend=0 → critical (no-data)
+  const dd = dDay(c.endDate)
+  if (dd.diff > 0 && t.spend === 0) {
+    msgs.push({
+      kind: 'critical',
+      cat: 'no-data',
+      text: t.impressions === 0
+        ? '운영 중인데 노출·소진 모두 0'
+        : `운영 중 소진 0 (노출 ${t.impressions.toLocaleString('ko-KR')})`,
+    })
   }
 
   // 기간 임박 (D-4 이하, 종료 전)
-  const d = dDay(c.endDate)
-  if (d.diff > 0 && d.diff <= 4) {
+  if (dd.diff > 0 && dd.diff <= 4) {
     msgs.push({
       kind: 'warn',
       cat: 'deadline',
-      text: `종료 임박 ${d.label}`,
+      text: `종료 임박 ${dd.label}`,
+    })
+  }
+
+  // 어제 데이터 미연동 — 비교 경고가 모두 skip 되어 사용자가 '경고가 안 나옴'
+  // 으로 인지하던 케이스 (사용자 보고). 명시적 안내 메시지로 가시화.
+  if (yesterdayMissing && t.spend > 0) {
+    msgs.push({
+      kind: 'warn',
+      cat: 'no-data',
+      text: '전일 스냅샷 없음 — CTR/소진률 비교 불가',
     })
   }
 
