@@ -68,8 +68,22 @@ export default function DmpFeePage() {
   const showCt     = product === 'ALL' || product === 'CT'
   const showCtv    = product === 'ALL' || product === 'CTV'
   const motivProduct = showCt && showCtv ? 'CT_CTV_BOTH' : showCtv ? 'CTV' : showCt ? 'CT' : null
+
+  // 사용자 결정 — '분석 페이지(CT/CTV) 의 날짜 로직과 동일하게'.
+  // month → [1일, 말일] 일자 범위 로 변환해 dateRange 형식으로 통일.
+  // 분석 페이지가 useMotivSettlementCampaignsByProduct(product, { dateRange }) 패턴을
+  // 사용하므로 DMP 페이지도 같은 형식으로 호출.
+  const dateRange = useMemo(() => {
+    const [y, m] = month.split('-').map(Number)
+    if (!y || !m) return undefined
+    const start = `${month}-01`
+    const end   = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+    return { start, end }
+  }, [month])
+
   const motivFetch = useMotivSettlementCampaignsByProduct(
-    motivProduct ?? 'CT', month, motivProduct !== null,
+    motivProduct ?? 'CT',
+    { dateRange, enabled: motivProduct !== null },
   )
 
   // 광고주/대행사 매핑 — Motiv 행 채울 때 fallback chain 에 사용.
@@ -133,22 +147,15 @@ export default function DmpFeePage() {
   }, [showCtPlus, monthRows, campaigns, advertisers])
 
   // === Motiv 행 — /v1/adgroups (활성 캠페인만) ===
-  const monthRange = useMemo(() => {
-    const [y, m] = month.split('-').map(Number)
-    if (!y || !m) return undefined
-    return {
-      startDate: `${month}-01`,
-      endDate:   `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`,
-    }
-  }, [month])
+  // 분석 페이지와 동일 dateRange 활용 (사용자 요청).
   const motivCampaignIds = useMemo(
     () => motivFetch.data.filter(c => c.status === 'Y').map(c => c.id).slice(0, 30),
     [motivFetch.data],
   )
   const adGroups = useMotivAdGroups({
     campaignIds: motivCampaignIds,
-    startDate: monthRange?.startDate,
-    endDate:   monthRange?.endDate,
+    startDate: dateRange?.start,
+    endDate:   dateRange?.end,
     enabled:   motivCampaignIds.length > 0,
   })
 
