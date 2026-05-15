@@ -415,7 +415,7 @@ function PurchaseTable({ rows, onEdit }: { rows: PurchaseRow[]; onEdit: (r: Purc
             <th className="px-2 py-2 text-left font-semibold">거래처명</th>
             <th className="px-2 py-2 text-left font-semibold">광고주명</th>
             <th className="px-2 py-2 text-left font-semibold">캠페인명</th>
-            <th className="px-2 py-2 text-right font-semibold">공급가액</th>
+            <th className="px-2 py-2 text-right font-semibold" title="agency_fee = 거래처별 대행 수수료 (매입 공급가액)">공급가액</th>
             <th className="px-2 py-2 text-right font-semibold">세액</th>
             <th className="px-2 py-2 text-right font-semibold">합계금액</th>
             <th className="px-2 py-2 text-right font-semibold" title="agency_fee — 거래처별 대행 수수료">대행 수수료</th>
