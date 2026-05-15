@@ -4,70 +4,83 @@ import { useState, useMemo } from "react"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
-import { MEDIA_MARKUP_RATE, DMP_FEE_RATES } from "@/lib/campaignTypes"
 import { DMP_FEE_RATES_DECIMAL } from "@/lib/calculationService"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
+import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
+import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAdGroups } from "@/lib/hooks/useMotivAdGroups"
 import { labelForTargetingProductId, motivTypeToProduct, type MediaProductFilter } from "@/lib/motivApi/productMapping"
+import { getAdvertiserName } from "@/lib/motivApi/advertiserHelpers"
 
-// DMP 컬럼 순서 (표에 표시할 유형만)
-const DMP_COLS = ["SKP", "TG360", "LOTTE", "KB", "WIFI"] as const
-type DmpCol = typeof DMP_COLS[number]
+/**
+ * DMP 수수료 정산 페이지 — 통합 표.
+ *
+ * 사용자 결정 (다중 에이전트 토론·검증 후):
+ *   1) DMP 페이지는 'DMP 비용만' 고려 — 기존 큰 정산 표(작업/VAT/기계비/대행사/매술) 제거.
+ *   2) CT+ + CT + CTV 단일 통합 표 — (광고주, 캠페인, 제품) 행 단위.
+ *   3) DMP 사별 비용 컬럼 (SKP/TG360/LOTTE/KB/WIFI + ETC).
+ *   4) 합계 카드: 전체 / CT+ / CT / CTV.
+ *   5) 매핑 안된 행은 노란 배지로 가시화.
+ *
+ * 데이터 소스:
+ *   - CT+: row.dmpType × DMP_FEE_RATES_DECIMAL[type] (계산값)
+ *   - Motiv (CT/CTV): /v1/adgroups → ag.data_fee 의 캠페인 단위 합 (실측)
+ *     DMP 사 분류 = ag.targeting_product_id → labelForTargetingProductId
+ */
 
-interface SettlementRow {
+const DMP_COLS = ["SKP", "TG360", "LOTTE", "KB", "WIFI", "ETC"] as const
+type DmpVendor = typeof DMP_COLS[number]
+
+interface UnifiedDmpRow {
   key: string
+  product: 'CT+' | 'CT' | 'CTV'
   advertiserName: string
   agencyName: string
   campaignName: string
-  media: string
-  isMatched: boolean
-  workAmount: number        // 작업(순금액) = sum supplyValue
-  netAmount: number         // 집행금액(VAT기준) = sum netAmount
-  execAmount: number        // 매출(세금계산서) = sum executionAmount
-  dmpFees: Record<DmpCol, number>
-  totalDmpFee: number
-  mediaMarkupFee: number    // 기계비 수수료
-  mediaMarkupFeeVat: number // 기계비 수수료 VAT14% 포함
-  agencyFee: number         // 대행사 수수료
-  totalFee: number
+  dmpFees: Record<DmpVendor, number>
+  dmpTotal: number
+  source: 'CT_PLUS' | 'MOTIV'
+  isUnmapped?: boolean   // Motiv targeting_product_id 매핑 누락
 }
 
 function toMonthStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
 }
-function shiftMonth(month: string, dir: number) {
-  const [y, m] = month.split("-").map(Number)
-  return toMonthStr(new Date(y, m - 1 + dir, 1))
-}
 function fmt(n: number) {
-  if (n === 0) return "-"
+  if (!Number.isFinite(n) || n === 0) return "-"
   return Math.round(n).toLocaleString("ko-KR")
 }
 function fmtNum(n: number) { return Math.round(n).toLocaleString("ko-KR") }
+
+function emptyFees(): Record<DmpVendor, number> {
+  return { SKP: 0, TG360: 0, LOTTE: 0, KB: 0, WIFI: 0, ETC: 0 }
+}
 
 export default function DmpFeePage() {
   const { campaigns, agencies, advertisers } = useMasterData()
   const { allRows: rawRows } = useRawData()
   const [month, setMonth] = useState(() => toMonthStr(new Date()))
-  const [product, setProduct] = useState<MediaProductFilter>('CT_PLUS')
+  const [product, setProduct] = useState<MediaProductFilter>('ALL')
   const [copied, setCopied] = useState(false)
 
   const showCtPlus = product === 'ALL' || product === 'CT_PLUS'
   const showCt     = product === 'ALL' || product === 'CT'
   const showCtv    = product === 'ALL' || product === 'CTV'
   const motivProduct = showCt && showCtv ? 'CT_CTV_BOTH' : showCtv ? 'CTV' : showCt ? 'CT' : null
-  // DMP 는 CT+ 전용 개념 — CT/CTV 건수만 참고 표시
   const motivFetch = useMotivSettlementCampaignsByProduct(
     motivProduct ?? 'CT', month, motivProduct !== null,
   )
 
-  // 월 필터 + markup 적용
+  // 광고주/대행사 매핑 — Motiv 행 채울 때 fallback chain 에 사용.
+  const { data: assignments } = useMotivAssignments()
+  const { byId: adAccountById } = useMotivAdAccounts(true)
+
+  // === CT+ 행 ===
   const computedRows = useMemo(
     () => applyMarkupToRows(rawRows, campaigns),
     [rawRows, campaigns]
   )
-
   const monthRows = useMemo(() => {
     const [y, m] = month.split("-").map(Number)
     const mStart = new Date(y, m - 1, 1)
@@ -78,136 +91,151 @@ export default function DmpFeePage() {
     })
   }, [computedRows, month])
 
-  // 캠페인×매체 단위로 집계
-  const rows = useMemo((): SettlementRow[] => {
-    const map = new Map<string, SettlementRow>()
-
+  const ctPlusRows = useMemo((): UnifiedDmpRow[] => {
+    if (!showCtPlus) return []
+    const map = new Map<string, UnifiedDmpRow>()
     for (const row of monthRows) {
-      const campaignId  = row.matchedCampaignId ?? null
-      const campaign    = campaignId ? campaigns.find(c => c.id === campaignId) : null
-      const advertiser  = campaign ? advertisers.find(a => a.id === campaign.advertiserId) : null
-      const agencyId    = advertiser?.agencyId ?? campaign?.agencyId ?? ""
-      const agencyName  = agencies.find(a => a.id === agencyId)?.name ?? "-"
-      const advName     = advertiser?.name ?? "-"
-      const campaignName = campaign?.campaignName ?? row.campaignName
-      const key         = `${campaignId ?? row.campaignName}::${row.media}`
-
+      const cId = row.matchedCampaignId
+      if (!cId) continue
+      const camp = campaigns.find(c => c.id === cId)
+      if (!camp) continue
+      const adv = advertisers.find(a => a.id === camp.advertiserId)
+      const ag  = agencies.find(a => a.id === (adv?.agencyId ?? camp.agencyId))
+      const key = `CT_PLUS::${cId}`
       if (!map.has(key)) {
-        const emptyFees: Record<DmpCol, number> = { SKP: 0, TG360: 0, LOTTE: 0, KB: 0, WIFI: 0 }
         map.set(key, {
-          key, advertiserName: advName, agencyName,
-          campaignName, media: row.media,
-          isMatched: !!campaignId,
-          workAmount: 0, netAmount: 0, execAmount: 0,
-          dmpFees: emptyFees,
-          totalDmpFee: 0, mediaMarkupFee: 0, mediaMarkupFeeVat: 0,
-          agencyFee: 0, totalFee: 0,
+          key, product: 'CT+',
+          advertiserName: adv?.name ?? '—',
+          agencyName:     ag?.name ?? '—',
+          campaignName:   camp.campaignName,
+          dmpFees: emptyFees(), dmpTotal: 0,
+          source: 'CT_PLUS',
         })
       }
       const entry = map.get(key)!
-      const net   = row.netAmount ?? 0
-      const exec  = row.executionAmount ?? 0
-      const supply = row.supplyValue ?? 0
-      entry.workAmount  += supply
-      entry.netAmount   += net
-      entry.execAmount  += exec
-
-      // DMP 수수료 (유형별)
-      const dt = row.dmpType
-      if (dt && DMP_COLS.includes(dt as DmpCol)) {
-        const rate = DMP_FEE_RATES_DECIMAL[dt as DmpCol] ?? 0
-        entry.dmpFees[dt as DmpCol] += Math.round(net * rate)
-        entry.totalDmpFee += Math.round(net * rate)
-      }
-
-      // 기계비 수수료 (매체 마크업)
-      const mmRate = (MEDIA_MARKUP_RATE[row.media] ?? 0) / 100
-      const mmFee  = Math.round(net * mmRate)
-      entry.mediaMarkupFee    += mmFee
-      entry.mediaMarkupFeeVat += Math.round(mmFee * 1.14)
-
-      // 대행사 수수료 (agencyFeeRate × net)
-      if (campaign) {
-        const mb = campaign.mediaBudgets.find(b => b.media === row.media)
-        const isDmpRow = dt && dt !== "DIRECT" && dt !== "MEDIA_TARGETING"
-        let agRate = 0
-        if (mb) {
-          if (mb.totalFeeRate !== undefined) {
-            // totalFeeRate에서 media markup과 dmp fee를 제외한 나머지가 대행사 수수료
-            const dmpRate = isDmpRow ? (DMP_FEE_RATES[dt!] ?? 0) : 0
-            agRate = Math.max(0, mb.totalFeeRate - (MEDIA_MARKUP_RATE[row.media] ?? 0) - dmpRate) / 100
-          } else {
-            agRate = (isDmpRow ? mb.dmp.agencyFeeRate : mb.nonDmp.agencyFeeRate) / 100
-          }
-        } else {
-          agRate = (campaign.agencyFeeRate ?? 0) / 100
-        }
-        entry.agencyFee += Math.round(net * agRate)
+      // row.dmpType 은 'SKP'|'TG360'|'LOTTE'|'KB'|'WIFI' 등을 포함하나 'ETC' 는 없음 (raw 파서 정의).
+      // DMP 사 5개만 카운트 — DIRECT/MEDIA_TARGETING/HyperLocal/BC/SH 등 0% 는 제외.
+      const dt = row.dmpType as string | undefined
+      const net = row.netAmount ?? 0
+      if (dt && (dt === 'SKP' || dt === 'TG360' || dt === 'LOTTE' || dt === 'KB' || dt === 'WIFI')) {
+        const rate = (DMP_FEE_RATES_DECIMAL as Record<string, number>)[dt] ?? 0
+        const fee = Math.round(net * rate)
+        entry.dmpFees[dt] += fee
+        entry.dmpTotal += fee
       }
     }
+    return Array.from(map.values()).filter(r => r.dmpTotal > 0)
+  }, [showCtPlus, monthRows, campaigns, advertisers, agencies])
 
-    for (const entry of map.values()) {
-      entry.totalFee = entry.totalDmpFee + entry.mediaMarkupFee + entry.agencyFee
+  // === Motiv 행 — /v1/adgroups (활성 캠페인만) ===
+  const monthRange = useMemo(() => {
+    const [y, m] = month.split('-').map(Number)
+    if (!y || !m) return undefined
+    return {
+      startDate: `${month}-01`,
+      endDate:   `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`,
     }
+  }, [month])
+  const motivCampaignIds = useMemo(
+    () => motivFetch.data.filter(c => c.status === 'Y').map(c => c.id).slice(0, 30),
+    [motivFetch.data],
+  )
+  const adGroups = useMotivAdGroups({
+    campaignIds: motivCampaignIds,
+    startDate: monthRange?.startDate,
+    endDate:   monthRange?.endDate,
+    enabled:   motivCampaignIds.length > 0,
+  })
 
-    return Array.from(map.values()).sort((a, b) => {
-      if (a.isMatched !== b.isMatched) return a.isMatched ? -1 : 1
-      return b.netAmount - a.netAmount
-    })
-  }, [monthRows, campaigns, advertisers, agencies])
+  const motivRows = useMemo((): UnifiedDmpRow[] => {
+    if (!motivProduct) return []
+    const asgById = new Map(assignments.map(a => [a.motivCampaignId, a]))
+    const map = new Map<string, UnifiedDmpRow>()
+    for (const ag of adGroups.rows) {
+      const camp = motivFetch.data.find(c => c.id === ag.campaignId)
+      if (!camp) continue
+      const product = motivTypeToProduct(camp.campaign_type)
+      if (product !== 'CT' && product !== 'CTV') continue
+      // 광고주/대행사 매핑 fallback chain — 검증 결과 따라.
+      const asg = asgById.get(camp.id)
+      const internalAdv = asg?.advertiserId ? advertisers.find(a => a.id === asg.advertiserId) : undefined
+      const internalAg  = asg?.agencyId     ? agencies.find(a => a.id === asg.agencyId)       : undefined
+      const adAccount   = adAccountById.get(camp.adaccount_id)
+      const advertiserName = internalAdv?.name || getAdvertiserName(adAccount) || '—'
+      const agencyName     = internalAg?.name  || '—'
 
-  // 합계
+      const key = `${product}::${camp.id}`
+      let isUnmapped = false
+      if (!map.has(key)) {
+        map.set(key, {
+          key, product,
+          advertiserName, agencyName,
+          campaignName: camp.title ?? `#${camp.id}`,
+          dmpFees: emptyFees(), dmpTotal: 0,
+          source: 'MOTIV',
+        })
+      }
+      const entry = map.get(key)!
+      const vendor = labelForTargetingProductId(ag.targetingProductId)
+      const fee = Math.round(ag.dataFee)
+      if (fee <= 0) continue
+      if (vendor === 'SKP' || vendor === 'TG360' || vendor === 'LOTTE' || vendor === 'KB' || vendor === 'WIFI') {
+        entry.dmpFees[vendor] += fee
+      } else {
+        // 매핑 안된 라벨 ('ID {n}' / '미분류') → ETC 로 흡수 + 표시
+        entry.dmpFees.ETC += fee
+        isUnmapped = true
+      }
+      entry.dmpTotal += fee
+      if (isUnmapped) entry.isUnmapped = true
+    }
+    return Array.from(map.values()).filter(r => r.dmpTotal > 0)
+  }, [motivProduct, adGroups.rows, motivFetch.data, assignments, advertisers, agencies, adAccountById])
+
+  const allRows = useMemo(
+    () => [...ctPlusRows, ...motivRows].sort((a, b) => b.dmpTotal - a.dmpTotal),
+    [ctPlusRows, motivRows],
+  )
+
+  // 합계 (전체/CT+/CT/CTV)
   const totals = useMemo(() => {
-    const t = {
-      workAmount: 0, netAmount: 0, execAmount: 0,
-      dmpFees: { SKP: 0, TG360: 0, LOTTE: 0, KB: 0, WIFI: 0 } as Record<DmpCol, number>,
-      totalDmpFee: 0, mediaMarkupFee: 0, mediaMarkupFeeVat: 0, agencyFee: 0, totalFee: 0,
+    const byProduct: Record<'전체' | 'CT+' | 'CT' | 'CTV', number> = { '전체': 0, 'CT+': 0, 'CT': 0, 'CTV': 0 }
+    const byVendor: Record<DmpVendor, number> = emptyFees()
+    for (const r of allRows) {
+      byProduct['전체'] += r.dmpTotal
+      byProduct[r.product] += r.dmpTotal
+      for (const v of DMP_COLS) byVendor[v] += r.dmpFees[v]
     }
-    for (const r of rows) {
-      t.workAmount      += r.workAmount
-      t.netAmount       += r.netAmount
-      t.execAmount      += r.execAmount
-      t.totalDmpFee     += r.totalDmpFee
-      t.mediaMarkupFee  += r.mediaMarkupFee
-      t.mediaMarkupFeeVat += r.mediaMarkupFeeVat
-      t.agencyFee       += r.agencyFee
-      t.totalFee        += r.totalFee
-      for (const d of DMP_COLS) t.dmpFees[d] += r.dmpFees[d]
-    }
-    return t
-  }, [rows])
+    return { byProduct, byVendor }
+  }, [allRows])
 
   function copyTsv() {
-    const dmpHeaders = DMP_COLS.map(d => `${d}수수료`)
-    const header = ["광고주", "대행사", "캠페인", "매체",
-      "작업(순금액)", "집행금액(VAT기준)",
-      ...dmpHeaders,
-      "기계비 수수료", "기계비 VAT14%",
-      "대행사 수수료", "총 수수료",
-      "매술(세금계산서)"].join("\t")
-    const dataRows = rows.map(r => [
-      r.advertiserName, r.agencyName, r.campaignName, r.media,
-      Math.round(r.workAmount), Math.round(r.netAmount),
-      ...DMP_COLS.map(d => Math.round(r.dmpFees[d])),
-      Math.round(r.mediaMarkupFee), Math.round(r.mediaMarkupFeeVat),
-      Math.round(r.agencyFee), Math.round(r.totalFee),
-      Math.round(r.execAmount),
+    const header = ["광고주", "대행사", "캠페인", "제품", ...DMP_COLS, "DMP합계"].join("\t")
+    const data = allRows.map(r => [
+      r.advertiserName, r.agencyName, r.campaignName, r.product,
+      ...DMP_COLS.map(v => Math.round(r.dmpFees[v])),
+      Math.round(r.dmpTotal),
     ].join("\t"))
-    const total = ["\ud569\uacc4", "", "", "",
-      Math.round(totals.workAmount), Math.round(totals.netAmount),
-      ...DMP_COLS.map(d => Math.round(totals.dmpFees[d])),
-      Math.round(totals.mediaMarkupFee), Math.round(totals.mediaMarkupFeeVat),
-      Math.round(totals.agencyFee), Math.round(totals.totalFee),
-      Math.round(totals.execAmount),
+    const total = ["합계", "", "", "전체",
+      ...DMP_COLS.map(v => Math.round(totals.byVendor[v])),
+      Math.round(totals.byProduct['전체']),
     ].join("\t")
-    navigator.clipboard.writeText([header, ...dataRows, total].join("\n")).then(() => {
+    navigator.clipboard.writeText([header, ...data, total].join("\n")).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
   }
 
-  const DMP_RATE_LABEL: Record<DmpCol, string> = {
-    SKP: "10%", TG360: "10%", LOTTE: "9%", KB: "10%", WIFI: "10%",
+  const productChipClass = (p: 'CT+' | 'CT' | 'CTV') =>
+    p === 'CT+' ? 'bg-violet-100 text-violet-700'
+    : p === 'CT' ? 'bg-blue-100 text-blue-700'
+    : 'bg-emerald-100 text-emerald-700'
+
+  const cardToneClass = (k: '전체' | 'CT+' | 'CT' | 'CTV') => {
+    if (k === '전체') return 'bg-violet-50 border-violet-200 text-violet-700'
+    if (k === 'CT+')  return 'bg-violet-50 border-violet-200 text-violet-700'
+    if (k === 'CT')   return 'bg-blue-50 border-blue-200 text-blue-700'
+    return 'bg-emerald-50 border-emerald-200 text-emerald-700'
   }
 
   return (
@@ -216,7 +244,7 @@ export default function DmpFeePage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-base font-semibold text-gray-900">DMP 수수료 정산</h1>
-            <p className="text-xs text-gray-400 mt-0.5">정산 리포트 · 캠페인×매체별 DMP 수수료 내역</p>
+            <p className="text-xs text-gray-400 mt-0.5">CT+ · CT · CTV 통합 — 광고주 단위 DMP 비용</p>
           </div>
           <button
             onClick={copyTsv}
@@ -231,306 +259,124 @@ export default function DmpFeePage() {
 
       <main className="p-6 space-y-4">
         <SettlementFilterBar
-          month={month}
-          onMonthChange={setMonth}
-          product={product}
-          onProductChange={setProduct}
+          month={month} onMonthChange={setMonth}
+          product={product} onProductChange={setProduct}
           rightSlot={
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              {showCtPlus && <span>CT+ {rows.length}줄</span>}
-              {motivProduct && <span>Motiv {motivFetch.data.length}개</span>}
+            <div className="flex items-center gap-2 text-[11px] text-gray-500">
+              {showCtPlus && <span>CT+ {ctPlusRows.length}</span>}
+              {motivProduct && <span>Motiv {motivRows.length}</span>}
             </div>
           }
         />
 
-        {showCtPlus && (rows.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-white py-16 text-center text-sm text-gray-400">
-            해당 월 CT+ raw 데이터가 없습니다.
-          </div>
-        ) : (
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                {/* 헤더 */}
-                <thead>
-                  {/* 헤더 그룹 행 */}
-                  <tr className="bg-gray-800 text-white">
-                    <th colSpan={4} className="px-3 py-2 text-left font-semibold border-r border-gray-600">정보</th>
-                    <th colSpan={2} className="px-3 py-2 text-center font-semibold border-r border-gray-600">집행 금액</th>
-                    <th colSpan={5} className="px-3 py-2 text-center font-semibold border-r border-gray-600">DMP 수수료</th>
-                    <th colSpan={2} className="px-3 py-2 text-center font-semibold border-r border-gray-600">기계비</th>
-                    <th colSpan={2} className="px-3 py-2 text-center font-semibold border-r border-gray-600">수수료</th>
-                    <th className="px-3 py-2 text-center font-semibold">매술</th>
-                  </tr>
-                  {/* 컬럼 헤더 */}
-                  <tr className="bg-gray-100 text-gray-600 border-b border-gray-200">
-                    <th className="sticky left-0 z-20 bg-gray-100 px-3 py-2 text-left font-medium whitespace-nowrap shadow-[2px_0_0_0_rgba(0,0,0,0.05)]">광고주</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">대행사</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">캠페인</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap border-r border-gray-200">매체</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">작업(순금액)</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap border-r border-gray-200">VAT기준</th>
-                    {DMP_COLS.map(d => (
-                      <th key={d} className="px-3 py-2 text-right font-medium whitespace-nowrap">
-                        <span>{d}</span>
-                        <span className="ml-1 text-gray-400 font-normal">({DMP_RATE_LABEL[d]})</span>
-                      </th>
-                    ))}
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap border-l border-r border-gray-200">DMP합계</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">기계비</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap border-r border-gray-200">VAT14%</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">대행사</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap border-r border-gray-200">합계</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">매술(세금계산서)</th>
-                  </tr>
-                  {/* 합계 행 */}
-                  <tr className="bg-blue-600 text-white font-semibold text-[11px]">
-                    <td colSpan={4} className="px-3 py-2 border-r border-blue-500">합계 ({rows.length}줄)</td>
-                    <td className="px-3 py-2 text-right">{fmtNum(totals.workAmount)}</td>
-                    <td className="px-3 py-2 text-right border-r border-blue-500">{fmtNum(totals.netAmount)}</td>
-                    {DMP_COLS.map(d => (
-                      <td key={d} className="px-3 py-2 text-right">{fmt(totals.dmpFees[d])}</td>
-                    ))}
-                    <td className="px-3 py-2 text-right border-l border-r border-blue-500">{fmtNum(totals.totalDmpFee)}</td>
-                    <td className="px-3 py-2 text-right">{fmt(totals.mediaMarkupFee)}</td>
-                    <td className="px-3 py-2 text-right border-r border-blue-500">{fmt(totals.mediaMarkupFeeVat)}</td>
-                    <td className="px-3 py-2 text-right">{fmt(totals.agencyFee)}</td>
-                    <td className="px-3 py-2 text-right border-r border-blue-500">{fmtNum(totals.totalFee)}</td>
-                    <td className="px-3 py-2 text-right">{fmtNum(totals.execAmount)}</td>
-                  </tr>
-                </thead>
-                {/* 데이터 행 */}
-                <tbody className="divide-y divide-gray-50">
-                  {rows.map((r) => (
-                    <tr key={r.key} className="group hover:bg-gray-50/70 transition-colors">
-                      <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50/70 px-3 py-2 text-gray-800 font-medium whitespace-nowrap shadow-[2px_0_0_0_rgba(0,0,0,0.05)]">{r.advertiserName}</td>
-                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.agencyName}</td>
-                      <td className="px-3 py-2 text-gray-700 max-w-[180px] truncate">
-                        {!r.isMatched && (
-                          <span className="mr-1 rounded px-1 py-0.5 text-[9px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">미매칭</span>
-                        )}
-                        {r.campaignName}
-                      </td>
-                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap border-r border-gray-100">{r.media}</td>
-                      <td className="px-3 py-2 text-right text-gray-700">{fmtNum(r.workAmount)}</td>
-                      <td className="px-3 py-2 text-right text-gray-800 font-medium border-r border-gray-100">{fmtNum(r.netAmount)}</td>
-                      {DMP_COLS.map(d => (
-                        <td key={d} className="px-3 py-2 text-right text-gray-600">
-                          {r.dmpFees[d] > 0
-                            ? <span className="font-medium text-indigo-700">{fmtNum(r.dmpFees[d])}</span>
-                            : <span className="text-gray-300">-</span>
-                          }
-                        </td>
-                      ))}
-                      <td className="px-3 py-2 text-right font-semibold text-indigo-800 border-l border-r border-gray-100">{fmt(r.totalDmpFee)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{fmt(r.mediaMarkupFee)}</td>
-                      <td className="px-3 py-2 text-right text-gray-500 border-r border-gray-100">{fmt(r.mediaMarkupFeeVat)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{fmt(r.agencyFee)}</td>
-                      <td className="px-3 py-2 text-right font-semibold text-blue-700 border-r border-gray-100">{fmt(r.totalFee)}</td>
-                      <td className="px-3 py-2 text-right font-bold text-emerald-700">{fmtNum(r.execAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
-
-        {/* Motiv (CT/CTV) DMP 비용 — 사용자 요청: 광고그룹 단에서 DMP 사별 data_fee. */}
-        {motivProduct && <MotivDmpSection month={month} campaigns={motivFetch.data} />}
-      </main>
-    </div>
-  )
-}
-
-// ─── Motiv (CT/CTV) DMP 비용 섹션 ───────────────────────────────────
-// 사용자 요청 — '광고그룹 단에서 DMP 사별로 data_fee 가져와서 DMP 수수료 페이지에 반영'.
-// /v1/stats/adgroup/breakdown 결과 — 캠페인 × 광고그룹 단위로 data_fee 합산.
-// DMP 사 매핑은 adgroup_title 에 포함된 토큰(SKP/TG360/LOTTE/KB/WIFI 등)으로 추정.
-function MotivDmpSection({
-  month, campaigns,
-}: {
-  month: string
-  campaigns: import('@/lib/motivApi/types').MotivCampaign[]
-}) {
-  const monthRange = useMemo(() => {
-    const [y, m] = month.split('-').map(Number)
-    if (!y || !m) return undefined
-    return {
-      startDate: `${month}-01`,
-      endDate:   `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`,
-    }
-  }, [month])
-
-  // 활성 캠페인만 — 비활성/종료된 건 광고그룹도 의미 없음.
-  const ids = useMemo(
-    () => campaigns.filter(c => c.status === 'Y').map(c => c.id).slice(0, 30),
-    [campaigns],
-  )
-  const adGroups = useMotivAdGroups({
-    campaignIds: ids,
-    startDate: monthRange?.startDate,
-    endDate:   monthRange?.endDate,
-    enabled:   ids.length > 0 && !!monthRange,
-  })
-
-  const rows = useMemo(() => {
-    const campMap = new Map(campaigns.map(c => [c.id, c]))
-    return adGroups.rows.map(r => {
-      const camp = campMap.get(r.campaignId)
-      const product = camp ? motivTypeToProduct(camp.campaign_type) : null
-      const vendor = labelForTargetingProductId(r.targetingProductId)
-      return {
-        campaignId: r.campaignId,
-        campaign:   camp?.title ?? `#${r.campaignId}`,
-        product:    (product === 'CT' || product === 'CTV') ? product : 'ETC' as 'CT' | 'CTV' | 'ETC',
-        adgroup:    r.title,
-        vendor,
-        targetingId: r.targetingProductId,
-        dataFee:    Math.round(r.dataFee),
-        cost:       Math.round(r.cost),
-        agencyFee:  Math.round(r.agencyFee),
-      }
-    }).filter(r => r.dataFee > 0)
-      .sort((a, b) => b.dataFee - a.dataFee)
-  }, [adGroups.rows, campaigns])
-
-  // 사용자 요청 — '전체 / CT / CTV' 구분 합계.
-  const totals = useMemo(() => {
-    const byVendor: Record<string, number> = {}
-    const byProduct: Record<'전체' | 'CT' | 'CTV', number> = { '전체': 0, 'CT': 0, 'CTV': 0 }
-    for (const r of rows) {
-      byVendor[r.vendor] = (byVendor[r.vendor] ?? 0) + r.dataFee
-      byProduct['전체'] += r.dataFee
-      if (r.product === 'CT')  byProduct['CT']  += r.dataFee
-      if (r.product === 'CTV') byProduct['CTV'] += r.dataFee
-    }
-    return { byVendor, byProduct, total: byProduct['전체'] }
-  }, [rows])
-
-  // 에러 단순화 — 사용자 화면 잘림 방지. 자세한 메시지는 콘솔/title.
-  const errorBrief = adGroups.error
-    ? (/404/.test(adGroups.error) ? 'Motiv API 미지원 (404)'
-       : /401/.test(adGroups.error) ? '인증 실패 (401)'
-       : /504|시간 초과/.test(adGroups.error) ? '응답 시간 초과'
-       : 'API 호출 실패')
-    : null
-
-  return (
-    <div className="rounded-2xl border border-violet-100 bg-white shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-violet-50/60 to-white flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-violet-500 text-white text-xs font-bold">D</span>
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">
-              캠페인 DMP 비용
-              {!adGroups.loading && rows.length > 0 && <span className="text-violet-600 ml-1.5 font-bold">{rows.length}</span>}
-            </h3>
-            <p className="text-[10px] text-gray-400 leading-tight mt-0.5">광고그룹 단위 data_fee · DMP 사 분류 (targeting_product_id 기반)</p>
-          </div>
-        </div>
-        {/* 전체 / CT / CTV 합계 — 사용자 요청 */}
-        <div className="flex items-center gap-2">
-          {(['전체', 'CT', 'CTV'] as const).map(k => (
-            <div
-              key={k}
-              className={`rounded-lg px-3 py-1.5 text-right ${
-                k === '전체' ? 'bg-violet-100 border border-violet-200'
-                : k === 'CT'  ? 'bg-blue-50 border border-blue-200'
-                : 'bg-emerald-50 border border-emerald-200'
-              }`}
-            >
-              <p className={`text-[10px] font-medium ${
-                k === '전체' ? 'text-violet-600' : k === 'CT' ? 'text-blue-600' : 'text-emerald-600'
-              }`}>{k}</p>
-              <p className={`text-sm font-bold tabular-nums leading-tight ${
-                k === '전체' ? 'text-violet-700' : k === 'CT' ? 'text-blue-700' : 'text-emerald-700'
-              }`}>₩{fmtNum(totals.byProduct[k])}</p>
+        {/* 합계 카드 — 전체 / CT+ / CT / CTV (사용자 요청) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {(['전체', 'CT+', 'CT', 'CTV'] as const).map(k => (
+            <div key={k} className={`rounded-xl border px-4 py-2.5 ${cardToneClass(k)}`}>
+              <p className="text-[10px] font-medium opacity-80">{k}</p>
+              <p className="text-base font-bold tabular-nums leading-tight mt-0.5">₩{fmtNum(totals.byProduct[k])}</p>
             </div>
           ))}
         </div>
-      </div>
 
-      {adGroups.loading ? (
-        <div className="flex items-center justify-center gap-2 px-4 py-10 text-xs text-gray-400">
-          <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
-          </svg>
-          광고그룹 정보 가져오는 중…
-        </div>
-      ) : errorBrief ? (
-        <div className="px-4 py-6">
-          <div className="rounded-xl bg-rose-50/60 border border-rose-200 p-3 text-xs text-rose-800 flex items-start gap-2">
-            <span className="text-base leading-none">⚠</span>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold">{errorBrief}</p>
-              <p className="mt-1 text-rose-600/80 truncate" title={adGroups.error ?? ''}>{adGroups.error}</p>
-              <p className="mt-1 text-gray-500">/v1/adgroups 응답 권한·형식을 Motiv 측에 확인하세요.</p>
+        {/* 통합 표 */}
+        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-gray-700 text-white text-[10px] font-bold">∑</span>
+              <h3 className="text-sm font-semibold text-gray-900">캠페인 DMP 비용 <span className="text-gray-500 ml-1 font-normal">({allRows.length})</span></h3>
             </div>
+            <p className="text-[10px] text-gray-400">CT+: 계산값 · CT/CTV: 광고그룹 data_fee 실측</p>
           </div>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="px-4 py-10 text-center text-xs text-gray-400">
-          해당 월의 DMP 비용(data_fee) 데이터가 없습니다.
-        </div>
-      ) : (
-        <>
-          {/* DMP 사별 합계 칩 — 모던/단순 */}
-          <div className="px-4 py-2.5 border-b border-gray-100 flex flex-wrap gap-1.5">
-            {Object.entries(totals.byVendor).sort((a, b) => b[1] - a[1]).map(([v, sum]) => {
-              const pct = totals.total > 0 ? Math.round(sum / totals.total * 100) : 0
-              return (
-                <span key={v} className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-medium ${
-                  v === '미분류' || v.startsWith('ID ') ? 'bg-gray-100 text-gray-700' : 'bg-violet-100 text-violet-800'
-                }`}>
-                  <span className="font-bold">{v}</span>
-                  <span className="tabular-nums">₩{fmtNum(sum)}</span>
-                  <span className="text-[9px] opacity-60">{pct}%</span>
-                </span>
-              )
-            })}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-gray-50 border-b border-gray-100 text-gray-500">
-                <tr>
-                  <th className="px-3 py-2 text-center font-medium">제품</th>
-                  <th className="px-3 py-2 text-left font-medium">캠페인</th>
-                  <th className="px-3 py-2 text-left font-medium">광고그룹</th>
-                  <th className="px-3 py-2 text-center font-medium">DMP 사</th>
-                  <th className="px-3 py-2 text-right font-medium">data_fee</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-400">cost</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-400">agency_fee</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.map((r, i) => (
-                  <tr key={`${r.campaignId}-${i}`} className="hover:bg-violet-50/30 transition-colors">
-                    <td className="px-3 py-1.5 text-center">
-                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                        r.product === 'CT'  ? 'bg-blue-100 text-blue-700'
-                        : r.product === 'CTV' ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-gray-100 text-gray-500'
-                      }`}>{r.product}</span>
-                    </td>
-                    <td className="px-3 py-1.5 text-gray-800 max-w-[220px] truncate" title={r.campaign}>{r.campaign}</td>
-                    <td className="px-3 py-1.5 text-gray-600 max-w-[260px] truncate" title={`${r.adgroup}\ntargeting_product_id: ${r.targetingId ?? '없음'}`}>{r.adgroup}</td>
-                    <td className="px-3 py-1.5 text-center">
-                      <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
-                        r.vendor === '미분류' || r.vendor.startsWith('ID ') ? 'bg-gray-100 text-gray-500' : 'bg-violet-100 text-violet-700'
-                      }`}>{r.vendor}</span>
-                    </td>
-                    <td className="px-3 py-1.5 text-right tabular-nums font-bold text-violet-700">{fmtNum(r.dataFee)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{fmtNum(r.cost)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{fmtNum(r.agencyFee)}</td>
+
+          {adGroups.loading && motivProduct ? (
+            <div className="flex items-center justify-center gap-2 px-4 py-10 text-xs text-gray-400">
+              <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+              </svg>
+              CT/CTV 광고그룹 데이터 가져오는 중…
+            </div>
+          ) : allRows.length === 0 ? (
+            <div className="px-4 py-12 text-center text-xs text-gray-400">
+              해당 월의 DMP 비용 데이터가 없습니다.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-200 text-gray-500">
+                  <tr>
+                    <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium whitespace-nowrap shadow-[2px_0_0_0_rgba(0,0,0,0.05)]">광고주</th>
+                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">대행사</th>
+                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">캠페인</th>
+                    <th className="px-3 py-2 text-center font-medium whitespace-nowrap">제품</th>
+                    {DMP_COLS.map(v => (
+                      <th key={v} className="px-3 py-2 text-right font-medium whitespace-nowrap">{v}</th>
+                    ))}
+                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap bg-gray-100">DMP 합계</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {allRows.map((r, i) => {
+                    const prev = i > 0 ? allRows[i - 1] : null
+                    const sameAdv = prev?.advertiserName === r.advertiserName
+                    return (
+                      <tr key={r.key} className="group hover:bg-gray-50/70 transition-colors">
+                        <td className={`sticky left-0 z-[1] bg-white group-hover:bg-gray-50/70 px-3 py-1.5 font-medium whitespace-nowrap max-w-[180px] truncate shadow-[2px_0_0_0_rgba(0,0,0,0.05)] ${
+                          sameAdv ? 'text-gray-300' : 'text-gray-800'
+                        }`} title={r.advertiserName}>
+                          {sameAdv ? '·' : r.advertiserName}
+                        </td>
+                        <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap max-w-[140px] truncate" title={r.agencyName}>
+                          {r.agencyName}
+                        </td>
+                        <td className="px-3 py-1.5 text-gray-700 max-w-[260px] truncate" title={r.campaignName}>
+                          {r.campaignName}
+                          {r.isUnmapped && (
+                            <span className="ml-1.5 rounded px-1.5 py-0.5 text-[9px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200" title="targeting_product_id 미매핑 — productMapping.TARGETING_PRODUCT_LABEL 추가 필요">
+                              매핑 필요
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${productChipClass(r.product)}`}>{r.product}</span>
+                        </td>
+                        {DMP_COLS.map(v => (
+                          <td key={v} className="px-3 py-1.5 text-right tabular-nums">
+                            {r.dmpFees[v] > 0
+                              ? <span className={v === 'ETC' ? 'text-gray-500' : 'text-violet-700 font-medium'}>{fmt(r.dmpFees[v])}</span>
+                              : <span className="text-gray-300">-</span>
+                            }
+                          </td>
+                        ))}
+                        <td className="px-3 py-1.5 text-right font-bold tabular-nums text-violet-800 bg-violet-50/30">{fmt(r.dmpTotal)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="bg-gray-100 border-t border-gray-200">
+                  <tr className="text-gray-800 font-semibold">
+                    <td className="sticky left-0 z-[1] bg-gray-100 px-3 py-2 whitespace-nowrap shadow-[2px_0_0_0_rgba(0,0,0,0.05)]" colSpan={4}>
+                      합계 ({allRows.length})
+                    </td>
+                    {DMP_COLS.map(v => (
+                      <td key={v} className="px-3 py-2 text-right tabular-nums">{fmt(totals.byVendor[v])}</td>
+                    ))}
+                    <td className="px-3 py-2 text-right font-bold tabular-nums text-violet-800 bg-violet-100">{fmtNum(totals.byProduct['전체'])}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {adGroups.error && motivProduct && (
+          <div className="rounded-xl bg-rose-50/60 border border-rose-200 p-3 text-xs text-rose-800">
+            <p className="font-semibold">⚠ CT/CTV 광고그룹 API 호출 실패</p>
+            <p className="mt-1 text-rose-600/80 truncate" title={adGroups.error}>{adGroups.error}</p>
           </div>
-        </>
-      )}
+        )}
+      </main>
     </div>
   )
 }
