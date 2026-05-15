@@ -144,12 +144,12 @@ export default function DmpFeePage() {
     return Array.from(map.values()).filter(r => r.dmpTotal > 0)
   }, [showCtPlus, monthRows, campaigns, advertisers])
 
-  // === Motiv 행 — /v1/adgroups (활성 캠페인만) ===
-  // 사용자 보고 — '캠페인이 다 불러와지지 않음'. 이전 .slice(0, 30) 으로
-  // 활성 캠페인 중 30개만 광고그룹 fetch 됐던 문제 (사용자 환경엔 30 초과).
-  // 제한 제거 — useMotivAdGroups 가 캠페인 ID 별로 병렬 호출.
+  // === Motiv 행 — /v1/adgroups ===
+  // 사용자 결정 — '활성 캠페인이 아니라 기간에 대해 존재하는 캠페인 전부'.
+  // motivFetch.data 가 이미 dateRange overlap 으로 필터됨 (useMotivSettlementCampaigns).
+  // status === 'Y' 추가 필터 제거 — 종료/일시정지 캠페인도 그 기간 내 비용은 포함.
   const motivCampaignIds = useMemo(
-    () => motivFetch.data.filter(c => c.status === 'Y').map(c => c.id),
+    () => motivFetch.data.map(c => c.id),
     [motivFetch.data],
   )
   const adGroups = useMotivAdGroups({
