@@ -135,14 +135,8 @@ export function buildAlerts(
     }
   }
 
-  // (호환 유지) 이전엔 yesterdayMissing 경고가 있었으나 전일 비교 제거됨 — 항상 false.
-  if (yesterdayMissing && t.spend > 0) {
-    msgs.push({
-      kind: 'warn',
-      cat: 'no-data',
-      text: '전일 스냅샷 없음 — CTR/소진률 비교 불가',
-    })
-  }
+  // 전일 스냅샷 안내 경고는 사용자 결정에 따라 제거됨 (전일 비교 기능 자체가 사라짐).
+  // yesterdayMissing 파라미터는 CTR/SR 비교 가드용으로만 사용.
 
   return msgs
 }
