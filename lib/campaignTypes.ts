@@ -55,6 +55,8 @@ export interface SubCampaign {
   ctrTarget?: number           // CTR 목표 (%)
   vtrTarget?: number           // VTR 목표 (%) — 동영상 캠페인용
   isVideo?: boolean            // 동영상 캠페인 여부
+  // 사용자 결정 — 대시보드 입력금액을 세부 캠페인 단위로 받음. 자동 저장/합산.
+  dashboardNetAmount?: number  // 광고주 대시보드 입력 금액 (세부 단위)
 }
 
 export interface MediaBudget {
@@ -215,6 +217,25 @@ export function getMediaTotals(mb: MediaBudget) {
     spendRate: calcSpendRate(totalSpend, totalSettingCost),
     dmpMarkup, nonDmpMarkup, dmpSC, nonDmpSC,
   }
+}
+
+// 신규 — 대시보드 입력 금액을 세부 캠페인 단위로 받아 합산. legacy campaign.dashboardNetAmount
+// 가 설정되어 있고 sub 합이 0 이면 legacy 값을 fallback 으로 사용.
+export function getCampaignDashboardNetAmount(c: Campaign): number {
+  let sum = 0
+  for (const mb of c.mediaBudgets) {
+    for (const sc of (mb.subCampaigns ?? [])) {
+      sum += sc.dashboardNetAmount ?? 0
+    }
+  }
+  if (sum === 0 && c.dashboardNetAmount && c.dashboardNetAmount > 0) return c.dashboardNetAmount
+  return sum
+}
+
+export function getMediaDashboardNetAmount(mb: MediaBudget): number {
+  let sum = 0
+  for (const sc of (mb.subCampaigns ?? [])) sum += sc.dashboardNetAmount ?? 0
+  return sum
 }
 
 export function getCampaignTotals(c: Campaign) {
