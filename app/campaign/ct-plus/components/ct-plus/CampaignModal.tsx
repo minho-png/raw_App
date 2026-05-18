@@ -98,19 +98,23 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
     setAdvertiserId("")
   }
 
+  // 사용자 보고 — '예산이 모든 매체 합으로 잡힘' 버그.
+  // 원인: setMediaBudgets(mediaBudgets.map(...)) — closure 캡처 mediaBudgets 가 stale.
+  // 매체 카드 N개가 동시에 useEffect 로 updateMBField 호출 시 첫 호출 후 mediaBudgets 가
+  // 갱신되기 전에 두 번째 호출이 진행 → 첫 업데이트 손실 / 다른 매체에 흘러감.
+  // 해결: 전부 functional updater (prev => prev.map(...)) 로 변경 — 항상 최신 state.
   function toggleMedia(media: string) {
-    if (mediaBudgets.some(mb => mb.media === media)) {
-      setMediaBudgets(mediaBudgets.filter(mb => mb.media !== media))
-    } else {
-      setMediaBudgets([...mediaBudgets, emptyMB(media)])
-    }
+    setMediaBudgets(prev =>
+      prev.some(mb => mb.media === media)
+        ? prev.filter(mb => mb.media !== media)
+        : [...prev, emptyMB(media)]
+    )
   }
 
   function updateMBField(media: string, field: string, value: number | boolean | undefined) {
-    setMediaBudgets(mediaBudgets.map(mb => {
+    setMediaBudgets(prev => prev.map(mb => {
       if (mb.media !== media) return mb
       const updated: MediaBudget = { ...mb, [field]: value }
-      // 총예산/총수수료율 변경 시 실 세팅금액 자동계산 (VAT 매체는 ×1.1)
       if (field === 'totalBudget' || field === 'totalFeeRate') {
         const budget = field === 'totalBudget' ? (value as number) : (mb.totalBudget ?? 0)
         const rate   = field === 'totalFeeRate' ? (value as number) : (mb.totalFeeRate ?? 0)
@@ -124,7 +128,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   }
 
   function addSubCampaign(media: string) {
-    setMediaBudgets(mediaBudgets.map(mb => {
+    setMediaBudgets(prev => prev.map(mb => {
       if (mb.media !== media) return mb
       const sub: SubCampaign = { id: genId(), name: '', budget: 0, spend: 0 }
       return recalcMbBudget({ ...mb, subCampaigns: [...(mb.subCampaigns ?? []), sub] })
@@ -144,7 +148,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   }
 
   function updateSubCampaign(media: string, idx: number, field: string, value: string | number | boolean | undefined) {
-    setMediaBudgets(mediaBudgets.map(mb => {
+    setMediaBudgets(prev => prev.map(mb => {
       if (mb.media !== media) return mb
       const subs = [...(mb.subCampaigns ?? [])]
       if (field === 'csvCampaignNames') {
@@ -158,7 +162,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   }
 
   function removeSubCampaign(media: string, idx: number) {
-    setMediaBudgets(mediaBudgets.map(mb => {
+    setMediaBudgets(prev => prev.map(mb => {
       if (mb.media !== media) return mb
       const subs = (mb.subCampaigns ?? []).filter((_, i) => i !== idx)
       return recalcMbBudget({ ...mb, subCampaigns: subs })
@@ -166,7 +170,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   }
 
   function setSubCampaignCsvNames(media: string, idx: number, names: string[]) {
-    setMediaBudgets(mediaBudgets.map(mb => {
+    setMediaBudgets(prev => prev.map(mb => {
       if (mb.media !== media) return mb
       const subs = [...(mb.subCampaigns ?? [])]
       subs[idx] = { ...subs[idx], csvCampaignNames: names }

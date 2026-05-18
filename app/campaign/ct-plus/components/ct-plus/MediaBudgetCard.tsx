@@ -3,9 +3,7 @@
 import React from "react"
 import { MediaBudget } from "@/lib/campaignTypes"
 import type { RawRow } from "@/lib/rawDataParser"
-import { inputCls, MF } from "./statusUtils"
 import { SubCampaignList } from "./SubCampaignList"
-import { KpiTargetSection } from "./KpiTargetSection"
 import { ActualSpendSection } from "./ActualSpendSection"
 
 export function MediaBudgetCard({
@@ -45,83 +43,39 @@ export function MediaBudgetCard({
     return csvNames.filter(n => mediaSet.has(n))
   }, [rawRows, mb.media, csvNames])
 
-  // 서브 캠페인이 1개 이상이면 합산값 자동, 0개면 사용자 수동 입력
+  // 사용자 결정 — 매체 단위 직접 입력 제거. mb.totalBudget 는 항상 세부 합으로 동기화.
+  // 사용자 보고 예산 버그(매체 / 세부 budget 이 모든 매체 합으로 잡힘) — sub=0 일 때도
+  // mb.totalBudget=0 으로 강제 동기화해 stale 값 제거.
   const subCount = (mb.subCampaigns ?? []).length
-  const hasSubs = subCount > 0
   const computedTotalBudget = React.useMemo(
     () => (mb.subCampaigns ?? []).reduce((s, sc) => s + (sc.budget ?? 0), 0),
     [mb.subCampaigns],
   )
-  // sub 가 있을 때만 자동 동기화 — 수동 입력 모드일 때 값을 덮어쓰지 않음
   React.useEffect(() => {
-    if (!hasSubs) return
     if (mb.totalBudget !== computedTotalBudget) {
       onUpdateMBField(mb.media, 'totalBudget', computedTotalBudget)
     }
-  }, [hasSubs, computedTotalBudget, mb.totalBudget, mb.media, onUpdateMBField])
+  }, [computedTotalBudget, mb.totalBudget, mb.media, onUpdateMBField])
 
   return (
     <div className="rounded-lg border border-gray-200 p-4 space-y-3">
-      <h3 className="text-sm font-semibold text-gray-900">{mb.media}</h3>
-
-      {/* DMP 수수료율 + 거래처 수수료율 + 총 예산(자동) */}
-      <div className="grid grid-cols-3 gap-3">
-        <MF label="DMP 수수료율 (%)">
-          <input
-            type="number" min="0" max="100" step="0.1"
-            value={mb.totalFeeRate ?? ''}
-            onChange={e => onUpdateMBField(mb.media, 'totalFeeRate', parseFloat(e.target.value) || 0)}
-            className={inputCls}
-            placeholder="예: 15"
-          />
-        </MF>
-        <MF label="거래처 수수료율 (%)">
-          <input
-            type="number" min="0" max="100" step="0.1"
-            value={mb.clientFeeRate ?? ''}
-            onChange={e => onUpdateMBField(mb.media, 'clientFeeRate', parseFloat(e.target.value) || undefined)}
-            className={inputCls}
-            placeholder="예: 10"
-          />
-        </MF>
-        <MF label={hasSubs ? `총 예산 (캠페인 ${subCount}건 합산 · 자동)` : '총 예산 (직접 입력)'}>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={hasSubs ? computedTotalBudget : (mb.totalBudget ?? '')}
-            readOnly={hasSubs}
-            onChange={hasSubs ? undefined : e => {
-              const v = parseFloat(e.target.value)
-              onUpdateMBField(mb.media, 'totalBudget', Number.isFinite(v) ? v : undefined)
-            }}
-            className={`${inputCls} ${hasSubs ? 'bg-gray-50 text-gray-700 cursor-not-allowed' : ''}`}
-            title={hasSubs ? '하위 캠페인 예산의 합으로 자동 계산됩니다' : '하위 캠페인이 없어 직접 입력합니다'}
-            placeholder={hasSubs ? undefined : '예: 10000000'}
-          />
-        </MF>
+      {/* 사용자 결정 — 매체 단위 설정(수수료율/총예산/동영상/CPC·CPM·CTR 목표) 모두 제거.
+          이 값들은 세부 캠페인(SubCampaign) 카드에서 입력. 매체 카드는 매체명 +
+          (자동 합산) 총 예산 표시 + 세부 캠페인 list + 실 소진 데이터 만. */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-900">{mb.media}</h3>
+        <div className="text-[11px] text-gray-500">
+          총 예산 (세부 {subCount}건 합산){' '}
+          <span className="font-bold text-blue-700 tabular-nums ml-1">
+            ₩{computedTotalBudget.toLocaleString('ko-KR')}
+          </span>
+        </div>
       </div>
 
-      {/* 실 소진 데이터 입력 */}
+      {/* 실 소진 데이터 입력 (유지) */}
       <ActualSpendSection mb={mb} onUpdateMBField={onUpdateMBField} />
 
-      {/* 동영상 여부 */}
-      <div className="flex items-center gap-2">
-        <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
-          <input
-            type="checkbox"
-            checked={mb.isVideo ?? false}
-            onChange={e => onUpdateMBField(mb.media, 'isVideo', e.target.checked)}
-            className="rounded"
-          />
-          동영상 캠페인
-        </label>
-      </div>
-
-      {/* KPI 목표 */}
-      <KpiTargetSection mb={mb} onUpdateMBField={onUpdateMBField} />
-
-      {/* 캠페인 (구 서브 캠페인) */}
+      {/* 캠페인 (세부 캠페인) — 모든 매체 단위 설정은 여기로 귀속됨 */}
       <SubCampaignList
         media={mb.media}
         subCampaigns={mb.subCampaigns}
