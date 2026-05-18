@@ -1,7 +1,7 @@
 
 "use client"
 import React from "react"
-import { SubCampaign } from "@/lib/campaignTypes"
+import { SubCampaign, calcSettingCost, applyMediaVat } from "@/lib/campaignTypes"
 
 export function SubCampaignList({
   media,
@@ -128,59 +128,123 @@ export function SubCampaignList({
               ) : (
                 <p className="text-[11px] text-gray-400 italic">위 &apos;DB 데이터 연결&apos;에서 CSV 캠페인명을 먼저 선택하세요</p>
               )}
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="number"
-                  value={sc.budget || ''}
-                  onChange={e => onUpdateSubCampaign(idx, 'budget', parseFloat(e.target.value) || 0)}
-                  placeholder="예산"
-                  className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-                <input
-                  type="number"
-                  value={sc.totalFeeRate ?? ''}
-                  onChange={e => onUpdateSubCampaign(idx, 'totalFeeRate', parseFloat(e.target.value) || undefined)}
-                  placeholder="수수료율 %"
-                  className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="number"
-                  value={sc.cpcTarget ?? ''}
-                  onChange={e => onUpdateSubCampaign(idx, 'cpcTarget', parseFloat(e.target.value) || undefined)}
-                  placeholder="CPC"
-                  className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-                <input
-                  type="number"
-                  value={sc.cpmTarget ?? ''}
-                  onChange={e => onUpdateSubCampaign(idx, 'cpmTarget', parseFloat(e.target.value) || undefined)}
-                  placeholder="CPM"
-                  className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-                {sc.isVideo ? (
-                  <input
-                    type="number"
-                    value={sc.vtrTarget ?? ''}
-                    onChange={e => onUpdateSubCampaign(idx, 'vtrTarget', parseFloat(e.target.value) || undefined)}
-                    placeholder="VTR %"
-                    className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  />
-                ) : (
-                  <input
-                    type="number"
-                    value={sc.ctrTarget ?? ''}
-                    onChange={e => onUpdateSubCampaign(idx, 'ctrTarget', parseFloat(e.target.value) || undefined)}
-                    placeholder="CTR %"
-                    className="text-xs rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  />
-                )}
+              {/* 예산/수수료 + 세팅금액 미리보기 */}
+              <SubBudgetRow sc={sc} idx={idx} onUpdateSubCampaign={onUpdateSubCampaign} media={media} />
+
+              {/* 캠페인 목표 (CPC / CPM / CTR·VTR) */}
+              <div>
+                <p className="text-[10px] font-medium text-gray-400 mb-1">캠페인 목표</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <FieldWithSuffix label="CPC" suffix="원">
+                    <input
+                      type="number" min="0"
+                      value={sc.cpcTarget ?? ''}
+                      onChange={e => onUpdateSubCampaign(idx, 'cpcTarget', parseFloat(e.target.value) || undefined)}
+                      placeholder="0"
+                      className="w-full text-xs rounded border border-gray-300 px-2 py-1 pr-7 focus:outline-none focus:ring-1 focus:ring-blue-400 tabular-nums"
+                    />
+                  </FieldWithSuffix>
+                  <FieldWithSuffix label="CPM" suffix="원">
+                    <input
+                      type="number" min="0"
+                      value={sc.cpmTarget ?? ''}
+                      onChange={e => onUpdateSubCampaign(idx, 'cpmTarget', parseFloat(e.target.value) || undefined)}
+                      placeholder="0"
+                      className="w-full text-xs rounded border border-gray-300 px-2 py-1 pr-7 focus:outline-none focus:ring-1 focus:ring-blue-400 tabular-nums"
+                    />
+                  </FieldWithSuffix>
+                  {sc.isVideo ? (
+                    <FieldWithSuffix label="VTR" suffix="%">
+                      <input
+                        type="number" min="0" max="100" step="0.1"
+                        value={sc.vtrTarget ?? ''}
+                        onChange={e => onUpdateSubCampaign(idx, 'vtrTarget', parseFloat(e.target.value) || undefined)}
+                        placeholder="0"
+                        className="w-full text-xs rounded border border-gray-300 px-2 py-1 pr-6 focus:outline-none focus:ring-1 focus:ring-blue-400 tabular-nums"
+                      />
+                    </FieldWithSuffix>
+                  ) : (
+                    <FieldWithSuffix label="CTR" suffix="%">
+                      <input
+                        type="number" min="0" max="100" step="0.01"
+                        value={sc.ctrTarget ?? ''}
+                        onChange={e => onUpdateSubCampaign(idx, 'ctrTarget', parseFloat(e.target.value) || undefined)}
+                        placeholder="0"
+                        className="w-full text-xs rounded border border-gray-300 px-2 py-1 pr-6 focus:outline-none focus:ring-1 focus:ring-blue-400 tabular-nums"
+                      />
+                    </FieldWithSuffix>
+                  )}
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
     </div>
+  )
+}
+
+// 세부 캠페인 예산/수수료 + 세팅금액(자동) 미리보기.
+// 사용자 요구 — 라벨/그룹/자동 산출 가시화로 UX 명확화.
+function SubBudgetRow({
+  sc, idx, media, onUpdateSubCampaign,
+}: {
+  sc: SubCampaign
+  idx: number
+  media: string
+  onUpdateSubCampaign: (idx: number, field: string, value: string | number | boolean | undefined) => void
+}) {
+  const settingCost = React.useMemo(() => {
+    if (!sc.budget) return 0
+    const base = calcSettingCost(sc.budget, sc.totalFeeRate ?? 0)
+    return applyMediaVat(media, base)
+  }, [sc.budget, sc.totalFeeRate, media])
+  return (
+    <div>
+      <p className="text-[10px] font-medium text-gray-400 mb-1">예산 · 수수료</p>
+      <div className="grid grid-cols-[1fr_120px] gap-2">
+        <FieldWithSuffix label="예산" suffix="원">
+          <input
+            type="number" min="0" step="1"
+            value={sc.budget || ''}
+            onChange={e => onUpdateSubCampaign(idx, 'budget', parseFloat(e.target.value) || 0)}
+            placeholder="0"
+            className="w-full text-xs rounded border border-gray-300 px-2 py-1 pr-7 focus:outline-none focus:ring-1 focus:ring-blue-400 tabular-nums"
+          />
+        </FieldWithSuffix>
+        <FieldWithSuffix label="수수료율" suffix="%">
+          <input
+            type="number" min="0" max="100" step="0.1"
+            value={sc.totalFeeRate ?? ''}
+            onChange={e => onUpdateSubCampaign(idx, 'totalFeeRate', parseFloat(e.target.value) || undefined)}
+            placeholder="0"
+            className="w-full text-xs rounded border border-gray-300 px-2 py-1 pr-6 focus:outline-none focus:ring-1 focus:ring-blue-400 tabular-nums"
+          />
+        </FieldWithSuffix>
+      </div>
+      <p className="mt-1 text-[10px] text-gray-400">
+        세팅금액(자동) <span className="ml-1 font-semibold text-gray-600 tabular-nums">₩{settingCost.toLocaleString('ko-KR')}</span>
+        <span className="ml-1 text-gray-300">= 예산 × (1 − 수수료율) {media === '네이버 GFA' ? '× 1.1 (VAT)' : ''}</span>
+      </p>
+    </div>
+  )
+}
+
+// 입력 상단 라벨 + 우측 단위 suffix 를 같이 표시하는 작은 wrapper.
+function FieldWithSuffix({
+  label, suffix, children,
+}: {
+  label: string
+  suffix: string
+  children: React.ReactNode
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[10px] font-medium text-gray-500 mb-0.5">{label}</span>
+      <span className="relative block">
+        {children}
+        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-gray-400">{suffix}</span>
+      </span>
+    </label>
   )
 }

@@ -22,7 +22,10 @@ export function ActualSpendSection({
   mb: MediaBudget
   onUpdateMBField: (media: string, field: string, value: number | boolean | undefined) => void
 }) {
-  if (!mb.totalBudget || !mb.totalFeeRate) return null
+  // 사용자 결정 — 매체 단위 fee rate 폐지. 하위 캠페인 합산 budget 이 있으면 노출.
+  // actualSettingCost 는 CampaignModal.recalcMbBudget 가 sub 합 × (1-feeRate/100) ± VAT 로
+  // 자동 채워 넣고, 사용자가 override 가능.
+  if (!mb.totalBudget) return null
   const actualSettingCost = mb.actualSettingCost ?? 0
 
   return (
