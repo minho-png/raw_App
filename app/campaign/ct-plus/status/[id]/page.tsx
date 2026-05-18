@@ -9,7 +9,7 @@ import {
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
-import { getCampaignTotals, getCampaignProgress, getMediaTotals } from "@/lib/campaignTypes"
+import { getCampaignTotals, getCampaignProgress, getMediaTotals, getCampaignDashboardNetAmount, getMediaDashboardNetAmount, type Campaign, type SubCampaign } from "@/lib/campaignTypes"
 import { fmt, spendRateStyle } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { RawRow } from "@/lib/rawDataParser"
 import { mColor } from "@/lib/mediaColors"
@@ -67,9 +67,8 @@ export default function CampaignDetailPage() {
   // 세부 캠페인 필터 — subCampaign.id 저장. mediaFilter 변경 시 reset.
   // 모든 탭(요약/일별/주간/소재/RAW)에 반영 — filteredRows 단계에서 적용.
   const [subCampaignFilter, setSubCampaignFilter] = useFilterPersistence<string>(`ct-plus-detail:${id}:subCampaign`, "")
-  // 기간·검색 필터 (모든 기능 탭 공통). sessionStorage 영속화.
-  type DateRange = "all"|"7d"|"30d"
-  const [dateRange, setDateRange] = useFilterPersistence<DateRange>(`ct-plus-detail:${id}:dateRange`, "all")
+  // 사용자 결정 — 요약 탭의 기간 필터(전체/최근7일/최근30일) 폐지.
+  // 캠페인 단위 상세에서는 캠페인 startDate~endDate 전체가 의미 있는 범위.
   const [creativeQuery, setCreativeQuery] = useFilterPersistence<string>(`ct-plus-detail:${id}:creativeQuery`, "")
   const [saving, setSaving] = useState(false)
   const [toast,  setToast]  = useState<string|null>(null)
@@ -100,21 +99,9 @@ export default function CampaignDetailPage() {
     if(!campaign) return []
     return applyMarkupToRows(rawRows,campaigns).filter(r=>r.matchedCampaignId===campaign.id)
   },[rawRows,campaigns,campaign])
-  // 선택된 매체 + 기간 + 소재 검색으로 필터링된 행 — 모든 탭의 기본 데이터셋.
-  // 기간: 'all' = 전체, '7d'/'30d' = 최근 N일 (raw 의 최대 date 기준)
+  // 선택된 매체 + 소재 검색 + 세부 캠페인으로 필터링된 행 — 모든 탭의 기본 데이터셋.
   const filteredRows = useMemo(()=>{
     let rs = mediaFilter ? campRows.filter(r=>r.media===mediaFilter) : campRows
-    if(dateRange!=="all" && rs.length>0){
-      const dates = rs.map(r=>r.date).filter(Boolean).sort()
-      const latest = dates[dates.length-1]
-      if(latest){
-        const days = dateRange==="7d" ? 7 : 30
-        const cutoff = new Date(latest)
-        cutoff.setDate(cutoff.getDate() - days + 1)
-        const cutoffStr = cutoff.toISOString().slice(0,10)
-        rs = rs.filter(r => r.date >= cutoffStr)
-      }
-    }
     if(creativeQuery.trim()){
       const q = creativeQuery.trim().toLowerCase()
       rs = rs.filter(r => (r.creativeName ?? "").toLowerCase().includes(q))
@@ -128,7 +115,7 @@ export default function CampaignDetailPage() {
       }
     }
     return rs
-  },[campRows,mediaFilter,dateRange,creativeQuery,subCampaignFilter,subCampaignMap])
+  },[campRows,mediaFilter,creativeQuery,subCampaignFilter,subCampaignMap])
   // 캠페인 로딩 후 첫 매체로 초기화
   useEffect(()=>{
     if(!campaign) return
@@ -180,14 +167,24 @@ export default function CampaignDetailPage() {
   const progress = campaign ? getCampaignProgress(campaign.startDate, campaign.endDate) : 0
   const totalA   = useMemo(()=>aggRows(filteredRows),[filteredRows])
 
-  // 대시보드 소진 비교 — 모달 / DetailPanel 의 기능을 본 페이지로 이식.
-  // 사용자 결정 — '클릭시 모달이 아닌 세부 내역으로 가되 대시보드 금액 비교 등의 기능이 세부 내역에서 확인 가능'.
-  const [dashboardInput, setDashboardInput] = useState<string>(
-    campaign?.dashboardNetAmount != null ? String(campaign.dashboardNetAmount) : ""
-  )
-  useEffect(() => {
-    setDashboardInput(campaign?.dashboardNetAmount != null ? String(campaign.dashboardNetAmount) : "")
-  }, [campaign?.id, campaign?.dashboardNetAmount])
+  // 대시보드 입력 = 세부 캠페인 단위에서만 받음 (사용자 결정).
+  // 자동 저장(onChange), 합계는 매체/캠페인 단위로 자동 산출.
+  // mediaFilter / subCampaignFilter 에 따라 표시되는 합계가 동적으로 좁혀짐.
+  const dashAmtAggregate = useMemo(() => {
+    if (!campaign) return 0
+    if (subCampaignFilter) {
+      for (const mb of campaign.mediaBudgets) {
+        const sc = mb.subCampaigns?.find(s => s.id === subCampaignFilter)
+        if (sc) return sc.dashboardNetAmount ?? 0
+      }
+      return 0
+    }
+    if (mediaFilter) {
+      const mb = campaign.mediaBudgets.find(m => m.media === mediaFilter)
+      return mb ? getMediaDashboardNetAmount(mb) : 0
+    }
+    return getCampaignDashboardNetAmount(campaign)
+  }, [campaign, mediaFilter, subCampaignFilter])
 
   const rawSpendRate = totals && totals.totalSettingCost>0
     ? +(totalA.spend/totals.totalSettingCost*100).toFixed(1) : 0
@@ -205,44 +202,74 @@ export default function CampaignDetailPage() {
   }
   const kpiRows = useMemo<KpiRow[]>(() => {
     if (!campaign || !totals) return []
-    // mediaFilter 가 있으면 해당 매체만, 없으면 전체 매체 + 전체합계 행 노출
+    // 사용자 결정 — KPI 목표가 매체 단위에서 세부 캠페인으로 이전됨 (PR #102).
+    // 따라서 매체별 KPI 행은 sub-camp 의 budget 가중 평균(CTR/VTR/%) 또는
+    // sub-camp 의 합산 예산 가중 평균(CPC/CPM/원) 으로 산출.
+    // 세부 캠페인 필터 활성 시에는 해당 sub 한 건만 표시.
+    const rows: KpiRow[] = []
+
+    // weighted average over sub-campaigns with target defined.
+    // %-단위(CTR/VTR) → budget 가중. 원-단위(CPC/CPM) → budget 가중. budget 없으면 단순 평균.
+    function aggregateTarget(subs: SubCampaign[], pick: (s: SubCampaign) => number | null | undefined) {
+      let totalW = 0, weighted = 0, count = 0, simple = 0
+      for (const sc of subs) {
+        const v = pick(sc)
+        if (v == null) continue
+        const w = sc.budget ?? 0
+        if (w > 0) { weighted += v * w; totalW += w }
+        simple += v; count += 1
+      }
+      if (totalW > 0) return weighted / totalW
+      if (count > 0) return simple / count
+      return null
+    }
+
     const targetMbs = mediaFilter
       ? campaign.mediaBudgets.filter(mb => mb.media === mediaFilter)
       : campaign.mediaBudgets
-    const rows: KpiRow[] = []
-    // 전체합계 행 — 매체 미선택 시에만 표시 (선택 시엔 해당 매체 행만 보이는 게 자연스러움)
-    if (!mediaFilter) {
+
+    if (!mediaFilter && !subCampaignFilter) {
       rows.push(
         { media: null, label: 'Budget',     target: totals.totalBudget || null, actual: totalA.spend,        unit: '원' },
         { media: null, label: 'Impression', target: null,                       actual: totalA.impressions,  unit: '' },
         { media: null, label: 'Click',      target: null,                       actual: totalA.clicks,       unit: '' },
       )
     }
-    // 매체별 raw 집계 — 대상 매체만
+
     const aggByMedia = new Map<string, ReturnType<typeof aggRows>>()
     for (const mb of targetMbs) {
       aggByMedia.set(mb.media, aggRows(filteredRows.filter(r => r.media === mb.media)))
     }
+
     for (const mb of targetMbs) {
       const a = aggByMedia.get(mb.media)
       if (!a) continue
-      // Budget target = 부킹 금액(totalBudget) — 마크업 차감 전. 실제 세팅 예산이 아닌 광고주 청구 기준.
+      const subs = (mb.subCampaigns ?? []).filter(
+        s => !subCampaignFilter || s.id === subCampaignFilter,
+      )
+      if (subs.length === 0) continue
       const mt = getMediaTotals(mb)
-      if (mt.totalBudget > 0) {
+      const budgetTarget = subs.reduce((s, sc) => s + (sc.budget ?? 0), 0)
+      if (budgetTarget > 0) {
+        rows.push({ media: mb.media, label: 'Budget', target: budgetTarget, actual: a.spend, unit: '원' })
+      } else if (mt.totalBudget > 0) {
         rows.push({ media: mb.media, label: 'Budget', target: mt.totalBudget, actual: a.spend, unit: '원' })
       }
-      // 매체 선택 시 Impression/Click 도 매체 단위로 보강
-      if (mediaFilter) {
+      if (mediaFilter || subCampaignFilter) {
         rows.push({ media: mb.media, label: 'Impression', target: null, actual: a.impressions, unit: '' })
         rows.push({ media: mb.media, label: 'Click',      target: null, actual: a.clicks,      unit: '' })
       }
-      if (mb.ctrTarget != null) rows.push({ media: mb.media, label: 'CTR', target: +mb.ctrTarget.toFixed(3), actual: a.ctr, unit: '%' })
-      if (mb.vtrTarget != null) rows.push({ media: mb.media, label: 'VTR', target: +mb.vtrTarget.toFixed(3), actual: a.vtr, unit: '%' })
-      if (mb.cpcTarget != null) rows.push({ media: mb.media, label: 'CPC', target: Math.round(mb.cpcTarget), actual: a.cpc, unit: '원', lowerBetter: true })
-      if (mb.cpmTarget != null) rows.push({ media: mb.media, label: 'CPM', target: Math.round(mb.cpmTarget), actual: a.cpm, unit: '원', lowerBetter: true })
+      const ctr = aggregateTarget(subs, s => s.ctrTarget)
+      const vtr = aggregateTarget(subs, s => s.vtrTarget)
+      const cpc = aggregateTarget(subs, s => s.cpcTarget)
+      const cpm = aggregateTarget(subs, s => s.cpmTarget)
+      if (ctr != null) rows.push({ media: mb.media, label: 'CTR', target: +ctr.toFixed(3), actual: a.ctr, unit: '%' })
+      if (vtr != null) rows.push({ media: mb.media, label: 'VTR', target: +vtr.toFixed(3), actual: a.vtr, unit: '%' })
+      if (cpc != null) rows.push({ media: mb.media, label: 'CPC', target: Math.round(cpc), actual: a.cpc, unit: '원', lowerBetter: true })
+      if (cpm != null) rows.push({ media: mb.media, label: 'CPM', target: Math.round(cpm), actual: a.cpm, unit: '원', lowerBetter: true })
     }
     return rows
-  }, [campaign, totals, totalA, filteredRows, mediaFilter])
+  }, [campaign, totals, totalA, filteredRows, mediaFilter, subCampaignFilter])
 
   // 요약 행 (선택 매체 내 캠페인별)
   const summaryRows = useMemo(()=>{
@@ -533,19 +560,8 @@ export default function CampaignDetailPage() {
           ))}
         </div>
 
-        {/* 필터 바 — 기능 탭별로 표시 항목 다름 */}
+        {/* 필터 바 — 사용자 결정: 기간 필터 제거. 세부 캠페인 chip + 소재 검색만 유지. */}
         <FilterBar label="필터">
-          <FilterChipGroup<DateRange>
-            label="기간"
-            options={[
-              { value: "all", label: "전체" },
-              { value: "7d",  label: "최근 7일" },
-              { value: "30d", label: "최근 30일" },
-            ]}
-            value={dateRange}
-            onChange={setDateRange}
-          />
-          {/* 세부 캠페인 chip — 선택된 매체의 subCampaign 목록 (사용자 요청: 모든 탭에 반영) */}
           {(() => {
             if (!campaign) return null
             const opts = campaign.mediaBudgets
@@ -574,8 +590,8 @@ export default function CampaignDetailPage() {
             />
           )}
           <FilterReset
-            visible={dateRange !== "all" || creativeQuery !== "" || subCampaignFilter !== ""}
-            onClick={() => { setDateRange("all"); setCreativeQuery(""); setSubCampaignFilter("") }}
+            visible={creativeQuery !== "" || subCampaignFilter !== ""}
+            onClick={() => { setCreativeQuery(""); setSubCampaignFilter("") }}
           />
         </FilterBar>
 
@@ -601,11 +617,13 @@ export default function CampaignDetailPage() {
               {/* ① 예산 · 페이싱 */}
               <SectionLabel step="01" title="예산 · 페이싱" hint="세팅금액 대비 현재 소진 상태 — raw 데이터와 광고주 대시보드 입력 비교" />
 
-              {/* 대시보드 소진 비교 — 모달 기능을 본 페이지로 이식 (사용자 요청) */}
+              {/* 대시보드 소진 비교 — 세부 캠페인 단위 입력으로 재구성 (사용자 결정).
+                  · 상단 3카드: 세팅금액 / raw 소진 / 대시보드 합계 (mediaFilter·subCampaignFilter 반영)
+                  · 하단 list: 각 세부 캠페인 행에 입력 — 자동 저장 + 합계 자동 갱신 */}
               {(() => {
                 const settingCost = totals.totalSettingCost
                 const rawSpend = totalA.spend
-                const dashAmt = parseFloat(dashboardInput) || 0
+                const dashAmt = dashAmtAggregate
                 const rawRate = settingCost > 0 ? +(rawSpend / settingCost * 100).toFixed(1) : 0
                 const dashRate = settingCost > 0 ? +(dashAmt / settingCost * 100).toFixed(1) : 0
                 const diff = +(dashRate - rawRate).toFixed(1)
@@ -618,16 +636,14 @@ export default function CampaignDetailPage() {
                         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white text-[10px] font-bold">₩</span>
                         <h3 className="text-xs font-semibold text-gray-800">대시보드 소진 비교</h3>
                       </div>
-                      <span className="text-[10px] text-gray-400">광고주 대시보드 입력 vs raw 데이터</span>
+                      <span className="text-[10px] text-gray-400">세부 캠페인별 입력 · 자동 합산</span>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
-                      {/* 세팅금액 — 슬레이트 */}
                       <div className="rounded-xl bg-white border border-slate-200 px-3 py-2.5">
                         <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">세팅금액</p>
                         <p className="mt-1 text-base font-bold tabular-nums text-slate-800 leading-tight">₩{fmt(settingCost)}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5">기준 예산</p>
                       </div>
-                      {/* raw 소진 — 블루 */}
                       <div className="rounded-xl bg-gradient-to-br from-blue-50 to-blue-50/50 border border-blue-200 px-3 py-2.5">
                         <p className="text-[10px] font-medium text-blue-500 uppercase tracking-wider">raw 소진 (CSV)</p>
                         <p className="mt-1 text-base font-bold tabular-nums text-blue-700 leading-tight">₩{fmt(rawSpend)}</p>
@@ -638,29 +654,9 @@ export default function CampaignDetailPage() {
                           </div>
                         </div>
                       </div>
-                      {/* 대시보드 입력 — 에메랄드 */}
                       <div className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-50/50 border border-emerald-200 px-3 py-2.5">
-                        <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wider">대시보드 입력</p>
-                        <div className="mt-1 flex items-baseline gap-0.5">
-                          <span className="text-base font-bold text-emerald-700 leading-tight">₩</span>
-                          <input
-                            type="number" min="0"
-                            value={dashboardInput}
-                            onChange={e => {
-                              const v = e.target.value
-                              setDashboardInput(v)
-                              const num = parseFloat(v)
-                              if (campaign) {
-                                upsertCampaign({
-                                  ...campaign,
-                                  dashboardNetAmount: Number.isFinite(num) && num > 0 ? num : undefined,
-                                })
-                              }
-                            }}
-                            placeholder="0"
-                            className="flex-1 min-w-0 bg-transparent text-base font-bold tabular-nums text-emerald-700 leading-tight focus:outline-none placeholder:text-emerald-300"
-                          />
-                        </div>
+                        <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wider">대시보드 합계</p>
+                        <p className="mt-1 text-base font-bold tabular-nums text-emerald-700 leading-tight">₩{fmt(dashAmt)}</p>
                         <div className="mt-0.5 flex items-center gap-1">
                           <span className={`text-[10px] font-semibold ${dsStyle.text}`}>{dashRate}%</span>
                           <div className="flex-1 h-1 rounded-full bg-emerald-100 overflow-hidden">
@@ -677,6 +673,13 @@ export default function CampaignDetailPage() {
                         <span className="tabular-nums opacity-80">{Math.abs(diff).toFixed(1)}%p · ₩{fmt(Math.abs(dashAmt - rawSpend))}</span>
                       </div>
                     )}
+                    {/* 세부 캠페인별 입력 list — 하위 단에서 입력으로 수정 (사용자 결정). */}
+                    <SubDashboardInputs
+                      campaign={campaign}
+                      mediaFilter={mediaFilter}
+                      subCampaignFilter={subCampaignFilter}
+                      onUpdate={upsertCampaign}
+                    />
                   </div>
                 )
               })()}
@@ -1207,6 +1210,110 @@ export default function CampaignDetailPage() {
           )}
         </>)}
       </main>
+    </div>
+  )
+}
+
+// 세부 캠페인별 대시보드 금액 입력 list.
+// 사용자 결정 — 입력은 세부 캠페인 단위에서만 가능. onChange 시 자동 저장.
+// mediaFilter / subCampaignFilter 적용하여 표시되는 행 좁힘.
+function SubDashboardInputs({
+  campaign,
+  mediaFilter,
+  subCampaignFilter,
+  onUpdate,
+}: {
+  campaign: Campaign
+  mediaFilter: string
+  subCampaignFilter: string
+  onUpdate: (c: Campaign) => void
+}) {
+  // 컨트롤드 input: 로컬 draft 로 빠른 typing 반영 + onChange 시 부모 state 즉시 저장.
+  // 부모 campaign 가 다른 source 로 갱신되면 useEffect 로 sync.
+  type DraftMap = Record<string, string>
+  const initial = React.useMemo<DraftMap>(() => {
+    const m: DraftMap = {}
+    for (const mb of campaign.mediaBudgets) {
+      for (const sc of (mb.subCampaigns ?? [])) {
+        m[sc.id] = sc.dashboardNetAmount != null ? String(sc.dashboardNetAmount) : ''
+      }
+    }
+    return m
+  }, [campaign])
+  const [draft, setDraft] = useState<DraftMap>(initial)
+  React.useEffect(() => { setDraft(initial) }, [initial])
+
+  const visibleRows = useMemo(() => {
+    const rows: { mb: typeof campaign.mediaBudgets[number]; sc: SubCampaign }[] = []
+    for (const mb of campaign.mediaBudgets) {
+      if (mediaFilter && mb.media !== mediaFilter) continue
+      for (const sc of (mb.subCampaigns ?? [])) {
+        if (subCampaignFilter && sc.id !== subCampaignFilter) continue
+        rows.push({ mb, sc })
+      }
+    }
+    return rows
+  }, [campaign, mediaFilter, subCampaignFilter])
+
+  if (visibleRows.length === 0) {
+    return (
+      <p className="mt-3 text-[11px] text-gray-400 italic">
+        세부 캠페인이 없습니다. 모달에서 매체 하위로 캠페인을 등록하세요.
+      </p>
+    )
+  }
+
+  function handleChange(scId: string, v: string) {
+    setDraft(prev => ({ ...prev, [scId]: v }))
+    const num = parseFloat(v)
+    const nextValue = Number.isFinite(num) && num > 0 ? num : undefined
+    const nextCampaign: Campaign = {
+      ...campaign,
+      mediaBudgets: campaign.mediaBudgets.map(mb => ({
+        ...mb,
+        subCampaigns: (mb.subCampaigns ?? []).map(sc =>
+          sc.id === scId ? { ...sc, dashboardNetAmount: nextValue } : sc,
+        ),
+      })),
+    }
+    onUpdate(nextCampaign)
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-emerald-100 bg-white/60">
+      <div className="px-3 py-2 border-b border-emerald-100 flex items-center gap-2">
+        <span className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wider">세부 캠페인별 대시보드 입력</span>
+        <span className="text-[10px] text-gray-400">입력 즉시 자동 저장 · 합계 자동 갱신</span>
+      </div>
+      <ul className="divide-y divide-emerald-50">
+        {visibleRows.map(({ mb, sc }) => (
+          <li key={sc.id} className="px-3 py-2 flex items-center gap-2">
+            <span
+              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium flex-shrink-0"
+              style={{ backgroundColor: mColor(mb.media) + '22', color: mColor(mb.media) }}
+            >
+              {mb.media}
+            </span>
+            <span className="flex-1 min-w-0 text-xs font-medium text-gray-700 truncate" title={sc.name}>
+              {sc.name || <span className="text-gray-300 italic">(이름 없음)</span>}
+            </span>
+            <span className="text-[10px] text-gray-400 tabular-nums flex-shrink-0">
+              예산 ₩{fmt(sc.budget ?? 0)}
+            </span>
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <span className="text-xs font-semibold text-emerald-700">₩</span>
+              <input
+                type="number"
+                min="0"
+                value={draft[sc.id] ?? ''}
+                onChange={e => handleChange(sc.id, e.target.value)}
+                placeholder="0"
+                className="w-32 rounded border border-emerald-200 bg-white px-2 py-1 text-xs text-right tabular-nums font-semibold text-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-400 placeholder:text-emerald-300"
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

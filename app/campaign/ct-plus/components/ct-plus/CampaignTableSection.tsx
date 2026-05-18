@@ -1,6 +1,6 @@
 "use client"
 import React, { useState } from "react"
-import { Campaign, Agency, Advertiser, Operator, getCampaignTotals, getCampaignProgress, getDday } from "@/lib/campaignTypes"
+import { Campaign, Agency, Advertiser, Operator, getCampaignTotals, getCampaignProgress, getDday, getCampaignDashboardNetAmount } from "@/lib/campaignTypes"
 import { fmt, spendRateStyle } from "./statusUtils"
 import { DailyDeltaCell } from "@/components/DailyDeltaCell"
 import type { DailySpendEntry } from "@/lib/hooks/useDailySpendMap"
@@ -75,6 +75,8 @@ export function CampaignTableSection({
                 const isLagging = c.status === "집행 중" && computed && (progress - rawSpendRate) >= 15
                 const sc       = spendRateStyle(rawSpendRate)
                 const csvCount = c.csvNames?.length ?? 0
+                // 사용자 결정 — 세부 캠페인 단위 대시보드 입력 합계 자동 표시.
+                const dashAmount = getCampaignDashboardNetAmount(c)
 
                 return (
                   <tr
@@ -183,6 +185,14 @@ export function CampaignTableSection({
                         <div>
                           <div className="font-medium text-blue-700">{fmt(computed.netAmount)}</div>
                           <div className="text-[10px] text-gray-400">/ {fmt(totals.totalSettingCost)}</div>
+                          {dashAmount > 0 && (
+                            <div
+                              className="text-[10px] text-emerald-600 mt-0.5"
+                              title="세부 캠페인 대시보드 입력 합계 (자동 합산)"
+                            >
+                              대시보드 ₩{fmt(dashAmount)}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <span className="text-gray-300 text-[11px]">—</span>
