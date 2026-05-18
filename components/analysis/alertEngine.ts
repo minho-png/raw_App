@@ -47,8 +47,8 @@ export function buildAlerts(
     }
   }
 
-  // 소진률 비교
-  if (!yesterdayMissing && c.budget > 0) {
+  // 소진률 비교 — 사용자 결정: 무료 캠페인은 비용 0 이므로 소진 경고 자체가 무의미.
+  if (!yesterdayMissing && c.budget > 0 && !c.isFree) {
     const srT = calcSR(t.spend, c.budget)
     const srY = calcSR(y.spend, c.budget)
     const srDiff = srT - srY
@@ -61,13 +61,14 @@ export function buildAlerts(
     }
   }
 
-  // 수익률 기준 미달 (절대값) — 전일 비교와 무관하게 항상 체크
+  // 수익률 기준 미달 (절대값) — 전일 비교와 무관하게 항상 체크.
+  // 무료 캠페인은 spend=0 이라 수익률 계산 의미 없음 → skip.
   const prT = calcPR(t)
   const minProfit = c.uiType === 'display' ? s.displayProfitMin
     : c.uiType === 'video' ? s.videoProfitMin
     : c.uiType === 'ctv' ? s.videoProfitMin  // CTV도 동영상 기준 적용
     : s.displayProfitMin
-  if (t.spend > 0 && prT < minProfit) {
+  if (!c.isFree && t.spend > 0 && prT < minProfit) {
     msgs.push({
       kind: 'warn',
       cat: 'profit',
@@ -92,15 +93,27 @@ export function buildAlerts(
   // 이전 조건이 (spend=0 AND impressions=0 AND budget>0) 로 너무 엄격해
   // budget 이 0/null 이거나 노출만 있는 케이스가 모두 누락됐음. 완화:
   //   - 진행중 캠페인(D-day>0) 인데 spend=0 → critical (no-data)
+  // 사용자 결정 — 무료 캠페인(is_free=true) 은 spend 가 항상 0 이므로
+  //   '소진 0' 경고 부적합. 노출까지 0 일 때만(미게재) 경고.
   const dd = dDay(c.endDate)
   if (dd.diff > 0 && t.spend === 0) {
-    msgs.push({
-      kind: 'critical',
-      cat: 'no-data',
-      text: t.impressions === 0
-        ? '운영 중인데 노출·소진 모두 0'
-        : `운영 중 소진 0 (노출 ${t.impressions.toLocaleString('ko-KR')})`,
-    })
+    if (c.isFree) {
+      if (t.impressions === 0) {
+        msgs.push({
+          kind: 'critical',
+          cat: 'no-data',
+          text: '운영 중인데 노출 0 (무료)',
+        })
+      }
+    } else {
+      msgs.push({
+        kind: 'critical',
+        cat: 'no-data',
+        text: t.impressions === 0
+          ? '운영 중인데 노출·소진 모두 0'
+          : `운영 중 소진 0 (노출 ${t.impressions.toLocaleString('ko-KR')})`,
+      })
+    }
   }
 
   // 기간 임박 (D-4 이하, 종료 전)
