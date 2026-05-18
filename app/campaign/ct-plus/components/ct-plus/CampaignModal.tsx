@@ -38,7 +38,6 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   const [mediaBudgets,    setMediaBudgets]    = useState<MediaBudget[]>(initial?.mediaBudgets ?? [])
   const [memo,            setMemo]            = useState(initial?.memo ?? "")
   const [csvNames,        setCsvNames]        = useState<string[]>(initial?.csvNames ?? [])
-  const [dashboardNetAmount, setDashboardNetAmount] = useState<number | "">(initial?.dashboardNetAmount ?? "")
   const [csvSearch,       setCsvSearch]       = useState('')
   const [csvMediaFilter,  setCsvMediaFilter]  = useState('')
   const { allRows: rawRows } = useRawData()
@@ -89,7 +88,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
   // Track dirty state (any change triggers isDirty)
   useEffect(() => {
     setIsDirty(true)
-  }, [agencyId, advertiserId, campaignName, campaignType, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo, csvNames, dashboardNetAmount])
+  }, [agencyId, advertiserId, campaignName, campaignType, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo, csvNames])
 
   const filteredAdvertisers = agencyId ? advertisers.filter(a => a.agencyId === agencyId) : advertisers
 
@@ -135,16 +134,21 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
     }))
   }
 
-  // 매체 totalBudget = 하위 캠페인 예산 합 (자동 동기화)
+  // 매체 totalBudget = 하위 캠페인 예산 합 (자동 동기화).
+  // 사용자 결정 — 매체 단위 수수료율 폐지. actualSettingCost 는 sub 별 (budget × (1 - feeRate/100))
+  // 합산 후 VAT 적용으로 자동 산출. sub 없으면 0.
   function recalcMbBudget(mb: MediaBudget): MediaBudget {
-    const sum = (mb.subCampaigns ?? []).reduce((s, sc) => s + (sc.budget ?? 0), 0)
-    if (sum === (mb.totalBudget ?? 0)) return mb
-    const next: MediaBudget = { ...mb, totalBudget: sum }
-    if ((mb.totalFeeRate ?? 0) >= 0 && sum > 0) {
-      const base = sum * (1 - (mb.totalFeeRate ?? 0) / 100)
-      next.actualSettingCost = Math.round(VAT_INCLUDED_MEDIA.includes(mb.media) ? base * 1.1 : base)
-    }
-    return next
+    const subs = mb.subCampaigns ?? []
+    const sum = subs.reduce((s, sc) => s + (sc.budget ?? 0), 0)
+    const baseSetting = subs.reduce(
+      (s, sc) => s + (sc.budget ?? 0) * (1 - (sc.totalFeeRate ?? 0) / 100),
+      0,
+    )
+    const nextActual = sum > 0
+      ? Math.round(VAT_INCLUDED_MEDIA.includes(mb.media) ? baseSetting * 1.1 : baseSetting)
+      : undefined
+    if (sum === (mb.totalBudget ?? 0) && nextActual === mb.actualSettingCost) return mb
+    return { ...mb, totalBudget: sum, actualSettingCost: nextActual }
   }
 
   function updateSubCampaign(media: string, idx: number, field: string, value: string | number | boolean | undefined) {
@@ -219,7 +223,6 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
       campaignType: campaignType || undefined,
       agencyId, advertiserId, managerId, startDate, endDate, settlementMonth, status, mediaBudgets, memo,
       csvNames,
-      dashboardNetAmount: dashboardNetAmount === "" ? undefined : dashboardNetAmount,
       createdAt: initial?.createdAt ?? new Date().toISOString() } as Campaign)
   }
 
@@ -430,15 +433,7 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           />
         ))}
 
-        <MF label={<span>대시보드 소진액 <span className="text-[11px] text-gray-400 font-normal">(대시보드 소진율 계산용 — 직접 입력 / 부킹 금액은 매체별 &apos;총 예산&apos; 합으로 자동 계산됩니다)</span></span>}>
-          <input
-            type="number" min="0"
-            value={dashboardNetAmount}
-            onChange={e => setDashboardNetAmount(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
-            placeholder="원 (비워두면 raw 데이터 기준)"
-            className={inputCls}
-          />
-        </MF>
+        {/* 사용자 결정 — '대시보드 소진액' 입력 제거. 상세 페이지 raw 데이터 기준 소진율로 충분. */}
 
         <MF label="특이사항">
           <textarea value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} rows={3} />

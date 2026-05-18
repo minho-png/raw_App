@@ -169,7 +169,27 @@ export function calcSpendRate(spend: number, settingCost: number): number {
 }
 
 export function getMediaTotals(mb: MediaBudget) {
-  // totalBudget + totalFeeRate unified setting takes priority
+  // 신규 (사용자 결정): 매체 단위 입력 폐지 → 세부 캠페인 합이 진실 소스.
+  // SubCampaign[] 가 1개 이상이면 sub.budget / sub.totalFeeRate 로 setting cost 계산.
+  // 사용자 보고 '집행금액 0' 버그 — getMediaTotals 가 mb.totalFeeRate(undefined)
+  // 조건 실패로 legacy DMP/nonDMP 0 fallback 으로 떨어지던 문제 해결.
+  const subs = mb.subCampaigns ?? []
+  if (subs.length > 0) {
+    const totalBudget = subs.reduce((s, sc) => s + (sc.budget ?? 0), 0)
+    const baseSetting = subs.reduce(
+      (s, sc) => s + calcSettingCost(sc.budget ?? 0, sc.totalFeeRate ?? 0),
+      0,
+    )
+    const totalSettingCost = applyMediaVat(mb.media, baseSetting)
+    const totalSpend = (mb.dmp?.spend ?? 0) + (mb.nonDmp?.spend ?? 0)
+    return {
+      totalBudget, totalSettingCost, totalSpend,
+      spendRate: calcSpendRate(totalSpend, totalSettingCost),
+      dmpMarkup: 0, nonDmpMarkup: 0,
+      dmpSC: totalSettingCost, nonDmpSC: 0,
+    }
+  }
+  // Legacy: 매체 단위 unified setting (이전 데이터 호환).
   if (mb.totalBudget !== undefined && mb.totalFeeRate !== undefined) {
     const baseSetting = calcSettingCost(mb.totalBudget, mb.totalFeeRate)
     const totalSettingCost = applyMediaVat(mb.media, baseSetting)
