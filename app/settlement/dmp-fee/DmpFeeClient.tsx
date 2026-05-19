@@ -202,11 +202,15 @@ export default function DmpFeeClient() {
       const adAccount   = adAccountById.get(camp.adaccount_id)
       const advertiserName = internalAdv?.name || getAdvertiserName(adAccount) || '—'
 
-      // accurateDmpFee — /v1/stats/campaign/breakdown 의 dmpFee (기간 정확).
+      // accurateDmpFee — /v1/stats/campaign/breakdown 의 dmpFee (기간 정확) 우선.
       // 광고그룹 list 의 dataFee 는 lifetime 일 가능성 (사용자 진단: 힐스펫 광고그룹 10개 dataFee=0).
       const campAdGroups = adGroupsByCampaign.get(camp.id) ?? []
       const adGroupTotal = campAdGroups.reduce((s, r) => s + r.dataFee, 0)
-      const accurateDmpFee = periodStats.byMotivId.get(camp.id)?.dmpFee ?? adGroupTotal
+      const periodDmpFee = periodStats.byMotivId.get(camp.id)?.dmpFee
+      // periodStats 미응답 시 lifetime adGroupTotal 사용 (기간 외도 표시되는 단점 있음 → diag 로 추적).
+      const accurateDmpFee = (periodDmpFee != null && periodDmpFee > 0)
+        ? periodDmpFee
+        : adGroupTotal
       if (accurateDmpFee <= 0) continue
 
       const key = `${product}::${advertiserName}`
@@ -223,20 +227,40 @@ export default function DmpFeeClient() {
       const entry = map.get(key)!
       seenCampaign.get(key)!.add(camp.id)
 
-      // vendor 비율 분배 — 광고그룹 dataFee 분포로 accurateDmpFee 분배.
-      if (adGroupTotal > 0) {
+      // vendor 비율 분배 — 우선순위:
+      //   ① 광고그룹 dataFee 분포 (lifetime 이라도 vendor 비율은 유효).
+      //   ② dataFee 가 모두 0 이면 광고그룹 개수 비율(targeting_product_id 분포)로 분배.
+      //      — 사용자 진단: 4-에이전트 토론 결과, dataFee=0 일 때 ETC 로 몰리던 문제 해결.
+      //   ③ 광고그룹 자체가 0 이면 ETC + isUnmapped 표시.
+      if (campAdGroups.length > 0) {
         const vendorWeight: Record<DmpVendor, number> = emptyFees()
-        for (const r of campAdGroups) {
-          const v = labelForTargetingProductId(r.targetingProductId)
-          const k2 = (v === 'SKP' || v === 'TG360' || v === 'LOTTE' || v === 'KB' || v === 'WIFI') ? v : 'ETC'
-          vendorWeight[k2] += r.dataFee
+        let weightSum = 0
+        if (adGroupTotal > 0) {
+          for (const r of campAdGroups) {
+            const v = labelForTargetingProductId(r.targetingProductId)
+            const k2 = (v === 'SKP' || v === 'TG360' || v === 'LOTTE' || v === 'KB' || v === 'WIFI') ? v : 'ETC'
+            vendorWeight[k2] += r.dataFee
+          }
+          weightSum = adGroupTotal
+        } else {
+          // dataFee 모두 0 — 광고그룹 개수로 vendor 비율 산출.
+          for (const r of campAdGroups) {
+            const v = labelForTargetingProductId(r.targetingProductId)
+            const k2 = (v === 'SKP' || v === 'TG360' || v === 'LOTTE' || v === 'KB' || v === 'WIFI') ? v : 'ETC'
+            vendorWeight[k2] += 1
+          }
+          weightSum = campAdGroups.length
         }
-        for (const v of DMP_COLS) {
-          entry.dmpFees[v] += (vendorWeight[v] / adGroupTotal) * accurateDmpFee
+        if (weightSum > 0) {
+          for (const v of DMP_COLS) {
+            entry.dmpFees[v] += (vendorWeight[v] / weightSum) * accurateDmpFee
+          }
+        } else {
+          entry.dmpFees.ETC += accurateDmpFee
+          entry.isUnmapped = true
         }
       } else {
-        // 광고그룹 dataFee 모두 0 (lifetime) 이지만 periodStats 가 양수.
-        // vendor 분류 불가 → ETC + 매핑 필요.
+        // 광고그룹 정보 자체 없음 — ETC 로 분류 + 매핑 필요 표시.
         entry.dmpFees.ETC += accurateDmpFee
         entry.isUnmapped = true
       }
@@ -349,6 +373,17 @@ export default function DmpFeeClient() {
                 <span>광고그룹 <b>{adGroups.rows.length}</b> ({motivCampaignIds.length} 캠페인 fetch)</span>
                 {d.truncated && <span className="text-rose-700 font-bold">⚠ 페이지 한계 도달!</span>}
                 {dropped > d.excluded + d.outOfRange && <span className="text-amber-700">⚠ dedup 손실 {dropped - d.excluded - d.outOfRange}</span>}
+                <span className="mx-1 text-gray-300">|</span>
+                <span title="기간 정확 dmpFee 캠페인 / 누락 fallback / chunk 절단 수">
+                  periodStats: <b className="text-emerald-700">{periodStats.byMotivId.size}</b>
+                  <span className="text-gray-400">/{motivCampaignIds.length}</span>
+                  <span className="ml-1 text-gray-400">rows={periodStats.diag.rowsFetched}</span>
+                  {periodStats.diag.truncatedChunks > 0 && (
+                    <span className="ml-1 text-rose-700 font-bold">⚠ chunk 절단 {periodStats.diag.truncatedChunks}</span>
+                  )}
+                  {periodStats.loading && <span className="ml-1 text-blue-600">loading...</span>}
+                  {periodStats.error && <span className="ml-1 text-rose-600">err: {periodStats.error}</span>}
+                </span>
               </div>
               <div className="mt-1.5 text-[10px] text-gray-500">
                 ?debug=ALL → 콘솔에 통과 캠페인 전체 dump. ?debug=힐스펫 → 매칭만.
