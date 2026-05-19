@@ -11,6 +11,9 @@ interface Props {
   campaigns: MotivCampaign[]
   agencies: Agency[]
   assignments: MotivAssignment[]
+  /** 사용자 결정 — 매입/매출과 동일 방식: /v1/stats/campaign/breakdown 기간 정확 값.
+   *  존재하는 캠페인은 c.stats(lifetime) 대신 본 값으로 override. */
+  statsByMotivId?: Map<number, { spend: number; mediaCost: number; agencyFee: number; dmpFee: number }>
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString("ko-KR") }
@@ -38,7 +41,7 @@ interface AgencyBucket {
  * "대행사별 수수료" 페이지 전용.
  */
 export function MotivAgencyAggregation({
-  title, loading, error, campaigns, agencies, assignments,
+  title, loading, error, campaigns, agencies, assignments, statsByMotivId,
 }: Props) {
   const byAgency = React.useMemo(() => {
     const assignById = new Map(assignments.map(a => [a.motivCampaignId, a]))
@@ -61,10 +64,12 @@ export function MotivAgencyAggregation({
       const ag = a?.agencyId ? agById.get(a.agencyId) ?? null : null
       const key = ag?.id ?? '__unassigned__'
       const bucket = ensureBucket(key, ag)
-      const spend     = n(c.stats?.cost)
-      const agencyFee = n(c.stats?.agency_fee)
-      const dataFee   = n(c.stats?.data_fee)
-      const revenue   = n(c.stats?.revenue)
+      // 사용자 결정 — periodStats(기간 정확)가 있으면 lifetime stats 덮어쓰기.
+      const ps = statsByMotivId?.get(c.id)
+      const spend     = ps ? ps.mediaCost : n(c.stats?.cost)
+      const agencyFee = ps ? ps.agencyFee : n(c.stats?.agency_fee)
+      const dataFee   = ps ? ps.dmpFee    : n(c.stats?.data_fee)
+      const revenue   = ps ? ps.spend     : n(c.stats?.revenue)
       bucket.items.push({ campaign: c, product, spend, agencyFee, dataFee, revenue })
       bucket.spend     += spend
       bucket.agencyFee += agencyFee
@@ -78,7 +83,7 @@ export function MotivAgencyAggregation({
       if (a.agency && !b.agency) return -1
       return (a.agency?.name ?? '').localeCompare(b.agency?.name ?? '')
     })
-  }, [campaigns, assignments, agencies])
+  }, [campaigns, assignments, agencies, statsByMotivId])
 
   const totals = React.useMemo(() => {
     let spend = 0, agencyFee = 0, dataFee = 0, revenue = 0
