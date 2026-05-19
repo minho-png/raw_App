@@ -30,6 +30,8 @@ import {
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
+import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
+import { useMotivAdGroups } from "@/lib/hooks/useMotivAdGroups"
 import { useSettlementOverrides, applyOverride, isOverrideStale } from "@/lib/hooks/useSettlementOverrides"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { ModalShell } from "@/components/atoms/ModalShell"
@@ -112,6 +114,15 @@ export default function SalesPurchasePage() {
     endDate:   monthRange?.endDate,
     enabled:   motivCampaignIds.length > 0 && !!monthRange,
   })
+  // 사용자 결정 — 광고주/대행사 매칭 없이 Motiv adAccount API 응답 그대로 사용.
+  const { byId: adAccountById } = useMotivAdAccounts(true)
+  // 사용자 결정 — DMP 비용을 vendor 별로 분배하기 위한 광고그룹 데이터.
+  const adGroups = useMotivAdGroups({
+    campaignIds: motivCampaignIds,
+    startDate: monthRange?.startDate,
+    endDate:   monthRange?.endDate,
+    enabled:   motivCampaignIds.length > 0,
+  })
   const statsByMotivId = useMemo(() => {
     const m = new Map<number, { spend: number; mediaCost: number; agencyFee: number; dmpFee: number }>()
     for (const [id, mtx] of periodStats.byMotivId) {
@@ -140,13 +151,14 @@ export default function SalesPurchasePage() {
   // 매출/매입 행 — periodStats 가 도착하면 자동 재계산.
   const salesRows: SalesRow[] = useMemo(() => buildSalesRows({
     month, ctPlus: ctPlusSettlements, motivCampaigns: motivFetch.data,
-    assignments, agencies, advertisers, operators, statsByMotivId,
-  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators, statsByMotivId])
+    assignments, agencies, advertisers, operators, statsByMotivId, adAccountById,
+  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators, statsByMotivId, adAccountById])
 
   const purchaseRows: PurchaseRow[] = useMemo(() => buildPurchaseRows({
     month, ctPlus: ctPlusSettlements, motivCampaigns: motivFetch.data,
-    assignments, agencies, advertisers, operators, statsByMotivId,
-  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators, statsByMotivId])
+    assignments, agencies, advertisers, operators, statsByMotivId, adAccountById,
+    adGroups: adGroups.rows,
+  }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators, statsByMotivId, adAccountById, adGroups.rows])
 
   // overrides — type 별로 분리 조회 후 행에 머지
   const salesOv    = useSettlementOverrides('sales',    month)
@@ -432,9 +444,9 @@ function PurchaseTable({ rows, onEdit }: { rows: PurchaseRow[]; onEdit: (r: Purc
             <th className="px-2 py-2 text-right font-semibold">합계금액</th>
             <th className="px-2 py-2 text-right font-semibold" title="agency_fee — 거래처별 대행 수수료">대행 수수료</th>
             <th className="px-2 py-2 text-right font-semibold" title="data_fee — 데이터(DMP) 비용">DMP 비용</th>
-            <th className="px-2 py-2 text-right font-semibold">IMC</th>
-            <th className="px-2 py-2 text-right font-semibold">TV</th>
-            <th className="px-2 py-2 text-right font-semibold">CT</th>
+            <th className="px-2 py-2 text-right font-semibold" title="CT+ (IMC)">CT+</th>
+            <th className="px-2 py-2 text-right font-semibold" title="CTV (Motiv TV)">CTV</th>
+            <th className="px-2 py-2 text-right font-semibold" title="CT (Motiv Display/Video/Partners)">CT</th>
             <th className="px-2 py-2 text-left font-semibold">송금일 기준</th>
             <th className="px-2 py-2 text-left font-semibold">송금기한</th>
           </tr>

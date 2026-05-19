@@ -4,6 +4,7 @@ import type { MotivCampaign } from '@/lib/motivApi/types'
 import {
   motivTypeToProduct,
   MEDIA_PRODUCT_LABEL,
+  labelForTargetingProductId,
   type MotivAssignment,
 } from '@/lib/motivApi/productMapping'
 
@@ -152,10 +153,13 @@ export interface SalesRowsParams {
    * statsByMotivId.get(c.id)?.dmpFee = DMP (data_fee)
    */
   statsByMotivId?: Map<number, { spend: number; mediaCost: number; agencyFee: number; dmpFee: number }>
+  /** 사용자 결정 — 매칭 없이 Motiv API 의 광고계정 정보를 그대로 사용.
+   *  campaign.adaccount_id → MotivAdAccount (광고주명·대행사명 포함). */
+  adAccountById?: Map<number, import('@/lib/motivApi/types').MotivAdAccount>
 }
 
 export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
-  const { month, ctPlus, motivCampaigns, assignments, agencies, advertisers, operators, statsByMotivId } = params
+  const { month, ctPlus, motivCampaigns, assignments, agencies, advertisers, operators, statsByMotivId, adAccountById } = params
   const agById = new Map(agencies.map(a => [a.id, a]))
   const advById = new Map(advertisers.map(a => [a.id, a]))
   const opById = new Map(operators.map(o => [o.id, o]))
@@ -205,10 +209,25 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
     const product = motivTypeToProduct(c.campaign_type)
     if (product !== 'CT' && product !== 'CTV') continue
     if (c.is_free) continue
+    // 사용자 결정 — 광고주/대행사 매칭 없이 Motiv API adAccount 의 값 그대로 사용.
+    // assignments(수동 매핑) 은 _agencyId 그룹 키 용도로만 보조 사용. 표시명은 adAccount 우선.
     const a = asgById.get(c.id)
-    const ag = a?.agencyId ? agById.get(a.agencyId) : undefined
-    const adv = a?.advertiserId ? advById.get(a.advertiserId) : undefined
     const op = a?.operatorId ? opById.get(a.operatorId) : undefined
+    const adAccount = adAccountById?.get(c.adaccount_id)
+    const advertiserDisplay = adAccount?.advertiser_name
+      || adAccount?.advertiser?.name
+      || adAccount?.name
+      || ''
+    const agencyDisplay = adAccount?.agency?.corporate_name
+      || adAccount?.agency_name
+      || adAccount?.agency?.name
+      || ''
+    // _agencyId 그룹 키 — 우선 internal assignment, 없으면 Motiv agency_id (motiv:{id}) 로 합성.
+    const internalAgId = a?.agencyId
+    const motivAgId = adAccount?.agency_id ?? (typeof adAccount?.agency?.id === 'number' ? adAccount.agency.id : undefined)
+    const groupAgencyId: string | undefined =
+      internalAgId ?? (motivAgId != null ? `motiv:${motivAgId}` : undefined)
+    const ag = internalAgId ? agById.get(internalAgId) : undefined
     // 사용자 정책 — '해당 기간에 발생한 정확한 매출 SPEND 만'.
     // c.total_spent / c.stats.revenue 모두 lifetime 누적이라 부정확.
     // /stats/campaign/breakdown 결과(periodStats)만 사용. 없으면 0 (집계 불가).
@@ -223,8 +242,8 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       해당월: month,
       담당자: op?.name ?? '',
       '세금계산서 작성일자': '',
-      '거래처명 (사업자등록증 기준)': ag?.corporateName || ag?.name || '',
-      광고주명: adv?.name || '',
+      '거래처명 (사업자등록증 기준)': agencyDisplay,
+      광고주명: advertiserDisplay,
       캠페인명: c.title ?? `#${c.id}`,
       공급가액: net,
       세액: vat,
@@ -232,7 +251,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       '수금일 기준': paymentBasisOf(ag),
       '수금 기한': computePaymentDueDate(month, ag),
       '수수료 (VAT포함)': Math.round(agencyFee * 1.1),
-      수취이메일: adv?.email || ag?.email || '',
+      수취이메일: ag?.email || '',
       '수수료 세금계산서 발행여부': '',
       'CT 해당금액 (vat 제외)': product === 'CT' ? net : 0,
       'IMC 해당금액 (vat 제외)': 0,
@@ -242,7 +261,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       업데이트: '',
       '수금 여부': '',
       '실 수금일': '',
-      _agencyId: ag?.id,
+      _agencyId: groupAgencyId,
       _rowKey: `sales:${month}:motiv-${c.id}`,
     })
   }
@@ -286,10 +305,14 @@ export interface PurchaseRowsParams {
   operators: Operator[]
   /** SalesRowsParams 와 동일 — 매입(매체비)도 기간 stats 로 정확히 계산. */
   statsByMotivId?: Map<number, { spend: number; mediaCost: number; agencyFee: number; dmpFee: number }>
+  /** 사용자 결정 — DMP 비용을 vendor(SKP/TG360/...) 별 합산하기 위한 광고그룹 데이터. */
+  adGroups?: import('@/lib/hooks/useMotivAdGroups').AdGroupRow[]
+  /** 사용자 결정 — 광고주/대행사 매칭 없이 adAccount API 응답 그대로 사용. */
+  adAccountById?: Map<number, import('@/lib/motivApi/types').MotivAdAccount>
 }
 
 export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
-  const { month, ctPlus, motivCampaigns, assignments, agencies, advertisers, operators, statsByMotivId } = params
+  const { month, ctPlus, motivCampaigns, assignments, agencies, advertisers, operators, statsByMotivId, adAccountById } = params
   const advById = new Map(advertisers.map(a => [a.id, a]))
   const agById = new Map(agencies.map(a => [a.id, a]))
   const opById = new Map(operators.map(o => [o.id, o]))
@@ -335,43 +358,133 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
     }
   }
 
+  // 사용자 결정 — Motiv 매입은 (a) 대행수수료 행 + (b) DMP 비용 vendor 별 행 으로 분리.
+  // (a) 대행수수료: 캠페인 별. adAccount 의 광고주/대행사 그대로 표시 (매칭 X).
+  // (b) DMP 비용: vendor(SKP/TG360/LOTTE/KB/WIFI/ETC) 별 합산, CT/CTV 컬럼 split.
+  const dmpVendorAcc = new Map<string, { CT: number; TV: number }>()  // vendor → product 합
+
   for (const c of motivCampaigns) {
     const product = motivTypeToProduct(c.campaign_type)
     if (product !== 'CT' && product !== 'CTV') continue
     const a = asgById.get(c.id)
-    const ag = a?.agencyId ? agById.get(a.agencyId) : undefined
-    const adv = a?.advertiserId ? advById.get(a.advertiserId) : undefined
     const op = a?.operatorId ? opById.get(a.operatorId) : undefined
+    const adAccount = adAccountById?.get(c.adaccount_id)
+    const advertiserDisplay = adAccount?.advertiser_name
+      || adAccount?.advertiser?.name
+      || adAccount?.name
+      || ''
+    const agencyDisplay = adAccount?.agency?.corporate_name
+      || adAccount?.agency_name
+      || adAccount?.agency?.name
+      || ''
+    const internalAgId = a?.agencyId
+    const motivAgId = adAccount?.agency_id ?? (typeof adAccount?.agency?.id === 'number' ? adAccount.agency.id : undefined)
+    const groupAgencyId: string | undefined =
+      internalAgId ?? (motivAgId != null ? `motiv:${motivAgId}` : undefined)
+    const ag = internalAgId ? agById.get(internalAgId) : undefined
     const periodStats = statsByMotivId?.get(c.id)
     const agencyFee = periodStats ? periodStats.agencyFee : Math.round(Number(c.stats?.agency_fee ?? 0))
     const dataFee   = periodStats ? periodStats.dmpFee    : Math.round(Number(c.stats?.data_fee ?? 0))
-    // 사용자 결정 — '매입 공급가액 = 대행 수수료(agency_fee)'.
-    // DMP 비용(data_fee) 은 별도로 DMP 수수료 페이지에서 집계.
-    const net = agencyFee
+    const label = MEDIA_PRODUCT_LABEL[product]
+
+    // (a) 대행수수료 행 — agency_fee 만, DMP 제외.
+    if (agencyFee > 0) {
+      const vat = Math.round(agencyFee * 0.1)
+      rows.push({
+        년월: month,
+        담당자: op?.name ?? '',
+        구분: `${label} 대행수수료`,
+        일자: '',
+        '거래처명 (세금계산서 기준)': agencyDisplay || 'Motiv',
+        광고주명: advertiserDisplay,
+        캠페인명: c.title ?? `#${c.id}`,
+        공급가액: agencyFee,
+        세액: vat,
+        합계금액: agencyFee + vat,
+        '대행 수수료': agencyFee,
+        '데이터(DMP) 비용': 0,
+        IMC: 0,
+        TV: product === 'CTV' ? agencyFee : 0,
+        CT: product === 'CT' ? agencyFee : 0,
+        '송금일 기준': paymentBasisOf(ag),
+        송금기한: computePaymentDueDate(month, ag),
+        _agencyId: groupAgencyId,
+        _rowKey: `purchase:${month}:motiv-${c.id}:agencyFee`,
+      })
+    }
+
+    // (b) DMP vendor 합산 — vendor 별 product split.
+    if (dataFee > 0) {
+      // 광고그룹 비율 추출 — adGroups 가 없으면 ETC 로 몰림.
+      const campAdGroups = (params.adGroups ?? []).filter(g => g.campaignId === c.id)
+      const totalGroupFee = campAdGroups.reduce((s, g) => s + g.dataFee, 0)
+      const vendorWeights = new Map<string, number>()  // vendor → weight
+      if (totalGroupFee > 0) {
+        for (const g of campAdGroups) {
+          const v = labelForTargetingProductId(g.targetingProductId)
+          const key = (v === 'SKP' || v === 'TG360' || v === 'LOTTE' || v === 'KB' || v === 'WIFI') ? v : 'ETC'
+          vendorWeights.set(key, (vendorWeights.get(key) ?? 0) + g.dataFee)
+        }
+        for (const [vendor, w] of vendorWeights) {
+          const share = (w / totalGroupFee) * dataFee
+          const cur = dmpVendorAcc.get(vendor) ?? { CT: 0, TV: 0 }
+          if (product === 'CT') cur.CT += share
+          else                  cur.TV += share
+          dmpVendorAcc.set(vendor, cur)
+        }
+      } else if (campAdGroups.length > 0) {
+        // adGroup dataFee 모두 0 → 광고그룹 개수 비율로 vendor 분배.
+        for (const g of campAdGroups) {
+          const v = labelForTargetingProductId(g.targetingProductId)
+          const key = (v === 'SKP' || v === 'TG360' || v === 'LOTTE' || v === 'KB' || v === 'WIFI') ? v : 'ETC'
+          vendorWeights.set(key, (vendorWeights.get(key) ?? 0) + 1)
+        }
+        const total = campAdGroups.length
+        for (const [vendor, count] of vendorWeights) {
+          const share = (count / total) * dataFee
+          const cur = dmpVendorAcc.get(vendor) ?? { CT: 0, TV: 0 }
+          if (product === 'CT') cur.CT += share
+          else                  cur.TV += share
+          dmpVendorAcc.set(vendor, cur)
+        }
+      } else {
+        const cur = dmpVendorAcc.get('ETC') ?? { CT: 0, TV: 0 }
+        if (product === 'CT') cur.CT += dataFee
+        else                  cur.TV += dataFee
+        dmpVendorAcc.set('ETC', cur)
+      }
+    }
+  }
+
+  // DMP vendor 행 일괄 추가 — 캠페인 별이 아닌 vendor 별 합산 (사용자 요구).
+  const dmpOrder = ['SKP', 'TG360', 'LOTTE', 'KB', 'WIFI', 'ETC'] as const
+  for (const vendor of dmpOrder) {
+    const acc = dmpVendorAcc.get(vendor)
+    if (!acc) continue
+    const ct = Math.round(acc.CT)
+    const tv = Math.round(acc.TV)
+    const net = ct + tv
     if (net <= 0) continue
     const vat = Math.round(net * 0.1)
-    const label = MEDIA_PRODUCT_LABEL[product]
     rows.push({
       년월: month,
-      담당자: op?.name ?? '',
-      구분: label,
+      담당자: '',
+      구분: `DMP (${vendor})`,
       일자: '',
-      '거래처명 (세금계산서 기준)': ag?.corporateName || ag?.name || 'Motiv',
-      광고주명: adv?.name || '',
-      캠페인명: c.title ?? `#${c.id}`,
+      '거래처명 (세금계산서 기준)': vendor,
+      광고주명: '',
+      캠페인명: '(전체 캠페인 합산)',
       공급가액: net,
       세액: vat,
       합계금액: net + vat,
-      // 사용자 결정 — 매입 공급가액 = agency_fee (= 대행 수수료). DMP 비용은 별도 페이지.
-      '대행 수수료': agencyFee,
-      '데이터(DMP) 비용': dataFee,  // 호환 유지 — 매입 표에서는 숨김, DMP 페이지에서 활용
+      '대행 수수료': 0,
+      '데이터(DMP) 비용': net,
       IMC: 0,
-      TV: product === 'CTV' ? net : 0,
-      CT: product === 'CT' ? net : 0,
-      '송금일 기준': paymentBasisOf(ag),
-      송금기한: computePaymentDueDate(month, ag),
-      _agencyId: ag?.id,
-      _rowKey: `purchase:${month}:motiv-${c.id}`,
+      TV: tv,
+      CT: ct,
+      '송금일 기준': '',
+      송금기한: '',
+      _rowKey: `purchase:${month}:dmp-vendor-${vendor}`,
     })
   }
 
