@@ -305,12 +305,17 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
       const net = Math.round(mb.netAmount)
       if (net <= 0) continue
       const vat = Math.round(net * 0.1)
+      // 사용자 결정 — 네이버 GFA / 카카오 모먼트 매입 거래처는 '매드코퍼레이션' 으로 발행.
+      // 매드 가 묶어서 청구하므로 매체별 라벨은 괄호로 표시. Google/META 는 매체사 직접 청구라 매체명 그대로.
+      const supplier = (mb.media === '네이버 GFA' || mb.media === '카카오모먼트')
+        ? `매드코퍼레이션 (${mb.media === '네이버 GFA' ? '네이버GFA' : '카카오모먼트'})`
+        : mb.media
       rows.push({
         년월: s.campaign.settlementMonth || month,
         담당자: op?.name ?? '',
         구분: 'CT+ (IMC)',
         일자: '',
-        '거래처명 (세금계산서 기준)': mb.media,
+        '거래처명 (세금계산서 기준)': supplier,
         광고주명: adv?.name || s.advName || '',
         캠페인명: s.campaign.campaignName,
         공급가액: net,
