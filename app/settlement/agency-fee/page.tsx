@@ -9,7 +9,9 @@ import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { MotivAgencyAggregation } from "@/components/settlement/MotivAgencyAggregation"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
+import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
+import { motivTypeToProduct } from "@/lib/motivApi/productMapping"
 import { genId } from "@/lib/idGen"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
@@ -77,6 +79,39 @@ export default function AgencyFeePage() {
   )
   const { data: assignments } = useMotivAssignments()
 
+  // 사용자 요구 — 매입/매출 시트(sales-purchase)와 동일 API 필터링 방식 적용.
+  // /v1/stats/campaign/breakdown 로 해당 월의 정확한 기간 spend/agencyFee/dataFee 를
+  // 별도 fetch. campaigns.index 의 lifetime stats 대신 본 값으로 override.
+  const monthRange = useMemo(() => {
+    const [yy, mm] = month.split('-').map(n => parseInt(n, 10))
+    if (!yy || !mm) return null
+    const startDate = `${month}-01`
+    const endDate = `${month}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`
+    return { startDate, endDate }
+  }, [month])
+  const motivCampaignIds = useMemo(
+    () => motivFetch.data.map(c => c.id),
+    [motivFetch.data],
+  )
+  const periodStats = useMotivStatsCampaign({
+    scope:     { campaignIds: motivCampaignIds },
+    startDate: monthRange?.startDate,
+    endDate:   monthRange?.endDate,
+    enabled:   motivCampaignIds.length > 0 && !!monthRange,
+  })
+  const statsByMotivId = useMemo(() => {
+    const m = new Map<number, { spend: number; mediaCost: number; agencyFee: number; dmpFee: number }>()
+    for (const [id, mtx] of periodStats.byMotivId) {
+      m.set(id, {
+        spend:     mtx.spend,
+        mediaCost: mtx.mediaCost,
+        agencyFee: mtx.agencyFee,
+        dmpFee:    mtx.dmpFee,
+      })
+    }
+    return m
+  }, [periodStats.byMotivId])
+
   useEffect(() => {
     try {
       const sn = localStorage.getItem(SNAPSHOTS_KEY)
@@ -123,37 +158,73 @@ export default function AgencyFeePage() {
     return map
   }, [computedRows, month])
 
-  // 전체 결과 행 생성 (raw data 기반)
+  // 전체 결과 행 생성 — CT+ raw data + Motiv CT/CTV 통합 (사용자 결정).
   const allRows: ResultRow[] = []
-  for (const c of filtered) {
-    const agencyId   = resolveAgencyId(c)
-    const agencyName = getAgencyName(agencyId)
-    const advName    = getAdvertiserName(c)
-    for (const mb of c.mediaBudgets) {
-      const spend   = spendMap.get(`${c.id}:${mb.media}`) ?? { dmp: 0, nonDmp: 0 }
-      const dmpRate = mb.dmp.agencyFeeRate > 0 ? mb.dmp.agencyFeeRate : (c.agencyFeeRate ?? 0)
-      const nonRate = mb.nonDmp.agencyFeeRate > 0 ? mb.nonDmp.agencyFeeRate : (c.agencyFeeRate ?? 0)
+  if (showCtPlus) {
+    for (const c of filtered) {
+      const agencyId   = resolveAgencyId(c)
+      const agencyName = getAgencyName(agencyId)
+      const advName    = getAdvertiserName(c)
+      for (const mb of c.mediaBudgets) {
+        const spend   = spendMap.get(`${c.id}:${mb.media}`) ?? { dmp: 0, nonDmp: 0 }
+        const dmpRate = mb.dmp.agencyFeeRate > 0 ? mb.dmp.agencyFeeRate : (c.agencyFeeRate ?? 0)
+        const nonRate = mb.nonDmp.agencyFeeRate > 0 ? mb.nonDmp.agencyFeeRate : (c.agencyFeeRate ?? 0)
 
-      if (spend.dmp > 0 && dmpRate > 0) {
-        allRows.push({
-          advertiserName: advName, agencyName, agencyId,
-          campaignName: c.campaignName, media: mb.media,
-          kind: "DMP",
-          spend: Math.round(spend.dmp),
-          feeRate: dmpRate,
-          fee: Math.round(spend.dmp * dmpRate / 100),
-        })
+        if (spend.dmp > 0 && dmpRate > 0) {
+          allRows.push({
+            advertiserName: advName, agencyName, agencyId,
+            campaignName: c.campaignName, media: mb.media,
+            kind: "DMP",
+            spend: Math.round(spend.dmp),
+            feeRate: dmpRate,
+            fee: Math.round(spend.dmp * dmpRate / 100),
+          })
+        }
+        if (spend.nonDmp > 0 && nonRate > 0) {
+          allRows.push({
+            advertiserName: advName, agencyName, agencyId,
+            campaignName: c.campaignName, media: mb.media,
+            kind: "비DMP",
+            spend: Math.round(spend.nonDmp),
+            feeRate: nonRate,
+            fee: Math.round(spend.nonDmp * nonRate / 100),
+          })
+        }
       }
-      if (spend.nonDmp > 0 && nonRate > 0) {
-        allRows.push({
-          advertiserName: advName, agencyName, agencyId,
-          campaignName: c.campaignName, media: mb.media,
-          kind: "비DMP",
-          spend: Math.round(spend.nonDmp),
-          feeRate: nonRate,
-          fee: Math.round(spend.nonDmp * nonRate / 100),
-        })
-      }
+    }
+  }
+
+  // Motiv CT/CTV — periodStats 기반 (sales-purchase 와 동일).
+  // mediaCost 를 집행금액으로, agencyFee 를 대행수수료로 사용 (이미 dmpFee 차감 전 raw 값).
+  // feeRate 는 (agencyFee / mediaCost × 100) 로 역산 표시.
+  if (motivProduct) {
+    const asgById = new Map(assignments.map(a => [a.motivCampaignId, a]))
+    for (const c of motivFetch.data) {
+      const product = motivTypeToProduct(c.campaign_type)
+      if (product !== 'CT' && product !== 'CTV') continue
+      const ps = statsByMotivId.get(c.id)
+      // fallback: campaigns.index 의 lifetime stats (period 미응답 시).
+      const spend     = Math.round(ps?.mediaCost ?? Number(c.stats?.cost ?? 0))
+      const agencyFee = Math.round(ps?.agencyFee ?? Number(c.stats?.agency_fee ?? 0))
+      if (spend <= 0 && agencyFee <= 0) continue
+      const asg = asgById.get(c.id)
+      const agencyId   = asg?.agencyId ?? ''
+      const agencyName = agencyId ? getAgencyName(agencyId) : '미지정'
+      const advName    = asg?.advertiserId
+        ? advertisers.find(a => a.id === asg.advertiserId)?.name ?? '—'
+        : (c.title ?? '—')
+      const feeRate = spend > 0 ? +(agencyFee / spend * 100).toFixed(2) : 0
+      allRows.push({
+        advertiserName: advName,
+        agencyName,
+        agencyId,
+        campaignName: c.title ?? `#${c.id}`,
+        media: product,
+        kind: 'DMP',
+        spend,
+        feeRate,
+        fee: agencyFee,
+      })
     }
   }
 
@@ -589,11 +660,12 @@ export default function AgencyFeePage() {
               : motivProduct === 'CTV' ? 'CTV 대행사별 집계 (Motiv)'
               : 'CT 대행사별 집계 (Motiv)'
             }
-            loading={motivFetch.loading}
-            error={motivFetch.error}
+            loading={motivFetch.loading || periodStats.loading}
+            error={motivFetch.error || periodStats.error}
             campaigns={motivFetch.data}
             agencies={agencies}
             assignments={assignments}
+            statsByMotivId={statsByMotivId}
           />
         )}
 

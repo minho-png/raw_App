@@ -6,8 +6,11 @@ export const CAMPAIGN_TYPES: CampaignType[] = ['IMC', 'video']
 export const AVAILABLE_MEDIA = ['네이버 GFA', '카카오모먼트', 'Google', 'META'] as const
 export type MediaName = typeof AVAILABLE_MEDIA[number]
 
+// 사용자 결정 — Google/META 10% 마크업은 자사 수익(대행수수료 = sub-campaign totalFeeRate
+// 에 이미 반영됨). 매체 비용에서 자동 차감하는 것이 아니므로 0 으로 설정.
+// 레거시 보존: 키 자체는 유지하되 기본값을 0 으로.
 export const MEDIA_MARKUP_RATE: Record<string, number> = {
-  '네이버 GFA': 0, '카카오모먼트': 0, 'Google': 10, 'META': 10,
+  '네이버 GFA': 0, '카카오모먼트': 0, 'Google': 0, 'META': 0,
 }
 
 // 네이버 GFA 는 VAT 별도 청구가 아닌 VAT 포함 금액으로 표시 (실 세팅 금액에 가산)
