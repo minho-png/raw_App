@@ -397,7 +397,11 @@ export default function DmpFeeClient() {
 
         {/* 통과 89개 캠페인 list — 화면에서 검색 가능 (사용자: '힐스펫이 있는지 확인'). */}
         {motivProduct && motivFetch.data.length > 0 && (
-          <DiagCampaignList campaigns={motivFetch.data} adGroups={adGroups.rows} />
+          <DiagCampaignList
+            campaigns={motivFetch.data}
+            adGroups={adGroups.rows}
+            periodStats={periodStats.byMotivId}
+          />
         )}
 
         <div className="flex items-center gap-2 text-[11px] text-gray-500 -mt-2">
@@ -595,11 +599,13 @@ function DiagCampaignDump({ campaigns }: { campaigns: import('@/lib/motivApi/typ
 }
 
 // 통과 캠페인 검색 패널 — 사용자가 힐스펫 등 특정 캠페인이 통과했는지 직접 확인.
+// 사용자 보고 (id=20100, 5월 힐스펫) — DMP 비용 누락 진단을 위해 데이터 소스별 값 노출.
 function DiagCampaignList({
-  campaigns, adGroups,
+  campaigns, adGroups, periodStats,
 }: {
   campaigns: import('@/lib/motivApi/types').MotivCampaign[]
   adGroups: import('@/lib/hooks/useMotivAdGroups').AdGroupRow[]
+  periodStats: Map<number, import('@/lib/motivApi/statsMapper').UnifiedDailyMetrics>
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -616,7 +622,7 @@ function DiagCampaignList({
   const filtered = useMemo(() => {
     const low = q.trim().toLowerCase()
     if (!low) return campaigns
-    return campaigns.filter(c => (c.title || '').toLowerCase().includes(low))
+    return campaigns.filter(c => (c.title || '').toLowerCase().includes(low) || String(c.id) === low)
   }, [campaigns, q])
 
   return (
@@ -627,7 +633,7 @@ function DiagCampaignList({
         className="w-full flex items-center justify-between px-3 py-2 text-[11px] text-gray-600 hover:bg-gray-50"
       >
         <span>
-          <b className="text-emerald-700">{campaigns.length}</b>개 통과 캠페인 list — 클릭으로 펼침/닫기 (검색 가능)
+          <b className="text-emerald-700">{campaigns.length}</b>개 통과 캠페인 list — 클릭으로 펼침/닫기 (검색 / id 직접 입력 가능)
         </span>
         <span>{open ? '▲' : '▼'}</span>
       </button>
@@ -635,21 +641,23 @@ function DiagCampaignList({
         <div className="border-t border-gray-100 p-3">
           <input
             type="text"
-            placeholder="캠페인 이름 검색 (예: 힐스펫)"
+            placeholder="캠페인 이름 또는 id (예: 힐스펫, 20100)"
             value={q}
             onChange={e => setQ(e.target.value)}
             className="w-full mb-2 rounded border border-gray-300 px-2 py-1 text-[11px]"
           />
-          <div className="max-h-72 overflow-y-auto text-[10px] tabular-nums">
+          <div className="max-h-80 overflow-y-auto text-[10px] tabular-nums">
             <table className="w-full">
               <thead className="bg-gray-50 text-gray-500 sticky top-0">
                 <tr>
                   <th className="px-2 py-1 text-left">id</th>
                   <th className="px-2 py-1 text-left">type</th>
                   <th className="px-2 py-1 text-left">status</th>
-                  <th className="px-2 py-1 text-left">start</th>
-                  <th className="px-2 py-1 text-left">end</th>
-                  <th className="px-2 py-1 text-left">광고그룹/dataFee 합</th>
+                  <th className="px-2 py-1 text-left">기간</th>
+                  <th className="px-2 py-1 text-right" title="adgroups list(lifetime) 합">광고그룹/dataFee(lifetime)</th>
+                  <th className="px-2 py-1 text-right" title="campaigns.index 응답의 lifetime data_fee">캠페인 lifetime dataFee</th>
+                  <th className="px-2 py-1 text-right" title="/v1/stats/campaign/breakdown 의 기간 dmpFee — 본 페이지에서 실제 사용됨">⭐ periodStats dmpFee</th>
+                  <th className="px-2 py-1 text-center" title="periodStats.dmpFee>0 or adGroupTotal>0 이면 표시(통과)">결과</th>
                   <th className="px-2 py-1 text-left">title</th>
                 </tr>
               </thead>
@@ -657,19 +665,33 @@ function DiagCampaignList({
                 {filtered.map(c => {
                   const ags = adGroupsByCampaign.get(c.id) ?? []
                   const sum = ags.reduce((s, a) => s + a.dataFee, 0)
+                  const campLifetime = Number(c.stats?.data_fee ?? 0)
+                  const pdf = periodStats.get(c.id)?.dmpFee ?? 0
+                  const accurate = pdf > 0 ? pdf : sum
+                  const willInclude = accurate > 0
                   return (
-                    <tr key={c.id} className="hover:bg-gray-50">
+                    <tr key={c.id} className={`hover:bg-gray-50 ${!willInclude ? 'bg-rose-50/40' : ''}`}>
                       <td className="px-2 py-0.5 font-mono">{c.id}</td>
                       <td className="px-2 py-0.5">{c.campaign_type}</td>
                       <td className="px-2 py-0.5">{c.status}</td>
-                      <td className="px-2 py-0.5">{c.start_date ?? '-'}</td>
-                      <td className="px-2 py-0.5">{c.end_date ?? '-'}</td>
-                      <td className="px-2 py-0.5">
-                        <span className={ags.length === 0 ? 'text-rose-600' : 'text-gray-700'}>
+                      <td className="px-2 py-0.5">{c.start_date?.slice(2) ?? '-'} ~ {c.end_date?.slice(2) ?? '-'}</td>
+                      <td className="px-2 py-0.5 text-right">
+                        <span className={ags.length === 0 ? 'text-rose-600' : 'text-gray-500'}>
                           {ags.length} / {Math.round(sum).toLocaleString('ko-KR')}
                         </span>
                       </td>
-                      <td className="px-2 py-0.5 max-w-[420px] truncate" title={c.title ?? ''}>
+                      <td className="px-2 py-0.5 text-right text-gray-500">{Math.round(campLifetime).toLocaleString('ko-KR')}</td>
+                      <td className={`px-2 py-0.5 text-right font-semibold ${pdf > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {Math.round(pdf).toLocaleString('ko-KR')}
+                      </td>
+                      <td className="px-2 py-0.5 text-center">
+                        {willInclude ? (
+                          <span className="inline-block rounded-full bg-emerald-100 text-emerald-700 px-1.5 py-0.5 text-[9px] font-bold">표시</span>
+                        ) : (
+                          <span className="inline-block rounded-full bg-rose-100 text-rose-700 px-1.5 py-0.5 text-[9px] font-bold">제외</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-0.5 max-w-[360px] truncate" title={c.title ?? ''}>
                         {c.title}
                       </td>
                     </tr>
@@ -678,7 +700,7 @@ function DiagCampaignList({
               </tbody>
             </table>
             {filtered.length === 0 && (
-              <p className="px-2 py-2 text-rose-600">검색 매칭 없음 — 이 캠페인은 통과 89개 안에 없음. 기간외(outOfRange) 로 빠짐.</p>
+              <p className="px-2 py-2 text-rose-600">검색 매칭 없음 — 이 캠페인은 통과 list 안에 없음. 기간외(outOfRange) 로 빠짐.</p>
             )}
           </div>
         </div>
