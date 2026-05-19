@@ -43,6 +43,8 @@ interface UnifiedDmpRow {
   dmpTotal: number
   source: 'CT_PLUS' | 'MOTIV'
   isUnmapped?: boolean
+  /** 사용자 진단 — dataFee 산출에 어떤 source 가 사용됐는지. */
+  dmpFeeSources?: Set<'period' | 'adgroup_lifetime' | 'campaign_lifetime'>
 }
 
 function toMonthStr(d: Date) {
@@ -207,16 +209,29 @@ export default function DmpFeeClient() {
         : resolveAdvertiserByFuzzyMatch(camp, advertisers, adAccount, product === 'CT' || product === 'CTV' ? product : null)
       const advertiserName = internalAdv?.name || fuzzyAdv?.name || getAdvertiserName(adAccount) || '—'
 
-      // accurateDmpFee — /v1/stats/campaign/breakdown 의 dmpFee (기간 정확) 우선.
-      // 광고그룹 list 의 dataFee 는 lifetime 일 가능성 (사용자 진단: 힐스펫 광고그룹 10개 dataFee=0).
+      // accurateDmpFee — 4-에이전트 진단(A1/A2/A3/A4) 결과 fallback chain 3단계:
+      //   ① periodStats.dmpFee — /v1/stats/campaign/breakdown 기간 정확 (1순위)
+      //   ② adGroupTotal — /v1/adgroups list lifetime (vendor 비율 분배 weight 도 됨)
+      //   ③ camp.stats?.data_fee — /v1/campaigns list lifetime (A3 권한 가설: 권한 밖
+      //      adaccount 캠페인은 stats/breakdown 응답에서 누락되나 campaigns.index 응답엔 포함)
+      // 셋 다 0/누락 일 때만 행 제외. 어떤 source 사용했는지 entry.dmpFeeSources 에 기록.
       const campAdGroups = adGroupsByCampaign.get(camp.id) ?? []
       const adGroupTotal = campAdGroups.reduce((s, r) => s + r.dataFee, 0)
       const periodDmpFee = periodStats.byMotivId.get(camp.id)?.dmpFee
-      // periodStats 미응답 시 lifetime adGroupTotal 사용 (기간 외도 표시되는 단점 있음 → diag 로 추적).
-      const accurateDmpFee = (periodDmpFee != null && periodDmpFee > 0)
-        ? periodDmpFee
-        : adGroupTotal
-      if (accurateDmpFee <= 0) continue
+      const campLifetime = Number(camp.stats?.data_fee ?? 0)
+      let dmpFeeSource: 'period' | 'adgroup_lifetime' | 'campaign_lifetime' | null = null
+      let accurateDmpFee = 0
+      if (periodDmpFee != null && periodDmpFee > 0) {
+        accurateDmpFee = periodDmpFee
+        dmpFeeSource = 'period'
+      } else if (adGroupTotal > 0) {
+        accurateDmpFee = adGroupTotal
+        dmpFeeSource = 'adgroup_lifetime'
+      } else if (campLifetime > 0) {
+        accurateDmpFee = campLifetime
+        dmpFeeSource = 'campaign_lifetime'
+      }
+      if (accurateDmpFee <= 0 || !dmpFeeSource) continue
 
       const key = `${product}::${advertiserName}`
       if (!map.has(key)) {
@@ -231,6 +246,8 @@ export default function DmpFeeClient() {
       }
       const entry = map.get(key)!
       seenCampaign.get(key)!.add(camp.id)
+      if (!entry.dmpFeeSources) entry.dmpFeeSources = new Set()
+      entry.dmpFeeSources.add(dmpFeeSource)
 
       // vendor 비율 분배 — 우선순위:
       //   ① 광고그룹 dataFee 분포 (lifetime 이라도 vendor 비율은 유효).
@@ -503,10 +520,31 @@ export default function DmpFeeClient() {
                     const sameAdv = prev?.advertiserName === r.advertiserName
                     return (
                       <tr key={r.key} className="group hover:bg-gray-50/70 transition-colors">
-                        <td className={`sticky left-0 z-[1] bg-white group-hover:bg-gray-50/70 px-3 py-1.5 font-medium whitespace-nowrap max-w-[200px] truncate shadow-[2px_0_0_0_rgba(0,0,0,0.05)] ${
+                        <td className={`sticky left-0 z-[1] bg-white group-hover:bg-gray-50/70 px-3 py-1.5 font-medium whitespace-nowrap max-w-[240px] truncate shadow-[2px_0_0_0_rgba(0,0,0,0.05)] ${
                           sameAdv ? 'text-gray-300' : 'text-gray-800'
-                        }`} title={r.advertiserName}>
+                        }`} title={(() => {
+                          const srcs = r.dmpFeeSources ? Array.from(r.dmpFeeSources) : []
+                          return `${r.advertiserName}${srcs.length ? '\n[dataFee source: ' + srcs.join(', ') + ']' : ''}`
+                        })()}>
                           {sameAdv ? '·' : r.advertiserName}
+                          {/* dataFee source 표시 — period(정확) / adgroup_lifetime / campaign_lifetime */}
+                          {!sameAdv && r.dmpFeeSources && (() => {
+                            const srcs = Array.from(r.dmpFeeSources)
+                            // 모두 period 면 색 표시 X. lifetime 만 사용했으면 amber 배지.
+                            const hasLifetime = srcs.some(s => s !== 'period')
+                            const allLifetime = srcs.every(s => s !== 'period')
+                            if (!hasLifetime) return null
+                            return (
+                              <span
+                                className={`ml-1 inline-block rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                                  allLifetime ? 'bg-amber-100 text-amber-700' : 'bg-amber-50 text-amber-600'
+                                }`}
+                                title={`기간 정확값(periodStats) 누락 → lifetime fallback 사용 (${srcs.join(', ')}).\nMotiv API 권한 또는 응답 누락 가능성.`}
+                              >
+                                ⚠ lifetime
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td className="px-3 py-1.5 text-center">
                           <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${productChipClass(r.product)}`}>{r.product}</span>
