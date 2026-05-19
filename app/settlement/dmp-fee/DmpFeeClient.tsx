@@ -12,7 +12,7 @@ import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAdGroups } from "@/lib/hooks/useMotivAdGroups"
 import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import { labelForTargetingProductId, motivTypeToProduct, type MediaProductFilter } from "@/lib/motivApi/productMapping"
-import { getAdvertiserName, resolveAdvertiserByFuzzyMatch } from "@/lib/motivApi/advertiserHelpers"
+import { getAdvertiserName } from "@/lib/motivApi/advertiserHelpers"
 
 /**
  * DMP 수수료 정산 페이지 — 통합 표.
@@ -182,7 +182,7 @@ export default function DmpFeeClient() {
   // 캠페인 단위 순회 — accurateDmpFee 우선, 광고그룹 비율로 vendor 분배.
   const motivRows = useMemo((): UnifiedDmpRow[] => {
     if (!motivProduct) return []
-    const asgById = new Map(assignments.map(a => [a.motivCampaignId, a]))
+    // 사용자 결정 — 광고주/대행사 매칭(assignments) 로직 제거. adAccount API 응답 그대로.
     const map = new Map<string, UnifiedDmpRow>()
     const seenCampaign = new Map<string, Set<number>>()
 
@@ -199,15 +199,11 @@ export default function DmpFeeClient() {
       const product = motivTypeToProduct(camp.campaign_type)
       if (product !== 'CT' && product !== 'CTV') continue
 
-      const asg = asgById.get(camp.id)
-      const internalAdv = asg?.advertiserId ? advertisers.find(a => a.id === asg.advertiserId) : undefined
       const adAccount   = adAccountById.get(camp.adaccount_id)
-      // 사용자 결정 — assignment 미설정 시 내부 advertiser 이름 fuzzy 매칭
-      // (예: '힐스펫 뉴트리션_CTV' 등록되어 있으면 title 에 '힐스펫 뉴트리션' 포함되는
-      //  Motiv 캠페인을 자동 연결).
-      const fuzzyAdv = internalAdv ? null
-        : resolveAdvertiserByFuzzyMatch(camp, advertisers, adAccount, product === 'CT' || product === 'CTV' ? product : null)
-      const advertiserName = internalAdv?.name || fuzzyAdv?.name || getAdvertiserName(adAccount) || '—'
+      // 사용자 결정 — '광고주/대행사 매칭 없이 API 로 불러온 adAccount 의 광고주/대행사
+      // 그대로 사용'. 기존 internalAdv (assignment.advertiserId) / fuzzy 매칭 모두 제거.
+      // adAccount.advertiser_name 1순위, adAccount.advertiser.name → adAccount.name → '—'.
+      const advertiserName = getAdvertiserName(adAccount) || '—'
 
       // accurateDmpFee — 4-에이전트 진단(A1/A2/A3/A4) 결과 fallback chain 3단계:
       //   ① periodStats.dmpFee — /v1/stats/campaign/breakdown 기간 정확 (1순위)
@@ -305,7 +301,7 @@ export default function DmpFeeClient() {
       }
     }
     return result
-  }, [motivProduct, adGroups.rows, motivFetch.data, assignments, advertisers, adAccountById, periodStats.byMotivId])
+  }, [motivProduct, adGroups.rows, motivFetch.data, adAccountById, periodStats.byMotivId])
 
   const allRows = useMemo(
     () => [...ctPlusRows, ...motivRows].sort((a, b) => b.dmpTotal - a.dmpTotal),
