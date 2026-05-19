@@ -31,6 +31,9 @@ interface State {
     final: number                // 최종 노출 수 (data.length)
     /** 페이지 한계(MAX_PAGES) 도달했는지 — 추가 캠페인 누락 가능성 신호 */
     truncated: boolean
+    /** 사용자 보고 — '제외로 포함되면 안되는 항목 확인'. 어떤 캠페인이 제외됐는지 노출. */
+    excludedSamples: { id: number; title: string }[]
+    outOfRangeSamples: { id: number; title: string; start: string | null; end: string | null }[]
   }
 }
 
@@ -62,7 +65,7 @@ function monthToRange(month: string): { start: string; end: string } | null {
  *
  * 주의: per_page 200, 첫 페이지만 조회 (향후 무한 스크롤/페이지네이션 고려).
  */
-const EMPTY_DIAG = { serverTotal: 0, fetched: 0, excluded: 0, outOfRange: 0, final: 0, truncated: false }
+const EMPTY_DIAG = { serverTotal: 0, fetched: 0, excluded: 0, outOfRange: 0, final: 0, truncated: false, excludedSamples: [], outOfRangeSamples: [] }
 
 export function useMotivSettlementCampaigns({ types, month, dateRange, perPage = 200, enabled = true, refreshKey = 0 }: Options) {
   const [state, setState] = useState<State>({ data: [], loading: true, error: null, exchangeRate: 0, total: 0, diag: { ...EMPTY_DIAG } })
@@ -159,6 +162,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
         let serverTotal = 0
         let fetched = 0
         let excluded = 0
+        const excludedSamples: { id: number; title: string }[] = []
         const byId = new Map<number, MotivCampaign>()
         let exchangeRate = 0
         for (const r of results) {
@@ -168,6 +172,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
             const matched = matchKw(c.title)
             if (isExcludedCampaign(c.title)) {
               excluded += 1
+              excludedSamples.push({ id: c.id, title: c.title ?? '' })
               if (matched) console.log(`[DMP debug] '${c.title}' (id=${c.id}) → EXCLUDED 리스트로 제외`)
               continue
             }
@@ -180,6 +185,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
         const afterDedup = data.length
 
         let outOfRange = 0
+        const outOfRangeSamples: { id: number; title: string; start: string | null; end: string | null }[] = []
         if (range) {
           const mStart = new Date(`${range.start}T00:00:00`)
           const mEnd   = new Date(`${range.end}T23:59:59`)
@@ -192,6 +198,9 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
             const keep = cs <= mEnd && ce >= mStart
             if (!keep) {
               outOfRange += 1
+              if (outOfRangeSamples.length < 50) {
+                outOfRangeSamples.push({ id: c.id, title: c.title ?? '', start: c.start_date, end: c.end_date })
+              }
               if (matchKw(c.title)) {
                 console.log(`[DMP debug] '${c.title}' (id=${c.id}) → outOfRange 제외 (운영 ${c.start_date}~${c.end_date} vs range ${range.start}~${range.end})`)
               }
@@ -217,6 +226,8 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
           serverTotal, fetched, excluded, outOfRange,
           final: data.length,
           truncated,
+          excludedSamples,
+          outOfRangeSamples,
         }
         if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
           console.log('[useMotivSettlementCampaigns] diag', diag, { types, range, dedupLost: fetched - excluded - afterDedup })

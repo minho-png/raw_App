@@ -12,7 +12,7 @@ import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAdGroups } from "@/lib/hooks/useMotivAdGroups"
 import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import { labelForTargetingProductId, motivTypeToProduct, type MediaProductFilter } from "@/lib/motivApi/productMapping"
-import { getAdvertiserName } from "@/lib/motivApi/advertiserHelpers"
+import { getAdvertiserName, resolveAdvertiserByFuzzyMatch } from "@/lib/motivApi/advertiserHelpers"
 
 /**
  * DMP 수수료 정산 페이지 — 통합 표.
@@ -200,7 +200,12 @@ export default function DmpFeeClient() {
       const asg = asgById.get(camp.id)
       const internalAdv = asg?.advertiserId ? advertisers.find(a => a.id === asg.advertiserId) : undefined
       const adAccount   = adAccountById.get(camp.adaccount_id)
-      const advertiserName = internalAdv?.name || getAdvertiserName(adAccount) || '—'
+      // 사용자 결정 — assignment 미설정 시 내부 advertiser 이름 fuzzy 매칭
+      // (예: '힐스펫 뉴트리션_CTV' 등록되어 있으면 title 에 '힐스펫 뉴트리션' 포함되는
+      //  Motiv 캠페인을 자동 연결).
+      const fuzzyAdv = internalAdv ? null
+        : resolveAdvertiserByFuzzyMatch(camp, advertisers, adAccount, product === 'CT' || product === 'CTV' ? product : null)
+      const advertiserName = internalAdv?.name || fuzzyAdv?.name || getAdvertiserName(adAccount) || '—'
 
       // accurateDmpFee — /v1/stats/campaign/breakdown 의 dmpFee (기간 정확) 우선.
       // 광고그룹 list 의 dataFee 는 lifetime 일 가능성 (사용자 진단: 힐스펫 광고그룹 10개 dataFee=0).
@@ -388,6 +393,35 @@ export default function DmpFeeClient() {
               <div className="mt-1.5 text-[10px] text-gray-500">
                 ?debug=ALL → 콘솔에 통과 캠페인 전체 dump. ?debug=힐스펫 → 매칭만.
               </div>
+              {/* 사용자 요구 — '제외로 포함되면 안되는 항목 확인'. 어떤 캠페인이
+                  EXCLUDED 리스트 / outOfRange 로 빠졌는지 표 형태로 가시화. */}
+              {d.excluded > 0 && (
+                <details className="mt-1.5 text-[10px]">
+                  <summary className="cursor-pointer text-rose-700 font-medium">제외 {d.excluded}건 — 클릭하여 list 펼치기 (lib/motivApi/productMapping.ts EXCLUDED_MOTIV_CAMPAIGN_NAMES 와 정확히 일치하는 title 만 제외됨)</summary>
+                  <ul className="mt-1 space-y-0.5 pl-4">
+                    {d.excludedSamples.map(s => (
+                      <li key={s.id} className="text-gray-600">
+                        <span className="font-mono text-gray-400 mr-1">#{s.id}</span>
+                        <span className="text-rose-700">{s.title || '(no title)'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {d.outOfRange > 0 && (
+                <details className="mt-1 text-[10px]">
+                  <summary className="cursor-pointer text-amber-700 font-medium">기간외 {d.outOfRange}건 — 클릭하여 처음 50건 list (운영기간이 선택한 월과 겹치지 않음)</summary>
+                  <ul className="mt-1 space-y-0.5 pl-4">
+                    {d.outOfRangeSamples.map(s => (
+                      <li key={s.id} className="text-gray-600">
+                        <span className="font-mono text-gray-400 mr-1">#{s.id}</span>
+                        <span className="text-gray-400 mr-1">{s.start?.slice(2) ?? '-'} ~ {s.end?.slice(2) ?? '-'}</span>
+                        <span className="text-amber-700">{s.title || '(no title)'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </div>
           )
         })()}
