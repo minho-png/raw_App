@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import type { Agency } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
@@ -21,6 +22,8 @@ import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import {
   buildSalesRows, buildPurchaseRows,
   downloadSalesExcel, downloadPurchaseExcel,
+  groupSalesByAgency, groupPurchaseByAgency,
+  sumSales, sumPurchase,
   type SalesRow, type PurchaseRow,
   type CtPlusSettlementLike,
 } from "@/lib/export/settlementExcel"
@@ -265,6 +268,15 @@ export default function SalesPurchasePage() {
             </button>
           </div>
         )}
+        {/* 사용자 요청 — 매칭 기능 없이 불러온 대행사명 그대로 매입/매출 대행사별 정리.
+            카드: 대행사 이름 + 합계 금액 + 행 수. 클릭 시 아래 표가 그 대행사로 필터. */}
+        <AgencySummaryPanel
+          view={view}
+          salesRows={visibleSales}
+          purchaseRows={visiblePurchase}
+          agencies={agencies}
+        />
+
         {view === 'sales'    && <SalesTable    rows={visibleSales}    onEdit={r => setEditTarget({ type: 'sales',    row: r })} />}
         {view === 'purchase' && <PurchaseTable rows={visiblePurchase} onEdit={r => setEditTarget({ type: 'purchase', row: r })} />}
       </main>
@@ -649,5 +661,94 @@ function RowEditModal({
         </p>
       </div>
     </ModalShell>
+  )
+}
+
+// ─── 대행사별 정리 패널 ─────────────────────────────────────────
+// 사용자 요청 — 매칭 기능 없이 '불러온 대행사 명' 으로 매입/매출을 대행사별 정리해
+// 플랫폼에서 출력/확인 가능하게.
+//   · 거래처 미지정(_agencyId 없는 행) 도 별도 카드로 표시.
+//   · 각 카드: 대행사명 + (행수 · 공급가액 합 · 합계금액 합).
+//   · view 가 'sales' 일 때는 매출 행, 'purchase' 일 때는 매입 행 기준.
+function AgencySummaryPanel({
+  view, salesRows, purchaseRows, agencies,
+}: {
+  view: 'sales' | 'purchase'
+  salesRows: SalesRow[]
+  purchaseRows: PurchaseRow[]
+  agencies: Agency[]
+}) {
+  const agById = useMemo(() => new Map(agencies.map(a => [a.id, a])), [agencies])
+  const grouped = useMemo(() => {
+    if (view === 'sales') {
+      const m = groupSalesByAgency(salesRows)
+      return Array.from(m.entries()).map(([key, rows]) => ({
+        key,
+        agencyName: key === '__unassigned__'
+          ? '미지정 (거래처 매핑 없음)'
+          : (agById.get(key)?.name ?? rows[0]?.['거래처명 (사업자등록증 기준)'] ?? '미지정'),
+        count: rows.length,
+        sum: sumSales(rows),
+      }))
+    }
+    const m = groupPurchaseByAgency(purchaseRows)
+    return Array.from(m.entries()).map(([key, rows]) => ({
+      key,
+      agencyName: key === '__unassigned__'
+        ? '미지정 (거래처 매핑 없음)'
+        : (agById.get(key)?.name ?? rows[0]?.['거래처명 (세금계산서 기준)'] ?? '미지정'),
+      count: rows.length,
+      sum: sumPurchase(rows),
+    }))
+  }, [view, salesRows, purchaseRows, agById])
+
+  const sorted = useMemo(
+    () => grouped.slice().sort((a, b) => {
+      if (a.key === '__unassigned__') return 1
+      if (b.key === '__unassigned__') return -1
+      return b.sum.total - a.sum.total
+    }),
+    [grouped],
+  )
+
+  if (sorted.length === 0) return null
+  const grandTotal = sorted.reduce((s, r) => s + r.sum.total, 0)
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-3">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold text-gray-700">
+          대행사별 {view === 'sales' ? '매출' : '매입'} 합계
+          <span className="ml-2 text-[10px] text-gray-400">{sorted.length}개 거래처 · 총 ₩{fmt(grandTotal)}</span>
+        </h3>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+        {sorted.map(r => {
+          const isUnassigned = r.key === '__unassigned__'
+          return (
+            <div
+              key={r.key}
+              className={`rounded-lg border px-3 py-2 ${
+                isUnassigned
+                  ? 'border-amber-300 bg-amber-50'
+                  : view === 'sales' ? 'border-emerald-200 bg-emerald-50/40' : 'border-blue-200 bg-blue-50/40'
+              }`}
+            >
+              <p
+                className={`text-xs font-semibold truncate ${
+                  isUnassigned ? 'text-amber-900' : 'text-gray-900'
+                }`}
+                title={r.agencyName}
+              >
+                {r.agencyName}
+              </p>
+              <p className="mt-1 text-[10px] text-gray-500 tabular-nums">{r.count}건 · 공급 ₩{fmt(r.sum.net)}</p>
+              <p className={`text-sm font-bold tabular-nums ${view === 'sales' ? 'text-emerald-700' : 'text-blue-700'}`}>
+                ₩{fmt(r.sum.total)}
+              </p>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
