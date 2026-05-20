@@ -156,10 +156,10 @@ export function SubCampaignList({
                   {sc.isVideo ? (
                     <FieldWithSuffix label="VTR" suffix="%">
                       <input
-                        type="number" min="0" max="100" step="0.1"
+                        type="number" min="0" max="100" step="0.01"
                         value={sc.vtrTarget ?? ''}
                         onChange={e => onUpdateSubCampaign(idx, 'vtrTarget', parseFloat(e.target.value) || undefined)}
-                        placeholder="0"
+                        placeholder="0.00"
                         className="w-full text-xs rounded border border-gray-300 px-2 py-1 pr-6 focus:outline-none focus:ring-1 focus:ring-blue-400 tabular-nums"
                       />
                     </FieldWithSuffix>
@@ -214,10 +214,10 @@ function SubBudgetRow({
         </FieldWithSuffix>
         <FieldWithSuffix label="수수료율" suffix="%">
           <input
-            type="number" min="0" max="100" step="0.1"
+            type="number" min="0" max="100" step="0.01"
             value={sc.totalFeeRate ?? ''}
             onChange={e => onUpdateSubCampaign(idx, 'totalFeeRate', parseFloat(e.target.value) || undefined)}
-            placeholder="0"
+            placeholder="0.00"
             className="w-full text-xs rounded border border-gray-300 px-2 py-1 pr-6 focus:outline-none focus:ring-1 focus:ring-blue-400 tabular-nums"
           />
         </FieldWithSuffix>
