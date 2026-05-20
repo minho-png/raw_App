@@ -374,8 +374,9 @@ export default function DmpFeeClient() {
           product={product} onProductChange={setProduct}
         />
 
-        {/* 진단 카드 — 항상 노출. 사용자 보고 '힐스펫 못 가져옴' 진단용. */}
-        {motivProduct && (() => {
+        {/* 사용자 QA 보고 — 진단 카드가 프로덕션 노출되어 신뢰도/보안 위험.
+            NODE_ENV=development 또는 URL ?debug=1 일 때만 노출. */}
+        {motivProduct && (typeof window !== 'undefined' && (process.env.NODE_ENV === 'development' || new URLSearchParams(window.location.search).has('debug'))) && (() => {
           const d = motivFetch.diag
           const dropped = d.fetched - d.final
           return (
@@ -439,11 +440,13 @@ export default function DmpFeeClient() {
           )
         })()}
 
-        {/* 통과 캠페인 콘솔 dump — ?debug=ALL 시 (페이지 mount 후 1회). */}
-        <DiagCampaignDump campaigns={motivFetch.data} />
+        {/* 사용자 QA — 디버그 dump/리스트도 dev/?debug=1 일 때만. */}
+        {typeof window !== 'undefined' && (process.env.NODE_ENV === 'development' || new URLSearchParams(window.location.search).has('debug')) && (
+          <DiagCampaignDump campaigns={motivFetch.data} />
+        )}
 
-        {/* 통과 89개 캠페인 list — 화면에서 검색 가능 (사용자: '힐스펫이 있는지 확인'). */}
-        {motivProduct && motivFetch.data.length > 0 && (
+        {/* 통과 캠페인 list — 디버그 모드만 노출 */}
+        {typeof window !== 'undefined' && (process.env.NODE_ENV === 'development' || new URLSearchParams(window.location.search).has('debug')) && motivProduct && motivFetch.data.length > 0 && (
           <DiagCampaignList
             campaigns={motivFetch.data}
             adGroups={adGroups.rows}

@@ -101,7 +101,21 @@ export default function MediaCostPage() {
     const advertiserName = getAdvertiserName(c.advertiserId)
     const agencyName     = getAgencyName(c.agencyId)
     for (const mb of c.mediaBudgets) {
-      const markupRate = MEDIA_MARKUP_RATE[mb.media] ?? 0
+      // 사용자 QA BUG-05 — 마크업률 표시 일관성.
+      // PR #106 이후 MEDIA_MARKUP_RATE 모두 0 → sub-camp totalFeeRate (budget 가중평균) 으로 실효율 표시.
+      // Fallback: sub 가 없으면 MEDIA_MARKUP_RATE 상수 (legacy).
+      const subs = mb.subCampaigns ?? []
+      let markupRate = MEDIA_MARKUP_RATE[mb.media] ?? 0
+      if (subs.length > 0) {
+        let wSum = 0, fSum = 0
+        for (const sc of subs) {
+          const b = sc.budget ?? 0
+          const f = sc.totalFeeRate ?? 0
+          wSum += b
+          fSum += b * f
+        }
+        if (wSum > 0) markupRate = +(fSum / wSum).toFixed(2)
+      }
       const rawSpend = rawSpendByCampMedia.get(`${c.id}||${mb.media}`) ?? 0
       if (mb.dmp.spend > 0) {
         const spend = mb.dmp.spend
@@ -154,11 +168,12 @@ export default function MediaCostPage() {
   const agencyPaletteMap: Record<string, typeof AGENCY_PALETTE[number]> = {}
   agencyIds.forEach((id, i) => { agencyPaletteMap[id] = AGENCY_PALETTE[i % AGENCY_PALETTE.length] })
 
-  // 매체별 집계
-  const mediaMap = new Map<string, { spend: number; netCost: number }>()
+  // 매체별 집계 — markupRate spend 가중평균 포함 (사용자 QA BUG-05).
+  const mediaMap = new Map<string, { spend: number; netCost: number; markupSum: number }>()
   for (const r of rows) {
-    const e = mediaMap.get(r.media) ?? { spend: 0, netCost: 0 }
+    const e = mediaMap.get(r.media) ?? { spend: 0, netCost: 0, markupSum: 0 }
     e.spend += r.spend; e.netCost += r.netCost
+    e.markupSum += r.markupRate * r.spend
     mediaMap.set(r.media, e)
   }
 
@@ -321,11 +336,12 @@ export default function MediaCostPage() {
                 <tbody className="divide-y divide-gray-50">
                   {Array.from(mediaMap.entries()).map(([media, d]) => {
                     const markupAmt = d.spend - d.netCost
+                    const effMarkup = d.spend > 0 ? +(d.markupSum / d.spend).toFixed(2) : (MEDIA_MARKUP_RATE[media] ?? 0)
                     return (
                       <tr key={media} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-5 py-2.5">
                           <span className="font-medium text-gray-800">{media}</span>
-                          <span className="ml-2 text-gray-400">마크업 {MEDIA_MARKUP_RATE[media] ?? 0}%</span>
+                          <span className="ml-2 text-gray-400" title="실효 마크업률 = sub-camp totalFeeRate 의 spend 가중평균">마크업 {effMarkup}%</span>
                         </td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">₩{fmt(d.spend)}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">-₩{fmt(markupAmt)}</td>
