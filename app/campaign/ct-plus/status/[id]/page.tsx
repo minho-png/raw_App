@@ -17,6 +17,7 @@ import { useKpiThresholds, checkBudgetWarning, checkRateWarning, checkCostWarnin
 import { useFilterPersistence } from "@/lib/hooks/useFilterPersistence"
 import { FilterBar, FilterChipGroup, FilterSearch, FilterReset } from "@/components/atoms/filters"
 import { KpiThresholdSettings } from "@/components/molecules/KpiThresholdSettings"
+import { useKpiCardVisibility, type KpiCardKey } from "@/lib/hooks/useKpiCardVisibility"
 
 const CREATIVE_COLORS = ["#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"]
 
@@ -76,6 +77,8 @@ export default function CampaignDetailPage() {
   const [editMode, setEditMode] = useState(false)
   const [showThresholds, setShowThresholds] = useState(false)
   const { thresholds, update: updateThresholds } = useKpiThresholds()
+  // 사용자 요청 — 상단 KPI 카드 클릭 추가/삭제. localStorage 영속화.
+  const kpiVis = useKpiCardVisibility()
 
   const campaign = useMemo(()=>campaigns.find(c=>c.id===id)??null,[campaigns,id])
 
@@ -455,22 +458,21 @@ export default function CampaignDetailPage() {
           const mb = campaign.mediaBudgets.find(m => m.media === mediaFilter)
           if (mb) { settingCost = getMediaTotals(mb).totalSettingCost; label = `${mediaFilter} 세팅금액` }
         }
-        // 사용자 보고 — '노출/클릭은 설정 불가능한데 상세보기에서는 KPI 기준 설정 가능'.
-        // 노출/조회/클릭은 raw 카운터 (목표 미설정). title 로 명시해 KPI 목표/임계값과 구분.
-        const items: { label: string; v: string; tone: 'primary' | 'accent' | 'good' | 'muted' | 'default'; hint?: string }[] = [
-          { label, v: `₩${fmtAbbr(settingCost)}`, tone: 'primary' },
-          { label: '집행금액', v: `₩${fmtAbbr(totalA.spend)}`, tone: 'accent' },
-          { label: '소진율', v: settingCost > 0 ? `${(totalA.spend/settingCost*100).toFixed(1)}%` : '-', tone: 'muted' },
-          { label: '노출', v: fmt(totalA.impressions), tone: 'default', hint: '실적값 — 목표 설정 불가' },
-          { label: '조회', v: fmt(totalA.views), tone: 'default', hint: '실적값 — 목표 설정 불가' },
-          { label: '클릭', v: fmt(totalA.clicks), tone: 'default', hint: '실적값 — 목표 설정 불가' },
-          { label: 'CTR', v: `${totalA.ctr}%`, tone: totalA.ctr > 1 ? 'good' : 'default', hint: '세부 캠페인에서 목표 설정' },
-          { label: 'VTR', v: `${totalA.vtr}%`, tone: 'default', hint: '세부 캠페인에서 목표 설정 (동영상)' },
-          { label: 'CPM', v: `₩${fmt(totalA.cpm)}`, tone: 'muted', hint: '세부 캠페인에서 목표 설정' },
-          { label: 'CPC', v: `₩${fmt(totalA.cpc)}`, tone: 'muted', hint: '세부 캠페인에서 목표 설정' },
-          { label: 'CPV', v: totalA.cpv > 0 ? `₩${fmt(totalA.cpv)}` : '-', tone: 'muted' },
-        ]
-        const toneClass = (t: typeof items[number]['tone']) => {
+        // 사용자 요청 — KPI 카드를 클릭으로 추가/삭제. useKpiCardVisibility 훅으로 관리.
+        const allItems: Record<KpiCardKey, { label: string; v: string; tone: 'primary' | 'accent' | 'good' | 'muted' | 'default'; hint?: string }> = {
+          setting:     { label, v: `₩${fmtAbbr(settingCost)}`, tone: 'primary' },
+          spend:       { label: '집행금액', v: `₩${fmtAbbr(totalA.spend)}`, tone: 'accent' },
+          spendRate:   { label: '소진율', v: settingCost > 0 ? `${(totalA.spend/settingCost*100).toFixed(1)}%` : '-', tone: 'muted' },
+          impressions: { label: '노출', v: fmt(totalA.impressions), tone: 'default', hint: '실적값 — 목표 설정 불가' },
+          views:       { label: '조회', v: fmt(totalA.views), tone: 'default', hint: '실적값 — 목표 설정 불가' },
+          clicks:      { label: '클릭', v: fmt(totalA.clicks), tone: 'default', hint: '실적값 — 목표 설정 불가' },
+          ctr:         { label: 'CTR', v: `${totalA.ctr}%`, tone: totalA.ctr > 1 ? 'good' : 'default', hint: '세부 캠페인에서 목표 설정' },
+          vtr:         { label: 'VTR', v: `${totalA.vtr}%`, tone: 'default', hint: '세부 캠페인에서 목표 설정 (동영상)' },
+          cpm:         { label: 'CPM', v: `₩${fmt(totalA.cpm)}`, tone: 'muted', hint: '세부 캠페인에서 목표 설정' },
+          cpc:         { label: 'CPC', v: `₩${fmt(totalA.cpc)}`, tone: 'muted', hint: '세부 캠페인에서 목표 설정' },
+          cpv:         { label: 'CPV', v: totalA.cpv > 0 ? `₩${fmt(totalA.cpv)}` : '-', tone: 'muted' },
+        }
+        const toneClass = (t: 'primary' | 'accent' | 'good' | 'muted' | 'default') => {
           if (t === 'primary') return { box: 'bg-slate-50 border-slate-200', label: 'text-slate-500', value: 'text-slate-900' }
           if (t === 'accent')  return { box: 'bg-blue-50 border-blue-200',   label: 'text-blue-600',  value: 'text-blue-700' }
           if (t === 'good')    return { box: 'bg-emerald-50 border-emerald-200', label: 'text-emerald-600', value: 'text-emerald-700' }
@@ -479,20 +481,37 @@ export default function CampaignDetailPage() {
         }
         return (
           <div className="bg-gradient-to-b from-white to-gray-50/60 border-b border-gray-200 px-6 py-3.5">
-            <div className="flex gap-2 overflow-x-auto">
-              {items.map(({ label, v, tone, hint }) => {
-                const cls = toneClass(tone)
+            <div className="flex gap-2 overflow-x-auto items-stretch">
+              {kpiVis.visible.map(key => {
+                const item = allItems[key]
+                if (!item) return null
+                const cls = toneClass(item.tone)
                 return (
                   <div
-                    key={label}
-                    title={hint}
-                    className={`flex-shrink-0 rounded-xl border px-3 py-2 min-w-[88px] ${cls.box} transition-shadow hover:shadow-sm`}
+                    key={key}
+                    title={item.hint}
+                    className={`group relative flex-shrink-0 rounded-xl border px-3 py-2 min-w-[88px] ${cls.box} transition-shadow hover:shadow-sm`}
                   >
-                    <div className={`text-[10px] font-medium uppercase tracking-wider ${cls.label}`}>{label}</div>
-                    <div className={`text-sm font-bold tabular-nums mt-1 ${cls.value}`}>{v}</div>
+                    <button
+                      type="button"
+                      onClick={() => kpiVis.remove(key)}
+                      className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-rose-600 hover:border-rose-300 text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm"
+                      title={`${item.label} 카드 숨기기`}
+                      aria-label={`${item.label} 숨기기`}
+                    >×</button>
+                    <div className={`text-[10px] font-medium uppercase tracking-wider ${cls.label}`}>{item.label}</div>
+                    <div className={`text-sm font-bold tabular-nums mt-1 ${cls.value}`}>{item.v}</div>
                   </div>
                 )
               })}
+              {kpiVis.hidden.length > 0 && (
+                <KpiCardAddMenu
+                  hidden={kpiVis.hidden}
+                  labelOf={k => allItems[k]?.label ?? k}
+                  onAdd={kpiVis.add}
+                  onReset={kpiVis.reset}
+                />
+              )}
             </div>
           </div>
         )
@@ -1054,13 +1073,21 @@ export default function CampaignDetailPage() {
                     <tbody className="divide-y divide-gray-50">
                       {filteredRows.map((r,i)=>{
                         const changed=edits.has(rowKey(r))
-                        // 이 행이 속한 subCampaign 추론 — (media, campaignName) 매칭.
-                        // RAW 편집에서도 세부 캠페인 식별 가능하게 (사용자 요청).
+                        // 사용자 QA BUG-01 — '전체 행 미매칭' 문제 해결.
+                        // 원인: SubCampaign.csvCampaignNames 가 비어 있으면 항상 미매칭.
+                        // Fix: (1) explicit csvNames 매칭 → (2) 매체 내 sub 가 1개뿐이면 자동 매칭.
                         const subName = (() => {
                           const cn = r.campaignName.trim().toLowerCase()
+                          // Pass 1: 명시 매칭
                           for (const [, sc] of subCampaignMap) {
                             if (sc.media === r.media && sc.csvNamesLower.includes(cn)) return sc.name
                           }
+                          // Pass 2: 매체 내 sub 1개뿐이면 자동 매칭 (fallback).
+                          const sameMedia: { name: string }[] = []
+                          for (const [, sc] of subCampaignMap) {
+                            if (sc.media === r.media) sameMedia.push({ name: sc.name })
+                          }
+                          if (sameMedia.length === 1) return sameMedia[0].name + ' ⓘ'
                           return null
                         })()
                         return(
@@ -1109,6 +1136,55 @@ export default function CampaignDetailPage() {
   )
 }
 
+// KPI 카드 추가 메뉴 — 숨겨진 카드 list 를 popover 로 표시. 사용자 요청.
+function KpiCardAddMenu({
+  hidden, labelOf, onAdd, onReset,
+}: {
+  hidden: KpiCardKey[]
+  labelOf: (k: KpiCardKey) => string
+  onAdd: (k: KpiCardKey) => void
+  onReset: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative flex-shrink-0 self-stretch flex items-center">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="h-full min-w-[56px] rounded-xl border border-dashed border-gray-300 bg-white px-2 text-[11px] text-gray-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+        title={`숨겨진 ${hidden.length}개 카드 다시 추가`}
+      >
+        + 카드 {hidden.length}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-20 w-44 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+            <p className="px-3 py-1 text-[10px] text-gray-400 uppercase tracking-wider">숨김 카드</p>
+            {hidden.map(k => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => { onAdd(k); if (hidden.length === 1) setOpen(false) }}
+                className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700"
+              >
+                + {labelOf(k)}
+              </button>
+            ))}
+            <div className="border-t border-gray-100 mt-1 pt-1">
+              <button
+                type="button"
+                onClick={() => { onReset(); setOpen(false) }}
+                className="block w-full text-left px-3 py-1.5 text-[11px] text-gray-500 hover:bg-gray-50"
+              >전체 표시 (기본값)</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // 세부 캠페인별 대시보드 금액 입력 list.
 // 사용자 결정 — 입력은 세부 캠페인 단위에서만 가능. onChange 시 자동 저장.
 // mediaFilter / subCampaignFilter 적용하여 표시되는 행 좁힘.
@@ -1153,7 +1229,7 @@ function SubDashboardInputs({
   if (visibleRows.length === 0) {
     return (
       <p className="mt-3 text-[11px] text-gray-400 italic">
-        세부 캠페인이 없습니다. 모달에서 매체 하위로 캠페인을 등록하세요.
+        세부 캠페인이 없습니다. 캠페인 현황 → 행 우측 [수정] → 매체 카드 → [+ 추가] 로 등록하세요.
       </p>
     )
   }

@@ -54,7 +54,7 @@ export function CampaignTableSection({
                 <th className="px-4 py-3 text-left">기간</th>
                 <th className="px-4 py-3 text-center" title="운영 기간 대비 경과한 비율">진행률</th>
                 <th className="px-4 py-3 text-center" title="raw 데이터 기준 소진율 (실 소진 / 세팅금액)">소진율</th>
-                <th className="px-4 py-3 text-right" title="집행금액(세팅금액) — 매체별 총예산 합">집행금액</th>
+                <th className="px-4 py-3 text-right" title="집행금액(마크업 포함) / 세팅금액">집행금액</th>
                 <th className="px-4 py-3 text-right" title="당일 / 전일 소진 비교">전일 대비 소진</th>
                 <th className="px-4 py-3 text-left">메모</th>
                 <th className="px-4 py-3 text-center" title="연결된 CSV 캠페인 수 (DB)">연결</th>
@@ -69,8 +69,9 @@ export function CampaignTableSection({
                 const progress = getCampaignProgress(c.startDate, c.endDate)
                 const computed = computedSpendMap.get(c.id)
                 // 소진율 = raw data 기반 (CSV 업로드 집행금액 ÷ 세팅금액)
+                // 사용자 QA — 소진율 = executionAmount(집행금액) ÷ 세팅금액. 세부 페이지와 동일.
                 const rawSpendRate = computed && totals.totalSettingCost > 0
-                  ? Math.round((computed.netAmount / totals.totalSettingCost) * 1000) / 10
+                  ? Math.round((computed.executionAmount / totals.totalSettingCost) * 1000) / 10
                   : 0
                 const isLagging = c.status === "집행 중" && computed && (progress - rawSpendRate) >= 15
                 const sc       = spendRateStyle(rawSpendRate)
@@ -169,21 +170,26 @@ export function CampaignTableSection({
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {computed ? (
+                      {/* 사용자 QA WARN-03 — 세팅금액 0 또는 데이터 없음 케이스 명확화. */}
+                      {!computed ? (
+                        <span className="text-[10px] text-gray-300" title="raw 데이터(CSV) 가 연결되지 않음">데이터 없음</span>
+                      ) : totals.totalSettingCost <= 0 ? (
+                        <span className="text-[10px] text-amber-600" title="매체/세부 캠페인 예산이 0 — 캠페인 수정에서 예산·수수료율 설정 필요">예산 미설정</span>
+                      ) : (
                         <>
                           <div className={`text-xs font-semibold ${sc.text}`}>{rawSpendRate.toFixed(1)}%</div>
                           <div className="mt-1 h-1.5 w-16 mx-auto rounded-full bg-gray-200">
                             <div className={`h-full rounded-full transition-all ${sc.bar}`} style={{ width: `${Math.min(rawSpendRate, 100)}%` }} />
                           </div>
                         </>
-                      ) : (
-                        <span className="text-[10px] text-gray-300">데이터 없음</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right text-xs">
+                    <td className="px-4 py-3 text-right text-xs" title="집행금액 = executionAmount (마크업 포함). 세부 페이지의 '집행금액' 카드와 동일 기준">
                       {computed ? (
                         <div>
-                          <div className="font-medium text-blue-700">{fmt(computed.netAmount)}</div>
+                          {/* 사용자 QA BUG-02 — 목록/세부 집행금액 기준 통일.
+                              세부 페이지는 totalA.spend(=executionAmount) 사용 → 여기도 동일하게. */}
+                          <div className="font-medium text-blue-700">{fmt(computed.executionAmount)}</div>
                           <div className="text-[10px] text-gray-400">/ {fmt(totals.totalSettingCost)}</div>
                           {dashAmount > 0 && (
                             <div
