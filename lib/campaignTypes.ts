@@ -17,7 +17,8 @@ export const MEDIA_MARKUP_RATE: Record<string, number> = {
 export const VAT_RATE = 10
 export const VAT_INCLUDED_MEDIA: ReadonlySet<string> = new Set(['네이버 GFA'])
 export function applyMediaVat(media: string, settingCost: number): number {
-  if (!VAT_INCLUDED_MEDIA.has(media)) return settingCost
+  // 사용자 보고 — 엑셀 일치성 위해 비-VAT 매체도 Math.round 적용 (소수점 누적 방지).
+  if (!VAT_INCLUDED_MEDIA.has(media)) return Math.round(settingCost)
   return Math.round(settingCost * (1 + VAT_RATE / 100))
 }
 
@@ -181,11 +182,15 @@ export function getMediaTotals(mb: MediaBudget) {
   const subs = mb.subCampaigns ?? []
   if (subs.length > 0) {
     const totalBudget = subs.reduce((s, sc) => s + (sc.budget ?? 0), 0)
-    const baseSetting = subs.reduce(
-      (s, sc) => s + calcSettingCost(sc.budget ?? 0, sc.totalFeeRate ?? 0),
+    // 사용자 보고 — '엑셀 입력 값과 일치하지 않는 문제'.
+    // 원인 후보: per-sub calcSettingCost 가 sub 별로 Math.round 후 합산 → 여러 sub
+    // 누적 round 오차 (수십 원 단위 차이). 해결: 합산 단계에서 round 없이 누적 → 최종에
+    // applyMediaVat 안에서 한 번만 round. 사용자 엑셀 (sum-then-round) 과 일치.
+    const baseSettingRaw = subs.reduce(
+      (s, sc) => s + (sc.budget ?? 0) * (1 - (sc.totalFeeRate ?? 0) / 100),
       0,
     )
-    const totalSettingCost = applyMediaVat(mb.media, baseSetting)
+    const totalSettingCost = applyMediaVat(mb.media, baseSettingRaw)
     const totalSpend = (mb.dmp?.spend ?? 0) + (mb.nonDmp?.spend ?? 0)
     return {
       totalBudget, totalSettingCost, totalSpend,

@@ -9,7 +9,7 @@ import {
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
-import { getCampaignTotals, getCampaignProgress, getMediaTotals, getCampaignDashboardNetAmount, getMediaDashboardNetAmount, type Campaign, type SubCampaign } from "@/lib/campaignTypes"
+import { getCampaignTotals, getCampaignProgress, getMediaTotals, getCampaignDashboardNetAmount, getMediaDashboardNetAmount, calcSettingCost, applyMediaVat, VAT_INCLUDED_MEDIA, type Campaign, type SubCampaign } from "@/lib/campaignTypes"
 import { fmt, spendRateStyle } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { RawRow } from "@/lib/rawDataParser"
 import { mColor } from "@/lib/mediaColors"
@@ -438,26 +438,36 @@ export default function CampaignDetailPage() {
       {(() => {
         let settingCost = totals.totalSettingCost
         let label = '세팅금액'
+        // 사용자 보고 — 상단 세팅금액 이상함. 원인: subCampaignFilter 시 sc.budget(부킹 예산) 만
+        // 사용 → '세팅금액' 라벨이지만 부킹 금액과 동일. 정확한 세팅금액은 budget × (1 - fee%)
+        // × VAT(네이버 GFA 1.1) 식으로 산출해야 함.
         if (subCampaignFilter) {
           for (const mb of campaign.mediaBudgets) {
             const sc = mb.subCampaigns?.find(s => s.id === subCampaignFilter)
-            if (sc) { settingCost = sc.budget ?? 0; label = '세부 예산'; break }
+            if (sc) {
+              const base = calcSettingCost(sc.budget ?? 0, sc.totalFeeRate ?? 0)
+              settingCost = applyMediaVat(mb.media, base)
+              label = `${mb.media} 세부 세팅금액`
+              break
+            }
           }
         } else if (mediaFilter) {
           const mb = campaign.mediaBudgets.find(m => m.media === mediaFilter)
           if (mb) { settingCost = getMediaTotals(mb).totalSettingCost; label = `${mediaFilter} 세팅금액` }
         }
-        const items: { label: string; v: string; tone: 'primary' | 'accent' | 'good' | 'muted' | 'default' }[] = [
+        // 사용자 보고 — '노출/클릭은 설정 불가능한데 상세보기에서는 KPI 기준 설정 가능'.
+        // 노출/조회/클릭은 raw 카운터 (목표 미설정). title 로 명시해 KPI 목표/임계값과 구분.
+        const items: { label: string; v: string; tone: 'primary' | 'accent' | 'good' | 'muted' | 'default'; hint?: string }[] = [
           { label, v: `₩${fmtAbbr(settingCost)}`, tone: 'primary' },
           { label: '집행금액', v: `₩${fmtAbbr(totalA.spend)}`, tone: 'accent' },
           { label: '소진율', v: settingCost > 0 ? `${(totalA.spend/settingCost*100).toFixed(1)}%` : '-', tone: 'muted' },
-          { label: '노출', v: fmt(totalA.impressions), tone: 'default' },
-          { label: '조회', v: fmt(totalA.views), tone: 'default' },
-          { label: '클릭', v: fmt(totalA.clicks), tone: 'default' },
-          { label: 'CTR', v: `${totalA.ctr}%`, tone: totalA.ctr > 1 ? 'good' : 'default' },
-          { label: 'VTR', v: `${totalA.vtr}%`, tone: 'default' },
-          { label: 'CPM', v: `₩${fmt(totalA.cpm)}`, tone: 'muted' },
-          { label: 'CPC', v: `₩${fmt(totalA.cpc)}`, tone: 'muted' },
+          { label: '노출', v: fmt(totalA.impressions), tone: 'default', hint: '실적값 — 목표 설정 불가' },
+          { label: '조회', v: fmt(totalA.views), tone: 'default', hint: '실적값 — 목표 설정 불가' },
+          { label: '클릭', v: fmt(totalA.clicks), tone: 'default', hint: '실적값 — 목표 설정 불가' },
+          { label: 'CTR', v: `${totalA.ctr}%`, tone: totalA.ctr > 1 ? 'good' : 'default', hint: '세부 캠페인에서 목표 설정' },
+          { label: 'VTR', v: `${totalA.vtr}%`, tone: 'default', hint: '세부 캠페인에서 목표 설정 (동영상)' },
+          { label: 'CPM', v: `₩${fmt(totalA.cpm)}`, tone: 'muted', hint: '세부 캠페인에서 목표 설정' },
+          { label: 'CPC', v: `₩${fmt(totalA.cpc)}`, tone: 'muted', hint: '세부 캠페인에서 목표 설정' },
           { label: 'CPV', v: totalA.cpv > 0 ? `₩${fmt(totalA.cpv)}` : '-', tone: 'muted' },
         ]
         const toneClass = (t: typeof items[number]['tone']) => {
@@ -470,11 +480,12 @@ export default function CampaignDetailPage() {
         return (
           <div className="bg-gradient-to-b from-white to-gray-50/60 border-b border-gray-200 px-6 py-3.5">
             <div className="flex gap-2 overflow-x-auto">
-              {items.map(({ label, v, tone }) => {
+              {items.map(({ label, v, tone, hint }) => {
                 const cls = toneClass(tone)
                 return (
                   <div
                     key={label}
+                    title={hint}
                     className={`flex-shrink-0 rounded-xl border px-3 py-2 min-w-[88px] ${cls.box} transition-shadow hover:shadow-sm`}
                   >
                     <div className={`text-[10px] font-medium uppercase tracking-wider ${cls.label}`}>{label}</div>
@@ -1170,33 +1181,59 @@ function SubDashboardInputs({
         <span className="text-[10px] text-gray-400">입력 즉시 자동 저장 · 합계 자동 갱신</span>
       </div>
       <ul className="divide-y divide-emerald-50">
-        {visibleRows.map(({ mb, sc }) => (
-          <li key={sc.id} className="px-3 py-2 flex items-center gap-2">
-            <span
-              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium flex-shrink-0"
-              style={{ backgroundColor: mColor(mb.media) + '22', color: mColor(mb.media) }}
-            >
-              {mb.media}
-            </span>
-            <span className="flex-1 min-w-0 text-xs font-medium text-gray-700 truncate" title={sc.name}>
-              {sc.name || <span className="text-gray-300 italic">(이름 없음)</span>}
-            </span>
-            <span className="text-[10px] text-gray-400 tabular-nums flex-shrink-0">
-              예산 ₩{fmt(sc.budget ?? 0)}
-            </span>
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              <span className="text-xs font-semibold text-emerald-700">₩</span>
-              <input
-                type="number"
-                min="0"
-                value={draft[sc.id] ?? ''}
-                onChange={e => handleChange(sc.id, e.target.value)}
-                placeholder="0"
-                className="w-32 rounded border border-emerald-200 bg-white px-2 py-1 text-xs text-right tabular-nums font-semibold text-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-400 placeholder:text-emerald-300"
-              />
-            </div>
-          </li>
-        ))}
+        {visibleRows.map(({ mb, sc }) => {
+          // 사용자 보고 — '네이버GFA 대시보드 금액 수수료 계산 필요'.
+          // 네이버 GFA 대시보드 표시 금액 = VAT 포함 supplyValue.
+          //   · 순매체비 환산 = ÷ 1.1 (raw CSV 와 동일 식)
+          //   · 집행금액 환산 = 순매체비 / (1 - sc.totalFeeRate/100) — 광고주 청구 기준
+          const dashValue = parseFloat(draft[sc.id] ?? '') || 0
+          const isNaver = VAT_INCLUDED_MEDIA.has(mb.media)
+          const netConverted = isNaver && dashValue > 0
+            ? Math.round(dashValue / 1.1)
+            : null
+          const fee = (sc.totalFeeRate ?? 0) / 100
+          const execConverted = isNaver && dashValue > 0 && fee > 0 && fee < 1
+            ? Math.round((dashValue / 1.1) / (1 - fee))
+            : null
+          return (
+            <li key={sc.id} className="px-3 py-2">
+              <div className="flex items-center gap-2">
+                <span
+                  className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium flex-shrink-0"
+                  style={{ backgroundColor: mColor(mb.media) + '22', color: mColor(mb.media) }}
+                >
+                  {mb.media}
+                </span>
+                <span className="flex-1 min-w-0 text-xs font-medium text-gray-700 truncate" title={sc.name}>
+                  {sc.name || <span className="text-gray-300 italic">(이름 없음)</span>}
+                </span>
+                <span className="text-[10px] text-gray-400 tabular-nums flex-shrink-0">
+                  예산 ₩{fmt(sc.budget ?? 0)}
+                </span>
+                <div className="flex items-center gap-0.5 flex-shrink-0">
+                  <span className="text-xs font-semibold text-emerald-700">₩</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={draft[sc.id] ?? ''}
+                    onChange={e => handleChange(sc.id, e.target.value)}
+                    placeholder="0"
+                    className="w-32 rounded border border-emerald-200 bg-white px-2 py-1 text-xs text-right tabular-nums font-semibold text-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-400 placeholder:text-emerald-300"
+                  />
+                </div>
+              </div>
+              {isNaver && dashValue > 0 && (
+                <div className="mt-1 ml-7 flex items-center gap-2 text-[10px] text-gray-500">
+                  <span className="text-gray-400">↳ 네이버 GFA 자동 환산:</span>
+                  <span className="tabular-nums">순매체비 ₩{fmt(netConverted ?? 0)} <span className="text-gray-300">(÷1.1)</span></span>
+                  {execConverted != null && (
+                    <span className="tabular-nums text-blue-600">집행금액 ₩{fmt(execConverted)} <span className="text-gray-300">(÷(1-{(fee*100).toFixed(1)}%))</span></span>
+                  )}
+                </div>
+              )}
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
