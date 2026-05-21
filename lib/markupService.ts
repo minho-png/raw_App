@@ -39,20 +39,9 @@ function buildCsvLookup(campaigns: Campaign[]): Map<string, Campaign> {
   return map
 }
 
-function getAgencyFeeDecimal(campaign: Campaign, mediaType: MediaType, isDmp: boolean): number {
-  const label = MEDIA_TYPE_TO_LABEL[mediaType]
-  const mb = campaign.mediaBudgets.find(m => m.media === label)
-  if (!mb) return 0
-  // 신규: totalFeeRate가 있으면 미디어 마크업과 DMP 수수료를 포함한 통합 수수료율 사용
-  if (mb.totalFeeRate !== undefined) return mb.totalFeeRate / 100
-  // 사용자 QA NEW-BUG-01 — 리타겟팅 서브캠페인 수수료 매체별 불일치 해결.
-  // 이전: targeting.agencyFeeRate 가 매체별로 미설정(0 vs 10) 다르게 저장되어 같은 조건(totalFeeRate=undefined)
-  //       에서 네이버 0% / 카카오 10% 등 부정합 발생.
-  // 정책 (D1+PM Option A): totalFeeRate 미설정 sub 는 일관되게 0% — 사용자가 명시 입력하지 않은
-  //   리타겟팅 등은 수수료 미부과 (UI 의 sub-camp 입력으로 강제하지 않고 default 0% 안전).
-  // dmp/nonDmp.agencyFeeRate 는 PR #102 이전 legacy 필드 — 더 이상 fallback 으로 신뢰하지 않음.
-  return 0
-}
+// 사용자 QA v4 NEW-BUG-01 (PM v2 + R1 검토) — getAgencyFeeDecimal dead 함수 제거.
+// 본 함수는 totalFeeRate 미설정 시 항상 0 을 반환 (Option A 적용 완료) — applyMarkupToRows
+// 의 fallback chain 도 0 으로 통일됐으므로 별도 함수 호출 자체가 불필요. 인라인화.
 
 function getMediaMarkupDecimal(mediaType: MediaType): number {
   const label = MEDIA_TYPE_TO_LABEL[mediaType]
@@ -94,13 +83,12 @@ export function applyMarkupToRows(rawRows: RawRow[], campaigns: Campaign[]): Raw
       }
     }
 
-    // 수수료율 우선순위: SubCampaign.totalFeeRate > MediaBudget.totalFeeRate > 개별 계산
+    // 수수료율 우선순위: SubCampaign.totalFeeRate > MediaBudget.totalFeeRate > 개별 계산.
+    // NEW-BUG-01 — totalFeeRate 미설정 시 agencyFee fallback 도 0 으로 통일 (getAgencyFeeDecimal 인라인).
     const effectiveFeeRate = matchedSubCampaign?.totalFeeRate ?? mb?.totalFeeRate
     const mediaMarkup    = effectiveFeeRate !== undefined ? 0 : getMediaMarkupDecimal(mediaType)
     const dmpFeeRate     = effectiveFeeRate !== undefined ? 0 : (isDmpRow ? DMP_FEE_RATES_DECIMAL[dmpType] ?? 0 : 0)
-    const agencyFee      = effectiveFeeRate !== undefined
-      ? effectiveFeeRate / 100
-      : (matched ? getAgencyFeeDecimal(matched, mediaType, isDmpRow) : 0)
+    const agencyFee      = effectiveFeeRate !== undefined ? effectiveFeeRate / 100 : 0
     const totalFeeDecimal = mediaMarkup + dmpFeeRate + agencyFee
 
     const isNaver = mediaType === 'naver'
@@ -129,41 +117,20 @@ export function computeCampaignRows(
   return allComputed.filter(r => r.matchedCampaignId === campaignId)
 }
 
-// ── 캠페인별 computed rows 로컬스토리지 영속 ────────────────────
-
-const COMPUTED_KEY_PREFIX = 'ct-plus-computed-v1-'
-
-export function saveComputedRows(campaignId: string, rows: RawRow[]): void {
+// ── 사용자 QA v4 V4-WARN-01 (PM v2 + R1 검토) — dead cache 함수 4개 제거 ──
+// 이전: saveComputedRows / loadComputedRows / clearComputedRows / recomputeAllCampaigns
+//        + COMPUTED_KEY_PREFIX. grep 결과 외부 호출 0건 확인 — 모두 미사용 dead code.
+// 1회성 cleanup: localStorage 의 'ct-plus-computed-v1-*' 잔존 키 일괄 제거 (idempotent).
+export function cleanupOrphanComputedCache(): number {
+  if (typeof window === 'undefined') return 0
+  let removed = 0
   try {
-    localStorage.setItem(COMPUTED_KEY_PREFIX + campaignId, JSON.stringify(rows))
-  } catch {}
-}
-
-export function loadComputedRows(campaignId: string): RawRow[] {
-  try {
-    const s = localStorage.getItem(COMPUTED_KEY_PREFIX + campaignId)
-    return s ? (JSON.parse(s) as RawRow[]) : []
-  } catch { return [] }
-}
-
-export function clearComputedRows(campaignId: string): void {
-  localStorage.removeItem(COMPUTED_KEY_PREFIX + campaignId)
-}
-
-/**
- * raw + campaigns -> computed rows -> localStorage
- */
-export function recomputeAllCampaigns(rawRows: RawRow[], campaigns: Campaign[]): void {
-  const allComputed = applyMarkupToRows(rawRows, campaigns)
-  const byCampaign = new Map<string, RawRow[]>()
-  for (const row of allComputed) {
-    if (row.matchedCampaignId) {
-      const arr = byCampaign.get(row.matchedCampaignId) ?? []
-      arr.push(row)
-      byCampaign.set(row.matchedCampaignId, arr)
+    const toRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('ct-plus-computed-v1-')) toRemove.push(key)
     }
-  }
-  for (const [cid, rows] of byCampaign.entries()) {
-    saveComputedRows(cid, rows)
-  }
+    for (const k of toRemove) { localStorage.removeItem(k); removed += 1 }
+  } catch {}
+  return removed
 }

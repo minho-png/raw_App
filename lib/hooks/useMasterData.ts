@@ -134,6 +134,20 @@ export function useMasterData(): MasterData {
 
   useEffect(() => { loadAll() }, [loadAll])
 
+  // 사용자 QA v4 V4-WARN-01 — 마운트 시 1회성 orphan computed cache 정리.
+  // 과거 버전 잔존 'ct-plus-computed-v1-*' 키 제거 (현재 코드는 미사용 dead code 였음).
+  useEffect(() => {
+    let cancelled = false
+    import('@/lib/markupService').then(m => {
+      if (cancelled) return
+      const removed = m.cleanupOrphanComputedCache()
+      if (removed > 0 && process.env.NODE_ENV === 'development') {
+        console.info('[ct-plus] orphan computed cache 정리:', removed, '개')
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
   // QA DB-001: 저장 실패 시 사용자에게 명시적으로 알림 (silent-fail 차단).
   //   localStorage 는 이미 반영되어 있으므로 단기 작업은 계속 가능,
   //   다만 새 기기/세션에서는 손실되므로 사용자가 인지해야 함.

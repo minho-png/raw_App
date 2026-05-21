@@ -278,18 +278,31 @@ export default function SalesPurchasePage() {
               {unassignedAmount >= UNASSIGNED_THRESHOLD ? '🔴' : '⚠'} <strong>거래처 미지정 {unassignedCount}건</strong>
               {unassignedAmount > 0 && <> (공급가액 합 <strong className="tabular-nums">₩{fmt(unassignedAmount)}</strong>)</>}
               {' '}— Motiv 캠페인에 대행사 매핑이 안 된 항목이 정산표에 빈 거래처로 노출됩니다.
-              {' '}<a href="/manage" className="underline hover:text-rose-700">관리 페이지</a>에서 매핑하거나 아래 토글로 격리 확인하세요.
             </span>
-            <button
-              onClick={() => setShowUnassignedOnly(v => !v)}
-              className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                showUnassignedOnly
-                  ? 'border-amber-500 bg-amber-200 text-amber-900'
-                  : 'border-amber-300 bg-white text-amber-800 hover:bg-amber-100'
-              }`}
-            >
-              {showUnassignedOnly ? '전체 보기' : '미지정만 보기'}
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* 사용자 QA v4 V4-INFO-02 — '관리 페이지로 이동' primary 버튼.
+                  /management 가 대행사 매핑 가능한 master data 페이지. */}
+              <a
+                href="/management"
+                className={`rounded px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                  unassignedAmount >= UNASSIGNED_THRESHOLD
+                    ? 'bg-rose-600 text-white hover:bg-rose-700'
+                    : 'bg-amber-600 text-white hover:bg-amber-700'
+                }`}
+              >
+                → 관리 페이지 매핑
+              </a>
+              <button
+                onClick={() => setShowUnassignedOnly(v => !v)}
+                className={`rounded border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                  showUnassignedOnly
+                    ? 'border-amber-500 bg-amber-200 text-amber-900'
+                    : 'border-amber-300 bg-white text-amber-800 hover:bg-amber-100'
+                }`}
+              >
+                {showUnassignedOnly ? '전체 보기' : '미지정만 보기'}
+              </button>
+            </div>
           </div>
         )}
         {/* 사용자 요청 — 매칭 기능 없이 불러온 대행사명 그대로 매입/매출 대행사별 정리.
