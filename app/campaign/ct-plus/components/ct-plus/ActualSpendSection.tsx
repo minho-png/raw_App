@@ -1,17 +1,17 @@
 "use client"
 import React from "react"
-import { MediaBudget } from "@/lib/campaignTypes"
+import { MediaBudget, VAT_INCLUDED_MEDIA } from "@/lib/campaignTypes"
 import { inputCls, MF } from "./statusUtils"
 
-// 실 세팅금액이 VAT 포함으로 계산되는 매체 (CampaignModal.updateMBField 자동계산 기준과 일치)
-const VAT_INCLUDED_MEDIA = ['네이버 GFA', '카카오모먼트']
+// 사용자 QA v4 V4-WARN-02 (Option B, Q1: VAT 별도) — 로컬 set 제거하고 전역 VAT_INCLUDED_MEDIA
+// (= Set(['네이버 GFA'])) 와 동기화. 카카오모먼트는 청구 실무가 VAT 별도이므로 ×1.0 자동계산.
 
 /**
  * feature/ui-improvements-v2 브랜치 정의 정렬:
  *   - 실 세팅금액(actualSettingCost) 1개만 입력 (VAT 라벨 매체별 분기)
  *   - 실 소진액(actualNetAmount) 입력 제거
  *   - actualSettingCost 는 totalBudget × (1 - totalFeeRate/100) 으로 자동 채움
- *     (네이버 GFA · 카카오모먼트는 ×1.1 VAT 포함)
+ *     (네이버 GFA 만 ×1.1 VAT 포함 — 카카오는 VAT 별도 청구이므로 ×1.0)
  *   - 사용자는 자동 채움 값을 수동 override 가능
  *   - 매입 산정 기준값으로 사용됨 (lib/export/settlementExcel.ts).
  */
@@ -30,12 +30,12 @@ export function ActualSpendSection({
   // 사용자 QA BUG-02 — actualSettingCost > totalBudget 데이터 이상 방지.
   // 수식 budget × (1-fee/100) 으로는 actualSettingCost ≤ totalBudget × 1.1 (VAT 포함) 이 상한.
   // 그 이상 입력 시 경고 (cap 은 PM 결정으로 미적용 — 사용자 의도 보존).
-  const upperBound = Math.round(mb.totalBudget * (VAT_INCLUDED_MEDIA.includes(mb.media) ? 1.1 : 1))
+  const upperBound = Math.round(mb.totalBudget * (VAT_INCLUDED_MEDIA.has(mb.media) ? 1.1 : 1))
   const exceedsBudget = actualSettingCost > upperBound
 
   return (
     <MF label={
-      VAT_INCLUDED_MEDIA.includes(mb.media)
+      VAT_INCLUDED_MEDIA.has(mb.media)
         ? <span>실 세팅금액 <span className="font-bold text-red-500">(VAT 포함)</span></span>
         : <span>실 세팅금액 <span className="text-gray-400 font-normal">(VAT 별도)</span></span>
     }>
