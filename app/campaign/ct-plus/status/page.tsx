@@ -175,6 +175,19 @@ export default function CampaignStatusPage() {
     }
   }, [filtered])
 
+  // 사용자 QA v4 V4-INFO-01 (R2 권고) — 매체 chip 필터 적용 시 헤더에 '필터 합계' + '전체 합계' 둘 다 노출.
+  // filterMedia 가 활성 상태일 때, 필터 무관 전체 캠페인의 세팅금액 합계를 보조로 제공.
+  const totalSummaryUnfiltered = useMemo(() => {
+    if (!filterMedia) return null
+    let totalBudget = 0, totalSettingCost = 0
+    campaigns.forEach(c => {
+      const t = getCampaignTotals(c)
+      totalBudget      += t.totalBudget
+      totalSettingCost += t.totalSettingCost
+    })
+    return { totalBudget, totalSettingCost }
+  }, [campaigns, filterMedia])
+
   // ── 이상치 감지 ───────────────────────────────────────
   // 소진율 기준: raw data(CSV) 집행금액 ÷ 세팅금액 (config mb.dmp.spend 아님)
   const anomalies = useMemo((): CampaignAnomaly[] => {
@@ -290,7 +303,11 @@ export default function CampaignStatusPage() {
             필터 적용 중 · {summary.total}개 캠페인 기준
           </p>
         )}
-        <CampaignSummaryBanner summary={summary} />
+        <CampaignSummaryBanner
+          summary={summary}
+          unfiltered={totalSummaryUnfiltered}
+          filterLabel={filterMedia || undefined}
+        />
         <AnomalyBanner
           anomalies={anomalies}
           onScrollToRow={(id) => {
