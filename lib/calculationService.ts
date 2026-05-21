@@ -113,6 +113,34 @@ export function calcCosts(
   return { supplyValue, netAmount, executionAmount }
 }
 
+/**
+ * 행 그룹에 대해 sum-then-round 패턴으로 총 집행금액 산출.
+ * 사용자 QA v4 V4-INFO-03 — row 단위 calcCosts() 의 누적 round 오차(±10~50원) 제거.
+ *
+ * 그룹화 키: (media, appliedFeeDecimal) — 동일 매체·동일 fee 묶음에 한해 sum-then-round.
+ *   매체가 다르면 Naver ÷1.1 정책, fee 가 다르면 ÷(1-fee) 정책이 달라 분리 필수.
+ *
+ * fee 정보 부재 row 는 별도 fallback (호출부에서 row.executionAmount 합 누적).
+ */
+export function sumExecutionGrouped(
+  rows: ReadonlyArray<{ supplyValue: number; media: string; appliedFeeDecimal: number }>,
+  naverLabel: string,
+): number {
+  const groups = new Map<string, { supplySum: number; isNaver: boolean; fee: number }>()
+  for (const r of rows) {
+    const k = `${r.media}|${r.appliedFeeDecimal.toFixed(6)}`
+    const g = groups.get(k) ?? { supplySum: 0, isNaver: r.media === naverLabel, fee: r.appliedFeeDecimal }
+    g.supplySum += r.supplyValue
+    groups.set(k, g)
+  }
+  let total = 0
+  for (const g of groups.values()) {
+    const net = g.isNaver ? g.supplySum / 1.1 : g.supplySum
+    total += g.fee >= 1 ? Math.round(net) : Math.round(net / (1 - g.fee))
+  }
+  return total
+}
+
 // ── DMP 정산 집계 ────────────────────────────────────────────
 export interface DmpSettlementRow {
   dmpType: DmpType

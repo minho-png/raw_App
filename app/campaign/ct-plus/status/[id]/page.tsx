@@ -9,7 +9,8 @@ import {
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
-import { getCampaignTotals, getCampaignProgress, getMediaTotals, getCampaignDashboardNetAmount, getMediaDashboardNetAmount, calcSettingCost, applyMediaVat, VAT_INCLUDED_MEDIA, type Campaign, type SubCampaign } from "@/lib/campaignTypes"
+import { getCampaignTotals, getCampaignProgress, getMediaTotals, getCampaignDashboardNetAmount, getMediaDashboardNetAmount, calcSettingCost, applyMediaVat, VAT_INCLUDED_MEDIA, NAVER_LABEL, type Campaign, type SubCampaign } from "@/lib/campaignTypes"
+import { sumExecutionGrouped } from "@/lib/calculationService"
 import { fmt, spendRateStyle } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { RawRow } from "@/lib/rawDataParser"
 import { mColor } from "@/lib/mediaColors"
@@ -43,7 +44,19 @@ function aggRows(rows: RawRow[]) {
   const imp = rows.reduce((s,r)=>s+(r.impressions??0),0)
   const clk = rows.reduce((s,r)=>s+(r.clicks??0),0)
   const vws = rows.reduce((s,r)=>s+(r.views??0),0)
-  const spd = rows.reduce((s,r)=>s+(r.executionAmount??0),0)
+  // 사용자 QA v4 V4-INFO-03 — 합계 카드는 sum-then-round 정밀합 사용 (±20원 오차 제거).
+  // appliedFeeDecimal 있는 row 는 (media, fee) 그룹 단위로 sum-then-round,
+  // 없는 row (구버전 RawRow) 는 row-rounded executionAmount 합으로 fallback.
+  const accurateRows = rows.filter(r => typeof r.appliedFeeDecimal === 'number')
+  const fallbackRows = rows.filter(r => typeof r.appliedFeeDecimal !== 'number')
+  const spd = sumExecutionGrouped(
+    accurateRows.map(r => ({
+      supplyValue: r.supplyValue ?? 0,
+      media: r.media,
+      appliedFeeDecimal: r.appliedFeeDecimal!,
+    })),
+    NAVER_LABEL,
+  ) + fallbackRows.reduce((s,r)=>s+(r.executionAmount??0),0)
   const net = rows.reduce((s,r)=>s+(r.netAmount??0),0)
   return {
     impressions:imp, clicks:clk, views:vws, spend:spd, netAmount:net,
