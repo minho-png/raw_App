@@ -15,7 +15,11 @@ export const MEDIA_MARKUP_RATE: Record<string, number> = {
 
 // 네이버 GFA 는 VAT 별도 청구가 아닌 VAT 포함 금액으로 표시 (실 세팅 금액에 가산)
 export const VAT_RATE = 10
-export const VAT_INCLUDED_MEDIA: ReadonlySet<string> = new Set(['네이버 GFA'])
+// 사용자 QA v4 — Naver 매체 라벨을 별도 상수로 분리. VAT_INCLUDED_MEDIA 에 다른 매체
+// (예: 카카오) 가 추가될 경우 calculationService.calcCosts 의 isNaver 판정이 회귀하지
+// 않도록 격리 (R1 검토 반영).
+export const NAVER_LABEL = '네이버 GFA' as const
+export const VAT_INCLUDED_MEDIA: ReadonlySet<string> = new Set([NAVER_LABEL])
 export function applyMediaVat(media: string, settingCost: number): number {
   // 사용자 보고 — 엑셀 일치성 위해 비-VAT 매체도 Math.round 적용 (소수점 누적 방지).
   if (!VAT_INCLUDED_MEDIA.has(media)) return Math.round(settingCost)
