@@ -27,6 +27,11 @@ export function ActualSpendSection({
   // 자동 채워 넣고, 사용자가 override 가능.
   if (!mb.totalBudget) return null
   const actualSettingCost = mb.actualSettingCost ?? 0
+  // 사용자 QA BUG-02 — actualSettingCost > totalBudget 데이터 이상 방지.
+  // 수식 budget × (1-fee/100) 으로는 actualSettingCost ≤ totalBudget × 1.1 (VAT 포함) 이 상한.
+  // 그 이상 입력 시 경고 (cap 은 PM 결정으로 미적용 — 사용자 의도 보존).
+  const upperBound = Math.round(mb.totalBudget * (VAT_INCLUDED_MEDIA.includes(mb.media) ? 1.1 : 1))
+  const exceedsBudget = actualSettingCost > upperBound
 
   return (
     <MF label={
@@ -38,9 +43,15 @@ export function ActualSpendSection({
         type="number" min="0"
         value={actualSettingCost}
         onChange={e => onUpdateMBField(mb.media, 'actualSettingCost', parseFloat(e.target.value) || undefined)}
-        className={inputCls}
+        className={`${inputCls} ${exceedsBudget ? 'border-rose-300 bg-rose-50' : ''}`}
         placeholder="원 (총예산·수수료율 입력 시 자동 계산)"
+        title={exceedsBudget ? `실 세팅금액이 부킹 예산(${mb.totalBudget.toLocaleString('ko-KR')})을 초과합니다 — 데이터 오류 가능성` : undefined}
       />
+      {exceedsBudget && (
+        <p className="mt-1 text-[10px] text-rose-700">
+          ⚠ 실 세팅금액이 부킹 예산({mb.totalBudget.toLocaleString('ko-KR')}원)을 초과합니다. 입력값을 확인하세요.
+        </p>
+      )}
     </MF>
   )
 }

@@ -185,13 +185,16 @@ export default function CampaignStatusPage() {
       const totals   = getCampaignTotals(c)
       const spend    = computedSpendMap.get(c.id)
 
-      // raw data 기반 소진율 (CSV 집행금액 ÷ 세팅금액)
+      // 사용자 QA BUG-01 — 이상치 감지 소진율과 UI 표시 소진율 불일치 해결.
+      // 이전: spend.netAmount (CSV 원값, Naver 는 ÷1.1 적용) 사용 → UI 표시(executionAmount) 와 다름.
+      // 변경: spend.executionAmount (마크업 포함, UI '집행금액' 카드와 동일 기준) 사용.
+      // WARN-02 — totalSettingCost > 0 가드: 예산 미설정 캠페인은 이상치 감지 자체 skip.
       const rawSpendRate = spend && totals.totalSettingCost > 0
-        ? Math.round((spend.netAmount / totals.totalSettingCost) * 1000) / 10
+        ? Math.round((spend.executionAmount / totals.totalSettingCost) * 1000) / 10
         : 0
 
-      // 진행률 vs raw 소진율 15%p 이상 차이 → 지연 경고
-      if (spend && progress - rawSpendRate >= 15) {
+      // 진행률 vs raw 소진율 15%p 이상 차이 → 지연 경고 (예산=0 제외)
+      if (spend && totals.totalSettingCost > 0 && progress - rawSpendRate >= 15) {
         result.push({
           campaign: c,
           type: "lagging",
@@ -201,8 +204,8 @@ export default function CampaignStatusPage() {
         })
       }
 
-      // raw 소진율 100% 초과 → 예산 초과 경고
-      if (rawSpendRate > 100) {
+      // raw 소진율 100% 초과 → 예산 초과 경고 (예산=0 제외)
+      if (totals.totalSettingCost > 0 && rawSpendRate > 100) {
         result.push({
           campaign: c,
           type: "overspend",

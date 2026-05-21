@@ -82,16 +82,20 @@ export default function MediaCostPage() {
   // QA BUG-006: 매체비용 정산이 mb.dmp.spend / mb.nonDmp.spend (수동 입력)만 보고
   // raw data 의 실집행금액을 반영하지 못해 빈 표가 노출되던 문제 보정.
   // (campaignId, media) → raw 집행금액 합 맵 구성.
-  const rawSpendByCampMedia = (() => {
-    if (rawRows.length === 0 || campaigns.length === 0) return new Map<string, number>()
+  // 사용자 QA BUG-04 — 매체비용 순매체비용 vs 매입 공급가액 불일치.
+  // 매입 페이지는 Σ row.netAmount 사용 → 매체비용도 동일 source 의 netSum 을 사용해 일치.
+  const { rawSpendByCampMedia, rawNetByCampMedia } = (() => {
+    const spend = new Map<string, number>()
+    const net = new Map<string, number>()
+    if (rawRows.length === 0 || campaigns.length === 0) return { rawSpendByCampMedia: spend, rawNetByCampMedia: net }
     const computed = applyMarkupToRows(rawRows, campaigns)
-    const m = new Map<string, number>()
     for (const r of computed) {
       if (!r.matchedCampaignId || !r.media) continue
       const key = `${r.matchedCampaignId}||${r.media}`
-      m.set(key, (m.get(key) ?? 0) + (r.executionAmount ?? 0))
+      spend.set(key, (spend.get(key) ?? 0) + (r.executionAmount ?? 0))
+      net.set(key, (net.get(key) ?? 0) + (r.netAmount ?? 0))
     }
-    return m
+    return { rawSpendByCampMedia: spend, rawNetByCampMedia: net }
   })()
 
   // ── 결과 행 계산 ───────────────────────────────────────────────
@@ -117,6 +121,12 @@ export default function MediaCostPage() {
         if (wSum > 0) markupRate = +(fSum / wSum).toFixed(2)
       }
       const rawSpend = rawSpendByCampMedia.get(`${c.id}||${mb.media}`) ?? 0
+      const rawNet   = rawNetByCampMedia.get(`${c.id}||${mb.media}`) ?? 0
+      // 사용자 QA BUG-03 — 예산 컬럼 ₩0 표시 해결.
+      // sub-camp budget 합산을 fallback 으로 추가. 우선순위: dmp.budget+nonDmp.budget(legacy) → sub 합.
+      const subBudgetSum = subs.reduce((s, sc) => s + (sc.budget ?? 0), 0)
+      const legacyMbBudget = (mb.dmp.budget ?? 0) + (mb.nonDmp.budget ?? 0)
+      const fallbackBudget = legacyMbBudget > 0 ? legacyMbBudget : subBudgetSum
       if (mb.dmp.spend > 0) {
         const spend = mb.dmp.spend
         rows.push({
@@ -124,7 +134,8 @@ export default function MediaCostPage() {
           campaignName: c.campaignName,
           media: mb.media,
           kind: 'DMP',
-          budget: mb.dmp.budget,
+          // BUG-03: dmp.budget 이 0 이면 sub 합 fallback (legacy → sub).
+          budget: mb.dmp.budget > 0 ? mb.dmp.budget : fallbackBudget,
           spend,
           markupRate,
           netCost: Math.round(spend * (1 - markupRate / 100)),
@@ -137,23 +148,25 @@ export default function MediaCostPage() {
           campaignName: c.campaignName,
           media: mb.media,
           kind: '비DMP',
-          budget: mb.nonDmp.budget,
+          budget: mb.nonDmp.budget > 0 ? mb.nonDmp.budget : fallbackBudget,
           spend,
           markupRate,
           netCost: Math.round(spend * (1 - markupRate / 100)),
         })
       }
-      // 수동 입력 spend 가 모두 0 이지만 raw 가 있는 경우 → raw 기반 행 추가 (실집행 누락 보정)
+      // 수동 입력 spend 가 모두 0 이지만 raw 가 있는 경우 → raw 기반 행 추가 (실집행 누락 보정).
+      // BUG-04: netCost 를 spend × (1-markup) 근사식이 아닌 rawNet (= Σ row.netAmount) 으로 통일 →
+      //          매입 페이지의 공급가액과 정확히 일치 (round 누적 오차 제거).
       if (mb.dmp.spend === 0 && mb.nonDmp.spend === 0 && rawSpend > 0) {
         rows.push({
           advertiserName, agencyName, agencyId: c.agencyId,
           campaignName: c.campaignName,
           media: mb.media,
           kind: 'DMP',
-          budget: (mb.dmp.budget ?? 0) + (mb.nonDmp.budget ?? 0),
+          budget: fallbackBudget,
           spend: rawSpend,
           markupRate,
-          netCost: Math.round(rawSpend * (1 - markupRate / 100)),
+          netCost: rawNet > 0 ? rawNet : Math.round(rawSpend * (1 - markupRate / 100)),
         })
       }
     }
@@ -413,8 +426,8 @@ export default function MediaCostPage() {
                     <th className="px-3 py-2.5 text-center font-medium text-gray-500 whitespace-nowrap">구분</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-500 whitespace-nowrap">예산</th>
                     <th className="px-4 py-2.5 text-right font-medium text-gray-500 whitespace-nowrap">집행금액</th>
-                    <th className="px-3 py-2.5 text-center font-medium text-gray-500 whitespace-nowrap">마크업률</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-gray-500 whitespace-nowrap">순매체비용</th>
+                    <th className="px-3 py-2.5 text-center font-medium text-gray-500 whitespace-nowrap" title="실효 마크업률 = sub-camp totalFeeRate 의 spend 가중평균">마크업률</th>
+                    <th className="px-4 py-2.5 text-right font-medium text-gray-500 whitespace-nowrap" title="순매체비용 = Σ row.netAmount (매입 페이지의 '공급가액' 과 동일 기준)">순매체비용 <span className="text-gray-300">(=매입 공급가액)</span></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
