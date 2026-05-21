@@ -22,6 +22,17 @@ export function applyMediaVat(media: string, settingCost: number): number {
   return Math.round(settingCost * (1 + VAT_RATE / 100))
 }
 
+// 사용자 QA BUG-02 — actualSettingCost > totalBudget × VAT 이상 데이터 합산 시 cap.
+// PM Option B+C 절충: 원본 데이터(localStorage) 는 보존, 합산/표시 시에만 상한 적용.
+// CampaignModal 의 validation 경고와 함께 데이터 무결성 보호.
+export function getCappedActualSettingCost(mb: MediaBudget): number {
+  const actual = mb.actualSettingCost ?? 0
+  if (actual <= 0) return 0
+  if (!mb.totalBudget || mb.totalBudget <= 0) return actual
+  const upperBound = Math.round(mb.totalBudget * (VAT_INCLUDED_MEDIA.has(mb.media) ? 1 + VAT_RATE / 100 : 1))
+  return Math.min(actual, upperBound)
+}
+
 export const MEDIA_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   '네이버 GFA':   { bg: 'bg-green-100',  text: 'text-green-700',  border: 'border-green-200' },
   '카카오모먼트': { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-200' },
