@@ -104,6 +104,15 @@ export function CampaignTableSection({
                             {dday.label}
                           </span>
                         )}
+                        {/* 사용자 QA NEW-WARN-03 — 종료일 경과인데 '집행 중' 상태 미해제 시 amber 배지 + 클릭 시 즉시 종료 전환. */}
+                        {dday.expired && c.status === "집행 중" && (
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); onStatusToggle(c.id) }}
+                            className="text-[10px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 rounded px-1.5 py-0.5 transition-colors"
+                            title="종료일 경과 — 클릭하면 '종료' 상태로 즉시 전환합니다"
+                          >⚠ 종료 권장</button>
+                        )}
                         {isLagging && <span className="text-[10px] font-semibold text-yellow-700">⚠ 지연</span>}
                       </div>
                     </td>

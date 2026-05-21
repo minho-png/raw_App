@@ -194,6 +194,12 @@ export default function SalesPurchasePage() {
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false)
   const unassignedSales    = useMemo(() => mergedSales.filter(r => !r._agencyId).length,    [mergedSales])
   const unassignedPurchase = useMemo(() => mergedPurchase.filter(r => !r._agencyId).length, [mergedPurchase])
+  // 사용자 QA NEW-WARN-02 — 거래처 미지정 DMP 금액 (예: 28.4M) 사용자에게 가시화.
+  const unassignedAmount = useMemo(() => {
+    const rows = view === 'sales' ? mergedSales : mergedPurchase
+    return rows.filter(r => !r._agencyId).reduce((s, r) => s + Number(r.공급가액 ?? 0), 0)
+  }, [view, mergedSales, mergedPurchase])
+  const UNASSIGNED_THRESHOLD = 1_000_000
   const visibleSales    = useMemo(
     () => showUnassignedOnly ? mergedSales.filter(r => !r._agencyId)    : mergedSales,
     [mergedSales, showUnassignedOnly],
@@ -263,10 +269,16 @@ export default function SalesPurchasePage() {
           </div>
         )}
         {unassignedCount > 0 && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-center justify-between gap-2">
+          <div className={`rounded-lg border px-3 py-2 text-xs flex items-center justify-between gap-2 ${
+            unassignedAmount >= UNASSIGNED_THRESHOLD
+              ? 'border-rose-300 bg-rose-50 text-rose-900'
+              : 'border-amber-300 bg-amber-50 text-amber-900'
+          }`}>
             <span>
-              ⚠ <strong>거래처 미지정 {unassignedCount}건</strong> 포함 — Motiv 캠페인에 대행사 매핑이 안 된 항목이 정산표에 빈 거래처로 노출됩니다.
-              {' '}<a href="/manage" className="underline hover:text-amber-700">관리 페이지</a>에서 매핑하거나 아래 토글로 격리 확인하세요.
+              {unassignedAmount >= UNASSIGNED_THRESHOLD ? '🔴' : '⚠'} <strong>거래처 미지정 {unassignedCount}건</strong>
+              {unassignedAmount > 0 && <> (공급가액 합 <strong className="tabular-nums">₩{fmt(unassignedAmount)}</strong>)</>}
+              {' '}— Motiv 캠페인에 대행사 매핑이 안 된 항목이 정산표에 빈 거래처로 노출됩니다.
+              {' '}<a href="/manage" className="underline hover:text-rose-700">관리 페이지</a>에서 매핑하거나 아래 토글로 격리 확인하세요.
             </span>
             <button
               onClick={() => setShowUnassignedOnly(v => !v)}

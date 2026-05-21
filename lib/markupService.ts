@@ -45,8 +45,13 @@ function getAgencyFeeDecimal(campaign: Campaign, mediaType: MediaType, isDmp: bo
   if (!mb) return 0
   // 신규: totalFeeRate가 있으면 미디어 마크업과 DMP 수수료를 포함한 통합 수수료율 사용
   if (mb.totalFeeRate !== undefined) return mb.totalFeeRate / 100
-  const targeting = isDmp ? mb.dmp : mb.nonDmp
-  return targeting.agencyFeeRate / 100
+  // 사용자 QA NEW-BUG-01 — 리타겟팅 서브캠페인 수수료 매체별 불일치 해결.
+  // 이전: targeting.agencyFeeRate 가 매체별로 미설정(0 vs 10) 다르게 저장되어 같은 조건(totalFeeRate=undefined)
+  //       에서 네이버 0% / 카카오 10% 등 부정합 발생.
+  // 정책 (D1+PM Option A): totalFeeRate 미설정 sub 는 일관되게 0% — 사용자가 명시 입력하지 않은
+  //   리타겟팅 등은 수수료 미부과 (UI 의 sub-camp 입력으로 강제하지 않고 default 0% 안전).
+  // dmp/nonDmp.agencyFeeRate 는 PR #102 이전 legacy 필드 — 더 이상 fallback 으로 신뢰하지 않음.
+  return 0
 }
 
 function getMediaMarkupDecimal(mediaType: MediaType): number {
@@ -55,9 +60,14 @@ function getMediaMarkupDecimal(mediaType: MediaType): number {
 }
 
 /**
- * raw rows에 캠페인 수수료율 적용 → computed rows 반환
+ * raw rows에 캠페인 수수료율 적용 → computed rows 반환.
  * rawRows의 supplyValue를 기준으로 계산.
  * matchedCampaignId가 없는 행은 markup 0 (raw 값 그대로 유지)
+ *
+ * ⚠ 사용자 핵심 원칙 (D4 검증) — **campaigns / rawRows 원본 객체 mutation 금지**.
+ * 본 함수는 새 RawRow[] 를 반환하며, 인자 객체를 절대 수정하지 않는다.
+ * CSV 파일 입력 시 사용자가 이미 입력한 campaign 데이터(actualSettingCost,
+ * sub-camp budget/totalFeeRate, dashboardNetAmount 등) 가 변경되면 안 됨.
  */
 export function applyMarkupToRows(rawRows: RawRow[], campaigns: Campaign[]): RawRow[] {
   const csvLookup = buildCsvLookup(campaigns)
