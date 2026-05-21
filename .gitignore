@@ -52,3 +52,4 @@ yarn-error.log*
 next-env.d.ts
 /docs/QA_GUIDE.md
 /docs/QA_TEST_RUNBOOK.md
+/docs/QA_V4_FIX_PLAN.md
