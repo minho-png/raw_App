@@ -59,11 +59,10 @@ export async function POST(req: NextRequest) {
 
     await col.updateOne(
       { workspace_id: WORKSPACE },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       {
         $set: { batches: updatedBatches, updated_at: new Date() },
         $setOnInsert: { created_at: new Date() },
-      } as any,
+      },
       { upsert: true }
     )
 

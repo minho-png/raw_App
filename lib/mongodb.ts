@@ -8,7 +8,6 @@ function getUri(): string {
 }
 
 let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
 
 const globalWithMongo = global as typeof globalThis & {
   _mongoClientPromise?: Promise<MongoClient>;
@@ -92,6 +91,6 @@ if (!globalWithMongo._mongoClientPromise) {
     globalWithMongo._mongoClientPromise = _buildTimeReject;
   }
 }
-clientPromise = globalWithMongo._mongoClientPromise!;
+const clientPromise: Promise<MongoClient> = globalWithMongo._mongoClientPromise!;
 
 export default clientPromise;
