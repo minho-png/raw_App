@@ -68,9 +68,9 @@ export function downloadTaxInvoiceRequestForm(
   aoa.push(['', '건(합계)',       `${rows.length}건`,           '', '', '', '', ''])
   aoa.push([])
 
-  // 디테일 헤더 (제품 분류 컬럼은 매출/매입 시트에만 — 발행 요청서에서는 생략)
+  // 사용자 요청 (2026-05-22) — '담당자', '세금계산서 작성일자' 제거. 컬럼 수 10 → 8.
   const detailHeader = [
-    '해당월', '담당자', '세금계산서 작성일자', '거래처명 (사업자등록증 기준)',
+    '해당월', '거래처명 (사업자등록증 기준)',
     '캠페인명', '공급가액', '세액', '합계금액',
     '수수료 (VAT포함)', '비고',
   ]
@@ -80,8 +80,6 @@ export function downloadTaxInvoiceRequestForm(
   for (const r of rows) {
     aoa.push([
       r.해당월 || monthShort,
-      r.담당자,
-      r['세금계산서 작성일자'] || today,
       r['거래처명 (사업자등록증 기준)'] || agency.name,
       simplifyCampaignName(r.캠페인명),
       r.공급가액,
@@ -92,9 +90,9 @@ export function downloadTaxInvoiceRequestForm(
     ])
   }
 
-  // 합계
+  // 합계 — 8 cell 정합 (라벨 '합계' 위치 = 컬럼 1 '거래처명' 자리)
   aoa.push([
-    '', '', '', '합계',
+    '', '합계',
     '', totals.net, totals.vat, totals.total,
     totals.fee, '',
   ])
@@ -110,22 +108,21 @@ export function downloadTaxInvoiceRequestForm(
   aoa.push(['※결재라인, 금액 등 내용의 수정이 필요할 경우 부득이하게 반려 될 수도 있으며, 작성중 문의사항이 있으시면 언제든지 인사기획팀으로 연락 부탁드립니다.'])
 
   // Merges (간소화: 제목, 내역만 병합)
-  // 열 수: 해당월/담당자/작성일자/거래처/캠페인/공급가액/세액/합계/수수료/비고 = 10
+  // 열 수: 해당월/거래처/캠페인/공급가액/세액/합계/수수료/비고 = 8
   const merges: XLSX.Range[] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }, // title
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 9 } }, // 내역
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } }, // title
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 7 } }, // 내역
   ]
 
   const ws = aoaToSheetWithMerges(aoa, merges)
-  setColumnWidths(ws, [10, 10, 14, 22, 30, 14, 12, 14, 14, 14])
+  setColumnWidths(ws, [10, 22, 30, 14, 12, 14, 14, 14])
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '세금계산서 발행 요청서')
 
-  // 또한 생 데이터도 별도 시트로
+  // 사용자 요청 (2026-05-22) — raw sheet 에서도 담당자/세금계산서 작성일자 제거.
   const rawWs = XLSX.utils.json_to_sheet(rows.map(r => ({
-    해당월: r.해당월, 담당자: r.담당자,
-    '세금계산서 작성일자': r['세금계산서 작성일자'],
+    해당월: r.해당월,
     '거래처명': r['거래처명 (사업자등록증 기준)'],
     캠페인명: r.캠페인명,
     공급가액: r.공급가액, 세액: r.세액, 합계금액: r.합계금액,
@@ -193,9 +190,9 @@ export function downloadPaymentRequestForm(
   ])
   aoa.push([])
 
-  // 디테일 헤더 (IMC/TV/CT 컬럼은 매출/매입 시트에만)
+  // 사용자 요청 (2026-05-22) — '담당자', '일자' 제거. 컬럼 수 9 → 7.
   const detailHeader = [
-    '년월', '담당자', '구분', '일자', '거래처명 (세금계산서 기준)',
+    '년월', '구분', '거래처명 (세금계산서 기준)',
     '캠페인명', '공급가액', '세액', '합계금액',
   ]
   aoa.push(detailHeader)
@@ -203,9 +200,7 @@ export function downloadPaymentRequestForm(
   for (const r of rows) {
     aoa.push([
       r.년월 || monthShort,
-      r.담당자,
       r.구분,
-      r.일자 || today,
       r['거래처명 (세금계산서 기준)'] || agency.name,
       simplifyCampaignName(r.캠페인명),
       r.공급가액,
@@ -214,9 +209,9 @@ export function downloadPaymentRequestForm(
     ])
   }
 
-  // 합계
+  // 합계 — 7 cell 정합 ('합계' 라벨 = 컬럼 2 '거래처명' 자리)
   aoa.push([
-    '', '', '', '', '합계',
+    '', '', '합계',
     '', totals.net, totals.vat, totals.total,
   ])
   aoa.push([])
@@ -231,21 +226,21 @@ export function downloadPaymentRequestForm(
   aoa.push(['50만원초과 : 기안자 → 소속팀장/실장[승인] → 소속본부장[승인] → 재무팀 매니저[승인] → 재무팀 팀장[승인] → 경영기획본부장[승인] → 대표이사[승인]'])
   aoa.push(['※결재라인, 금액 등 내용의 수정이 필요할 경우 부득이하게 반려 될 수도 있으며, 작성중 문의사항이 있으시면 언제든지 인사기획팀으로 연락 부탁드립니다.'])
 
-  // 열 수: 년월/담당자/구분/일자/거래처/캠페인/공급가액/세액/합계 = 9
+  // 열 수: 년월/구분/거래처/캠페인/공급가액/세액/합계 = 7
   const merges: XLSX.Range[] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }, // title
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 8 } }, // 내역
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }, // title
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 6 } }, // 내역
   ]
 
   const ws = aoaToSheetWithMerges(aoa, merges)
-  setColumnWidths(ws, [10, 10, 14, 12, 26, 28, 14, 12, 14])
+  setColumnWidths(ws, [10, 14, 26, 28, 14, 12, 14])
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '대금 지급 요청서')
 
-  // 원본 데이터 시트
+  // 사용자 요청 (2026-05-22) — raw sheet 에서도 담당자/일자 제거.
   const rawWs = XLSX.utils.json_to_sheet(rows.map(r => ({
-    년월: r.년월, 담당자: r.담당자, 구분: r.구분, 일자: r.일자,
+    년월: r.년월, 구분: r.구분,
     '거래처명': r['거래처명 (세금계산서 기준)'],
     캠페인명: r.캠페인명,
     공급가액: r.공급가액, 세액: r.세액, 합계금액: r.합계금액,
