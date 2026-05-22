@@ -186,7 +186,7 @@ function DuplicateConfirmModal({
               중복 {duplicateCount.toLocaleString("ko-KR")}행은 제거되고, 신규 {uniqueCount.toLocaleString("ko-KR")}행만 업로드됩니다.
             </p>
             <p className="text-[11px] text-amber-700 mt-1">
-              '캠페인명 · 소재명 · 날짜' 가 모두 동일한 데이터는 DB에 이미 존재하므로 업로드되지 않습니다.
+              &lsquo;캠페인명 · 소재명 · 날짜&rsquo; 가 모두 동일한 데이터는 DB에 이미 존재하므로 업로드되지 않습니다.
             </p>
           </div>
 

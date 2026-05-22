@@ -59,7 +59,15 @@ const MMP_REQUIRED_PARAMS = [
   { key: 'gaid',   placeholder: '{GAID}',   label: 'GAID',    desc: '안드로이드 기기 식별자(Google Advertising ID)' },
 ]
 
-function analyzeUrl(urlStr: string) {
+interface UrlAnalysis {
+  hasUtm: boolean
+  utmParams: { key: string; value: string; label: string; color: string }[]
+  missingUtm: { key: string; label: string }[]
+  mmp: { name: string; color: string } | null
+  missingMmpParams: typeof MMP_REQUIRED_PARAMS
+}
+
+function analyzeUrl(urlStr: string): UrlAnalysis {
   try {
     const url = new URL(urlStr)
     const params = url.searchParams
@@ -443,7 +451,18 @@ function VideoResultTable({ videos, product, onRemove }: { videos: VideoAsset[];
 
 // ── URL 탭 ────────────────────────────────────────────────────────
 
-function UrlTab({ urls, urlInput, urlInputValid, onInputChange, onAdd, onRemove, onToggle, onNoteChange }: any) {
+interface UrlTabProps {
+  urls: LandingUrl[]
+  urlInput: string
+  urlInputValid: boolean
+  onInputChange: (value: string) => void
+  onAdd: () => void
+  onRemove: (id: string) => void
+  onToggle: (id: string) => void
+  onNoteChange: (id: string, note: string) => void
+}
+
+function UrlTab({ urls, urlInput, urlInputValid, onInputChange, onAdd, onRemove, onToggle, onNoteChange }: UrlTabProps) {
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -471,7 +490,9 @@ function UrlTab({ urls, urlInput, urlInputValid, onInputChange, onAdd, onRemove,
   )
 }
 
-function UrlResultList({ urls, onRemove, onToggle, onNoteChange }: any) {
+type UrlResultListProps = Pick<UrlTabProps, 'urls' | 'onRemove' | 'onToggle' | 'onNoteChange'>
+
+function UrlResultList({ urls, onRemove, onToggle, onNoteChange }: UrlResultListProps) {
   return (
     <div className="space-y-3">
       {urls.map((u: LandingUrl, idx: number) => {
@@ -500,7 +521,7 @@ function UrlResultList({ urls, onRemove, onToggle, onNoteChange }: any) {
                   </div>
                   {analysis.hasUtm ? (
                     <div className="flex flex-wrap gap-2">
-                      {analysis.utmParams.map((p: any) => (
+                      {analysis.utmParams.map(p => (
                         <div key={p.key} className={`rounded-lg border px-3 py-1.5 ${p.color}`}>
                           <p className="text-[10px] font-semibold opacity-60 mb-0.5">{p.label}</p>
                           <p className="text-xs font-mono font-medium">{p.value}</p>
@@ -511,7 +532,7 @@ function UrlResultList({ urls, onRemove, onToggle, onNoteChange }: any) {
                   {analysis.hasUtm && analysis.missingUtm.length > 0 && (
                     <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
                       <span className="text-amber-500 text-xs">⚠</span>
-                      <p className="text-xs text-amber-700">필수 파라미터 누락: {analysis.missingUtm.map((m: any) => m.key).join(', ')}</p>
+                      <p className="text-xs text-amber-700">필수 파라미터 누락: {analysis.missingUtm.map(m => m.key).join(', ')}</p>
                     </div>
                   )}
                 </div>
