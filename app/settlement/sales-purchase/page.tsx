@@ -378,9 +378,6 @@ function SalesTable({ rows, onEdit }: { rows: SalesRow[]; onEdit: (r: SalesRow) 
             <th className="px-2 py-2 text-right font-semibold">CT</th>
             <th className="px-2 py-2 text-right font-semibold">IMC</th>
             <th className="px-2 py-2 text-right font-semibold">TV</th>
-            <th className="px-2 py-2 text-left font-semibold">수금일 기준</th>
-            <th className="px-2 py-2 text-left font-semibold">수금 기한</th>
-            <th className="px-2 py-2 text-left font-semibold">수취이메일</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -411,9 +408,6 @@ function SalesTable({ rows, onEdit }: { rows: SalesRow[]; onEdit: (r: SalesRow) 
               <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{r['CT 해당금액 (vat 제외)'] > 0 ? fmt(r['CT 해당금액 (vat 제외)']) : '-'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{r['IMC 해당금액 (vat 제외)'] > 0 ? fmt(r['IMC 해당금액 (vat 제외)']) : '-'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-indigo-600">{r['TV 해당금액 (vat 제외)'] > 0 ? fmt(r['TV 해당금액 (vat 제외)']) : '-'}</td>
-              <td className="px-2 py-1.5 text-gray-500">{r['수금일 기준']}</td>
-              <td className="px-2 py-1.5 text-gray-500">{r['수금 기한']}</td>
-              <td className="px-2 py-1.5 text-gray-500 truncate max-w-[180px]" title={r.수취이메일}>{r.수취이메일}</td>
             </tr>
           ))}
         </tbody>
@@ -472,8 +466,6 @@ function PurchaseTable({ rows, onEdit }: { rows: PurchaseRow[]; onEdit: (r: Purc
             <th className="px-2 py-2 text-right font-semibold" title="CT+ (IMC)">CT+</th>
             <th className="px-2 py-2 text-right font-semibold" title="CTV (Motiv TV)">CTV</th>
             <th className="px-2 py-2 text-right font-semibold" title="CT (Motiv Display/Video/Partners)">CT</th>
-            <th className="px-2 py-2 text-left font-semibold">송금일 기준</th>
-            <th className="px-2 py-2 text-left font-semibold">송금기한</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -506,8 +498,6 @@ function PurchaseTable({ rows, onEdit }: { rows: PurchaseRow[]; onEdit: (r: Purc
               <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{r.IMC > 0 ? fmt(r.IMC) : '-'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-indigo-600">{r.TV > 0 ? fmt(r.TV) : '-'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{r.CT > 0 ? fmt(r.CT) : '-'}</td>
-              <td className="px-2 py-1.5 text-gray-500">{r['송금일 기준']}</td>
-              <td className="px-2 py-1.5 text-gray-500">{r.송금기한}</td>
             </tr>
           ))}
         </tbody>
@@ -543,10 +533,7 @@ const SALES_EDITABLE_FIELDS: { key: keyof SalesRow; label: string; type: 'text' 
   { key: '공급가액',                        label: '공급가액',                     type: 'number' },
   { key: '세액',                            label: '세액',                         type: 'number' },
   { key: '합계금액',                        label: '합계금액',                     type: 'number' },
-  { key: '수금일 기준',                     label: '수금일 기준',                  type: 'text' },
-  { key: '수금 기한',                       label: '수금 기한',                    type: 'text' },
   { key: '수수료 (VAT포함)',                label: '수수료 (VAT포함)',             type: 'number' },
-  { key: '수취이메일',                      label: '수취이메일',                   type: 'text' },
   { key: '수수료 세금계산서 발행여부',       label: '수수료 세금계산서 발행여부',   type: 'text' },
   { key: 'CT 해당금액 (vat 제외)',          label: 'CT 해당금액 (VAT 제외)',       type: 'number' },
   { key: 'IMC 해당금액 (vat 제외)',         label: 'IMC 해당금액 (VAT 제외)',      type: 'number' },
@@ -574,8 +561,6 @@ const PURCHASE_EDITABLE_FIELDS: { key: keyof PurchaseRow; label: string; type: '
   { key: 'IMC',                             label: 'IMC',                          type: 'number' },
   { key: 'TV',                              label: 'TV',                           type: 'number' },
   { key: 'CT',                              label: 'CT',                           type: 'number' },
-  { key: '송금일 기준',                     label: '송금일 기준',                  type: 'text' },
-  { key: '송금기한',                        label: '송금기한',                     type: 'text' },
 ]
 
 function RowEditModal({
