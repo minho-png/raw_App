@@ -390,9 +390,34 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
           </MF>
         </div>
 
-        {/* UX-04: DB 데이터 연결 — 매체 설정 위로 이동 (역방향 흐름 해소). */}
+        {/* UX-05 (사용자 결정) — 매체 선택을 DB 데이터 연결보다 위로 이동.
+            이전 UX-04 는 정반대 (DB → 매체) 였으나 매체가 선결 조건이라는 사용자 의도 반영.
+            매체 미선택 시 아래 CsvMappingPanel 은 잠금 처리. */}
+        <MF label="매체 선택">
+          <div className="flex flex-wrap gap-2">
+            {AVAILABLE_MEDIA.map(m => (
+              <button key={m} onClick={() => toggleMedia(m)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${mediaBudgets.some(mb => mb.media === m) ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                {m}
+              </button>
+            ))}
+          </div>
+        </MF>
+
         {rawRows.length > 0 && (
-          <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+          <div
+            className={`rounded-lg border p-3 transition-opacity ${
+              mediaBudgets.length === 0
+                ? 'border-gray-200 bg-gray-50/60 opacity-60 pointer-events-none select-none'
+                : 'border-blue-100 bg-blue-50/40'
+            }`}
+            aria-disabled={mediaBudgets.length === 0}
+          >
+            {mediaBudgets.length === 0 && (
+              <p className="text-[11px] text-amber-700 mb-2 flex items-center gap-1">
+                <span aria-hidden>ⓘ</span> 위에서 <span className="font-semibold">매체를 먼저 선택</span>해야 DB 데이터를 연결할 수 있습니다.
+              </p>
+            )}
             <CsvMappingPanel
               rawRows={rawRows}
               csvNames={csvNames}
@@ -406,17 +431,6 @@ export function CampaignModal({ initial, operators, agencies, advertisers, onSav
             />
           </div>
         )}
-
-        <MF label="매체 선택">
-          <div className="flex flex-wrap gap-2">
-            {AVAILABLE_MEDIA.map(m => (
-              <button key={m} onClick={() => toggleMedia(m)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${mediaBudgets.some(mb => mb.media === m) ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                {m}
-              </button>
-            ))}
-          </div>
-        </MF>
 
         {mediaBudgets.map(mb => (
           <MediaBudgetCard
