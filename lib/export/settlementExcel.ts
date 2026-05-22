@@ -242,7 +242,10 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       해당월: month,
       담당자: op?.name ?? '',
       '세금계산서 작성일자': '',
-      '거래처명 (사업자등록증 기준)': agencyDisplay,
+      // 사용자 요청 — CT/CTV 매출 거래처명 비어 있는 케이스 fallback.
+      //   adAccount API 의 agency_* 가 비어 있으면 internal 대행사 매핑(ag) →
+      //   '미지정 대행사' 순으로 채워 표 빈 칸 방지. 광고주명/캠페인명 으로는 fallback 하지 않음 (의미 다름).
+      '거래처명 (사업자등록증 기준)': agencyDisplay || ag?.corporateName || ag?.name || '미지정 대행사',
       광고주명: advertiserDisplay,
       캠페인명: c.title ?? `#${c.id}`,
       공급가액: net,
@@ -395,7 +398,10 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
         담당자: op?.name ?? '',
         구분: `${label} 대행수수료`,
         일자: '',
-        '거래처명 (세금계산서 기준)': agencyDisplay || 'Motiv',
+        // 사용자 요청 — CT/CTV 매입 거래처명 비어 있는 케이스 fallback.
+        //   adAccount API agency_* 가 비어 있으면 internal 대행사 매핑(ag) → '미지정 대행사' 순.
+        //   이전 'Motiv' fallback 은 자사명이 거래처 자리에 들어가 부적절 → 제거.
+        '거래처명 (세금계산서 기준)': agencyDisplay || ag?.corporateName || ag?.name || '미지정 대행사',
         광고주명: advertiserDisplay,
         캠페인명: c.title ?? `#${c.id}`,
         공급가액: agencyFee,
