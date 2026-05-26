@@ -117,10 +117,8 @@ export interface SalesRow {
   공급가액: number
   세액: number
   합계금액: number
-  '수금일 기준': string
-  '수금 기한': string
+  // 사용자 요청 (2026-05-22) — '수금일 기준' / '수금 기한' / '수취이메일' 제거.
   '수수료 (VAT포함)': number
-  수취이메일: string
   '수수료 세금계산서 발행여부': string
   'CT 해당금액 (vat 제외)': number
   'IMC 해당금액 (vat 제외)': number
@@ -188,10 +186,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       공급가액: net,
       세액: vat,
       합계금액: net + vat,
-      '수금일 기준': paymentBasisOf(ag),
-      '수금 기한': computePaymentDueDate(month, ag),
       '수수료 (VAT포함)': fee,
-      수취이메일: adv?.email || ag?.email || '',
       '수수료 세금계산서 발행여부': '',
       'CT 해당금액 (vat 제외)': 0,
       'IMC 해당금액 (vat 제외)': net,
@@ -243,16 +238,16 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       해당월: month,
       담당자: op?.name ?? '',
       '세금계산서 작성일자': '',
-      '거래처명 (사업자등록증 기준)': agencyDisplay,
+      // 사용자 요청 — CT/CTV 매출 거래처명 비어 있는 케이스 fallback.
+      //   adAccount API 의 agency_* 가 비어 있으면 internal 대행사 매핑(ag) →
+      //   '미지정 대행사' 순으로 채워 표 빈 칸 방지. 광고주명/캠페인명 으로는 fallback 하지 않음 (의미 다름).
+      '거래처명 (사업자등록증 기준)': agencyDisplay || ag?.corporateName || ag?.name || '미지정 대행사',
       광고주명: advertiserDisplay,
       캠페인명: c.title ?? `#${c.id}`,
       공급가액: net,
       세액: vat,
       합계금액: net + vat,
-      '수금일 기준': paymentBasisOf(ag),
-      '수금 기한': computePaymentDueDate(month, ag),
       '수수료 (VAT포함)': roundWon(agencyFee * 1.1),
-      수취이메일: ag?.email || '',
       '수수료 세금계산서 발행여부': '',
       'CT 해당금액 (vat 제외)': product === 'CT' ? net : 0,
       'IMC 해당금액 (vat 제외)': 0,
@@ -289,8 +284,7 @@ export interface PurchaseRow {
   IMC: number
   TV: number
   CT: number
-  '송금일 기준': string
-  송금기한: string
+  // 사용자 요청 (2026-05-22) — '송금일 기준' / '송금기한' 제거.
   // 내부 메타
   _agencyId?: string
   _rowKey: string  // 'purchase:{month}:{campaignId}[:media]' (override 식별)
@@ -320,43 +314,79 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
   const asgById = new Map(assignments.map(a => [a.motivCampaignId, a]))
   const rows: PurchaseRow[] = []
 
+  // 사용자 요청 (2026-05-22) — CT+ 매체비를 캠페인별이 아니라 매체별(supplier 별)로 합산.
+  //   네이버 GFA + 카카오모먼트 = '매드코퍼레이션' 통합 1행 (괄호 매체명 제거).
+  //   META = 단독 거래처 1행.  Google = 단독 거래처 1행.
+  //   _agencyId: 'supplier:{key}' — AgencySummaryPanel 에서 매체별 카드로 그룹핑.
+  //   R-07 주의: 캠페인별 개별 반올림 합과 합산 후 반올림 ±1원 차이 가능. Excel total 검산 시 인지 필요.
+  type SupplierKey = 'mad' | 'meta' | 'google' | string
+  const SUPPLIER_LABEL: Record<string, string> = {
+    mad:    '매드코퍼레이션',
+    meta:   'META',
+    google: 'Google',
+  }
+  function ctplusSupplierKey(media: string): SupplierKey {
+    if (media === '네이버 GFA' || media === '카카오모먼트') return 'mad'
+    if (media === 'META')   return 'meta'
+    if (media === 'Google') return 'google'
+    return media  // 나머지 매체는 매체명 그대로
+  }
+
+  type SupplierBucket = {
+    net: number
+    campaigns: Set<string>
+    advertisers: Set<string>
+    settleMonth: string
+  }
+  const supplierBuckets = new Map<SupplierKey, SupplierBucket>()
+
   for (const s of ctPlus) {
-    const ag = agById.get(s.campaign.agencyId)
     const adv = advById.get(s.campaign.advertiserId)
-    const op = opById.get(s.campaign.managerId)
     for (const mb of s.mediaRows) {
-      // CT+ 매입 공급가액 = RAW CSV netAmount (VAT 별도) — 매체사 실 집행 기준
+      // main #122 — CT+ 매입을 공급처(매체)별로 합산. roundWon 으로 IEEE754 보정.
       const net = roundWon(mb.netAmount)
       if (net <= 0) continue
-      const vat = roundWon(net * 0.1)
-      // 사용자 결정 — 네이버 GFA / 카카오 모먼트 매입 거래처는 '매드코퍼레이션' 으로 발행.
-      // 매드 가 묶어서 청구하므로 매체별 라벨은 괄호로 표시. Google/META 는 매체사 직접 청구라 매체명 그대로.
-      const supplier = (mb.media === '네이버 GFA' || mb.media === '카카오모먼트')
-        ? `매드코퍼레이션 (${mb.media === '네이버 GFA' ? '네이버GFA' : '카카오모먼트'})`
-        : mb.media
-      rows.push({
-        년월: s.campaign.settlementMonth || month,
-        담당자: op?.name ?? '',
-        구분: 'CT+ (IMC)',
-        일자: '',
-        '거래처명 (세금계산서 기준)': supplier,
-        광고주명: adv?.name || s.advName || '',
-        캠페인명: s.campaign.campaignName,
-        공급가액: net,
-        세액: vat,
-        합계금액: net + vat,
-        // CT+ 는 RAW CSV 기반 — agency_fee/data_fee API 분해 없음. 표시 0.
-        '대행 수수료': 0,
-        '데이터(DMP) 비용': 0,
-        IMC: net,
-        TV: 0,
-        CT: 0,
-        '송금일 기준': paymentBasisOf(ag),
-        송금기한: computePaymentDueDate(month, ag),
-        _agencyId: ag?.id,
-        _rowKey: `purchase:${s.campaign.settlementMonth || month}:${s.campaign.id}:${mb.media}`,
-      })
+      const key = ctplusSupplierKey(mb.media)
+      const bucket = supplierBuckets.get(key) ?? {
+        net: 0,
+        campaigns: new Set<string>(),
+        advertisers: new Set<string>(),
+        settleMonth: s.campaign.settlementMonth || month,
+      }
+      bucket.net += net
+      bucket.campaigns.add(s.campaign.campaignName)
+      bucket.advertisers.add(adv?.name || s.advName || '')
+      supplierBuckets.set(key, bucket)
     }
+  }
+
+  for (const [key, bucket] of supplierBuckets) {
+    const net = roundWon(bucket.net)
+    const vat = roundWon(net * 0.1)
+    const label = SUPPLIER_LABEL[key] ?? key
+    const advDisplay = bucket.advertisers.size === 1
+      ? [...bucket.advertisers][0]
+      : `(${bucket.advertisers.size}개 광고주)`
+    const campDisplay = `(매체별 합산, ${bucket.campaigns.size}건)`
+    rows.push({
+      년월: bucket.settleMonth,
+      담당자: '',
+      구분: 'CT+ (IMC) 매체비',
+      일자: '',
+      '거래처명 (세금계산서 기준)': label,
+      광고주명: advDisplay,
+      캠페인명: campDisplay,
+      공급가액: net,
+      세액: vat,
+      합계금액: net + vat,
+      '대행 수수료': 0,
+      '데이터(DMP) 비용': 0,
+      IMC: net,
+      TV: 0,
+      CT: 0,
+      _agencyId: `supplier:${key}`,
+      _rowKey: `purchase:${bucket.settleMonth}:supplier-${key}`,
+    })
   }
 
   // 사용자 결정 — Motiv 매입은 (a) 대행수수료 행 + (b) DMP 비용 vendor 별 행 으로 분리.
@@ -396,7 +426,10 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
         담당자: op?.name ?? '',
         구분: `${label} 대행수수료`,
         일자: '',
-        '거래처명 (세금계산서 기준)': agencyDisplay || 'Motiv',
+        // 사용자 요청 — CT/CTV 매입 거래처명 비어 있는 케이스 fallback.
+        //   adAccount API agency_* 가 비어 있으면 internal 대행사 매핑(ag) → '미지정 대행사' 순.
+        //   이전 'Motiv' fallback 은 자사명이 거래처 자리에 들어가 부적절 → 제거.
+        '거래처명 (세금계산서 기준)': agencyDisplay || ag?.corporateName || ag?.name || '미지정 대행사',
         광고주명: advertiserDisplay,
         캠페인명: c.title ?? `#${c.id}`,
         공급가액: agencyFee,
@@ -407,8 +440,6 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
         IMC: 0,
         TV: product === 'CTV' ? agencyFee : 0,
         CT: product === 'CT' ? agencyFee : 0,
-        '송금일 기준': paymentBasisOf(ag),
-        송금기한: computePaymentDueDate(month, ag),
         _agencyId: groupAgencyId,
         _rowKey: `purchase:${month}:motiv-${c.id}:agencyFee`,
       })
@@ -483,8 +514,6 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
       IMC: 0,
       TV: tv,
       CT: ct,
-      '송금일 기준': '',
-      송금기한: '',
       _rowKey: `purchase:${month}:dmp-vendor-${vendor}`,
     })
   }
@@ -494,22 +523,23 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
 
 // ─── Excel 시트 헬퍼 ──────────────────────────────────────────────
 
+// 사용자 요청 (2026-05-22) — Excel 출력 컬럼에서 '담당자', '세금계산서 작성일자' 제거.
+// 인터페이스의 필드 자체는 UI 편집/override 영역에서 여전히 사용 가능하나 시트 출력에서만 숨김.
 const SALES_HEADERS: (keyof SalesRow)[] = [
-  '해당월', '담당자', '세금계산서 작성일자', '거래처명 (사업자등록증 기준)', '광고주명',
+  '해당월', '거래처명 (사업자등록증 기준)', '광고주명',
   '캠페인명', '공급가액', '세액', '합계금액',
-  '수금일 기준', '수금 기한', '수수료 (VAT포함)', '수취이메일',
-  '수수료 세금계산서 발행여부',
+  '수수료 (VAT포함)', '수수료 세금계산서 발행여부',
   'CT 해당금액 (vat 제외)', 'IMC 해당금액 (vat 제외)', 'TV 해당금액 (vat 제외)',
   '비고', '참고', '업데이트', '수금 여부', '실 수금일',
 ]
 
+// 사용자 요청 (2026-05-22) — '담당자', '일자' 제거.
 const PURCHASE_HEADERS: (keyof PurchaseRow)[] = [
-  '년월', '담당자', '구분', '일자',
+  '년월', '구분',
   '거래처명 (세금계산서 기준)', '광고주명',
   '캠페인명', '공급가액', '세액', '합계금액',
   '대행 수수료', '데이터(DMP) 비용',
   'IMC', 'TV', 'CT',
-  '송금일 기준', '송금기한',
 ]
 
 function rowsToSheet<T>(rows: T[], headers: (keyof T)[]): XLSX.WorkSheet {

@@ -9,7 +9,8 @@ import {
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
-import { getCampaignTotals, getCampaignProgress, getMediaTotals, getCampaignDashboardNetAmount, getMediaDashboardNetAmount, calcSettingCost, applyMediaVat, VAT_INCLUDED_MEDIA, type Campaign, type SubCampaign } from "@/lib/campaignTypes"
+import { getCampaignTotals, getCampaignProgress, getMediaTotals, getCampaignDashboardNetAmount, getMediaDashboardNetAmount, calcSettingCost, applyMediaVat, VAT_INCLUDED_MEDIA, NAVER_LABEL, type Campaign, type SubCampaign } from "@/lib/campaignTypes"
+import { sumExecutionGrouped } from "@/lib/calculationService"
 import { fmt, spendRateStyle } from "@/app/campaign/ct-plus/components/ct-plus/statusUtils"
 import type { RawRow } from "@/lib/rawDataParser"
 import { mColor } from "@/lib/mediaColors"
@@ -17,7 +18,7 @@ import { useKpiThresholds, checkBudgetWarning, checkRateWarning, checkCostWarnin
 import { useFilterPersistence } from "@/lib/hooks/useFilterPersistence"
 import { FilterBar, FilterChipGroup, FilterSearch, FilterReset } from "@/components/atoms/filters"
 import { KpiThresholdSettings } from "@/components/molecules/KpiThresholdSettings"
-import { useKpiCardVisibility, type KpiCardKey } from "@/lib/hooks/useKpiCardVisibility"
+import { useKpiCardVisibility, KPI_CARD_KEYS, type KpiCardKey } from "@/lib/hooks/useKpiCardVisibility"
 
 const CREATIVE_COLORS = ["#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"]
 
@@ -43,7 +44,19 @@ function aggRows(rows: RawRow[]) {
   const imp = rows.reduce((s,r)=>s+(r.impressions??0),0)
   const clk = rows.reduce((s,r)=>s+(r.clicks??0),0)
   const vws = rows.reduce((s,r)=>s+(r.views??0),0)
-  const spd = rows.reduce((s,r)=>s+(r.executionAmount??0),0)
+  // 사용자 QA v4 V4-INFO-03 — 합계 카드는 sum-then-round 정밀합 사용 (±20원 오차 제거).
+  // appliedFeeDecimal 있는 row 는 (media, fee) 그룹 단위로 sum-then-round,
+  // 없는 row (구버전 RawRow) 는 row-rounded executionAmount 합으로 fallback.
+  const accurateRows = rows.filter(r => typeof r.appliedFeeDecimal === 'number')
+  const fallbackRows = rows.filter(r => typeof r.appliedFeeDecimal !== 'number')
+  const spd = sumExecutionGrouped(
+    accurateRows.map(r => ({
+      supplyValue: r.supplyValue ?? 0,
+      media: r.media,
+      appliedFeeDecimal: r.appliedFeeDecimal!,
+    })),
+    NAVER_LABEL,
+  ) + fallbackRows.reduce((s,r)=>s+(r.executionAmount??0),0)
   const net = rows.reduce((s,r)=>s+(r.netAmount??0),0)
   return {
     impressions:imp, clicks:clk, views:vws, spend:spd, netAmount:net,
@@ -504,14 +517,18 @@ export default function CampaignDetailPage() {
                   </div>
                 )
               })}
-              {kpiVis.hidden.length > 0 && (
-                <KpiCardAddMenu
-                  hidden={kpiVis.hidden}
-                  labelOf={k => allItems[k]?.label ?? k}
-                  onAdd={kpiVis.add}
-                  onReset={kpiVis.reset}
-                />
-              )}
+              {/* UX (사용자 요청) — 모달 형태로 변경. 카드가 모두 표시 중이어도 관리 가능하도록
+                  hidden.length === 0 조건 제거. 버튼은 '+ 카드 0' 으로 표시되어도 충분히 이해 가능. */}
+              <KpiCardAddMenu
+                visible={kpiVis.visible}
+                hidden={kpiVis.hidden}
+                allKeys={KPI_CARD_KEYS}
+                labelOf={k => allItems[k]?.label ?? k}
+                valueOf={k => allItems[k]?.v ?? '-'}
+                onAdd={kpiVis.add}
+                onRemove={kpiVis.remove}
+                onReset={kpiVis.reset}
+              />
             </div>
           </div>
         )
@@ -1136,50 +1153,115 @@ export default function CampaignDetailPage() {
   )
 }
 
-// KPI 카드 추가 메뉴 — 숨겨진 카드 list 를 popover 로 표시. 사용자 요청.
+// KPI 카드 추가 모달 — 사용자 요청: popover 가 좁고 한눈에 안 들어와서 모달로 전환.
+//   - 트리거: 카드 strip 우측 '+ 카드 N' 점선 버튼
+//   - 모달 내용: 전체 카드 목록을 grid 로 보여주고 보임/숨김 toggle
+//   - 카드 클릭 → 즉시 add/remove (실시간 반영)
+//   - 하단: '전체 표시' / '닫기' 버튼
 function KpiCardAddMenu({
-  hidden, labelOf, onAdd, onReset,
+  visible, hidden, allKeys, labelOf, valueOf, onAdd, onRemove, onReset,
 }: {
+  visible: KpiCardKey[]
   hidden: KpiCardKey[]
+  allKeys: readonly KpiCardKey[]
   labelOf: (k: KpiCardKey) => string
+  valueOf: (k: KpiCardKey) => string
   onAdd: (k: KpiCardKey) => void
+  onRemove: (k: KpiCardKey) => void
   onReset: () => void
 }) {
   const [open, setOpen] = useState(false)
+  // 모달 열림 시 body scroll lock + ESC 닫기 처리
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [open])
+
   return (
-    <div className="relative flex-shrink-0 self-stretch flex items-center">
+    <div className="flex-shrink-0 self-stretch flex items-center">
       <button
         type="button"
-        onClick={() => setOpen(v => !v)}
+        onClick={() => setOpen(true)}
         className="h-full min-w-[56px] rounded-xl border border-dashed border-gray-300 bg-white px-2 text-[11px] text-gray-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-        title={`숨겨진 ${hidden.length}개 카드 다시 추가`}
+        title={`숨겨진 ${hidden.length}개 카드 추가 / 표시 카드 관리`}
+        aria-label="KPI 카드 관리 모달 열기"
       >
         + 카드 {hidden.length}
       </button>
       {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-20 w-44 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
-            <p className="px-3 py-1 text-[10px] text-gray-400 uppercase tracking-wider">숨김 카드</p>
-            {hidden.map(k => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => { onAdd(k); if (hidden.length === 1) setOpen(false) }}
-                className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700"
-              >
-                + {labelOf(k)}
-              </button>
-            ))}
-            <div className="border-t border-gray-100 mt-1 pt-1">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="kpi-card-modal-title"
+        >
+          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
+          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-3.5">
+              <div>
+                <h2 id="kpi-card-modal-title" className="text-sm font-semibold text-gray-900">표시할 KPI 카드 선택</h2>
+                <p className="text-[11px] text-gray-500 mt-0.5">클릭으로 보임/숨김을 즉시 변경합니다. 변경 사항은 모든 캠페인에 자동 저장됩니다.</p>
+              </div>
               <button
                 type="button"
-                onClick={() => { onReset(); setOpen(false) }}
-                className="block w-full text-left px-3 py-1.5 text-[11px] text-gray-500 hover:bg-gray-50"
+                onClick={() => setOpen(false)}
+                className="rounded-full h-8 w-8 flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="닫기"
+              >×</button>
+            </div>
+            <div className="p-5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {allKeys.map(k => {
+                  const isVisible = visible.includes(k)
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => isVisible ? onRemove(k) : onAdd(k)}
+                      className={`text-left rounded-xl border px-3 py-2.5 transition-all ${
+                        isVisible
+                          ? 'border-blue-300 bg-blue-50 hover:bg-blue-100'
+                          : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/40'
+                      }`}
+                      aria-pressed={isVisible}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-[10px] font-medium uppercase tracking-wider ${isVisible ? 'text-blue-700' : 'text-gray-500'}`}>
+                          {labelOf(k)}
+                        </span>
+                        <span className={`text-[10px] font-semibold ${isVisible ? 'text-blue-600' : 'text-gray-400'}`}>
+                          {isVisible ? '✓ 표시' : '+ 추가'}
+                        </span>
+                      </div>
+                      <div className={`text-sm font-bold tabular-nums mt-1.5 ${isVisible ? 'text-blue-900' : 'text-gray-700'}`}>
+                        {valueOf(k)}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="sticky bottom-0 flex items-center justify-between gap-2 border-t border-gray-100 bg-gray-50/80 px-5 py-3 rounded-b-2xl">
+              <button
+                type="button"
+                onClick={() => onReset()}
+                className="text-[11px] text-gray-600 hover:text-blue-700 underline-offset-2 hover:underline"
               >전체 표시 (기본값)</button>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5"
+              >닫기</button>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   )

@@ -6,7 +6,7 @@ import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
 import {
   getMediaTotals, getCampaignTotals,
-  MEDIA_MARKUP_RATE, DMP_FEE_RATE,
+  MEDIA_MARKUP_RATE, DMP_FEE_RATE, VAT_INCLUDED_MEDIA,
 } from "@/lib/campaignTypes"
 import type { Campaign, MediaBudget } from "@/lib/campaignTypes"
 import type { RawRow } from "@/lib/rawDataParser"
@@ -93,7 +93,9 @@ function buildSettlement(
       markup: Math.round(calcMediaMarkup(mb)),
       spendRate: rate,
       rowCount: rows.length,
-      isNaver: mb.media === "naver",
+      // V4-WARN-02 부수 버그 수정 — 이전: `mb.media === "naver"` 는 실제 라벨('네이버 GFA') 과
+      // 불일치하여 항상 false → "(VAT 포함)" 라벨 영원히 노출 안 됨. 전역 set 으로 일관화.
+      isNaver: VAT_INCLUDED_MEDIA.has(mb.media),
     }
   })
   const tot = getCampaignTotals(campaign)

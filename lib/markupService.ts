@@ -101,6 +101,8 @@ export function applyMarkupToRows(rawRows: RawRow[], campaigns: Campaign[]): Raw
       executionAmount,
       grossCost:       executionAmount,
       matchedCampaignId: matched?.id ?? row.matchedCampaignId,
+      // V4-INFO-03 — 합계 카드의 sum-then-round 정밀합 산출용 fee 동봉.
+      appliedFeeDecimal: totalFeeDecimal,
     }
   })
 }

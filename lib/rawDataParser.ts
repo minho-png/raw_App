@@ -26,6 +26,12 @@ export interface RawRow {
   advertiserHint: string | null
   /** csvNames 역매칭으로 확정된 캠페인 ID (없으면 undefined = 미매칭) */
   matchedCampaignId?: string
+  /**
+   * markupService.applyMarkupToRows 가 동봉한 적용 fee (0~1).
+   * 합계 카드의 sum-then-round 정밀합 산출용 — 미존재 시 row.executionAmount 합으로 fallback.
+   * 사용자 QA v4 V4-INFO-03 — 캠페인 상세 ±수십 원 오차 해결.
+   */
+  appliedFeeDecimal?: number
 }
 
 /** 캠페인에 해당 매체가 설정돼 있는지 확인 */
