@@ -40,6 +40,18 @@ echo "  AI Harness — Verify Loop"
 echo "══════════════════════════════════════"
 echo ""
 
+# ── Step 0: Unit tests (계산 정합) ───────────────────────────
+# Node 22 내장 test runner + type stripping — 새 dependency 없이 .ts 직접 실행.
+# 순수 계산 함수(roundWon / distributeRounding / calcCosts) 의 정합성 회귀 방지.
+if compgen -G "tests/*.test.ts" > /dev/null; then
+  step_info "Unit tests (node --test, 계산 정합)..."
+  TEST_OUT=$(node --experimental-strip-types --test tests/*.test.ts 2>&1) && step_pass "Tests: passed" || {
+    step_fail "Tests: failed"
+    echo "$TEST_OUT" | tail -30
+    ISSUES+=("$TEST_OUT")
+  }
+fi
+
 # ── Step 1: TypeScript ───────────────────────────────────────
 step_info "TypeScript type-check (tsc --noEmit)..."
 TS_OUT=$(npx tsc --noEmit 2>&1) && step_pass "TypeScript: no errors" || {

@@ -35,6 +35,7 @@
     "components/atoms",
     "components/molecules",
     "components/organisms",
-    "pixel-agents"
+    "pixel-agents",
+    "tests"
   ]
 }

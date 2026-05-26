@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { roundWon } from '@/lib/calculationService'
 import type { Campaign, Agency, Advertiser, Operator } from '@/lib/campaignTypes'
 import type { MotivCampaign } from '@/lib/motivApi/types'
 import {
@@ -172,11 +173,11 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
     const adv = advById.get(s.campaign.advertiserId)
     const op = opById.get(s.campaign.managerId)
     // CT+ 매출 공급가액 = 부킹 금액 (광고주 청구 기준)
-    const net = Math.round(s.totals.budget)
+    const net = roundWon(s.totals.budget)
     if (net <= 0) continue
-    const vat = Math.round(net * 0.1)
+    const vat = roundWon(net * 0.1)
     // CT+ 수수료 (VAT포함) = (DMP사 비용 + 대행수수료) × 1.1
-    const fee = Math.round(s.totals.markup * 1.1)
+    const fee = roundWon(s.totals.markup * 1.1)
     rows.push({
       해당월: s.campaign.settlementMonth || month,
       담당자: op?.name ?? '',
@@ -237,7 +238,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
     const revenue   = periodStats.spend
     const net = revenue
     if (net <= 0) continue
-    const vat = Math.round(net * 0.1)
+    const vat = roundWon(net * 0.1)
     rows.push({
       해당월: month,
       담당자: op?.name ?? '',
@@ -250,7 +251,7 @@ export function buildSalesRows(params: SalesRowsParams): SalesRow[] {
       합계금액: net + vat,
       '수금일 기준': paymentBasisOf(ag),
       '수금 기한': computePaymentDueDate(month, ag),
-      '수수료 (VAT포함)': Math.round(agencyFee * 1.1),
+      '수수료 (VAT포함)': roundWon(agencyFee * 1.1),
       수취이메일: ag?.email || '',
       '수수료 세금계산서 발행여부': '',
       'CT 해당금액 (vat 제외)': product === 'CT' ? net : 0,
@@ -325,9 +326,9 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
     const op = opById.get(s.campaign.managerId)
     for (const mb of s.mediaRows) {
       // CT+ 매입 공급가액 = RAW CSV netAmount (VAT 별도) — 매체사 실 집행 기준
-      const net = Math.round(mb.netAmount)
+      const net = roundWon(mb.netAmount)
       if (net <= 0) continue
-      const vat = Math.round(net * 0.1)
+      const vat = roundWon(net * 0.1)
       // 사용자 결정 — 네이버 GFA / 카카오 모먼트 매입 거래처는 '매드코퍼레이션' 으로 발행.
       // 매드 가 묶어서 청구하므로 매체별 라벨은 괄호로 표시. Google/META 는 매체사 직접 청구라 매체명 그대로.
       const supplier = (mb.media === '네이버 GFA' || mb.media === '카카오모먼트')
@@ -383,13 +384,13 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
       internalAgId ?? (motivAgId != null ? `motiv:${motivAgId}` : undefined)
     const ag = internalAgId ? agById.get(internalAgId) : undefined
     const periodStats = statsByMotivId?.get(c.id)
-    const agencyFee = periodStats ? periodStats.agencyFee : Math.round(Number(c.stats?.agency_fee ?? 0))
-    const dataFee   = periodStats ? periodStats.dmpFee    : Math.round(Number(c.stats?.data_fee ?? 0))
+    const agencyFee = periodStats ? periodStats.agencyFee : roundWon(Number(c.stats?.agency_fee ?? 0))
+    const dataFee   = periodStats ? periodStats.dmpFee    : roundWon(Number(c.stats?.data_fee ?? 0))
     const label = MEDIA_PRODUCT_LABEL[product]
 
     // (a) 대행수수료 행 — agency_fee 만, DMP 제외.
     if (agencyFee > 0) {
-      const vat = Math.round(agencyFee * 0.1)
+      const vat = roundWon(agencyFee * 0.1)
       rows.push({
         년월: month,
         담당자: op?.name ?? '',
@@ -461,11 +462,11 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
   for (const vendor of dmpOrder) {
     const acc = dmpVendorAcc.get(vendor)
     if (!acc) continue
-    const ct = Math.round(acc.CT)
-    const tv = Math.round(acc.TV)
+    const ct = roundWon(acc.CT)
+    const tv = roundWon(acc.TV)
     const net = ct + tv
     if (net <= 0) continue
-    const vat = Math.round(net * 0.1)
+    const vat = roundWon(net * 0.1)
     rows.push({
       년월: month,
       담당자: '',

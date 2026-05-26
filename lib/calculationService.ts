@@ -83,6 +83,70 @@ export function isDmp(dmpType: DmpType): boolean {
   return dmpType !== 'DIRECT'
 }
 
+// ── 금액 반올림 정합 유틸 ─────────────────────────────────────
+//
+// 정산 금액은 1원 단위 정수로 표시·정산된다. 두 종류의 부동소수점 오차를 다룬다:
+//  (1) IEEE754 표현 오차 — net * 0.1 이 ...0000001 / ...9999999 로 나와
+//      반올림이 한쪽으로 튀는 현상. roundWon() 이 양자화로 방어한다.
+//  (2) 행별 반올림 누적 — 각 행을 Math.round 한 뒤 더하면 그 합이 '정확값을
+//      한 번 반올림한 총액' 과 행 수만큼 벌어진다(최대 수십 원). 표시 그룹
+//      단위로 distributeRounding() 을 적용하면 'Σ행 = 그룹 총액' 을 보장한다.
+
+/**
+ * 원 단위 반올림 (round-half-up, 음수 대칭은 Math.round 동작 유지).
+ * 곱셈/나눗셈 결과의 이진 표현 오차를 6자리에서 양자화해 제거한 뒤 반올림하므로
+ * `roundWon(net * 0.1)` 같은 식이 항상 안정적으로 같은 정수를 낸다.
+ */
+export function roundWon(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.round(Math.round(value * 1e6) / 1e6)
+}
+
+/**
+ * 최대 잔여 배분(largest remainder method).
+ * 각 정확값(float)을 정수로 만들되, 정수 배열의 합이 `total`(미지정 시 정확값
+ * 합을 roundWon 한 값)과 **정확히 일치**하도록 잔여 ±1원을 소수부가 큰(잉여) /
+ * 작은(부족) 행부터 배분한다. 반환 배열의 합 === target 을 항상 보장.
+ *
+ * 용도: 한 표시 그룹(광고주 행의 DMP사별 셀, 캠페인의 매체별 행 등)에서
+ * 개별 정수 셀들의 합이 그룹 합계 정수와 어긋나지 않도록 정합을 맞춘다.
+ *
+ * - 빈 배열이면 [] 반환.
+ * - NaN/Infinity 입력은 0 으로 간주.
+ * - 동률 소수부는 원래 순서(앞쪽)를 우선해 결정적(deterministic)으로 동작.
+ */
+export function distributeRounding(values: number[], total?: number): number[] {
+  const n = values.length
+  if (n === 0) return []
+
+  const sanitized = values.map(v => (Number.isFinite(v) ? v : 0))
+  const target = total !== undefined
+    ? roundWon(total)
+    : roundWon(sanitized.reduce((s, v) => s + v, 0))
+
+  const result = sanitized.map(v => Math.floor(v))
+  let remainder = target - result.reduce((s, v) => s + v, 0)
+
+  // 소수부 큰 순 (동률은 인덱스 오름차순) → 결정적 배분 순서
+  const order = sanitized
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i)
+
+  if (remainder > 0) {
+    for (let k = 0; k < order.length && remainder > 0; k++, remainder--) {
+      result[order[k].i] += 1
+    }
+  } else if (remainder < 0) {
+    for (let k = order.length - 1; k >= 0 && remainder < 0; k--, remainder++) {
+      result[order[k].i] -= 1
+    }
+  }
+
+  // total 을 임의 지정해 |잔여| > 행수인 극단 케이스: 합 정합만 첫 행에 보정.
+  if (remainder !== 0) result[0] += remainder
+  return result
+}
+
 // ── 집행 금액 계산 (RAW_APP 공식) ────────────────────────────
 export interface CostCalculation {
   supplyValue: number     // 파일 원본 금액
@@ -103,12 +167,12 @@ export function calcCosts(
   feeDecimal: number,   // 0~1 범위 (예: 10% → 0.10)
 ): CostCalculation {
   const netAmount = isNaver
-    ? Math.round(supplyValue / 1.1)
+    ? roundWon(supplyValue / 1.1)
     : supplyValue
 
   const executionAmount = feeDecimal >= 1
     ? netAmount
-    : Math.round(netAmount / (1 - feeDecimal))
+    : roundWon(netAmount / (1 - feeDecimal))
 
   return { supplyValue, netAmount, executionAmount }
 }
@@ -157,7 +221,7 @@ export function calcDmpSettlement(
   for (const [dmpType, { execution, net, count }] of map.entries()) {
     const feeRate = DMP_FEE_RATES_PERCENT[dmpType] ?? 0
     const feeDecimal = DMP_FEE_RATES_DECIMAL[dmpType] ?? 0
-    const feeAmount = Math.round(net * feeDecimal)
+    const feeAmount = roundWon(net * feeDecimal)
     settlementRows.push({ dmpType, totalExecution: execution, totalNet: net, feeAmount, feeRate, rowCount: count })
     totalExecution += execution
     totalNet += net
