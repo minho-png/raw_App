@@ -226,6 +226,10 @@ export class CalculationService {
 
       const supplyVal = parseFloat(String(row.supply_value).replace(/,/g, '')) || 0;
       // 네이버 VAT: supply / 1.1 = netAmount, execution = net / (1 - feeRate)
+      // 반올림 정책 — lib/calculationService.calcCosts 는 행별 roundWon 으로 정수화하지만,
+      // 본 모듈(performance API / CT raw 분석 경로)은 baseValue·executionAmt 를 **float 로 유지**한다.
+      // 정산 화면(sales-purchase·dmp-fee)이 쓰는 lib 경로와 달리 여기는 다운스트림 집계 정확도가
+      // 우선이며, 행별 반올림 누적이 없어 표시·집계 시점에 roundWon() 으로 1회만 반올림하면 된다.
       const baseValue = (rowMedia === '네이버GFA') ? (supplyVal / 1.1) : supplyVal;
       const executionAmt = feeDecimal === 1 ? baseValue : baseValue / (1 - feeDecimal);
 

@@ -6,6 +6,7 @@ import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
 import { getMediaTotals, MEDIA_MARKUP_RATE, DMP_FEE_RATE } from "@/lib/campaignTypes"
+import { roundWon } from "@/lib/calculationService"
 import type { Campaign, MediaBudget } from "@/lib/campaignTypes"
 import type { RawRow } from "@/lib/rawDataParser"
 
@@ -36,7 +37,7 @@ import { useSettlementOverrides, applyOverride, isOverrideStale } from "@/lib/ho
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { ModalShell } from "@/components/atoms/ModalShell"
 
-function fmt(n: number) { return Math.round(n).toLocaleString("ko-KR") }
+function fmt(n: number) { return roundWon(n).toLocaleString("ko-KR") }
 function toMonthStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
 }
@@ -59,10 +60,10 @@ function buildCtPlusSettlement(
     const exec = rows.reduce((s, r) => s + (r.executionAmount ?? 0), 0)
     return {
       media: mb.media,
-      netAmount: Math.round(net),
-      executionAmount: Math.round(exec),
-      budget: Math.round(t.totalBudget),
-      markup: Math.round(calcMediaMarkup(mb)),
+      netAmount: roundWon(net),
+      executionAmount: roundWon(exec),
+      budget: roundWon(t.totalBudget),
+      markup: roundWon(calcMediaMarkup(mb)),
     }
   })
   const totalNet    = mediaRows.reduce((s, r) => s + r.netAmount, 0)
@@ -593,9 +594,9 @@ function RowEditModal({
       // 공급가액 변경 시 세액(10%) + 합계금액(net+vat) 자동 갱신.
       // 단, 사용자가 세액/합계를 직접 수정한 적이 있으면 해당 필드는 건드리지 않음.
       if (key === '공급가액' && typeof next === 'number') {
-        if (!manualVatTouched) merged['세액'] = Math.round(next * 0.1)
+        if (!manualVatTouched) merged['세액'] = roundWon(next * 0.1)
         if (!manualTotalTouched) {
-          const vat = manualVatTouched ? Number(merged['세액'] ?? 0) : Math.round(next * 0.1)
+          const vat = manualVatTouched ? Number(merged['세액'] ?? 0) : roundWon(next * 0.1)
           merged['합계금액'] = next + vat
         }
       }

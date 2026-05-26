@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
-import { DMP_FEE_RATES_DECIMAL } from "@/lib/calculationService"
+import { DMP_FEE_RATES_DECIMAL, roundWon, distributeRounding } from "@/lib/calculationService"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
@@ -303,8 +303,19 @@ export default function DmpFeeClient() {
     return result
   }, [motivProduct, adGroups.rows, motivFetch.data, adAccountById, periodStats.byMotivId])
 
+  // dmpFees / dmpTotal 은 여기까지 raw float 으로 누적된다(행 단위 반올림 누적 회피).
+  // 표시 직전 행 단위로 largest-remainder 배분해 정수화하면, 각 광고주 행에서
+  // 'Σ DMP사별 셀 = DMP합계' 가 보장되고(행 정합), footer 열합·전체합도 정수 셀의
+  // 단순 합이 되어 행/열/총합이 모두 1원 오차 없이 일치한다.
   const allRows = useMemo(
-    () => [...ctPlusRows, ...motivRows].sort((a, b) => b.dmpTotal - a.dmpTotal),
+    () => [...ctPlusRows, ...motivRows]
+      .sort((a, b) => b.dmpTotal - a.dmpTotal)
+      .map(r => {
+        const dist = distributeRounding(DMP_COLS.map(v => r.dmpFees[v]), roundWon(r.dmpTotal))
+        const dmpFees = emptyFees()
+        DMP_COLS.forEach((v, i) => { dmpFees[v] = dist[i] })
+        return { ...r, dmpFees, dmpTotal: roundWon(r.dmpTotal) }
+      }),
     [ctPlusRows, motivRows],
   )
 
