@@ -33,9 +33,11 @@ export function SettlementFilterBar({ month, onMonthChange, product, onProductCh
         value={product}
         onChange={onProductChange}
       />
-      <div className="flex-1" />
       {rightSlot}
-      <OpenApiStatusBadge />
+      {/* ml-auto 로 우측 정렬 — 모바일(360px) wrap 시에도 badge 가 좌측으로 흩어지지 않음 (UX 리뷰 ⑧) */}
+      <div className="ml-auto">
+        <OpenApiStatusBadge />
+      </div>
     </FilterBar>
   )
 }

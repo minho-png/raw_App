@@ -18,10 +18,14 @@ export type InsightsLevel = 'CAMPAIGN' | 'ADGROUP' | 'AD' | 'DAILY' | 'HOURLY'
 export type OpenApiStatus = 'ACTIVE' | 'PAUSED'
 
 /**
- * 캠페인 타입 — 새 API 가이드 기준.
- * Motiv 의 PARTNERS 대응값은 추후 확인 필요.
+ * 캠페인 타입 — 새 API 가이드 기준 + Motiv 호환.
+ *
+ * 데이터 리뷰 ⑨ — Motiv productMapping.ts 는 PARTNERS → CT 로 매핑한다.
+ * PARTNERS 를 누락하면 Open API 전환 시 PARTNERS 캠페인이 campaignType 필터에서
+ * 빠지거나 product 분류에 실패해 CT 정산에서 통째 누락된다. union 에 포함해
+ * 매핑 손실을 방지한다. (가이드 명시 3종 + 호환 1종)
  */
-export type OpenApiCampaignType = 'DISPLAY' | 'VIDEO' | 'TV'
+export type OpenApiCampaignType = 'DISPLAY' | 'VIDEO' | 'TV' | 'PARTNERS'
 
 /**
  * CAMPAIGN level dimensions — 캠페인 단위로 그룹된 집계 row 의 식별/속성 컬럼.
@@ -114,6 +118,12 @@ export interface InsightsMetrics {
   clicks: number
   ctr: number
   cost: number
+  /**
+   * 통화 코드 — 가이드상 현재 항상 'KRW'.
+   * 데이터 리뷰 ⑨ — Google/META 등 USD 결제 매체가 추후 cost 에 USD 로 유입되면
+   * KRW 전제(roundWon)와 충돌. 소비부는 `currency !== 'KRW'` 가드를 두어야 한다.
+   * (USD 환산용 mediaCostUsd/exchangeRate 는 /settlements metric — Phase 2 도입)
+   */
   currency: string
   cpc: number
   cpm: number
@@ -232,5 +242,18 @@ export interface MeResponse {
     email: string
     roles: string[]
     permissions: string[]
+  }
+}
+
+/**
+ * `/api/open-api/me` proxy 가 브라우저로 내려보내는 **축소** 응답.
+ *
+ * 보안 리뷰 ⑦ — email/roles/permissions 는 PII·권한 정보라 클라로 보내지 않는다.
+ * badge 표시에 필요한 mb_id/name 만 노출. (권한 판정은 서버에서 MeResponse 사용)
+ */
+export interface MeHealthResponse {
+  data: {
+    mb_id: string
+    name: string
   }
 }
