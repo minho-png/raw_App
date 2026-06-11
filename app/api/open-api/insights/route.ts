@@ -1,23 +1,37 @@
 /**
  * Crosstarget Open API `/ads/insights` proxy.
  *
- * 토큰 노출 방지 + 입력 검증 + 에러 정규화. 클라이언트는 본 endpoint 를 호출.
+ * 토큰 노출 방지 + 입력 검증 + 에러 정규화. 클라이언트는 본 endpoint 호출.
  *
  * 필수 쿼리: `dateFrom`, `dateTo` (YYYY-MM-DD).
- * 옵션:      `level`(기본 CAMPAIGN), `campaignType`, `accountId`, `agencyId`,
- *            `page`, `limit`, `all=true` (전체 페이지 자동 순회).
+ * level 별 추가 검증 (가이드 §5 매트릭스):
+ *   - DAILY: 기간 ≤ 90일
+ *   - HOURLY: 기간 ≤ 7일
+ *   - ADGROUP/AD: campaignIds 필수 (콤마 다중)
+ *
+ * Phase 1 확장 (2026-06-11): CAMPAIGN 외 level 의 501 가드 해제.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  fetchCampaignInsights,
+  fetchAdGroupInsights,
+  fetchAdInsights,
   fetchAllCampaignInsights,
+  fetchCampaignInsights,
+  fetchDailyInsights,
+  fetchHourlyInsights,
 } from '@/lib/openApi/insightsService'
 import { OpenApiError } from '@/lib/openApi/client'
-import type { InsightsLevel } from '@/lib/openApi/types'
+import {
+  Q_MAX_LEN,
+  isValidDate,
+  sanitizeOrderBy,
+  validateDateRange,
+  validateIdList,
+} from '@/lib/openApi/validation'
+import type { InsightsLevel, InsightsQuery, OpenApiStatus } from '@/lib/openApi/types'
 
 const ALLOWED_LEVELS: InsightsLevel[] = ['CAMPAIGN', 'ADGROUP', 'AD', 'DAILY', 'HOURLY']
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 function bad(message: string, status = 400) {
   return NextResponse.json({ error: { code: 'BAD_REQUEST', message } }, { status })
@@ -45,36 +59,82 @@ export async function GET(req: NextRequest) {
   if (!ALLOWED_LEVELS.includes(levelRaw)) {
     return bad(`level 은 ${ALLOWED_LEVELS.join('/')} 중 하나여야 합니다.`)
   }
-  if (levelRaw !== 'CAMPAIGN') {
-    // Phase 1: CAMPAIGN level 만 지원. 다른 level 은 dimensions 타입 분기 필요 — 추후 확장.
-    return bad('현재 CAMPAIGN level 만 지원합니다. ADGROUP/AD/DAILY/HOURLY 는 추후 추가 예정.', 501)
-  }
 
   const dateFrom = sp.get('dateFrom')
   const dateTo = sp.get('dateTo')
-  if (!dateFrom || !DATE_RE.test(dateFrom)) return bad('dateFrom 은 YYYY-MM-DD 필수.')
-  if (!dateTo || !DATE_RE.test(dateTo)) return bad('dateTo 는 YYYY-MM-DD 필수.')
-  if (dateFrom > dateTo) return bad('dateFrom 이 dateTo 보다 늦을 수 없습니다.')
+  if (!isValidDate(dateFrom)) return bad('dateFrom 은 YYYY-MM-DD 필수.')
+  if (!isValidDate(dateTo)) return bad('dateTo 는 YYYY-MM-DD 필수.')
+
+  // 가이드 §5 일자 제약 (순서 + DAILY≤90 / HOURLY≤7) — 순수 모듈 위임.
+  const rangeChk = validateDateRange(levelRaw, dateFrom, dateTo)
+  if (!rangeChk.ok) return bad(rangeChk.message, rangeChk.message.includes('늦을') ? 400 : 422)
+
+  // id 류 콤마 다중 검증 (보안 리뷰 ⑦) — 개별 early-return 으로 타입 narrowing.
+  const campaignIdsChk = validateIdList(sp.get('campaignIds'), 'campaignIds')
+  if (!campaignIdsChk.ok) return bad(campaignIdsChk.message, 422)
+  const adGroupIdsChk = validateIdList(sp.get('adGroupIds'), 'adGroupIds')
+  if (!adGroupIdsChk.ok) return bad(adGroupIdsChk.message, 422)
+  const adIdsChk = validateIdList(sp.get('adIds'), 'adIds')
+  if (!adIdsChk.ok) return bad(adIdsChk.message, 422)
+  const idsChk = validateIdList(sp.get('ids'), 'ids')
+  if (!idsChk.ok) return bad(idsChk.message, 422)
+  const campaignIds = campaignIdsChk.value
+
+  if ((levelRaw === 'ADGROUP' || levelRaw === 'AD') && !campaignIds) {
+    return bad(`${levelRaw} level 은 campaignIds (콤마 다중) 필수.`, 422)
+  }
+
+  const qRaw = sp.get('q')
+  if (qRaw && qRaw.length > Q_MAX_LEN) {
+    return bad(`q 는 최대 ${Q_MAX_LEN}자.`, 422)
+  }
+
+  const orderBy = sanitizeOrderBy(sp.get('orderBy'))
 
   const page = Number(sp.get('page'))
   const limit = Number(sp.get('limit'))
-  const query = {
+  const statusRaw = sp.get('status')
+  const orderRaw = sp.get('order')
+  const baseQuery: Omit<InsightsQuery, 'level'> = {
     dateFrom,
     dateTo,
     campaignType: sp.get('campaignType') ?? undefined,
     accountId: sp.get('accountId') ?? undefined,
     agencyId: sp.get('agencyId') ?? undefined,
+    campaignIds,
+    adGroupIds: adGroupIdsChk.value,
+    adIds: adIdsChk.value,
+    ids: idsChk.value,
+    status: statusRaw === 'ACTIVE' || statusRaw === 'PAUSED' ? (statusRaw as OpenApiStatus) : undefined,
+    q: qRaw ?? undefined,
+    orderBy,
+    order: orderRaw === 'ASC' || orderRaw === 'DESC' ? orderRaw : undefined,
     page: Number.isFinite(page) && page > 0 ? Math.floor(page) : undefined,
-    limit: Number.isFinite(limit) && limit > 0 ? Math.min(500, Math.floor(limit)) : undefined,
+    limit: Number.isFinite(limit) && limit > 0 ? Math.min(1000, Math.floor(limit)) : undefined,
   }
 
   const all = sp.get('all') === 'true'
   const startedAt = Date.now()
 
   try {
-    const data = all
-      ? await fetchAllCampaignInsights(query)
-      : await fetchCampaignInsights(query)
+    let data
+    switch (levelRaw) {
+      case 'CAMPAIGN': {
+        if (all) {
+          // fetchAllCampaignInsights 는 page 무시 (1부터 자동 순회) — page 키 제외.
+          const { page: _omit, ...rest } = baseQuery
+          void _omit
+          data = await fetchAllCampaignInsights(rest)
+        } else {
+          data = await fetchCampaignInsights(baseQuery)
+        }
+        break
+      }
+      case 'ADGROUP': data = await fetchAdGroupInsights(baseQuery); break
+      case 'AD':      data = await fetchAdInsights(baseQuery); break
+      case 'DAILY':   data = await fetchDailyInsights(baseQuery); break
+      case 'HOURLY':  data = await fetchHourlyInsights(baseQuery); break
+    }
     const latencyMs = Date.now() - startedAt
     console.info('[open-api/insights] OK', { level: levelRaw, dateFrom, dateTo, latencyMs })
     return NextResponse.json(data, {
@@ -87,7 +147,8 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     if (err instanceof OpenApiError) {
-      console.error('[open-api/insights]', { code: err.code, status: err.status, meta: err.meta })
+      // 관측 (운영 리뷰 ⑩) — 토큰 값 미포함, 진단 컨텍스트만.
+      console.error('[open-api/insights]', { code: err.code, status: err.status, level: levelRaw, dateFrom, dateTo, meta: err.meta })
       return NextResponse.json(
         { error: { code: err.code, message: err.message, details: err.details } },
         {

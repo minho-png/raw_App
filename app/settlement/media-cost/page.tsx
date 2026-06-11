@@ -6,6 +6,7 @@ import { MEDIA_MARKUP_RATE } from "@/lib/campaignTypes"
 import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
+import { roundWon } from "@/lib/calculationService"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
@@ -138,7 +139,7 @@ export default function MediaCostPage() {
           budget: mb.dmp.budget > 0 ? mb.dmp.budget : fallbackBudget,
           spend,
           markupRate,
-          netCost: Math.round(spend * (1 - markupRate / 100)),
+          netCost: roundWon(spend * (1 - markupRate / 100)),
         })
       }
       if (mb.nonDmp.spend > 0) {
@@ -151,7 +152,7 @@ export default function MediaCostPage() {
           budget: mb.nonDmp.budget > 0 ? mb.nonDmp.budget : fallbackBudget,
           spend,
           markupRate,
-          netCost: Math.round(spend * (1 - markupRate / 100)),
+          netCost: roundWon(spend * (1 - markupRate / 100)),
         })
       }
       // 수동 입력 spend 가 모두 0 이지만 raw 가 있는 경우 → raw 기반 행 추가 (실집행 누락 보정).
@@ -166,7 +167,7 @@ export default function MediaCostPage() {
           budget: fallbackBudget,
           spend: rawSpend,
           markupRate,
-          netCost: rawNet > 0 ? rawNet : Math.round(rawSpend * (1 - markupRate / 100)),
+          netCost: rawNet > 0 ? rawNet : roundWon(rawSpend * (1 - markupRate / 100)),
         })
       }
     }
