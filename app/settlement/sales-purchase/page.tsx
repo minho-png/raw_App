@@ -81,7 +81,7 @@ function buildCtPlusSettlement(
 
 export default function SalesPurchasePage() {
   const today = new Date()
-  const { campaigns, agencies, advertisers, operators } = useMasterData()
+  const { campaigns, agencies, advertisers, operators, loading: masterLoading } = useMasterData()
   const { allRows: rawRows } = useRawData()
   const [month, setMonth]     = useState(toMonthStr(today))
   const [product, setProduct] = useState<MediaProductFilter>('ALL')
@@ -160,6 +160,40 @@ export default function SalesPurchasePage() {
     assignments, agencies, advertisers, operators, statsByMotivId, adAccountById,
     adGroups: adGroups.rows,
   }), [month, ctPlusSettlements, motivFetch.data, assignments, agencies, advertisers, operators, statsByMotivId, adAccountById, adGroups.rows])
+
+  // 빈 화면 원인별 진단 (10인 진단 ⑧ 반영) — "데이터 없음"이 로딩/데이터부재/매칭실패 중
+  // 무엇인지 사용자가 구분하고 다음 행동을 알 수 있게. (Open API 와 무관 — Motiv+CT+ 소스)
+  const emptyDiag = useMemo<EmptyDiag>(() => {
+    if (masterLoading || motivFetch.loading) {
+      return { kind: 'loading', title: '데이터를 불러오는 중…', hint: '' }
+    }
+    if (motivFetch.error) {
+      return { kind: 'error', title: 'Motiv 데이터를 불러오지 못했습니다.', hint: motivFetch.error }
+    }
+    const noCtPlusEntities = campaigns.length === 0
+    const noMonthCtPlus = ctPlusSettlements.length === 0
+    const noMotiv = motivFetch.data.length === 0
+    if (noCtPlusEntities && noMotiv) {
+      return {
+        kind: 'empty',
+        title: '표시할 정산 데이터가 없습니다.',
+        hint: 'CT+ 캠페인이 등록되지 않았고 Motiv 응답도 없습니다. 캠페인 관리에서 CT+ 를 등록하거나, 상단 매체/월 필터를 확인하세요.',
+      }
+    }
+    if (noMonthCtPlus && noMotiv) {
+      return {
+        kind: 'empty',
+        title: `${month} 정산 데이터가 없습니다.`,
+        hint: `해당 정산월(${month})의 CT+ 캠페인이 없고 Motiv 매칭 캠페인도 없습니다. 다른 월을 선택하거나 캠페인 운영기간을 확인하세요.`,
+      }
+    }
+    // 데이터 소스는 있는데 현재 필터(매출/매입·대행사)로 행이 0 인 경우.
+    return {
+      kind: 'filtered',
+      title: '현재 필터에 해당하는 데이터가 없습니다.',
+      hint: '매체/대행사 필터를 해제하거나 다른 월을 선택해 보세요.',
+    }
+  }, [masterLoading, motivFetch.loading, motivFetch.error, motivFetch.data.length, campaigns.length, ctPlusSettlements.length, month])
 
   // overrides — type 별로 분리 조회 후 행에 머지
   const salesOv    = useSettlementOverrides('sales',    month)
@@ -315,8 +349,8 @@ export default function SalesPurchasePage() {
           agencies={agencies}
         />
 
-        {view === 'sales'    && <SalesTable    rows={visibleSales}    onEdit={r => setEditTarget({ type: 'sales',    row: r })} />}
-        {view === 'purchase' && <PurchaseTable rows={visiblePurchase} onEdit={r => setEditTarget({ type: 'purchase', row: r })} />}
+        {view === 'sales'    && <SalesTable    rows={visibleSales}    emptyDiag={emptyDiag} onEdit={r => setEditTarget({ type: 'sales',    row: r })} />}
+        {view === 'purchase' && <PurchaseTable rows={visiblePurchase} emptyDiag={emptyDiag} onEdit={r => setEditTarget({ type: 'purchase', row: r })} />}
       </main>
 
       {editTarget && (
@@ -345,12 +379,34 @@ export default function SalesPurchasePage() {
   )
 }
 
-// ─── 매출 테이블 ────────────────────────────────────────────────
-function SalesTable({ rows, onEdit }: { rows: SalesRow[]; onEdit: (r: SalesRow) => void }) {
-  if (rows.length === 0) {
-    return <div className="rounded-xl border border-gray-200 bg-white py-12 text-center text-sm text-gray-400">
-      해당 월·필터의 매출 데이터가 없습니다.
+// ─── 빈 상태 진단 ───────────────────────────────────────────────
+type EmptyDiag = {
+  kind: 'loading' | 'empty' | 'filtered' | 'error'
+  title: string
+  hint: string
+}
+
+/** 원인별 빈 상태 — 로딩 스피너 / 데이터 부재 안내 / 필터 안내 / 에러 구분. */
+function SettlementEmptyState({ diag }: { diag: EmptyDiag }) {
+  const tone =
+    diag.kind === 'error' ? 'border-rose-200 bg-rose-50 text-rose-700'
+    : diag.kind === 'loading' ? 'border-gray-200 bg-white text-gray-500'
+    : 'border-gray-200 bg-white text-gray-500'
+  return (
+    <div className={`rounded-xl border py-12 px-6 text-center ${tone}`} role="status" aria-live="polite">
+      {diag.kind === 'loading' && (
+        <span className="mb-3 inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-500 align-middle" aria-hidden />
+      )}
+      <p className="text-sm font-medium">{diag.title}</p>
+      {diag.hint && <p className="mt-1.5 text-xs text-gray-400 max-w-md mx-auto leading-relaxed">{diag.hint}</p>}
     </div>
+  )
+}
+
+// ─── 매출 테이블 ────────────────────────────────────────────────
+function SalesTable({ rows, emptyDiag, onEdit }: { rows: SalesRow[]; emptyDiag: EmptyDiag; onEdit: (r: SalesRow) => void }) {
+  if (rows.length === 0) {
+    return <SettlementEmptyState diag={emptyDiag} />
   }
   const totals = rows.reduce((acc, r) => ({
     net: acc.net + Number(r.공급가액 ?? 0),
@@ -431,11 +487,9 @@ function SalesTable({ rows, onEdit }: { rows: SalesRow[]; onEdit: (r: SalesRow) 
 }
 
 // ─── 매입 테이블 ────────────────────────────────────────────────
-function PurchaseTable({ rows, onEdit }: { rows: PurchaseRow[]; onEdit: (r: PurchaseRow) => void }) {
+function PurchaseTable({ rows, emptyDiag, onEdit }: { rows: PurchaseRow[]; emptyDiag: EmptyDiag; onEdit: (r: PurchaseRow) => void }) {
   if (rows.length === 0) {
-    return <div className="rounded-xl border border-gray-200 bg-white py-12 text-center text-sm text-gray-400">
-      해당 월·필터의 매입 데이터가 없습니다.
-    </div>
+    return <SettlementEmptyState diag={emptyDiag} />
   }
   const totals = rows.reduce((acc, r) => ({
     net: acc.net + Number(r.공급가액 ?? 0),

@@ -67,17 +67,53 @@ const VISUAL: Record<OpenApiHealthStatus, Visual> = {
     dotCls: 'bg-rose-500',
     title: '403 — DSP 권한 없음. 관리자에 문의',
   },
+  // ── 'error' 세분화 (정확한 원인 노출) ──────────────────────────
+  // 일시적·환경 원인(미배포/지연/연결)은 amber — 데이터 자체는 Motiv 기반이라 정상 동작.
+  not_found: {
+    label: 'Open API 경로 없음',
+    icon: '⚠',
+    cls: 'bg-amber-50 text-amber-700 border-amber-300',
+    dotCls: 'bg-amber-500',
+    title: '404 — /me 엔드포인트가 미배포이거나 경로가 잘못됨. Crosstarget API 배포 상태 확인',
+  },
+  timeout: {
+    label: 'Open API 응답 지연',
+    icon: '⚠',
+    cls: 'bg-amber-50 text-amber-700 border-amber-300',
+    dotCls: 'bg-amber-500',
+    title: '응답이 30초를 초과했습니다. 잠시 후 클릭하여 재시도',
+  },
+  network: {
+    label: 'Open API 연결 실패',
+    icon: '⚠',
+    cls: 'bg-amber-50 text-amber-700 border-amber-300',
+    dotCls: 'bg-amber-500',
+    title: '서버에 연결할 수 없습니다. 네트워크 확인 후 클릭하여 재시도',
+  },
+  server_error: {
+    label: 'Open API 서버 오류',
+    icon: '✗',
+    cls: 'bg-rose-50 text-rose-700 border-rose-300',
+    dotCls: 'bg-rose-500',
+    title: 'Crosstarget 서버 일시 장애(5xx). 잠시 후 재시도, 지속 시 관리자 문의',
+  },
   error: {
     label: 'Open API 오류',
     icon: '✗',
     cls: 'bg-rose-50 text-rose-700 border-rose-300',
     dotCls: 'bg-rose-500',
-    title: '/me 호출 실패. 클릭하여 재시도',
+    title: '알 수 없는 오류. 클릭하여 재시도',
   },
 }
 
+// 라벨 옆 칩에 노출할 상태 — 비정상(분류된 오류)일 때 errorCode 를 모노폰트로 표시해
+// "정확한 원인"(HTTP_404 / TIMEOUT / NETWORK 등)을 한눈에. ok/loading/idle 은 칩 없음.
+const ERROR_STATES = new Set([
+  'token_missing', 'unauthorized', 'forbidden', 'not_found', 'timeout', 'network', 'server_error', 'error',
+])
+
 export function OpenApiStatusBadge() {
-  const { status, identity, errorMessage, revalidate } = useOpenApiHealth()
+  const { status, identity, errorCode, errorMessage, revalidate } = useOpenApiHealth()
   const v = VISUAL[status]
   const detail = status === 'ok' && identity
     ? `${v.title} (${identity.mb_id})`
@@ -85,6 +121,7 @@ export function OpenApiStatusBadge() {
       ? `${v.title} — ${errorMessage}`
       : v.title
   const ariaLabel = `${v.label}. ${detail}. 클릭하면 다시 확인합니다.`
+  const showCode = ERROR_STATES.has(status) && !!errorCode
 
   return (
     <span
@@ -109,6 +146,9 @@ export function OpenApiStatusBadge() {
       <span className="sm:hidden" aria-hidden>API</span>
       {status === 'ok' && identity && (
         <span className="font-mono opacity-80 hidden sm:inline">· {identity.mb_id}</span>
+      )}
+      {showCode && (
+        <span className="font-mono opacity-70 hidden sm:inline">· {errorCode}</span>
       )}
     </span>
   )
