@@ -2,6 +2,7 @@
 import React from "react"
 import { MEDIA_PRODUCT_FILTERS, type MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { FilterBar, FilterChipGroup, FilterMonth, FilterDivider } from "@/components/atoms/filters"
+import { OpenApiStatusBadge } from "@/components/atoms/OpenApiStatusBadge"
 
 interface Props {
   month: string
@@ -13,9 +14,11 @@ interface Props {
 }
 
 /**
- * 정산 페이지 3종(agency-fee / dmp-fee / media-cost) 공통 필터 바.
+ * 정산 페이지 4종(agency-fee / dmp-fee / media-cost / sales-purchase) 공통 필터 바.
  *  - 월 이동 (◀ / ▶)
  *  - 제품(탭): 전체 | CT+ | CT | CTV
+ *  - Open API 토큰 상태 badge (우측 끝 고정) — Phase 1 (2026-06-11) 추가.
+ *    /me 헬스체크 결과를 한눈에 표시. badge 자체는 정보 표시 전용 (클릭 X).
  *
  * 내부적으로 공통 atoms (FilterBar / FilterChipGroup / FilterMonth) 사용해
  * 다른 페이지(분석/상태)와 외관·UX 일치.
@@ -30,12 +33,9 @@ export function SettlementFilterBar({ month, onMonthChange, product, onProductCh
         value={product}
         onChange={onProductChange}
       />
-      {rightSlot && (
-        <>
-          <div className="flex-1" />
-          {rightSlot}
-        </>
-      )}
+      <div className="flex-1" />
+      {rightSlot}
+      <OpenApiStatusBadge />
     </FilterBar>
   )
 }
