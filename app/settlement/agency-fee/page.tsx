@@ -12,6 +12,7 @@ import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettle
 import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { motivTypeToProduct } from "@/lib/motivApi/productMapping"
+import { roundWon } from "@/lib/calculationService"
 import { genId } from "@/lib/idGen"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
@@ -175,9 +176,9 @@ export default function AgencyFeePage() {
             advertiserName: advName, agencyName, agencyId,
             campaignName: c.campaignName, media: mb.media,
             kind: "DMP",
-            spend: Math.round(spend.dmp),
+            spend: roundWon(spend.dmp),
             feeRate: dmpRate,
-            fee: Math.round(spend.dmp * dmpRate / 100),
+            fee: roundWon(spend.dmp * dmpRate / 100),
           })
         }
         if (spend.nonDmp > 0 && nonRate > 0) {
@@ -185,9 +186,9 @@ export default function AgencyFeePage() {
             advertiserName: advName, agencyName, agencyId,
             campaignName: c.campaignName, media: mb.media,
             kind: "비DMP",
-            spend: Math.round(spend.nonDmp),
+            spend: roundWon(spend.nonDmp),
             feeRate: nonRate,
-            fee: Math.round(spend.nonDmp * nonRate / 100),
+            fee: roundWon(spend.nonDmp * nonRate / 100),
           })
         }
       }
@@ -204,8 +205,8 @@ export default function AgencyFeePage() {
       if (product !== 'CT' && product !== 'CTV') continue
       const ps = statsByMotivId.get(c.id)
       // fallback: campaigns.index 의 lifetime stats (period 미응답 시).
-      const spend     = Math.round(ps?.mediaCost ?? Number(c.stats?.cost ?? 0))
-      const agencyFee = Math.round(ps?.agencyFee ?? Number(c.stats?.agency_fee ?? 0))
+      const spend     = roundWon(ps?.mediaCost ?? Number(c.stats?.cost ?? 0))
+      const agencyFee = roundWon(ps?.agencyFee ?? Number(c.stats?.agency_fee ?? 0))
       if (spend <= 0 && agencyFee <= 0) continue
       const asg = asgById.get(c.id)
       const agencyId   = asg?.agencyId ?? ''
@@ -253,7 +254,7 @@ export default function AgencyFeePage() {
   const selectedAgency = agencies.find(a => a.id === selectedAgencyId) ?? null
   const selectedFee    = selectedAgencyId ? (agencyStats[selectedAgencyId]?.fee ?? 0) : 0
   const taxBase        = selectedFee
-  const taxAmount      = Math.round(taxBase * 0.1)
+  const taxAmount      = roundWon(taxBase * 0.1)
   const taxTotal       = taxBase + taxAmount
 
   function downloadRegistrationPdf(ag: Agency) {

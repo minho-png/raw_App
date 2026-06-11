@@ -22,20 +22,19 @@ import {
   fetchHourlyInsights,
 } from '@/lib/openApi/insightsService'
 import { OpenApiError } from '@/lib/openApi/client'
+import {
+  Q_MAX_LEN,
+  isValidDate,
+  sanitizeOrderBy,
+  validateDateRange,
+  validateIdList,
+} from '@/lib/openApi/validation'
 import type { InsightsLevel, InsightsQuery, OpenApiStatus } from '@/lib/openApi/types'
 
 const ALLOWED_LEVELS: InsightsLevel[] = ['CAMPAIGN', 'ADGROUP', 'AD', 'DAILY', 'HOURLY']
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 function bad(message: string, status = 400) {
   return NextResponse.json({ error: { code: 'BAD_REQUEST', message } }, { status })
-}
-
-/** dateFrom..dateTo (포함) 일수. 두 값 모두 YYYY-MM-DD 형식 검증된 후 호출. */
-function daysBetween(from: string, to: string): number {
-  const a = Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))
-  const b = Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10))
-  return Math.floor((b - a) / 86_400_000) + 1
 }
 
 export async function GET(req: NextRequest) {
@@ -48,23 +47,34 @@ export async function GET(req: NextRequest) {
 
   const dateFrom = sp.get('dateFrom')
   const dateTo = sp.get('dateTo')
-  if (!dateFrom || !DATE_RE.test(dateFrom)) return bad('dateFrom 은 YYYY-MM-DD 필수.')
-  if (!dateTo || !DATE_RE.test(dateTo)) return bad('dateTo 는 YYYY-MM-DD 필수.')
-  if (dateFrom > dateTo) return bad('dateFrom 이 dateTo 보다 늦을 수 없습니다.')
+  if (!isValidDate(dateFrom)) return bad('dateFrom 은 YYYY-MM-DD 필수.')
+  if (!isValidDate(dateTo)) return bad('dateTo 는 YYYY-MM-DD 필수.')
 
-  // 가이드 §5 일자/필수 필터 제약
-  const days = daysBetween(dateFrom, dateTo)
-  if (levelRaw === 'DAILY' && days > 90) {
-    return bad('DAILY level 은 최대 90일 (포함 기준).', 422)
-  }
-  if (levelRaw === 'HOURLY' && days > 7) {
-    return bad('HOURLY level 은 최대 7일 (포함 기준).', 422)
-  }
+  // 가이드 §5 일자 제약 (순서 + DAILY≤90 / HOURLY≤7) — 순수 모듈 위임.
+  const rangeChk = validateDateRange(levelRaw, dateFrom, dateTo)
+  if (!rangeChk.ok) return bad(rangeChk.message, rangeChk.message.includes('늦을') ? 400 : 422)
 
-  const campaignIds = sp.get('campaignIds') ?? undefined
+  // id 류 콤마 다중 검증 (보안 리뷰 ⑦) — 개별 early-return 으로 타입 narrowing.
+  const campaignIdsChk = validateIdList(sp.get('campaignIds'), 'campaignIds')
+  if (!campaignIdsChk.ok) return bad(campaignIdsChk.message, 422)
+  const adGroupIdsChk = validateIdList(sp.get('adGroupIds'), 'adGroupIds')
+  if (!adGroupIdsChk.ok) return bad(adGroupIdsChk.message, 422)
+  const adIdsChk = validateIdList(sp.get('adIds'), 'adIds')
+  if (!adIdsChk.ok) return bad(adIdsChk.message, 422)
+  const idsChk = validateIdList(sp.get('ids'), 'ids')
+  if (!idsChk.ok) return bad(idsChk.message, 422)
+  const campaignIds = campaignIdsChk.value
+
   if ((levelRaw === 'ADGROUP' || levelRaw === 'AD') && !campaignIds) {
     return bad(`${levelRaw} level 은 campaignIds (콤마 다중) 필수.`, 422)
   }
+
+  const qRaw = sp.get('q')
+  if (qRaw && qRaw.length > Q_MAX_LEN) {
+    return bad(`q 는 최대 ${Q_MAX_LEN}자.`, 422)
+  }
+
+  const orderBy = sanitizeOrderBy(sp.get('orderBy'))
 
   const page = Number(sp.get('page'))
   const limit = Number(sp.get('limit'))
@@ -77,12 +87,12 @@ export async function GET(req: NextRequest) {
     accountId: sp.get('accountId') ?? undefined,
     agencyId: sp.get('agencyId') ?? undefined,
     campaignIds,
-    adGroupIds: sp.get('adGroupIds') ?? undefined,
-    adIds: sp.get('adIds') ?? undefined,
-    ids: sp.get('ids') ?? undefined,
+    adGroupIds: adGroupIdsChk.value,
+    adIds: adIdsChk.value,
+    ids: idsChk.value,
     status: statusRaw === 'ACTIVE' || statusRaw === 'PAUSED' ? (statusRaw as OpenApiStatus) : undefined,
-    q: sp.get('q') ?? undefined,
-    orderBy: sp.get('orderBy') ?? undefined,
+    q: qRaw ?? undefined,
+    orderBy,
     order: orderRaw === 'ASC' || orderRaw === 'DESC' ? orderRaw : undefined,
     page: Number.isFinite(page) && page > 0 ? Math.floor(page) : undefined,
     limit: Number.isFinite(limit) && limit > 0 ? Math.min(1000, Math.floor(limit)) : undefined,
@@ -112,12 +122,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data)
   } catch (err) {
     if (err instanceof OpenApiError) {
+      // 관측 (운영 리뷰 ⑩) — 토큰 값 미포함, 진단 컨텍스트만.
+      console.error('[open-api/insights]', { code: err.code, status: err.status, level: levelRaw, dateFrom, dateTo })
       return NextResponse.json(
         { error: { code: err.code, message: err.message, details: err.details } },
         { status: err.status },
       )
     }
     const message = err instanceof Error ? err.message : String(err)
+    console.error('[open-api/insights] INTERNAL', message)
     return NextResponse.json(
       { error: { code: 'INTERNAL', message } },
       { status: 500 },

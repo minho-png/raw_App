@@ -43,6 +43,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# 예외: 토큰 없는 예제 템플릿은 추적 (운영자 온보딩용)
+!.env.local.example
 
 # vercel
 .vercel
