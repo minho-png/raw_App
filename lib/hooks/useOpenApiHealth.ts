@@ -71,8 +71,9 @@ async function load(force: boolean): Promise<void> {
         setCache({ status, identity: null, errorCode: code, errorMessage: message })
       }
     } catch (e) {
+      // 브라우저 → proxy fetch 자체 실패 (오프라인 등) — network 로 분류.
       const message = e instanceof Error ? e.message : String(e)
-      setCache({ status: 'error', identity: null, errorCode: 'NETWORK', errorMessage: message })
+      setCache({ status: 'network', identity: null, errorCode: 'NETWORK', errorMessage: message })
     } finally {
       lastFetched = Date.now()
       inflight = null
