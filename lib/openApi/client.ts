@@ -26,15 +26,37 @@ function getBaseUrl(): string {
   return process.env.OPEN_API_BASE_URL || DEFAULT_BASE_URL
 }
 
+export interface OpenApiErrorMeta {
+  /** 외부 호출 대상 (host+path, 토큰·querystring 미포함) — 진단용. */
+  upstream?: string
+  /** 외부 응답 status. 네트워크 단계 실패면 undefined. */
+  upstreamStatus?: number
+  /** 첫 시도 ~ 최종 결과까지 누적 latency (ms). */
+  latencyMs?: number
+  /** 실제 수행된 시도 횟수. */
+  attempts?: number
+}
+
 export class OpenApiError extends Error {
   constructor(
     public code: string,
     message: string,
     public status: number,
     public details?: Record<string, string[]>,
+    public meta?: OpenApiErrorMeta,
   ) {
     super(message)
     this.name = 'OpenApiError'
+  }
+}
+
+/** 진단 로그용 — 토큰·query 제거. host+path 만 반환. */
+function diagPath(url: string): string {
+  try {
+    const u = new URL(url)
+    return `${u.host}${u.pathname}`
+  } catch {
+    return url
   }
 }
 
@@ -63,15 +85,33 @@ export async function openApiFetch<T>(
   const token = getApiToken()
   const base = getBaseUrl()
   const url = `${base}${path}${query ? buildQueryString(query) : ''}`
+  const upstream = diagPath(url)
+  const startedAt = Date.now()
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-    },
-    cache: 'no-store',
-  })
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+    })
+  } catch (err) {
+    const latencyMs = Date.now() - startedAt
+    const msg = err instanceof Error ? err.message : String(err)
+    // 진단: 외부 도메인에 도달조차 못함 (DNS/방화벽/오프라인/Vercel egress 등).
+    console.error(`[OpenAPI:server] ${upstream} FAIL NETWORK ${latencyMs}ms: ${msg}`)
+    throw new OpenApiError(
+      'NETWORK',
+      `Open API NETWORK: ${msg}`,
+      504,
+      undefined,
+      { upstream, latencyMs, attempts: 1 },
+    )
+  }
+  const latencyMs = Date.now() - startedAt
 
   if (!res.ok) {
     let body: Partial<InsightsErrorBody> | null = null
@@ -81,20 +121,27 @@ export async function openApiFetch<T>(
     } catch {
       // 본문이 JSON 이 아니면 raw text 만 사용
     }
+    const meta: OpenApiErrorMeta = { upstream, upstreamStatus: res.status, latencyMs, attempts: 1 }
     if (body?.error) {
+      console.error(`[OpenAPI:server] ${upstream} FAIL ${body.error.code} HTTP ${res.status} ${latencyMs}ms`)
       throw new OpenApiError(
         body.error.code,
         body.error.message,
         res.status,
         body.error.details,
+        meta,
       )
     }
+    console.error(`[OpenAPI:server] ${upstream} FAIL HTTP_${res.status} ${latencyMs}ms: ${text.slice(0, 200)}`)
     throw new OpenApiError(
       `HTTP_${res.status}`,
       `Open API ${res.status}: ${text.slice(0, 300)}`,
       res.status,
+      undefined,
+      meta,
     )
   }
 
+  console.info(`[OpenAPI:server] ${upstream} OK ${res.status} ${latencyMs}ms`)
   return (await res.json()) as T
 }
