@@ -7,15 +7,25 @@
  */
 
 import type { InsightsErrorBody } from './types'
+import { sanitizeApiToken, isHeaderSafeToken } from './validation'
 
 const DEFAULT_BASE_URL = 'https://manage2.crosstarget.co.kr/api/v1'
 
 function getApiToken(): string {
-  const token = process.env.OPEN_API_TOKEN
+  // 토큰 sanitize — env/Vercel 붙여넣기 시 흔한 공백·개행 제거 (sanitizeApiToken 주석 참조).
+  const token = sanitizeApiToken(process.env.OPEN_API_TOKEN)
   if (!token) {
     throw new OpenApiError(
       'TOKEN_MISSING',
-      'OPEN_API_TOKEN 환경변수가 설정되지 않았습니다. Crosstarget 우측 상단 프로필 → API 토큰 메뉴에서 발급 후 .env.local 및 Vercel 환경변수에 추가하세요.',
+      'OPEN_API_TOKEN 환경변수가 설정되지 않았거나 공백/개행만으로 구성되어 있습니다. Crosstarget 우측 상단 프로필 → API 토큰 메뉴에서 발급 후 .env.local 및 Vercel 환경변수에 추가하세요.',
+      503,
+    )
+  }
+  // 헤더에 들어갈 수 없는 문자가 남아있으면 명확한 에러로 전환 (raw 값은 로그 미노출 — 보안).
+  if (!isHeaderSafeToken(token)) {
+    throw new OpenApiError(
+      'TOKEN_INVALID',
+      'OPEN_API_TOKEN 에 헤더로 보낼 수 없는 문자가 포함되어 있습니다. 토큰을 재발급 후 다시 등록하세요.',
       503,
     )
   }

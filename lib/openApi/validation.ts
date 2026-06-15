@@ -15,6 +15,24 @@ export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export type Check<T> = { ok: true; value: T } | { ok: false; message: string }
 
+/**
+ * 토큰 문자열 sanitize — 공백·개행 전부 제거. 순수 함수.
+ *
+ * 증상 (2026-06-15): OPEN_API_TOKEN 앞뒤에 '\n' 이 섞이면 `Authorization: Bearer
+ * \n9|...` 헤더가 만들어져 fetch 의 Headers.append 가 "invalid header value" 로
+ * throw → 모든 Open API 호출이 NETWORK 실패. env/Vercel 에 토큰을 붙여넣을 때
+ * trailing newline 이 흔히 들어간다. Crosstarget(Laravel Sanctum) 토큰은
+ * `id|alphanumeric` 형식이라 내부 공백이 절대 없으므로 모든 whitespace 제거가 안전.
+ */
+export function sanitizeApiToken(raw: string | null | undefined): string {
+  return (raw ?? '').replace(/\s+/g, '')
+}
+
+/** sanitize 후 헤더 안전 문자(printable ASCII)로만 구성됐는지. */
+export function isHeaderSafeToken(token: string): boolean {
+  return /^[\x21-\x7e]+$/.test(token)
+}
+
 /** 콤마 다중 ID 파라미터 검증 — 값이 없으면 통과(undefined). */
 export function validateIdList(value: string | null, name: string): Check<string | undefined> {
   if (!value) return { ok: true, value: undefined }

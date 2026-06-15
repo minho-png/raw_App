@@ -107,12 +107,42 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
           }
           const ac = new AbortController()
           const timer = setTimeout(() => ac.abort(), 30_000)
+          const t0 = Date.now()
           try {
             const res = await fetch(`/api/motiv/campaigns?${params.toString()}`, {
               cache: 'no-store', signal: ac.signal,
             })
-            if (!res.ok) throw new Error(`Motiv ${t} ${res.status}`)
-            return (await res.json()) as MotivCampaignListResponse
+            const ms = Date.now() - t0
+            // 서버 프록시가 부착한 진단 헤더 — 외부 호출 단계까지 콘솔에서 분간.
+            const diag = {
+              upstream: res.headers.get('X-OpenApi-Upstream'),
+              upstreamStatus: res.headers.get('X-OpenApi-Upstream-Status'),
+              upstreamLatencyMs: res.headers.get('X-OpenApi-Latency-Ms'),
+              attempts: res.headers.get('X-OpenApi-Attempts'),
+            }
+            if (!res.ok) {
+              // 응답 body 의 실제 에러 code/message 를 콘솔에 남김 (status 만으론 원인 불명).
+              // 라우트별로 error 가 문자열({error:"..."}) 또는 객체({error:{code,message}})
+              // 두 shape 가 섞여 있어 둘 다 안전 파싱.
+              const body = await res.json().catch(() => null) as { error?: string | { code?: string; message?: string } } | null
+              const errField = body?.error
+              const code = typeof errField === 'object' && errField?.code ? errField.code : `HTTP_${res.status}`
+              const message = typeof errField === 'string'
+                ? errField
+                : (errField?.message ?? '')
+              console.group(`%c[Motiv→OpenAPI] campaigns ${t} ✗ ${res.status} ${code}`, 'color:#b91c1c;font-weight:600')
+              console.error('message:', message || '(본문 없음)')
+              console.info('page:', page, 'range:', range ?? '(none)', 'elapsed:', `${ms}ms`)
+              console.info('upstream diag:', diag)
+              console.info('hint: TOKEN_MISSING→env 미설정 / 401→토큰만료 / NETWORK→토큰 공백·개행 또는 연결 / 422→잘못된 파라미터')
+              console.groupEnd()
+              throw new Error(`Motiv ${t} ${res.status} — ${code}${message ? `: ${message}` : ''}`)
+            }
+            const json = (await res.json()) as MotivCampaignListResponse
+            if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+              console.debug(`[Motiv→OpenAPI] campaigns ${t} ✓ ${res.status} (${json.data?.length ?? 0}건, ${ms}ms)`, { diag })
+            }
+            return json
           } finally {
             clearTimeout(timer)
           }
@@ -236,6 +266,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
       } catch (e) {
         if (cancelled) return
         const msg = e instanceof Error ? e.message : String(e)
+        console.error(`[useMotivSettlementCampaigns] 로드 실패 (types=${types.join(',')}):`, msg)
         setState(s => ({ ...s, loading: false, error: msg }))
       }
     })()

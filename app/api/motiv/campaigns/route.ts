@@ -83,13 +83,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(response)
   } catch (err) {
     if (err instanceof OpenApiError) {
-      console.error('[motiv/campaigns→openApi]', { code: err.code, status: err.status })
+      console.error('[motiv/campaigns→openApi]', { code: err.code, status: err.status, message: err.message })
+      // 구조화 에러 — 클라이언트(useMotivSettlementCampaigns) 가 실제 code/message 를
+      // 콘솔에 그대로 표시할 수 있게 한다 (문자열로 뭉개면 code 가 HTTP_xxx 로 손실).
       return NextResponse.json(
-        { error: `Open API ${err.code}: ${err.message}` },
+        { error: { code: err.code, message: err.message } },
         { status: err.status },
       )
     }
     const message = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: { code: 'INTERNAL', message } }, { status: 500 })
   }
 }
