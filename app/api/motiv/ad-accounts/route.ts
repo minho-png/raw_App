@@ -1,33 +1,78 @@
+/**
+ * `/api/motiv/ad-accounts` — Open API 는 별도 광고계정 목록 명세를 주지 않음.
+ *
+ * CAMPAIGN level insights 의 dimensions.accountId/accountName 에서 distinct 추출.
+ * 합당한 대안 — 정산 페이지의 필터 옵션 채우기에 필요한 광고계정 목록을 동일하게 제공.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchAdAccounts } from '@/lib/motivApi/adAccountService'
-import type { MotivAdAccountQuery, MotivStatus } from '@/lib/motivApi/types'
+import { fetchAllCampaignInsights } from '@/lib/openApi/insightsService'
+import { OpenApiError } from '@/lib/openApi/client'
+import { distinctAdAccountsFromCampaignRows } from '@/lib/openApi/legacyAdapter'
+import type { MotivAdAccountListResponse, MotivStatus } from '@/lib/motivApi/types'
+import { motivStatusToOpen } from '@/lib/openApi/legacyAdapter'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 const ALLOWED_STATUS: MotivStatus[] = ['Y', 'N']
 
-function parseQuery(searchParams: URLSearchParams): MotivAdAccountQuery {
-  const query: MotivAdAccountQuery = {}
-  const q = searchParams.get('q')
-  if (q) query.q = q.slice(0, 100)
-  const status = searchParams.get('status')
-  if (status && (ALLOWED_STATUS as string[]).includes(status)) {
-    query.status = status as MotivStatus
-  }
-  const page = Number(searchParams.get('page'))
-  if (Number.isFinite(page) && page > 0) query.page = Math.floor(page)
-  const perPage = Number(searchParams.get('per_page'))
-  if (Number.isFinite(perPage) && perPage > 0) query.per_page = Math.min(200, Math.max(1, Math.floor(perPage)))
-  const sort = searchParams.get('sort')
-  if (sort) query.sort = sort
-  return query
+function defaultDateTo(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+function defaultDateFrom(): string {
+  const d = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  d.setUTCFullYear(d.getUTCFullYear() - 2)
+  return d.toISOString().slice(0, 10)
 }
 
 export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams
   try {
-    const data = await fetchAdAccounts(parseQuery(req.nextUrl.searchParams))
-    return NextResponse.json(data)
+    const status = sp.get('status')
+    const q = sp.get('q')
+    const perPage = Number(sp.get('per_page'))
+
+    const all = await fetchAllCampaignInsights({
+      dateFrom: defaultDateFrom(),
+      dateTo: defaultDateTo(),
+      status: status && (ALLOWED_STATUS as string[]).includes(status)
+        ? motivStatusToOpen(status as MotivStatus)
+        : undefined,
+      limit: 1000,
+    })
+
+    let accounts = distinctAdAccountsFromCampaignRows(all.data)
+    if (q) {
+      const needle = q.slice(0, 100).toLowerCase()
+      accounts = accounts.filter(a => (a.name ?? '').toLowerCase().includes(needle))
+    }
+
+    const total = accounts.length
+    const per = Number.isFinite(perPage) && perPage > 0 ? Math.min(200, Math.floor(perPage)) : total
+    const response: MotivAdAccountListResponse = {
+      data: per === total ? accounts : accounts.slice(0, per),
+      links: { first: null, last: null, prev: null, next: null },
+      meta: {
+        current_page: 1,
+        from: total === 0 ? null : 1,
+        last_page: per > 0 ? Math.max(1, Math.ceil(total / per)) : 1,
+        per_page: per,
+        to: total === 0 ? null : Math.min(total, per),
+        total,
+        path: '',
+      },
+    }
+    return NextResponse.json(response)
   } catch (err) {
+    if (err instanceof OpenApiError) {
+      console.error('[motiv/ad-accounts→openApi]', { code: err.code, status: err.status })
+      return NextResponse.json(
+        { error: `Open API ${err.code}: ${err.message}` },
+        { status: err.status },
+      )
+    }
     const message = err instanceof Error ? err.message : String(err)
-    const status = /^Motiv API 401/.test(message) ? 401 : 500
-    return NextResponse.json({ error: message }, { status })
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -1,9 +1,15 @@
-import { fetchCampaigns } from '@/lib/motivApi/campaignService'
-import { fetchAdGroups } from '@/lib/motivApi/adGroupService'
+import { fetchAllCampaignInsights, fetchAdGroupInsights } from '@/lib/openApi/insightsService'
+import {
+  campaignInsightToMotivCampaign,
+  adGroupInsightToMotivAdGroup,
+} from '@/lib/openApi/legacyAdapter'
 import type { MotivCampaign, MotivCampaignType, MotivAdGroup } from '@/lib/motivApi/types'
 import { motivTypeToProduct, isExcludedCampaign, type MediaProductType } from '@/lib/motivApi/productMapping'
 
-// 알림 대상 campaign_type (CT + CTV)
+/**
+ * 알림 대상 campaign_type (CT + CTV).
+ * 데이터 출처: Open API CAMPAIGN/ADGROUP insights (2026-06-15 마이그레이션).
+ */
 const ALERT_TYPES: MotivCampaignType[] = ['DISPLAY', 'VIDEO', 'PARTNERS', 'TV']
 
 export interface ZeroSpendEntry {
@@ -23,41 +29,45 @@ function isTodayInRange(start: string | null, end: string | null, now: Date): bo
 }
 
 function campaignImpressions(c: MotivCampaign): number {
-  const win  = Number(c.stats?.win ?? 0)
+  // 어댑터가 v_impression = impressions, win = impressions 로 채움 — 합 = 2×impressions
+  // 동일 값을 두 번 더하지 않도록 v_impression 한쪽만 사용 (의미: 전체 노출).
   const vImp = Number(c.stats?.v_impression ?? 0)
-  return (Number.isFinite(win) ? win : 0) + (Number.isFinite(vImp) ? vImp : 0)
+  return Number.isFinite(vImp) ? vImp : 0
 }
 
 function adGroupImpressions(g: MotivAdGroup): number {
-  const win  = Number(g.stats?.win ?? 0)
   const vImp = Number(g.stats?.v_impression ?? 0)
-  return (Number.isFinite(win) ? win : 0) + (Number.isFinite(vImp) ? vImp : 0)
+  return Number.isFinite(vImp) ? vImp : 0
+}
+
+function ymdKst(now: Date): string {
+  const d = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 /**
  * CT/CTV 활성 캠페인 중 **노출 0** 항목을 조회 (campaign + ad-group 레벨 드릴다운).
  *
- * 두 가지 케이스를 모두 감지:
- *   A) 캠페인 전체 노출 0
- *   B) 캠페인은 노출 > 0 이지만, 활성·기간 내 광고그룹 중 노출 0 인 것이 있음
- *
- * 광고그룹 API 장애/미존재 시: campaign 레벨만 보고 (graceful degrade).
+ * Open API CAMPAIGN/ADGROUP insights 의 *오늘* 누적을 기준으로 판정.
+ * 광고그룹 API 장애 시 campaign 레벨만 보고 (graceful degrade).
  */
 export async function collectZeroSpendCampaigns(now: Date = new Date()): Promise<ZeroSpendEntry[]> {
+  const today = ymdKst(now)
   // 1) 활성 campaigns 조회 (type 별 4회 병렬)
   const campResults = await Promise.all(ALERT_TYPES.map(t =>
-    fetchCampaigns({
-      campaign_type: t,
-      status: 'Y',
-      per_page: 200,
-      page: 1,
-      sort: '-created_at',
-    })
+    fetchAllCampaignInsights({
+      dateFrom: today,
+      dateTo: today,
+      campaignType: t,
+      status: 'ACTIVE',
+      limit: 200,
+    }),
   ))
 
   const eligibleCampaigns: { campaign: MotivCampaign; product: MediaProductType }[] = []
   for (const r of campResults) {
-    for (const c of r.data) {
+    for (const row of r.data) {
+      const c = campaignInsightToMotivCampaign(row)
       if (isExcludedCampaign(c.title)) continue
       if (c.status !== 'Y') continue
       if (!isTodayInRange(c.start_date, c.end_date, now)) continue
@@ -67,34 +77,42 @@ export async function collectZeroSpendCampaigns(now: Date = new Date()): Promise
     }
   }
 
-  // 2) 활성 ad-groups 조회 (1회, status=Y). 실패해도 campaign-level 로 fallback.
+  // 2) 활성 ad-groups 조회 — 활성 캠페인 ID 가 있어야 ADGROUP level 호출 가능.
   let adGroups: MotivAdGroup[] = []
-  try {
-    const agRes = await fetchAdGroups({
-      status: 'Y',
-      per_page: 200,
-      page: 1,
-      sort: '-created_at',
-    })
-    adGroups = agRes.data
-  } catch (e) {
-    // 404/401/네트워크 실패 시 광고그룹 드릴다운 스킵
-    console.warn('[zeroSpendAlert] adgroups fetch failed, falling back to campaign-level:', (e as Error).message)
-    adGroups = []
+  const campaignIds = eligibleCampaigns
+    .map(e => String(e.campaign.id))
+    .filter(id => id !== '-1')
+    .join(',')
+
+  if (campaignIds) {
+    try {
+      const agRes = await fetchAdGroupInsights({
+        dateFrom: today,
+        dateTo: today,
+        campaignIds,
+        status: 'ACTIVE',
+        limit: 1000,
+      })
+      adGroups = agRes.data.map(adGroupInsightToMotivAdGroup)
+    } catch (e) {
+      console.warn('[zeroSpendAlert] adgroups fetch failed, falling back to campaign-level:', (e as Error).message)
+      adGroups = []
+    }
   }
 
   // 3) campaign_id → zero-impression ad-groups 매핑
   const zeroByCampId = new Map<number, MotivAdGroup[]>()
   for (const g of adGroups) {
     if (g.status !== 'Y') continue
-    if (!isTodayInRange(g.start_date, g.end_date, now)) continue
+    // ADGROUP dimensions 에 일정 정보가 없음 — 기간 필터는 campaign 측으로 위임,
+    // 광고그룹 자체는 status·노출 만으로 판정.
     if (adGroupImpressions(g) > 0) continue
     const arr = zeroByCampId.get(g.campaign_id) ?? []
     arr.push(g)
     zeroByCampId.set(g.campaign_id, arr)
   }
 
-  // 4) 병합: 캠페인 레벨 0 이거나 그룹 레벨 0 이 하나라도 있으면 entry 생성
+  // 4) 병합
   const out: ZeroSpendEntry[] = []
   for (const { campaign, product } of eligibleCampaigns) {
     const impressions = campaignImpressions(campaign)
@@ -124,13 +142,11 @@ export function formatZeroSpendEmail(entries: ZeroSpendEntry[], now: Date): {
     return { subject, text, html }
   }
 
-  // 정렬: CTV 먼저, 그 안에서 가나다순
   const sorted = [...entries].sort((a, b) => {
     if (a.product !== b.product) return a.product === 'CTV' ? -1 : 1
     return (a.campaign.title ?? '').localeCompare(b.campaign.title ?? '')
   })
 
-  // ── 평문 ──
   const textLines: string[] = [
     `${dateStr} 오전 9시 기준 미노출 CT/CTV`,
     `캠페인 ${entries.length}건 (전체 노출 0: ${campaignOnlyCount}건) / 광고그룹 ${totalGroups}개`,
@@ -149,7 +165,6 @@ export function formatZeroSpendEmail(entries: ZeroSpendEntry[], now: Date): {
   }
   const text = textLines.join('\n')
 
-  // ── HTML ──
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const blocks = sorted.map(({ campaign, product, impressions, zeroAdGroups }) => {
     const pillBg = product === 'CTV' ? '#eef2ff' : '#dbeafe'
@@ -177,7 +192,7 @@ export function formatZeroSpendEmail(entries: ZeroSpendEntry[], now: Date): {
   <h2 style="font-size:16px;margin:0 0 6px">${dateStr} 09:00 기준 미노출 CT/CTV</h2>
   <p style="font-size:12px;color:#666;margin:0 0 14px">
     캠페인 ${entries.length}건 · 전체 노출 0 ${campaignOnlyCount}건 · 광고그룹 ${totalGroups}개<br/>
-    판정: 활성(status=Y) + 기간 내 + <code>win + v_impression = 0</code>. 무료 캠페인(is_free) 도 포함.
+    판정: 활성(status=ACTIVE) + Open API 오늘 누적 노출 0. 무료 캠페인(is_free) 도 포함.
   </p>
   ${blocks}
 </div>`

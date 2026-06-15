@@ -1,46 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { fetchStatsDaily, type StatsQuery } from '@/lib/motivApi/statsService'
+/**
+ * `/api/motiv/stats/daily` — Open API DAILY insights 로 교체.
+ *
+ * Open API DAILY 는 기간 최대 90일 (proxy 검증). 호출자가 90일 초과로 보내면
+ * Open API 가 422 반환 → 그대로 클라이언트에 전파.
+ */
 
-// GET /api/motiv/stats/daily?{scope...}&start_date&end_date
-// MOTIV §10 권한 규칙: Platform 유저는 scope 생략 가능. 그 외엔
-//   campaign_id / adaccount_id / agency_id / publisher_id 중 하나 필수.
-// 본 route 는 보수적으로 scope 1개 이상 필수 — 비-Platform 호출 시 401 폭주 방지.
-//
-// query keys (모두 옵셔널이지만 scope 4개 중 1개는 필수):
-//   campaign_id, adaccount_id, adgroup_id, ad_id, agency_id, publisher_id, country
-//   start_date, end_date, exchange_rate, include, page, per_page, sort
+import { NextRequest, NextResponse } from 'next/server'
+import { fetchDailyInsights } from '@/lib/openApi/insightsService'
+import { OpenApiError } from '@/lib/openApi/client'
+import { dailyRowToStatsRecord, metricsToStatsRecord } from '@/lib/openApi/legacyAdapter'
+import type { StatsBreakdownResponse } from '@/lib/motivApi/statsService'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const SCOPE_KEYS = ['campaign_id', 'adaccount_id', 'agency_id', 'publisher_id'] as const
 
-function parseQuery(sp: URLSearchParams): StatsQuery {
-  const q: StatsQuery = {}
-  const str = (k: keyof StatsQuery) => {
-    const v = sp.get(k)
-    if (v) (q as Record<string, string | number>)[k] = v
-  }
-  const num = (k: keyof StatsQuery) => {
-    const v = sp.get(k)
-    if (v == null) return
-    const n = Number(v)
-    if (Number.isFinite(n)) (q as Record<string, string | number>)[k] = n
-  }
-  str('campaign_id'); str('adaccount_id'); str('adgroup_id'); str('ad_id')
-  str('agency_id'); str('publisher_id'); str('country')
-  str('start_date'); str('end_date'); str('sort')
-  num('exchange_rate'); num('page')
-  const perPage = Number(sp.get('per_page'))
-  if (Number.isFinite(perPage)) q.per_page = Math.min(100, Math.max(1, Math.floor(perPage)))
-  if (sp.get('include') === 'totals') q.include = 'totals'
-  return q
+function defaultDateTo(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+function defaultDateFrom(): string {
+  const d = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  d.setUTCDate(d.getUTCDate() - 89)
+  return d.toISOString().slice(0, 10)
 }
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
 
-  // scope 사전 검증
   const hasScope = SCOPE_KEYS.some(k => sp.get(k))
   if (!hasScope) {
     return NextResponse.json(
@@ -54,14 +41,44 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const query = parseQuery(sp)
-    const data = await fetchStatsDaily(query)
-    return NextResponse.json(data)
+    const dateFrom = sp.get('start_date') || defaultDateFrom()
+    const dateTo = sp.get('end_date') || defaultDateTo()
+
+    const data = await fetchDailyInsights({
+      dateFrom,
+      dateTo,
+      campaignIds: sp.get('campaign_id') || undefined,
+      adGroupIds: sp.get('adgroup_id') || undefined,
+      adIds: sp.get('ad_id') || undefined,
+      accountId: sp.get('adaccount_id') || undefined,
+      agencyId: sp.get('agency_id') || undefined,
+    })
+
+    const rows = (data.data ?? []).map(dailyRowToStatsRecord)
+    const response: StatsBreakdownResponse = {
+      data: rows,
+      links: { prev: null, next: null },
+      meta: {
+        current_page: 1,
+        from: rows.length === 0 ? undefined : 1,
+        to: rows.length,
+        total: rows.length,
+        last_page: 1,
+        per_page: rows.length,
+      },
+      totals: metricsToStatsRecord(data.summary?.metrics),
+      exchange_rate: 1,
+    }
+    return NextResponse.json(response)
   } catch (err) {
+    if (err instanceof OpenApiError) {
+      console.error('[motiv/stats/daily→openApi]', { code: err.code, status: err.status })
+      return NextResponse.json(
+        { error: `Open API ${err.code}: ${err.message}` },
+        { status: err.status },
+      )
+    }
     const message = err instanceof Error ? err.message : String(err)
-    const status = /Motiv API 401/.test(message) ? 401
-      : /시간 초과/.test(message) ? 504
-      : 500
-    return NextResponse.json({ error: message }, { status })
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
