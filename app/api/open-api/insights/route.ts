@@ -32,6 +32,9 @@ import {
 import type { InsightsLevel, InsightsQuery, OpenApiStatus } from '@/lib/openApi/types'
 
 const ALLOWED_LEVELS: InsightsLevel[] = ['CAMPAIGN', 'ADGROUP', 'AD', 'DAILY', 'HOURLY']
+// 가이드 §4: campaignType 허용값 (Motiv 호환 PARTNERS 포함). 잘못된 값은 업스트림에
+// 흘리지 않고 프록시 단에서 422 로 차단 — 업스트림 5xx 로 둔갑하는 것 방지.
+const ALLOWED_CAMPAIGN_TYPES = ['DISPLAY', 'VIDEO', 'TV', 'PARTNERS']
 
 function bad(message: string, status = 400) {
   return NextResponse.json({ error: { code: 'BAD_REQUEST', message } }, { status })
@@ -87,6 +90,11 @@ export async function GET(req: NextRequest) {
   const qRaw = sp.get('q')
   if (qRaw && qRaw.length > Q_MAX_LEN) {
     return bad(`q 는 최대 ${Q_MAX_LEN}자.`, 422)
+  }
+
+  const campaignTypeRaw = sp.get('campaignType')
+  if (campaignTypeRaw && !ALLOWED_CAMPAIGN_TYPES.includes(campaignTypeRaw)) {
+    return bad(`campaignType 은 ${ALLOWED_CAMPAIGN_TYPES.join('/')} 중 하나여야 합니다.`, 422)
   }
 
   const orderBy = sanitizeOrderBy(sp.get('orderBy'))

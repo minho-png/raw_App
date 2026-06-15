@@ -221,18 +221,21 @@ export function distinctAgenciesFromCampaignRows(
 }
 
 // ── Paging 매핑 ─────────────────────────────────────────────────
-export function pagingToMotivMeta(p: InsightsPaging, perPageHint?: number): PaginationMeta {
-  const perPage = p.limit || perPageHint || 0
-  const totalPages = p.totalPages || (perPage > 0 ? Math.max(1, Math.ceil(p.totalCount / perPage)) : 1)
-  const from = p.totalCount === 0 ? null : Math.min(p.totalCount, (p.page - 1) * perPage + 1)
-  const to = p.totalCount === 0 ? null : Math.min(p.totalCount, p.page * perPage)
+export function pagingToMotivMeta(p: InsightsPaging | undefined | null, perPageHint?: number): PaginationMeta {
+  // 업스트림이 paging 을 생략한 변형(가이드 §7) 방어 — undefined 면 단일 페이지로 합성.
+  const page = p?.page ?? 1
+  const totalCount = p?.totalCount ?? 0
+  const perPage = p?.limit || perPageHint || 0
+  const totalPages = p?.totalPages || (perPage > 0 ? Math.max(1, Math.ceil(totalCount / perPage)) : 1)
+  const from = totalCount === 0 ? null : Math.min(totalCount, (page - 1) * perPage + 1)
+  const to = totalCount === 0 ? null : Math.min(totalCount, page * perPage)
   return {
-    current_page: p.page,
+    current_page: page,
     from,
     last_page: totalPages,
     per_page: perPage,
     to,
-    total: p.totalCount,
+    total: totalCount,
     path: '',
   }
 }

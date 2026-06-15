@@ -12,11 +12,53 @@ import type {
   InsightsCampaignDimensions,
   InsightsDailyDimensions,
   InsightsHourlyDimensions,
+  InsightsMetrics,
+  InsightsPaging,
   InsightsQuery,
   InsightsResponse,
+  InsightsRow,
 } from './types'
 
 const INSIGHTS_PATH = '/ads/insights'
+
+/**
+ * 빈/누락 metrics 기본값 — currency 는 가이드상 'KRW' 고정.
+ * 업스트림이 summary 를 생략하거나 부분만 채워도 소비부(roundWon 등)가 안전.
+ */
+const EMPTY_METRICS: InsightsMetrics = {
+  impressions: 0,
+  clicks: 0,
+  ctr: 0,
+  cost: 0,
+  currency: 'KRW',
+  cpc: 0,
+  cpm: 0,
+}
+
+/**
+ * 업스트림 200 응답 shape 정규화 — 견고성 가드 (VIDEO 500 회귀 수정 2026-06-15).
+ *
+ * 운영 가이드 §7: "200(data=null) → proxy 가 필드 접근 실패로 500". 실제로 결과가
+ * 0건인 level/campaignType (예: VIDEO 캠페인 부재) 에서 업스트림이 `data` 만 주고
+ * `summary`/`paging` 을 생략하면, 하위 소비부(pagingToMotivMeta·fetchAllCampaignInsights·
+ * route 매핑)가 `paging.limit`·`paging.totalPages` 접근에서 TypeError 를 던져 500
+ * (INTERNAL) 이 됐다. DISPLAY(데이터 존재) 는 정상, VIDEO(0건) 만 500 나던 증상의 근본 원인.
+ *
+ * 본 정규화로 모든 level helper 가 항상 완전한 InsightsResponse 를 반환하도록 보장한다.
+ * 에러(4xx/5xx)는 정규화 이전 client.ts 에서 OpenApiError 로 throw 되므로 영향 없음.
+ */
+function normalizeInsightsResponse<D>(raw: unknown): InsightsResponse<D> {
+  const r = (raw ?? {}) as Partial<InsightsResponse<D>>
+  const data: InsightsRow<D>[] = Array.isArray(r.data) ? r.data : []
+  const summaryMetrics = r.summary?.metrics ?? { ...EMPTY_METRICS }
+  const paging: InsightsPaging = r.paging ?? {
+    page: 1,
+    limit: data.length,
+    totalCount: data.length,
+    totalPages: 1,
+  }
+  return { data, summary: { metrics: summaryMetrics }, paging }
+}
 
 /**
  * 일반 insights 호출 — level 은 query 가 명시. dimensions 타입은 호출자가 제네릭으로 지정.
@@ -27,7 +69,7 @@ const INSIGHTS_PATH = '/ads/insights'
 export async function fetchInsights<D>(
   query: InsightsQuery,
 ): Promise<InsightsResponse<D>> {
-  return openApiFetch<InsightsResponse<D>>(INSIGHTS_PATH, {
+  const raw = await openApiFetch<unknown>(INSIGHTS_PATH, {
     level: query.level,
     dateFrom: query.dateFrom,
     dateTo: query.dateTo,
@@ -45,6 +87,8 @@ export async function fetchInsights<D>(
     page: query.page,
     limit: query.limit,
   })
+  // 업스트림 shape 변형(summary/paging 누락) 방어 — VIDEO 0건 등 빈 결과 안전 처리.
+  return normalizeInsightsResponse<D>(raw)
 }
 
 /**
@@ -109,14 +153,18 @@ export async function fetchAllCampaignInsights(
   const limit = query.limit ?? 200
 
   const first = await fetchCampaignInsights({ ...query, page: 1, limit })
-  if (first.paging.totalPages <= 1) return first
+  // normalizeInsightsResponse 가 paging 을 항상 채우지만, totalPages 가 0/NaN 인
+  // 변형도 방어 (≤1 이면 단일 페이지로 간주).
+  const totalPages = first.paging?.totalPages ?? 1
+  if (!Number.isFinite(totalPages) || totalPages <= 1) return first
 
   const merged = { ...first, data: [...first.data] }
-  const lastPage = Math.min(first.paging.totalPages, MAX_PAGES)
+  const lastPage = Math.min(totalPages, MAX_PAGES)
   for (let page = 2; page <= lastPage; page++) {
     const next = await fetchCampaignInsights({ ...query, page, limit })
     merged.data.push(...next.data)
   }
   merged.paging = { ...first.paging, page: 1, limit, totalPages: lastPage }
+  merged.summary = first.summary
   return merged
 }
