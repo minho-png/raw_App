@@ -72,23 +72,39 @@ export function useOpenApiCampaigns(options: Options = {}): State {
     let cancelled = false
     ;(async () => {
       setState(s => ({ ...s, loading: true, error: null, errorCode: null }))
-      try {
-        const range = dateFrom && dateTo ? { dateFrom, dateTo } : currentMonthRange()
-        const params = new URLSearchParams()
-        params.set('level', 'CAMPAIGN')
-        params.set('dateFrom', range.dateFrom)
-        params.set('dateTo', range.dateTo)
-        if (typeKey) params.set('campaignType', typeKey)
-        if (all) params.set('all', 'true')
+      const range = dateFrom && dateTo ? { dateFrom, dateTo } : currentMonthRange()
+      const params = new URLSearchParams()
+      params.set('level', 'CAMPAIGN')
+      params.set('dateFrom', range.dateFrom)
+      params.set('dateTo', range.dateTo)
+      if (typeKey) params.set('campaignType', typeKey)
+      if (all) params.set('all', 'true')
 
-        const res = await fetch(`/api/open-api/insights?${params.toString()}`, {
-          cache: 'no-store',
-        })
+      const proxyUrl = `/api/open-api/insights?${params.toString()}`
+      const t0 = Date.now()
+      try {
+        const res = await fetch(proxyUrl, { cache: 'no-store' })
+        const proxyMs = Date.now() - t0
         const body = await res.json().catch(() => ({}))
+        // 진단 헤더 (서버 proxy 가 부착) — 브라우저 콘솔에서 외부 호출 단계까지 분간 가능.
+        const diag = {
+          upstream: res.headers.get('X-OpenApi-Upstream'),
+          upstreamStatus: res.headers.get('X-OpenApi-Upstream-Status'),
+          upstreamLatencyMs: res.headers.get('X-OpenApi-Latency-Ms'),
+          attempts: res.headers.get('X-OpenApi-Attempts'),
+        }
 
         if (!res.ok) {
           const code = body?.error?.code ?? `HTTP_${res.status}`
           const message = body?.error?.message ?? `Open API ${res.status}`
+          console.groupCollapsed(`[OpenAPI] insights ✗ ${code} (${res.status}) — ${message}`)
+          console.error('message:', message)
+          console.info('proxy:', proxyUrl)
+          console.info('proxy total ms:', proxyMs)
+          console.info('upstream diag:', diag)
+          console.info('error body:', body?.error ?? body)
+          console.info('range:', range, 'campaignType:', typeKey || '(all)', 'all:', all)
+          console.groupEnd()
           if (!cancelled) {
             setState({ ...EMPTY, error: message, errorCode: code })
           }
@@ -96,6 +112,13 @@ export function useOpenApiCampaigns(options: Options = {}): State {
         }
 
         const data = body as InsightsResponse<InsightsCampaignDimensions>
+        console.groupCollapsed(`[OpenAPI] insights ✓ ${data.data?.length ?? 0} rows (${proxyMs}ms)`)
+        console.info('proxy:', proxyUrl)
+        console.info('upstream diag:', diag)
+        console.info('range:', range, 'campaignType:', typeKey || '(all)', 'all:', all)
+        console.info('paging:', data.paging)
+        console.info('summary:', data.summary?.metrics)
+        console.groupEnd()
         if (!cancelled) {
           setState({
             data: data.data ?? [],
@@ -106,8 +129,11 @@ export function useOpenApiCampaigns(options: Options = {}): State {
           })
         }
       } catch (e) {
-        if (cancelled) return
+        const proxyMs = Date.now() - t0
         const msg = e instanceof Error ? e.message : String(e)
+        // proxy 자체에 도달 실패 — 오프라인 / 빌드 안 됨 / 라우트 미배포 등.
+        console.error(`[OpenAPI] insights ✗ NETWORK (proxy 실패, ${proxyMs}ms): ${msg}`, { proxyUrl })
+        if (cancelled) return
         setState({ ...EMPTY, error: msg, errorCode: 'NETWORK' })
       }
     })()

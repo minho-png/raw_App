@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
-import { fetchCampaigns } from '@/lib/motivApi/campaignService'
+import { fetchAllCampaignInsights } from '@/lib/openApi/insightsService'
+import { campaignInsightToMotivCampaign } from '@/lib/openApi/legacyAdapter'
 import type { MotivCampaignType } from '@/lib/motivApi/types'
 
-// 매일 0시 (Vercel cron) — Motiv 전 캠페인의 누적 stats 를 캡처해 저장.
-// 분석 페이지의 전일 비교용 (today 누적 - yesterday 누적 = 오늘 발생량).
+/**
+ * 매일 0시 (Vercel cron) — 전 캠페인의 누적 stats 를 캡처해 저장.
+ *
+ * 데이터 출처: Open API CAMPAIGN insights (사용자 결정 2026-06-15 — Motiv → Open API
+ * 일원화). lifetime 누적에 근사하기 위해 dateFrom 을 2년 전으로 widen.
+ *
+ * 분석 페이지의 전일 비교용 — (today 누적 - yesterday 누적) = 오늘 발생량.
+ */
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -21,10 +28,15 @@ function checkAuth(req: NextRequest): { ok: true } | { ok: false; reason: string
   return { ok: true }
 }
 
-// YYYY-MM-DD (오늘 0시 캡처 시 date 는 '어제' = 캡처가 가리키는 누적의 마지막 날)
 function yesterdayStr(now: Date): string {
   const d = new Date(now)
   d.setDate(d.getDate() - 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function dateFromTwoYearsAgo(now: Date): string {
+  const d = new Date(now)
+  d.setFullYear(d.getFullYear() - 2)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
@@ -36,11 +48,18 @@ export async function GET(req: NextRequest) {
 
   const now = new Date()
   const date = yesterdayStr(now)
+  const dateFrom = dateFromTwoYearsAgo(now)
 
   try {
-    // 4 type 모두 병렬 fetch (Promise.allSettled — 일부 실패해도 부분 저장 가능)
     const results = await Promise.allSettled(
-      TYPES.map(t => fetchCampaigns({ campaign_type: t, per_page: 500 })),
+      TYPES.map(t =>
+        fetchAllCampaignInsights({
+          dateFrom,
+          dateTo: date,
+          campaignType: t,
+          limit: 200,
+        }),
+      ),
     )
 
     const campaigns: Array<{
@@ -58,7 +77,8 @@ export async function GET(req: NextRequest) {
         errors.push({ type: t, error: r.reason instanceof Error ? r.reason.message : String(r.reason) })
         return
       }
-      for (const c of r.value.data ?? []) {
+      for (const row of r.value.data ?? []) {
+        const c = campaignInsightToMotivCampaign(row)
         campaigns.push({
           motivId: c.id,
           campaign_type: c.campaign_type,

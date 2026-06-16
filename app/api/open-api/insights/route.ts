@@ -32,9 +32,27 @@ import {
 import type { InsightsLevel, InsightsQuery, OpenApiStatus } from '@/lib/openApi/types'
 
 const ALLOWED_LEVELS: InsightsLevel[] = ['CAMPAIGN', 'ADGROUP', 'AD', 'DAILY', 'HOURLY']
+// 가이드 §4: campaignType 허용값 (Motiv 호환 PARTNERS 포함). 잘못된 값은 업스트림에
+// 흘리지 않고 프록시 단에서 422 로 차단 — 업스트림 5xx 로 둔갑하는 것 방지.
+const ALLOWED_CAMPAIGN_TYPES = ['DISPLAY', 'VIDEO', 'TV', 'PARTNERS']
 
 function bad(message: string, status = 400) {
   return NextResponse.json({ error: { code: 'BAD_REQUEST', message } }, { status })
+}
+
+function diagHeaders(opts: {
+  upstream?: string
+  upstreamStatus?: number
+  latencyMs?: number
+  attempts?: number
+}): Record<string, string> {
+  // 브라우저 콘솔 진단용 — 토큰·PII·query 미포함.
+  const h: Record<string, string> = {}
+  if (opts.upstream) h['X-OpenApi-Upstream'] = opts.upstream
+  if (opts.upstreamStatus !== undefined) h['X-OpenApi-Upstream-Status'] = String(opts.upstreamStatus)
+  if (opts.latencyMs !== undefined) h['X-OpenApi-Latency-Ms'] = String(opts.latencyMs)
+  if (opts.attempts !== undefined) h['X-OpenApi-Attempts'] = String(opts.attempts)
+  return h
 }
 
 export async function GET(req: NextRequest) {
@@ -74,6 +92,11 @@ export async function GET(req: NextRequest) {
     return bad(`q 는 최대 ${Q_MAX_LEN}자.`, 422)
   }
 
+  const campaignTypeRaw = sp.get('campaignType')
+  if (campaignTypeRaw && !ALLOWED_CAMPAIGN_TYPES.includes(campaignTypeRaw)) {
+    return bad(`campaignType 은 ${ALLOWED_CAMPAIGN_TYPES.join('/')} 중 하나여야 합니다.`, 422)
+  }
+
   const orderBy = sanitizeOrderBy(sp.get('orderBy'))
 
   const page = Number(sp.get('page'))
@@ -99,6 +122,7 @@ export async function GET(req: NextRequest) {
   }
 
   const all = sp.get('all') === 'true'
+  const startedAt = Date.now()
 
   try {
     let data
@@ -119,21 +143,36 @@ export async function GET(req: NextRequest) {
       case 'DAILY':   data = await fetchDailyInsights(baseQuery); break
       case 'HOURLY':  data = await fetchHourlyInsights(baseQuery); break
     }
-    return NextResponse.json(data)
+    const latencyMs = Date.now() - startedAt
+    console.info('[open-api/insights] OK', { level: levelRaw, dateFrom, dateTo, latencyMs })
+    return NextResponse.json(data, {
+      headers: diagHeaders({
+        upstream: 'manage2.crosstarget.co.kr/api/v1/ads/insights',
+        upstreamStatus: 200,
+        latencyMs,
+        attempts: 1,
+      }),
+    })
   } catch (err) {
     if (err instanceof OpenApiError) {
       // 관측 (운영 리뷰 ⑩) — 토큰 값 미포함, 진단 컨텍스트만.
-      console.error('[open-api/insights]', { code: err.code, status: err.status, level: levelRaw, dateFrom, dateTo })
+      console.error('[open-api/insights]', { code: err.code, status: err.status, level: levelRaw, dateFrom, dateTo, meta: err.meta })
       return NextResponse.json(
         { error: { code: err.code, message: err.message, details: err.details } },
-        { status: err.status },
+        {
+          status: err.status,
+          headers: diagHeaders({
+            ...(err.meta ?? {}),
+            latencyMs: err.meta?.latencyMs ?? Date.now() - startedAt,
+          }),
+        },
       )
     }
     const message = err instanceof Error ? err.message : String(err)
     console.error('[open-api/insights] INTERNAL', message)
     return NextResponse.json(
       { error: { code: 'INTERNAL', message } },
-      { status: 500 },
+      { status: 500, headers: diagHeaders({ latencyMs: Date.now() - startedAt }) },
     )
   }
 }

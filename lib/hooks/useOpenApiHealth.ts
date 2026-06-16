@@ -56,23 +56,42 @@ async function load(force: boolean): Promise<void> {
   if (cache.status === 'idle') setCache({ ...cache, status: 'loading' })
 
   inflight = (async () => {
+    const t0 = Date.now()
     try {
       const res = await fetch('/api/open-api/me', { cache: 'no-store' })
+      const proxyMs = Date.now() - t0
       const body = await res.json().catch(() => ({} as Record<string, unknown>))
+      // 진단 헤더 (서버 proxy 가 부착) — 외부 호출 단계까지 브라우저 콘솔에서 분간 가능.
+      const diag = {
+        upstream: res.headers.get('X-OpenApi-Upstream'),
+        upstreamStatus: res.headers.get('X-OpenApi-Upstream-Status'),
+        upstreamLatencyMs: res.headers.get('X-OpenApi-Latency-Ms'),
+        attempts: res.headers.get('X-OpenApi-Attempts'),
+      }
 
       if (res.ok) {
         const identity = (body as MeHealthResponse).data ?? null
+        console.info(`[OpenAPI] me ✓ ${identity?.name ?? identity?.mb_id ?? '?'} (${proxyMs}ms)`, { diag })
         setCache({ status: 'ok', identity, errorCode: null, errorMessage: null })
       } else {
         const errBody = body as { error?: { code?: string; message?: string } }
         const code = errBody.error?.code ?? `HTTP_${res.status}`
         const message = errBody.error?.message ?? `Open API ${res.status}`
         const status = mapHealthStatus(res.status, errBody.error?.code)
+        console.groupCollapsed(`[OpenAPI] me ✗ ${code} (${res.status}) — ${message}`)
+        console.error('message:', message)
+        console.info('mapped status:', status)
+        console.info('proxy total ms:', proxyMs)
+        console.info('upstream diag:', diag)
+        console.info('error body:', errBody.error ?? body)
+        console.groupEnd()
         setCache({ status, identity: null, errorCode: code, errorMessage: message })
       }
     } catch (e) {
+      const proxyMs = Date.now() - t0
       // 브라우저 → proxy fetch 자체 실패 (오프라인 등) — network 로 분류.
       const message = e instanceof Error ? e.message : String(e)
+      console.error(`[OpenAPI] me ✗ NETWORK (proxy 실패, ${proxyMs}ms): ${message}`)
       setCache({ status: 'network', identity: null, errorCode: 'NETWORK', errorMessage: message })
     } finally {
       lastFetched = Date.now()

@@ -1,52 +1,119 @@
+/**
+ * `/api/motiv/ad-groups` — 데이터 출처를 Open API 로 교체.
+ *
+ * Open API ADGROUP level 은 campaignIds 가 *필수*. Motiv 호출자가 campaign_id 를
+ * 안 주면, CAMPAIGN level 로 활성 캠페인을 먼저 조회 후 campaignIds 모아 호출 (2-step).
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchAdGroups } from '@/lib/motivApi/adGroupService'
-import type { MotivAdGroupQuery, MotivStatus } from '@/lib/motivApi/types'
+import { fetchAdGroupInsights, fetchAllCampaignInsights } from '@/lib/openApi/insightsService'
+import { OpenApiError } from '@/lib/openApi/client'
+import {
+  adGroupInsightToMotivAdGroup,
+  metricsToMotivStats,
+  motivStatusToOpen,
+  pagingToMotivMeta,
+} from '@/lib/openApi/legacyAdapter'
+import type {
+  MotivAdGroupListResponse,
+  MotivStatus,
+} from '@/lib/motivApi/types'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 const ALLOWED_STATUS: MotivStatus[] = ['Y', 'N']
 
-function parseQuery(searchParams: URLSearchParams): MotivAdGroupQuery {
-  const query: MotivAdGroupQuery = {}
-  const q = searchParams.get('q')
-  if (q) query.q = q.slice(0, 100)
+function defaultDateTo(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+function defaultDateFrom(): string {
+  const d = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  d.setUTCFullYear(d.getUTCFullYear() - 2)
+  return d.toISOString().slice(0, 10)
+}
 
-  const status = searchParams.get('status')
-  if (status && (ALLOWED_STATUS as string[]).includes(status)) {
-    query.status = status as MotivStatus
-  }
-
-  const campaignId = Number(searchParams.get('campaign_id'))
-  if (Number.isFinite(campaignId) && campaignId > 0) query.campaign_id = Math.floor(campaignId)
-
-  const adaccountId = Number(searchParams.get('adaccount_id'))
-  if (Number.isFinite(adaccountId) && adaccountId > 0) query.adaccount_id = Math.floor(adaccountId)
-
-  const page = Number(searchParams.get('page'))
-  if (Number.isFinite(page) && page > 0) query.page = Math.floor(page)
-
-  const perPage = Number(searchParams.get('per_page'))
-  if (Number.isFinite(perPage) && perPage > 0) {
-    query.per_page = Math.min(200, Math.max(1, Math.floor(perPage)))
-  }
-
-  const sort = searchParams.get('sort')
-  if (sort) query.sort = sort
-
-  const start = searchParams.get('start_date')
-  if (start) query.start_date = start
-  const end = searchParams.get('end_date')
-  if (end) query.end_date = end
-
-  return query
+async function resolveCampaignIds(
+  dateFrom: string,
+  dateTo: string,
+  statusOpen: 'ACTIVE' | 'PAUSED' | undefined,
+): Promise<string> {
+  const all = await fetchAllCampaignInsights({
+    dateFrom,
+    dateTo,
+    status: statusOpen,
+    limit: 1000,
+  })
+  return all.data.map(r => r.dimensions.campaignId).filter(Boolean).join(',')
 }
 
 export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams
   try {
-    const query = parseQuery(req.nextUrl.searchParams)
-    const data = await fetchAdGroups(query)
-    return NextResponse.json(data)
+    const status = sp.get('status')
+    const q = sp.get('q')
+    const campaignId = sp.get('campaign_id')
+    const accountId = sp.get('adaccount_id')
+    const page = Number(sp.get('page'))
+    const perPage = Number(sp.get('per_page'))
+    const startDate = sp.get('start_date')
+    const endDate = sp.get('end_date')
+
+    const dateFrom = startDate || defaultDateFrom()
+    const dateTo = endDate || defaultDateTo()
+    const statusOpen = status && (ALLOWED_STATUS as string[]).includes(status)
+      ? motivStatusToOpen(status as MotivStatus)
+      : undefined
+
+    // campaignIds 필수 — 호출자가 안 보냈으면 CAMPAIGN level 로 활성 캠페인 ID 수집.
+    const campaignIds = campaignId
+      ? String(campaignId)
+      : await resolveCampaignIds(dateFrom, dateTo, statusOpen)
+
+    if (!campaignIds) {
+      // 활성 캠페인 0건 — 빈 목록 정상 응답.
+      const empty: MotivAdGroupListResponse = {
+        data: [],
+        links: { first: null, last: null, prev: null, next: null },
+        meta: { current_page: 1, from: null, last_page: 1, per_page: perPage || 0, to: null, total: 0, path: '' },
+        totals: metricsToMotivStats(undefined),
+        exchange_rate: 1,
+      }
+      return NextResponse.json(empty)
+    }
+
+    const data = await fetchAdGroupInsights({
+      dateFrom,
+      dateTo,
+      campaignIds,
+      accountId: accountId || undefined,
+      status: statusOpen,
+      q: q ? q.slice(0, 100) : undefined,
+      page: Number.isFinite(page) && page > 0 ? Math.floor(page) : undefined,
+      limit: Number.isFinite(perPage) && perPage > 0 ? Math.min(1000, Math.floor(perPage)) : undefined,
+    })
+
+    const motivAdGroups = (data.data ?? []).map(adGroupInsightToMotivAdGroup)
+    const totals = metricsToMotivStats(data.summary?.metrics)
+    const meta = pagingToMotivMeta(data.paging, perPage || motivAdGroups.length)
+
+    const response: MotivAdGroupListResponse = {
+      data: motivAdGroups,
+      links: { first: null, last: null, prev: null, next: null },
+      meta,
+      totals,
+      exchange_rate: 1,
+    }
+    return NextResponse.json(response)
   } catch (err) {
+    if (err instanceof OpenApiError) {
+      console.error('[motiv/ad-groups→openApi]', { code: err.code, status: err.status })
+      return NextResponse.json(
+        { error: `Open API ${err.code}: ${err.message}` },
+        { status: err.status },
+      )
+    }
     const message = err instanceof Error ? err.message : String(err)
-    const status = /^Motiv API 401/.test(message) ? 401 : 500
-    return NextResponse.json({ error: message }, { status })
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
