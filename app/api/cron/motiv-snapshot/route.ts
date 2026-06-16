@@ -51,8 +51,10 @@ export async function GET(req: NextRequest) {
   const dateFrom = dateFromTwoYearsAgo(now)
 
   try {
+    // PARTNERS 는 Open API Phase 1 미지원 (가이드 §4) — 불필요한 422 호출 회피.
+    const supported = TYPES.filter(t => t !== 'PARTNERS')
     const results = await Promise.allSettled(
-      TYPES.map(t =>
+      supported.map(t =>
         fetchAllCampaignInsights({
           dateFrom,
           dateTo: date,
@@ -72,7 +74,7 @@ export async function GET(req: NextRequest) {
     const errors: Array<{ type: MotivCampaignType; error: string }> = []
 
     results.forEach((r, i) => {
-      const t = TYPES[i]
+      const t = supported[i]
       if (r.status === 'rejected') {
         errors.push({ type: t, error: r.reason instanceof Error ? r.reason.message : String(r.reason) })
         return

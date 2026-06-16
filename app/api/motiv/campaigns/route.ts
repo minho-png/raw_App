@@ -49,6 +49,27 @@ export async function GET(req: NextRequest) {
     const startDate = sp.get('start_date')
     const endDate = sp.get('end_date')
 
+    // Open API Phase 1 미지원 campaign_type short-circuit.
+    // 가이드 §4: Open API 의 campaignType enum 은 DISPLAY/VIDEO/TV 3종 (PARTNERS 제외).
+    // useMotivSettlementCampaigns 는 CT product 일 때 [DISPLAY,VIDEO,PARTNERS] 를
+    // Promise.all 로 호출하는데, PARTNERS 가 업스트림 422 (VALIDATION_ERROR) 를 받으면
+    // hook 전체가 깨져 CT 페이지가 비어버린다. PARTNERS 만 빈 응답으로 short-circuit
+    // 하여 다른 3 type 의 정상 응답을 보존한다 (PARTNERS 캠페인은 누락 — Phase 2 까지
+    // 한계, 사용자 합의 "Open API 정보로 논리적 동일 결과").
+    if (type === 'PARTNERS') {
+      console.warn('[motiv/campaigns→openApi] PARTNERS 는 Open API Phase 1 미지원 — 빈 응답 반환 (가이드 §4)')
+      const empty: MotivCampaignListResponse = {
+        data: [],
+        links: { first: null, last: null, prev: null, next: null },
+        meta: { current_page: 1, from: null, last_page: 1, per_page: perPage || 0, to: null, total: 0, path: '' },
+        totals: metricsToMotivStats(undefined),
+        exchange_rate: 1,
+      }
+      return NextResponse.json(empty, {
+        headers: { 'X-OpenApi-Skipped': 'PARTNERS-unsupported' },
+      })
+    }
+
     const baseQuery = {
       dateFrom: startDate || defaultDateFrom(),
       dateTo: endDate || defaultDateTo(),

@@ -32,9 +32,11 @@ import {
 import type { InsightsLevel, InsightsQuery, OpenApiStatus } from '@/lib/openApi/types'
 
 const ALLOWED_LEVELS: InsightsLevel[] = ['CAMPAIGN', 'ADGROUP', 'AD', 'DAILY', 'HOURLY']
-// 가이드 §4: campaignType 허용값 (Motiv 호환 PARTNERS 포함). 잘못된 값은 업스트림에
-// 흘리지 않고 프록시 단에서 422 로 차단 — 업스트림 5xx 로 둔갑하는 것 방지.
-const ALLOWED_CAMPAIGN_TYPES = ['DISPLAY', 'VIDEO', 'TV', 'PARTNERS']
+// 가이드 §4: Open API 의 campaignType enum 은 DISPLAY/VIDEO/TV 3종만 허용.
+// PARTNERS 는 Motiv union 호환을 위해 types.ts 에 포함됐을 뿐 업스트림이 거부함
+// (실측 2026-06-16: 422 VALIDATION_ERROR). 잘못된 값은 업스트림에 흘리지 않고
+// 프록시 단에서 422 로 차단 — 5xx 로 둔갑하는 것 방지.
+const ALLOWED_CAMPAIGN_TYPES = ['DISPLAY', 'VIDEO', 'TV']
 
 function bad(message: string, status = 400) {
   return NextResponse.json({ error: { code: 'BAD_REQUEST', message } }, { status })

@@ -53,8 +53,10 @@ function ymdKst(now: Date): string {
  */
 export async function collectZeroSpendCampaigns(now: Date = new Date()): Promise<ZeroSpendEntry[]> {
   const today = ymdKst(now)
-  // 1) 활성 campaigns 조회 (type 별 4회 병렬)
-  const campResults = await Promise.all(ALERT_TYPES.map(t =>
+  // 1) 활성 campaigns 조회 (Open API 지원 type 만 병렬 — PARTNERS 는 Phase 1 미지원
+  //    422 라 Promise.all 전체 실패 방지 위해 제외, 가이드 §4).
+  const supported = ALERT_TYPES.filter(t => t !== 'PARTNERS')
+  const campResults = await Promise.all(supported.map(t =>
     fetchAllCampaignInsights({
       dateFrom: today,
       dateTo: today,
