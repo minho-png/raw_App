@@ -48,8 +48,15 @@ const EMPTY_METRICS: InsightsMetrics = {
  * 에러(4xx/5xx)는 정규화 이전 client.ts 에서 OpenApiError 로 throw 되므로 영향 없음.
  */
 function normalizeInsightsResponse<D>(raw: unknown): InsightsResponse<D> {
-  const r = (raw ?? {}) as Partial<InsightsResponse<D>>
-  const data: InsightsRow<D>[] = Array.isArray(r.data) ? r.data : []
+  const r = (raw ?? {}) as Partial<InsightsResponse<D>> & { rows?: InsightsRow<D>[] }
+  // 배열 키 호환 (2026-06-16): 명세상 응답 배열 키가 `data` 인지 `rows` 인지 운영망
+  // 확인 전까지 둘 다 수용. 실제 API 가 `rows` 로 응답하는데 `data` 만 읽으면 모든
+  // 캠페인이 빈 배열로 떨어져 화면이 통째 0 이 된다(콘솔에 정상 수신 로그 부재와 일치).
+  const data: InsightsRow<D>[] = Array.isArray(r.data)
+    ? r.data
+    : Array.isArray(r.rows)
+      ? r.rows
+      : []
   const summaryMetrics = r.summary?.metrics ?? { ...EMPTY_METRICS }
   const paging: InsightsPaging = r.paging ?? {
     page: 1,
