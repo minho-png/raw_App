@@ -8,3 +8,4 @@
 export { GET } from '../ad-groups/route'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60  // Open API insights 집계가 길어질 수 있어 함수 타임아웃 상향
