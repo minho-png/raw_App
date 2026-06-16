@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
       // 구조화 에러 — 클라이언트(useMotivSettlementCampaigns) 가 실제 code/message 를
       // 콘솔에 그대로 표시할 수 있게 한다 (문자열로 뭉개면 code 가 HTTP_xxx 로 손실).
       return NextResponse.json(
-        { error: { code: err.code, message: err.message } },
+        { error: { code: err.code, message: err.message, details: err.details } },
         { status: err.status },
       )
     }

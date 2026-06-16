@@ -109,10 +109,28 @@ export function useMotivStatsCampaign({
             params.set('page',     String(page))
             params.set('sort', 'campaign_id')
 
+            const t0 = Date.now()
             const res = await fetch(`/api/motiv/stats/campaign?${params.toString()}`, { cache: 'no-store' })
+            const ms = Date.now() - t0
+            const diag = {
+              upstream: res.headers.get('X-OpenApi-Upstream'),
+              upstreamStatus: res.headers.get('X-OpenApi-Upstream-Status'),
+              upstreamLatencyMs: res.headers.get('X-OpenApi-Latency-Ms'),
+              attempts: res.headers.get('X-OpenApi-Attempts'),
+            }
             if (!res.ok) {
-              const j = await res.json().catch(() => ({}))
-              throw new Error((j as { error?: string }).error || `HTTP ${res.status}`)
+              const j = await res.json().catch(() => null) as { error?: string | { code?: string; message?: string; details?: Record<string, string[]> } } | null
+              const errField = j?.error
+              const code = typeof errField === 'object' && errField?.code ? errField.code : `HTTP_${res.status}`
+              const message = typeof errField === 'string' ? errField : (errField?.message ?? '')
+              const details = typeof errField === 'object' ? errField?.details : undefined
+              console.group(`%c[Motiv→OpenAPI] stats/campaign ✗ ${res.status} ${code}`, 'color:#b91c1c;font-weight:600')
+              console.error('message:', message || '(본문 없음)')
+              console.info('params:', Object.fromEntries(params), 'elapsed:', `${ms}ms`)
+              console.info('upstream diag:', diag)
+              if (details) console.info('details:', details)
+              console.groupEnd()
+              throw new Error(`stats/campaign ${res.status} — ${code}${message ? `: ${message}` : ''}`)
             }
             const json = await res.json() as {
               data?: Record<string, string>[]

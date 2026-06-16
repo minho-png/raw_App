@@ -84,7 +84,9 @@ function buildQueryString(query: Record<string, string | number | undefined | nu
 // motivApi/statsService.ts 의 30초 AbortController 패턴과 일관. 업스트림
 // (manage2.crosstarget.co.kr) 지연 시 Vercel function 이 플랫폼 한도까지
 // 무기한 대기하던 문제 방어. 5xx/네트워크 한정 지수 backoff 재시도.
-const DEFAULT_TIMEOUT_MS = 30_000
+// Hook 측 fetch timeout(60s) 보다 짧게 — race 시 hook 의 "signal is aborted without
+// reason" 대신 라우트가 명확한 OpenApiError(TIMEOUT/NETWORK) 응답을 먼저 던지게 함.
+const DEFAULT_TIMEOUT_MS = 25_000
 const MAX_RETRIES = 2  // 최초 1회 + 재시도 2회 = 총 3회
 
 function isRetriableStatus(status: number): boolean {

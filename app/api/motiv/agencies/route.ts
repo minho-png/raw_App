@@ -66,11 +66,11 @@ export async function GET(req: NextRequest) {
     if (err instanceof OpenApiError) {
       console.error('[motiv/agencies→openApi]', { code: err.code, status: err.status })
       return NextResponse.json(
-        { error: `Open API ${err.code}: ${err.message}` },
+        { error: { code: err.code, message: err.message, details: err.details } },
         { status: err.status },
       )
     }
     const message = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: { code: 'INTERNAL', message } }, { status: 500 })
   }
 }
