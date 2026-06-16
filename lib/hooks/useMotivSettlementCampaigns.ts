@@ -294,7 +294,7 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
 //   useMotivSettlementCampaignsByProduct('CT', { month: '2026-05' })   // 동등
 export function useMotivSettlementCampaignsByProduct(
   product: MediaProductType | 'CT_CTV_BOTH',
-  monthOrOptions?: string | { month?: string; dateRange?: { start: string; end: string }; enabled?: boolean; refreshKey?: number },
+  monthOrOptions?: string | { month?: string; dateRange?: { start: string; end: string }; enabled?: boolean; refreshKey?: number; perPage?: number },
   enabledArg = true,
 ) {
   let types: MotivCampaignType[] = []
@@ -313,6 +313,7 @@ export function useMotivSettlementCampaignsByProduct(
       types,
       month:      opts.month,
       dateRange:  'dateRange'  in opts ? opts.dateRange  : undefined,
+      perPage:    'perPage'    in opts ? opts.perPage    : undefined,
       enabled,
       refreshKey: 'refreshKey' in opts ? opts.refreshKey : undefined,
     }),

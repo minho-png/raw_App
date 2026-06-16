@@ -43,12 +43,26 @@ export default function DashboardPage() {
   const { allRows: rawRows } = useRawData()
 
   // CT / CTV — MOTIV API 캠페인 (운영 중 판정 위해 page-level 호출)
-  // month 파라미터 미지정 — 전체 캠페인 중 isActiveMotivCampaign 으로 필터.
+  // 성능 (2026-06-16): 기존엔 range 미지정 → 라우트가 2년 범위로 Open API insights 를
+  // 집계해 totalCount(~1.9만) 가 폭증, hook 이 ~95페이지를 순회하다 60초 TIMEOUT.
+  // 대시보드는 "집행중"(현재 운영) 캠페인만 필요하고, 집행중 캠페인은 최근 활동이
+  // 있으므로 최근 90일 윈도로 좁혀도 누락되지 않는다. 윈도 축소로 업스트림 집계 비용과
+  // 페이지 수를 동시에 대폭 절감 + perPage 1000(Open API max)으로 라운드트립 최소화.
+  // (사용하는 필드 total_budget/total_spent/status/start_date/end_date 는 모두
+  //  날짜무관 lifetime dimension 이라 윈도 축소가 값 정확도에 영향 없음)
+  const dashboardRange = useMemo(() => {
+    const KST = 9 * 60 * 60 * 1000
+    const now = new Date(Date.now() + KST)
+    const to = now.toISOString().slice(0, 10)
+    const fromDate = new Date(now)
+    fromDate.setUTCDate(fromDate.getUTCDate() - 90)
+    return { start: fromDate.toISOString().slice(0, 10), end: to }
+  }, [])
   // 실시간 갱신 — 모든 MOTIV 호출 + master data 가 refreshKey 에 반응
   const refreshControl = useRefreshControl()
   const refreshKey = refreshControl.key
-  const motivCt  = useMotivSettlementCampaignsByProduct('CT',  { refreshKey })
-  const motivCtv = useMotivSettlementCampaignsByProduct('CTV', { refreshKey })
+  const motivCt  = useMotivSettlementCampaignsByProduct('CT',  { refreshKey, dateRange: dashboardRange, perPage: 1000 })
+  const motivCtv = useMotivSettlementCampaignsByProduct('CTV', { refreshKey, dateRange: dashboardRange, perPage: 1000 })
 
   // 상태값 정규화 — '집행중' / '집행 중' / '집행  중' 모두 동일하게 처리 (BUG-03)
   function isActive(c: Campaign): boolean {

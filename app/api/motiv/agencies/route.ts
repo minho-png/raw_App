@@ -13,6 +13,7 @@ import type { MotivAgencyListResponse } from '@/lib/motivApi/types'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60  // Open API insights 집계가 길어질 수 있어 함수 타임아웃 상향 (기본 10~15s)
 
 function defaultDateTo(): string {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
