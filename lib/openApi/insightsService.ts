@@ -52,11 +52,24 @@ function normalizeInsightsResponse<D>(raw: unknown): InsightsResponse<D> {
   // 배열 키 호환 (2026-06-16): 명세상 응답 배열 키가 `data` 인지 `rows` 인지 운영망
   // 확인 전까지 둘 다 수용. 실제 API 가 `rows` 로 응답하는데 `data` 만 읽으면 모든
   // 캠페인이 빈 배열로 떨어져 화면이 통째 0 이 된다(콘솔에 정상 수신 로그 부재와 일치).
-  const data: InsightsRow<D>[] = Array.isArray(r.data)
-    ? r.data
+  const arrayKey: 'data' | 'rows' | 'none' = Array.isArray(r.data)
+    ? 'data'
     : Array.isArray(r.rows)
-      ? r.rows
-      : []
+      ? 'rows'
+      : 'none'
+  const data: InsightsRow<D>[] =
+    arrayKey === 'data' ? (r.data as InsightsRow<D>[]) :
+    arrayKey === 'rows' ? (r.rows as InsightsRow<D>[]) : []
+  // 진단(2026-06-16): 운영망 응답의 실제 상위 키 목록을 한 줄 기록 — 명세 확정용.
+  // 사용자가 Vercel Functions Log 에서 `arrayKey=` 만 보고 'data' vs 'rows' 즉시 판별 가능.
+  try {
+    const topKeys = Object.keys(r as object).join(',')
+    // 첫 row 의 키도 함께 — 코드는 {dimensions(복수), metrics} 가정,
+    // 명세 이미지는 {dimension(단수 배열), metrics}. 어느 쪽이 실제인지 1회 확인용.
+    const firstRow = data[0] as unknown as Record<string, unknown> | undefined
+    const rowKeys = firstRow ? Object.keys(firstRow).join(',') : '(empty)'
+    console.info(`[OpenAPI:insights] shape arrayKey=${arrayKey} topKeys=${topKeys} count=${data.length} rowKeys=${rowKeys}`)
+  } catch { /* 진단 실패는 무시 */ }
   const summaryMetrics = r.summary?.metrics ?? { ...EMPTY_METRICS }
   const paging: InsightsPaging = r.paging ?? {
     page: 1,
