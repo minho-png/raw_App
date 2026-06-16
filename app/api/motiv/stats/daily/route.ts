@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fetchDailyInsights } from '@/lib/openApi/insightsService'
 import { OpenApiError } from '@/lib/openApi/client'
 import { dailyRowToStatsRecord, metricsToStatsRecord } from '@/lib/openApi/legacyAdapter'
+import { defaultDeriveConfig, settlementFromMetrics } from '@/lib/openApi/settlementDerive'
 import type { StatsBreakdownResponse } from '@/lib/motivApi/statsService'
 
 export const runtime = 'nodejs'
@@ -55,7 +56,8 @@ export async function GET(req: NextRequest) {
       agencyId: sp.get('agency_id') || undefined,
     })
 
-    const rows = (data.data ?? []).map(dailyRowToStatsRecord)
+    const cfg = defaultDeriveConfig()
+    const rows = (data.data ?? []).map(r => dailyRowToStatsRecord(r, settlementFromMetrics(r.metrics, cfg)))
     const response: StatsBreakdownResponse = {
       data: rows,
       links: { prev: null, next: null },
@@ -67,7 +69,7 @@ export async function GET(req: NextRequest) {
         last_page: 1,
         per_page: rows.length,
       },
-      totals: metricsToStatsRecord(data.summary?.metrics),
+      totals: metricsToStatsRecord(data.summary?.metrics, settlementFromMetrics(data.summary?.metrics, cfg)),
       exchange_rate: 1,
     }
     return NextResponse.json(response)

@@ -16,7 +16,47 @@ import {
   metricsToMotivStats,
   openStatusToMotiv,
   motivStatusToOpen,
+  adGroupInsightToMotivAdGroup,
 } from '../lib/openApi/legacyAdapter.ts'
+
+// ── adGroup 정산성 주입 (광고주/대행사/비용 작업 2026-06-16) ─────
+// DMP 감지·파생 계산은 settlementDerive(서버 전용)가 수행하고, 어댑터는 주입값만 할당.
+test('adGroupInsightToMotivAdGroup: targetingProductId + settlement 주입 할당', () => {
+  const ag = adGroupInsightToMotivAdGroup({
+    dimensions: { adGroupId: '5', adGroupName: 'CT_SKP_리타겟', campaignId: '10', status: 'ACTIVE' },
+    metrics: { impressions: 1000, clicks: 10, ctr: 1, cost: 1_000_000, currency: 'KRW', cpc: 0, cpm: 0 },
+  }, { targetingProductId: 'SKP', settlement: { revenue: 1_100_000, agency_fee: 100_000, data_fee: 100_000 } })
+  assert.equal(ag.targeting_product_id, 'SKP')
+  assert.equal(ag.stats?.data_fee, 100_000)
+  assert.equal(ag.stats?.cost, 1_000_000)
+})
+
+test('adGroupInsightToMotivAdGroup: 주입 없으면 분류 undefined + 정산성 0', () => {
+  const ag = adGroupInsightToMotivAdGroup({
+    dimensions: { adGroupId: '6', adGroupName: '일반 광고그룹', campaignId: '10', status: 'ACTIVE' },
+    metrics: { impressions: 500, clicks: 5, ctr: 1, cost: 500_000, currency: 'KRW', cpc: 0, cpm: 0 },
+  })
+  assert.equal(ag.targeting_product_id, undefined)
+  assert.equal(ag.stats?.data_fee, 0)
+})
+
+// ── metricsToMotivStats 정산성 주입 ─────────────────────────────
+test('metricsToMotivStats: settlement 없으면 정산성 필드 0', () => {
+  const s = metricsToMotivStats({ impressions: 0, clicks: 0, ctr: 0, cost: 1_000_000, currency: 'KRW', cpc: 0, cpm: 0 })
+  assert.equal(s.cost, 1_000_000)
+  assert.equal(s.agency_fee, 0)
+  assert.equal(s.data_fee, 0)
+  assert.equal(s.revenue, 0)
+})
+
+test('metricsToMotivStats: settlement 주입 → 그대로 할당', () => {
+  const s = metricsToMotivStats(
+    { impressions: 0, clicks: 0, ctr: 0, cost: 1_000_000, currency: 'KRW', cpc: 0, cpm: 0 },
+    { revenue: 1_200_000, agency_fee: 200_000, data_fee: 0 },
+  )
+  assert.equal(s.agency_fee, 200_000)
+  assert.equal(s.revenue, 1_200_000)
+})
 
 // ── pagingToMotivMeta: 누락 paging 방어 (VIDEO 500 근본 원인) ──────
 test('pagingToMotivMeta: undefined paging 도 안전 (단일 페이지 합성)', () => {

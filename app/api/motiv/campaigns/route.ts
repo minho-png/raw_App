@@ -15,6 +15,7 @@ import {
   motivStatusToOpen,
   pagingToMotivMeta,
 } from '@/lib/openApi/legacyAdapter'
+import { defaultDeriveConfig, settlementFromMetrics } from '@/lib/openApi/settlementDerive'
 import type {
   MotivCampaignListResponse,
   MotivCampaignType,
@@ -91,8 +92,12 @@ export async function GET(req: NextRequest) {
       ? await fetchCampaignInsights(baseQuery)
       : await fetchAllCampaignInsights(allQuery)
 
-    const motivCampaigns = (data.data ?? []).map(campaignInsightToMotivCampaign)
-    const totals = metricsToMotivStats(data.summary?.metrics)
+    // 정산성 파생 (사용자 결정 2026-06-16) — 기본 대행요율(env) 있으면 agency_fee 파생.
+    const cfg = defaultDeriveConfig()
+    const motivCampaigns = (data.data ?? []).map(r =>
+      campaignInsightToMotivCampaign(r, settlementFromMetrics(r.metrics, cfg)),
+    )
+    const totals = metricsToMotivStats(data.summary?.metrics, settlementFromMetrics(data.summary?.metrics, cfg))
     const meta = pagingToMotivMeta(data.paging, hasPerPage ? perPage : motivCampaigns.length)
 
     const response: MotivCampaignListResponse = {

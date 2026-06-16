@@ -11,7 +11,56 @@ import {
   distributeRounding,
   calcCosts,
   calcDmpSettlement,
+  deriveSettlementFromCost,
+  detectDmpType,
+  DMP_FEE_RATES_DECIMAL,
 } from '../lib/calculationService.ts'
+
+// ── deriveSettlementFromCost: 매체비 → 정산성 파생 (Open API Phase 1 갭 보완) ──
+test('deriveSettlementFromCost: 요율 없으면 전부 0 (기존 동작 유지)', () => {
+  const d = deriveSettlementFromCost(1_000_000)
+  assert.equal(d.mediaCost, 1_000_000)
+  assert.equal(d.pureAgencyFee, 0)
+  assert.equal(d.dataFee, 0)
+  assert.equal(d.agencyFeeTotal, 0)
+  assert.equal(d.revenue, 1_000_000)
+})
+
+test('deriveSettlementFromCost: 대행 15% 파생', () => {
+  const d = deriveSettlementFromCost(1_000_000, { agencyFeeRate: 0.15 })
+  assert.equal(d.pureAgencyFee, 150_000)
+  assert.equal(d.dataFee, 0)
+  assert.equal(d.agencyFeeTotal, 150_000)
+  assert.equal(d.revenue, 1_150_000)
+})
+
+test('deriveSettlementFromCost: DMP 10% data_fee 파생', () => {
+  const d = deriveSettlementFromCost(1_000_000, { dmpFeeDecimal: 0.10 })
+  assert.equal(d.dataFee, 100_000)
+  assert.equal(d.agencyFeeTotal, 100_000)  // 순수대행 0 + DMP 10만
+  assert.equal(d.revenue, 1_100_000)
+})
+
+test('deriveSettlementFromCost: 대행+DMP 합산 (Motiv 관례 agency_fee = 대행+DMP)', () => {
+  const d = deriveSettlementFromCost(1_000_000, { agencyFeeRate: 0.15, dmpFeeDecimal: 0.10 })
+  assert.equal(d.pureAgencyFee, 150_000)
+  assert.equal(d.dataFee, 100_000)
+  assert.equal(d.agencyFeeTotal, 250_000)
+  assert.equal(d.revenue, 1_250_000)
+})
+
+test('deriveSettlementFromCost: NaN/음수 cost 안전', () => {
+  assert.equal(deriveSettlementFromCost(NaN, { agencyFeeRate: 0.15 }).mediaCost, 0)
+  assert.equal(deriveSettlementFromCost(NaN, { agencyFeeRate: 0.15 }).revenue, 0)
+})
+
+test('deriveSettlementFromCost: SKP 광고그룹 요율로 data_fee 일관', () => {
+  // detectDmpType('SKP_리타겟') = SKP, 요율 0.10 → data_fee = cost × 0.10
+  const dmp = detectDmpType('SKP_리타겟')
+  const d = deriveSettlementFromCost(500_000, { dmpFeeDecimal: DMP_FEE_RATES_DECIMAL[dmp] })
+  assert.equal(dmp, 'SKP')
+  assert.equal(d.dataFee, 50_000)
+})
 
 // ── roundWon: IEEE754 표현 오차 방어 ──────────────────────────
 test('roundWon: 0.1 곱 / 1.1 나눗셈 오차가 있어도 안정적 반올림', () => {
