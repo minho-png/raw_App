@@ -14,6 +14,7 @@ import {
   motivStatusToOpen,
   pagingToMotivMeta,
 } from '@/lib/openApi/legacyAdapter'
+import { adGroupSettlement, defaultDeriveConfig, settlementFromMetrics } from '@/lib/openApi/settlementDerive'
 import type {
   MotivAdGroupListResponse,
   MotivStatus,
@@ -94,8 +95,13 @@ export async function GET(req: NextRequest) {
       limit: Number.isFinite(perPage) && perPage > 0 ? Math.min(1000, Math.floor(perPage)) : undefined,
     })
 
-    const motivAdGroups = (data.data ?? []).map(adGroupInsightToMotivAdGroup)
-    const totals = metricsToMotivStats(data.summary?.metrics)
+    // data_fee 는 광고그룹명 DMP 감지로 자동 파생. 대행요율(env)은 cfg 로 전달.
+    const cfg = defaultDeriveConfig()
+    const motivAdGroups = (data.data ?? []).map(r => {
+      const { targetingProductId, settlement } = adGroupSettlement(r.dimensions.adGroupName, r.metrics, cfg)
+      return adGroupInsightToMotivAdGroup(r, { targetingProductId, settlement })
+    })
+    const totals = metricsToMotivStats(data.summary?.metrics, settlementFromMetrics(data.summary?.metrics, cfg))
     const meta = pagingToMotivMeta(data.paging, perPage || motivAdGroups.length)
 
     const response: MotivAdGroupListResponse = {

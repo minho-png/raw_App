@@ -13,6 +13,7 @@ import {
   campaignRowToStatsRecord,
   metricsToStatsRecord,
 } from '@/lib/openApi/legacyAdapter'
+import { defaultDeriveConfig, settlementFromMetrics } from '@/lib/openApi/settlementDerive'
 import type { StatsBreakdownResponse } from '@/lib/motivApi/statsService'
 
 export const runtime = 'nodejs'
@@ -71,7 +72,8 @@ export async function GET(req: NextRequest) {
       ? await fetchCampaignInsights(baseQuery)
       : await fetchAllCampaignInsights(allQuery)
 
-    const rows = (data.data ?? []).map(campaignRowToStatsRecord)
+    const cfg = defaultDeriveConfig()
+    const rows = (data.data ?? []).map(r => campaignRowToStatsRecord(r, settlementFromMetrics(r.metrics, cfg)))
     const response: StatsBreakdownResponse = {
       data: rows,
       links: { prev: null, next: null },
@@ -83,7 +85,7 @@ export async function GET(req: NextRequest) {
         last_page: data.paging.totalPages,
         per_page: data.paging.limit,
       },
-      totals: metricsToStatsRecord(data.summary?.metrics),
+      totals: metricsToStatsRecord(data.summary?.metrics, settlementFromMetrics(data.summary?.metrics, cfg)),
       exchange_rate: 1,
     }
     return NextResponse.json(response)

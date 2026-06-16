@@ -95,7 +95,7 @@ export async function collectZeroSpendCampaigns(now: Date = new Date()): Promise
         status: 'ACTIVE',
         limit: 1000,
       })
-      adGroups = agRes.data.map(adGroupInsightToMotivAdGroup)
+      adGroups = agRes.data.map(r => adGroupInsightToMotivAdGroup(r))
     } catch (e) {
       console.warn('[zeroSpendAlert] adgroups fetch failed, falling back to campaign-level:', (e as Error).message)
       adGroups = []

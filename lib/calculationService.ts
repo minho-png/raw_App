@@ -281,3 +281,53 @@ export function calcCpc(cost: number, clicks: number): number {
   if (clicks <= 0) return 0
   return Math.round(cost / clicks)
 }
+
+// ── Open API 매체비(cost) → 정산성 지표 파생 ──────────────────────────
+//
+// 배경 (2026-06-16, 사용자 결정 "파생 계산 포함"):
+//   Crosstarget Open API Phase 1 은 insights 집계(cost/impressions/clicks/video)만
+//   제공하고 정산성 필드(agency_fee/data_fee/revenue/profit)는 주지 않는다
+//   (Phase 2 /settlements 대기). 기존 CT+ 정산 방법론(cost × 요율 = fee)을 그대로
+//   재사용해 매체비로부터 정산성 지표를 **파생**한다.
+//
+// 회계 규약 (lib/motivApi/statsService.ts 주석과 일치):
+//   매체비(mediaCost)   = cost
+//   DMP 수수료(dataFee) = cost × dmpFeeDecimal       (광고그룹 DMP 감지)
+//   순수 대행(pureAgency)= cost × agencyFeeRate        (대행 요율)
+//   Motiv agency_fee    = pureAgency + dataFee          ("대행+DMP합" 관례)
+//   매출(revenue)       = mediaCost + pureAgency + dataFee  (광고주 청구액 근사)
+//
+// ⚠️ 본 값은 **추정치**다. 실제 청구액(Motiv 정산)과 다를 수 있으므로 표시 시
+//    "추정" 라벨이 필요하다. 요율 미지정 시 0 으로 안전 fallback (= 기존 동작).
+
+export interface SettlementDerivation {
+  /** 매체비 = cost (원 단위). */
+  mediaCost: number
+  /** 순수 대행 수수료 = cost × agencyFeeRate. */
+  pureAgencyFee: number
+  /** DMP 수수료 = cost × dmpFeeDecimal. */
+  dataFee: number
+  /** Motiv 관례 agency_fee = 순수 대행 + DMP (대행+DMP합). */
+  agencyFeeTotal: number
+  /** 매출(광고주 청구액 근사) = 매체비 + 총수수료. */
+  revenue: number
+}
+
+/**
+ * 매체비(cost)로부터 정산성 지표 파생. 순수 함수.
+ *
+ * @param cost  Open API insights 의 매체비 (KRW). 음수/NaN 은 0 처리.
+ * @param opts.agencyFeeRate  대행 요율 (소수, 예: 15% → 0.15). 기본 0.
+ * @param opts.dmpFeeDecimal  DMP 요율 (소수, DMP_FEE_RATES_DECIMAL 값). 기본 0.
+ */
+export function deriveSettlementFromCost(
+  cost: number,
+  opts: { agencyFeeRate?: number; dmpFeeDecimal?: number } = {},
+): SettlementDerivation {
+  const mediaCost = roundWon(cost)
+  const dataFee = roundWon(mediaCost * (opts.dmpFeeDecimal ?? 0))
+  const pureAgencyFee = roundWon(mediaCost * (opts.agencyFeeRate ?? 0))
+  const agencyFeeTotal = pureAgencyFee + dataFee
+  const revenue = mediaCost + pureAgencyFee + dataFee
+  return { mediaCost, pureAgencyFee, dataFee, agencyFeeTotal, revenue }
+}

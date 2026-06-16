@@ -62,11 +62,34 @@ function toNumberId(s: string | number | undefined | null): number {
   return Number.isFinite(n) ? n : -1
 }
 
+// ── 정산성 주입 값 ──────────────────────────────────────────────
+// 사용자 결정 (2026-06-16): Open API 가 안 주는 agency_fee/data_fee/revenue 를
+// 매체비(cost)×요율로 파생. 파생 공식은 lib/calculationService 에 있고, 그것을
+// 사용하는 계산은 서버 전용 lib/openApi/settlementDerive.ts 가 수행한다(테스트
+// 격리 위해 어댑터는 calculationService 를 직접 import 하지 않음 — strip-only 테스트가
+// 어댑터를 import 할 수 있게 유지). 어댑터는 **계산된 값만 받아 할당**한다.
+// 미주입(undefined) 이면 기존대로 0 — 비파괴.
+export interface SettlementValues {
+  /** 매출(광고주 청구액 근사) = 매체비 + 총수수료. */
+  revenue: number
+  /** Motiv 관례 agency_fee = 순수대행 + DMP. */
+  agency_fee: number
+  /** DMP 수수료 = cost × DMP요율. */
+  data_fee: number
+}
+
 // ── Metrics 매핑 ────────────────────────────────────────────────
 // Open API InsightsMetrics → Motiv stats. 누락 필드는 0.
-export function metricsToMotivStats(m: InsightsMetrics | undefined): MotivCampaignStats {
+// derive 가 주어지면 정산성 필드(agency_fee/data_fee/revenue)를 cost×요율로 파생.
+export function metricsToMotivStats(
+  m: InsightsMetrics | undefined,
+  settlement?: SettlementValues,
+): MotivCampaignStats {
   const impressions = num(m?.impressions)
   const clicks = num(m?.clicks)
+  const cost = num(m?.cost)
+  // 정산성 값 주입 (없으면 전부 0 — 기존 동작 유지).
+  const s = settlement ?? { revenue: 0, agency_fee: 0, data_fee: 0 }
   return {
     bid: 0,
     win: impressions,
@@ -75,12 +98,12 @@ export function metricsToMotivStats(m: InsightsMetrics | undefined): MotivCampai
     winprice: 0,
     pubprice: 0,
     payprice: 0,
-    cost: num(m?.cost),
-    revenue: 0,           // Open API 미제공 — 정산성 (Phase 2)
-    agency_fee: 0,        // Open API 미제공
-    data_fee: 0,          // Open API 미제공
-    profit: 0,            // Open API 미제공
-    profit_rate: 0,       // Open API 미제공
+    cost,
+    revenue: s.revenue,        // 주입: 매체비 + 총수수료 (없으면 0)
+    agency_fee: s.agency_fee,  // 주입: 순수대행 + DMP (Motiv 관례)
+    data_fee: s.data_fee,      // 주입: cost × DMP요율
+    profit: 0,                 // 보수적 — margin 미반영 (revenue = cost + fee 라 0)
+    profit_rate: 0,
     v_impression: impressions,
     v_play: num(m?.videoStarts),
     v_play25: num(m?.videoP25Watched),
@@ -116,6 +139,7 @@ function num(v: number | string | undefined | null): number {
 // ── Campaign 매핑 ───────────────────────────────────────────────
 export function campaignInsightToMotivCampaign(
   row: InsightsRow<InsightsCampaignDimensions>,
+  settlement?: SettlementValues,
 ): MotivCampaign {
   const d = row.dimensions
   return {
@@ -136,7 +160,8 @@ export function campaignInsightToMotivCampaign(
     daily_budget: d.dailyBudget ?? null,
     daily_spent: d.dailySpent ?? null,
     created_at: null,
-    stats: metricsToMotivStats(row.metrics),
+    // 캠페인 level 은 광고그룹명이 없어 DMP 감지 불가 — 대행 요율만 파생(있으면).
+    stats: metricsToMotivStats(row.metrics, settlement),
   }
 }
 
@@ -149,8 +174,11 @@ function deliveryTypeFromCampaignType(t?: string): MotivDeliveryType {
 }
 
 // ── AdGroup 매핑 ────────────────────────────────────────────────
+// 호출자(settlementDerive.adGroupSettlement)가 광고그룹명 DMP 감지로 산출한
+// targetingProductId(분류 키) + settlement(data_fee 등)을 주입. 미주입 시 기존 동작.
 export function adGroupInsightToMotivAdGroup(
   row: InsightsRow<InsightsAdGroupDimensions>,
+  opts?: { targetingProductId?: string; settlement?: SettlementValues },
 ): MotivAdGroup {
   const d = row.dimensions
   return {
@@ -167,10 +195,9 @@ export function adGroupInsightToMotivAdGroup(
     daily_budget: null,
     daily_spent: null,
     created_at: null,
-    // 광고그룹의 DMP targeting 식별자 — Open API 에 직접 매칭 필드 없음. costMethod
-    // 가 가까울 수 있음(매체별 상이) — 안전하게 undefined.
-    targeting_product_id: undefined,
-    stats: metricsToMotivStats(row.metrics),
+    // 광고그룹명 DMP 감지 결과를 분류 키로 사용 (DMP 사별 data_fee 집계).
+    targeting_product_id: opts?.targetingProductId,
+    stats: metricsToMotivStats(row.metrics, opts?.settlement),
   }
 }
 
@@ -244,8 +271,11 @@ export function pagingToMotivMeta(p: InsightsPaging | undefined | null, perPageH
 // Motiv stats route 의 응답은 dictionary<string,string>. Open API metrics 를
 // 같은 평탄 dictionary 로 변환 (rowsToDailyPoints 가 cost/revenue/profit/
 // agency_fee/data_fee key 를 읽음).
-export function metricsToStatsRecord(m: InsightsMetrics | undefined): Record<string, string> {
-  const s = metricsToMotivStats(m)
+export function metricsToStatsRecord(
+  m: InsightsMetrics | undefined,
+  settlement?: SettlementValues,
+): Record<string, string> {
+  const s = metricsToMotivStats(m, settlement)
   const rec: Record<string, string> = {}
   for (const [k, v] of Object.entries(s)) {
     rec[k] = String(v)
@@ -255,21 +285,23 @@ export function metricsToStatsRecord(m: InsightsMetrics | undefined): Record<str
 
 export function dailyRowToStatsRecord(
   row: { dimensions: { date?: string | null | undefined; [k: string]: unknown }; metrics: InsightsMetrics },
+  settlement?: SettlementValues,
 ): Record<string, string> {
   return {
     date: String(row.dimensions.date ?? ''),
-    ...metricsToStatsRecord(row.metrics),
+    ...metricsToStatsRecord(row.metrics, settlement),
   }
 }
 
 export function campaignRowToStatsRecord(
   row: InsightsRow<InsightsCampaignDimensions>,
+  settlement?: SettlementValues,
 ): Record<string, string> {
   return {
     campaign_id: row.dimensions.campaignId,
     campaign_title: row.dimensions.campaignName ?? '',
     campaign_type: row.dimensions.campaignType ?? '',
     adaccount_id: row.dimensions.accountId,
-    ...metricsToStatsRecord(row.metrics),
+    ...metricsToStatsRecord(row.metrics, settlement),
   }
 }
