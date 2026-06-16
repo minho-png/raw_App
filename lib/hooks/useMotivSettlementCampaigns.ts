@@ -106,7 +106,10 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
             params.set('end_date',   range.end)
           }
           const ac = new AbortController()
-          const timer = setTimeout(() => ac.abort(), 30_000)
+          // 60s — Open API client(25s × retry 2회 ≈ 75s) 와 race 시 hook 이 먼저 abort 하면
+          // "signal is aborted without reason" 만 보이고 실제 원인을 못 봄. 25s 라우트
+          // timeout 보다 길게 두어 라우트가 OpenApiError 로 명확히 응답할 시간 확보.
+          const timer = setTimeout(() => ac.abort(), 60_000)
           const t0 = Date.now()
           try {
             const res = await fetch(`/api/motiv/campaigns?${params.toString()}`, {
@@ -143,6 +146,13 @@ export function useMotivSettlementCampaigns({ types, month, dateRange, perPage =
               console.debug(`[Motiv→OpenAPI] campaigns ${t} ✓ ${res.status} (${json.data?.length ?? 0}건, ${ms}ms)`, { diag })
             }
             return json
+          } catch (e) {
+            // AbortError 를 사용자 친화 메시지로 — "signal is aborted without reason" 보다 정확.
+            if (e instanceof Error && e.name === 'AbortError') {
+              console.error(`[Motiv→OpenAPI] campaigns ${t} ✗ TIMEOUT (60s 초과 — 업스트림 응답 지연)`)
+              throw new Error(`Motiv ${t} TIMEOUT — 60초 안에 응답 없음 (업스트림 지연 또는 네트워크)`)
+            }
+            throw e
           } finally {
             clearTimeout(timer)
           }
