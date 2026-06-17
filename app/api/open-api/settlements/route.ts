@@ -14,6 +14,7 @@ import {
   validateSettlementDateRange,
   validateGroupBy,
   sanitizeSingleId,
+  sanitizeSettlementOrderBy,
 } from '@/lib/openApi/validation'
 
 export const runtime = 'nodejs'
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
       mediaId: sanitizeSingleId(sp.get('mediaId')),
       dataProviderId: sanitizeSingleId(sp.get('dataProviderId')),
       includeInternalTrade: internalRaw === null ? undefined : internalRaw !== 'false',
-      orderBy: sp.get('orderBy') ?? undefined,
+      orderBy: sanitizeSettlementOrderBy(sp.get('orderBy')),
       order: orderRaw === 'ASC' || orderRaw === 'DESC' ? orderRaw : undefined,
       page: Number.isFinite(page) && page > 0 ? Math.floor(page) : undefined,
       limit: Number.isFinite(limit) && limit > 0 ? Math.min(1000, Math.floor(limit)) : undefined,

@@ -1,21 +1,12 @@
-// MOTIV Stats API wrapper (P3).
-// 문서 §10 의 모든 stats 엔드포인트는 동일 응답 구조 `{ data[], links, meta }` 를 반환하며
-// `data` 의 각 행은 dictionary[string, string] 형태.
+// MOTIV Stats API 호환 모듈 — 데이터 출처는 Open API 로 일원화됐고 본 모듈은
+// **응답 shape 호환 타입** + 파싱 헬퍼만 남긴다. 직접 호출 함수(fetchStatsDaily/
+// fetchStatsCampaign) 와 토큰/URL 빌더는 호출자 0건이라 제거 (2026-06-16 cleanup).
 //
-// 본 모듈은 일별(daily) 통계만 우선 wrapping. 다른 breakdown(campaign/publisher/...)
-// 은 동일 패턴이라 필요 시 확장 가능.
+// 응답 구조 `{ data[], links, meta }` 는 /api/motiv/stats/* 라우트가 Open API 결과를
+// 어댑터로 변환해 그대로 유지하므로, 본 타입(StatsBreakdownResponse) 과 파싱 헬퍼
+// (toNum/rowsToDailyPoints/aggregateDailyToMetrics) 는 그대로 사용된다.
 
-const BASE_URL = 'https://desk-ct.motiv-i.com/api'
-
-function getApiToken(): string {
-  const token = process.env.MOTIV_API_TOKEN
-  if (!token) {
-    throw new Error('MOTIV_API_TOKEN 환경변수가 설정되지 않았습니다. .env.local에 추가하세요.')
-  }
-  return token
-}
-
-// 권한 규칙: Platform 외 유저는 scope 필수 — campaign_id / adaccount_id / agency_id / publisher_id
+// 권한 규칙 호환 — Platform 외 유저는 scope 필수. /api/motiv/stats/* 라우트가 동일 키를 받는다.
 export interface StatsQuery {
   campaign_id?: string     // 콤마 구분 복수 가능
   adaccount_id?: string
@@ -41,47 +32,6 @@ export interface StatsBreakdownResponse {
   totals?: Record<string, string>
   exchange_rate?: number
 }
-
-function buildQuery(query: StatsQuery): string {
-  const params = new URLSearchParams()
-  for (const [k, v] of Object.entries(query)) {
-    if (v === undefined || v === null || v === '') continue
-    params.set(k, String(v))
-  }
-  const s = params.toString()
-  return s ? `?${s}` : ''
-}
-
-async function fetchStatsBreakdown(path: string, query: StatsQuery): Promise<StatsBreakdownResponse> {
-  const token = getApiToken()
-  const url = `${BASE_URL}${path}${buildQuery(query)}`
-  // 30초 timeout (QA BUG-004 패턴)
-  const ac = new AbortController()
-  const timer = setTimeout(() => ac.abort(), 30_000)
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      cache: 'no-store',
-      signal: ac.signal,
-    })
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`Motiv API ${res.status}: ${text.slice(0, 300)}`)
-    }
-    return (await res.json()) as StatsBreakdownResponse
-  } catch (e) {
-    if ((e as Error).name === 'AbortError') throw new Error('Motiv stats 응답 시간 초과 (30s)')
-    throw e
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-export const fetchStatsDaily    = (q: StatsQuery) => fetchStatsBreakdown('/v1/stats/daily/breakdown', q)
-export const fetchStatsCampaign = (q: StatsQuery) => fetchStatsBreakdown('/v1/stats/campaign/breakdown', q)
-// 광고그룹 단위 stats — 사용자 요청. /v1/stats/adgroup/breakdown 은 404(미존재)이므로
-// /v1/adgroups (list+stats) 를 사용 (lib/hooks/useMotivAdGroups).
 
 // 파싱 helper — dictionary[string,string] 의 숫자 필드 안전 변환
 export function toNum(v: string | number | null | undefined): number {

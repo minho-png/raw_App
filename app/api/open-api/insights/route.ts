@@ -26,6 +26,7 @@ import {
   Q_MAX_LEN,
   isValidDate,
   sanitizeOrderBy,
+  sanitizeSingleId,
   validateDateRange,
   validateIdList,
 } from '@/lib/openApi/validation'
@@ -109,8 +110,9 @@ export async function GET(req: NextRequest) {
     dateFrom,
     dateTo,
     campaignType: sp.get('campaignType') ?? undefined,
-    accountId: sp.get('accountId') ?? undefined,
-    agencyId: sp.get('agencyId') ?? undefined,
+    // 단일 ID — settlements 와 동일 sanitize (영숫자·_- 만, 길이 ≤64). 인젝션 표면 차단.
+    accountId: sanitizeSingleId(sp.get('accountId')),
+    agencyId: sanitizeSingleId(sp.get('agencyId')),
     campaignIds,
     adGroupIds: adGroupIdsChk.value,
     adIds: adIdsChk.value,

@@ -118,3 +118,11 @@ export function sanitizeSingleId(value: string | null): string | undefined {
   // ID/코드: 영숫자·_-만 허용 (인젝션 표면 차단).
   return /^[A-Za-z0-9_-]+$/.test(v) ? v : undefined
 }
+
+/** 정산 orderBy 허용 키 (명세상 metrics 키). 화이트리스트 외 값은 silent drop. */
+export const ALLOWED_SETTLEMENT_ORDER_BY = new Set([
+  'revenue', 'grossProfit', 'margin', 'mediaCost', 'mediaCostInternal',
+])
+export function sanitizeSettlementOrderBy(value: string | null): string | undefined {
+  return value && ALLOWED_SETTLEMENT_ORDER_BY.has(value) ? value : undefined
+}

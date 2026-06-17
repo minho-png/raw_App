@@ -16,6 +16,9 @@
 
 import { useState } from 'react'
 import { useOpenApiCampaigns } from '@/lib/hooks/useOpenApiCampaigns'
+import { useOpenApiSettlements } from '@/lib/hooks/useOpenApiSettlements'
+import { currentMonthKst } from '@/lib/dateRange'
+import { findDimension, type GroupByDim } from '@/lib/openApi/settlementsTypes'
 
 function row(label: string, value: string | number | null | undefined) {
   return (
@@ -30,9 +33,18 @@ function row(label: string, value: string | number | null | undefined) {
 
 export default function OpenApiDiagnosticsPage() {
   const [refreshKey, setRefreshKey] = useState(0)
+  const [settlementsMonth, setSettlementsMonth] = useState(currentMonthKst())
+  const [settlementsGroup, setSettlementsGroup] = useState<GroupByDim>('AGENCY')
+  const [settlementsRunning, setSettlementsRunning] = useState(false)
   const { data, summary, loading, error, errorCode } = useOpenApiCampaigns({
     all: true,
     enabled: true,
+    refreshKey,
+  })
+  const settlements = useOpenApiSettlements({
+    month: settlementsMonth,
+    groupBy: [settlementsGroup],
+    enabled: settlementsRunning,
     refreshKey,
   })
 
@@ -74,6 +86,48 @@ export default function OpenApiDiagnosticsPage() {
         {row('summary.impressions', summary?.impressions)}
         {row('summary.clicks', summary?.clicks)}
         {row('summary.cost', summary?.cost)}
+      </div>
+
+      <div style={{ padding: 16, border: '1px solid #ddd', borderRadius: 6, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+          <strong style={{ fontSize: 15 }}>정산 집계 (/settlements) 진단</strong>
+          <input
+            type="month"
+            value={settlementsMonth}
+            onChange={e => setSettlementsMonth(e.target.value)}
+            style={{ padding: '4px 8px', fontSize: 13 }}
+          />
+          <select
+            value={settlementsGroup}
+            onChange={e => setSettlementsGroup(e.target.value as GroupByDim)}
+            style={{ padding: '4px 8px', fontSize: 13 }}
+          >
+            <option value="AGENCY">AGENCY (대행사)</option>
+            <option value="MEDIA">MEDIA (매체)</option>
+            <option value="DATA_PROVIDER">DATA_PROVIDER (DMP)</option>
+            <option value="DATE">DATE (일자)</option>
+          </select>
+          <button
+            onClick={() => { setSettlementsRunning(true); setRefreshKey(k => k + 1) }}
+            disabled={settlements.loading}
+            style={{ padding: '6px 12px', cursor: 'pointer' }}
+          >
+            {settlements.loading ? '호출 중…' : '테스트 실행'}
+          </button>
+        </div>
+        {row('endpoint', '/api/open-api/settlements (proxy)')}
+        {row('대상 외부 API', 'manage2.crosstarget.co.kr/api/v1/settlements')}
+        {row('월', settlementsMonth)}
+        {row('groupBy', settlementsGroup)}
+        {row('상태', settlements.error ? `FAIL — ${settlements.error}` : settlementsRunning ? (settlements.loading ? '호출 중…' : `OK (${settlements.rows.length} rows)`) : '대기 (테스트 실행 누르세요)')}
+        {settlements.rows[0] && (() => {
+          const d = findDimension(settlements.rows[0], settlementsGroup)
+          let label = '—'
+          if (d?.type === 'DATE') label = d.date
+          else if (d) label = d.name || d.id || '—'
+          return row('첫 row dimension', label)
+        })()}
+        {settlements.rows[0] && row('첫 row metrics 키', Object.keys(settlements.rows[0].metrics).slice(0, 10).join(', '))}
       </div>
 
       <details style={{ marginBottom: 16 }}>

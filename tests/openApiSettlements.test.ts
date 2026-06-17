@@ -10,7 +10,9 @@ import {
   validateGroupBy,
   validateSettlementDateRange,
   sanitizeSingleId,
+  sanitizeSettlementOrderBy,
 } from '../lib/openApi/validation.ts'
+import { friendlyOpenApiError } from '../lib/openApi/health.ts'
 import { monthToRange, isValidMonth, currentMonthKst } from '../lib/dateRange.ts'
 import { findDimension } from '../lib/openApi/settlementsTypes.ts'
 import type { SettlementRow } from '../lib/openApi/settlementsTypes.ts'
@@ -72,6 +74,31 @@ test('isValidMonth / currentMonthKst', () => {
   assert.equal(isValidMonth('2026-06'), true)
   assert.equal(isValidMonth('2026-13'), false)
   assert.match(currentMonthKst(new Date('2026-06-16T00:00:00Z')), /^\d{4}-\d{2}$/)
+})
+
+// ── sanitizeSettlementOrderBy ────────────────────────────────────
+test('sanitizeSettlementOrderBy: 화이트리스트 metrics 만 통과', () => {
+  assert.equal(sanitizeSettlementOrderBy('revenue'), 'revenue')
+  assert.equal(sanitizeSettlementOrderBy('grossProfit'), 'grossProfit')
+  assert.equal(sanitizeSettlementOrderBy('margin'), 'margin')
+  assert.equal(sanitizeSettlementOrderBy('mediaCost'), 'mediaCost')
+  assert.equal(sanitizeSettlementOrderBy('mediaCostInternal'), 'mediaCostInternal')
+  assert.equal(sanitizeSettlementOrderBy('impressions'), undefined)  // insights 키 (정산엔 부적합)
+  assert.equal(sanitizeSettlementOrderBy('drop_table'), undefined)
+  assert.equal(sanitizeSettlementOrderBy(null), undefined)
+})
+
+// ── friendlyOpenApiError ─────────────────────────────────────────
+test('friendlyOpenApiError: 기술코드 → 한글 메시지', () => {
+  assert.match(friendlyOpenApiError('TOKEN_MISSING'), /토큰이 설정되지 않았습니다/)
+  assert.match(friendlyOpenApiError('TIMEOUT'), /60초/)
+  assert.match(friendlyOpenApiError('NETWORK'), /네트워크/)
+  assert.match(friendlyOpenApiError('HTTP_401'), /만료|무효/)
+  assert.match(friendlyOpenApiError('HTTP_403'), /권한/)
+  assert.match(friendlyOpenApiError('HTTP_404'), /경로|미배포/)
+  assert.match(friendlyOpenApiError('HTTP_503'), /업스트림 서버/)
+  // 알 수 없는 code → message fallback
+  assert.equal(friendlyOpenApiError('UNKNOWN_CODE', '구체 메시지'), '구체 메시지')
 })
 
 // ── findDimension ────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { genId } from "@/lib/idGen"
 import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
+import { friendlyOpenApiError } from "@/lib/openApi/health"
 
 const SNAPSHOTS_KEY  = "media-cost-snapshots-v1"
 
@@ -518,10 +519,16 @@ export default function MediaCostPage() {
               {mediaSettlement.loading ? (
                 <div className="px-5 py-10 text-center text-sm text-gray-400">불러오는 중…</div>
               ) : mediaSettlement.error ? (
-                <div className="px-5 py-8 text-center">
-                  <p className="text-sm text-rose-500">매체비 조회 실패</p>
-                  <p className="mt-1 text-[11px] text-gray-400">{mediaSettlement.error}</p>
-                </div>
+                (() => {
+                  const [code, ...rest] = mediaSettlement.error.split(':')
+                  const message = rest.join(':').trim() || undefined
+                  return (
+                    <div className="px-5 py-8 text-center">
+                      <p className="text-sm text-rose-600">{friendlyOpenApiError(code, message)}</p>
+                      <p className="mt-1 text-[11px] text-gray-400">상세 코드: {mediaSettlement.error}</p>
+                    </div>
+                  )
+                })()
               ) : rows.length === 0 ? (
                 <div className="px-5 py-10 text-center text-sm text-gray-400">해당 월 CT/CTV 매체비 데이터가 없습니다.</div>
               ) : (
