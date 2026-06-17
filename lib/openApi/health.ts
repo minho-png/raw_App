@@ -39,3 +39,34 @@ export function mapHealthStatus(httpStatus: number, code: string | undefined): O
   if (httpStatus >= 500) return 'server_error'
   return 'error'
 }
+
+/**
+ * 에러 code/message → 사용자 친화 한글 메시지. 정산 페이지의 에러 박스에 쓰임.
+ * (FE-5 PM QA 점검 — `TOKEN_MISSING`/`HTTP_401` 같은 기술코드 노출 회피).
+ */
+export function friendlyOpenApiError(code?: string, message?: string): string {
+  switch (code) {
+    case 'TOKEN_MISSING':
+      return 'Open API 토큰이 설정되지 않았습니다. 관리자에게 문의하거나 환경변수(OPEN_API_TOKEN)를 확인해 주세요.'
+    case 'TOKEN_INVALID':
+      return 'Open API 토큰 형식이 올바르지 않습니다. 재발급 후 다시 등록해 주세요.'
+    case 'TIMEOUT':
+      return '응답이 60초를 초과했습니다. 잠시 후 다시 시도해 주세요.'
+    case 'NETWORK':
+      return '네트워크 연결을 확인해 주세요. (서버 도달 불가)'
+    case 'HTTP_401':
+      return '토큰이 만료되었거나 무효합니다. 재발급 후 환경변수를 갱신해 주세요.'
+    case 'HTTP_403':
+      return '이 API 에 대한 권한이 없습니다. 관리자에게 문의해 주세요.'
+    case 'HTTP_404':
+      return '엔드포인트 경로 오류 또는 미배포 상태입니다. 관리자에게 문의해 주세요.'
+    case 'VALIDATION_ERROR':
+    case 'BAD_REQUEST':
+      return `요청 파라미터가 올바르지 않습니다.${message ? ` (${message})` : ''}`
+    case 'INTERNAL':
+      return `서버 내부 오류가 발생했습니다.${message ? ` (${message})` : ''}`
+    default:
+      if (code?.startsWith('HTTP_5')) return '업스트림 서버 일시 장애입니다. 잠시 후 재시도해 주세요.'
+      return message || code || '알 수 없는 오류가 발생했습니다.'
+  }
+}

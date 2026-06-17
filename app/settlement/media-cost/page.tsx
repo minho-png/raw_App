@@ -11,6 +11,9 @@ import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { genId } from "@/lib/idGen"
+import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
+import { findDimension } from "@/lib/openApi/settlementsTypes"
+import { friendlyOpenApiError } from "@/lib/openApi/health"
 
 const SNAPSHOTS_KEY  = "media-cost-snapshots-v1"
 
@@ -61,6 +64,8 @@ export default function MediaCostPage() {
   const [showHistory, setShowHistory]   = useState(false)
   const [confirmedToast, setConfirmedToast] = useState(false)
   const [noteInput, setNoteInput]       = useState('')
+  // 내부거래 매체비 포함 여부 (Open API includeInternalTrade). 기본 포함.
+  const [includeInternal, setIncludeInternal] = useState(true)
 
   const showCtPlus = product === 'ALL' || product === 'CT_PLUS'
   const showCt     = product === 'ALL' || product === 'CT'
@@ -70,6 +75,16 @@ export default function MediaCostPage() {
   const motivFetch = useMotivSettlementCampaignsByProduct(
     motivProduct ?? 'CT', month, motivProduct !== null,
   )
+  // CT/CTV 매체비 — 새 Open API 정산 집계(월 단위, groupBy=MEDIA). 기존엔 "CT+ 전용"
+  // 안내만 있고 실데이터가 없던 자리를 실제 매체별 mediaCost/mediaCostInternal 로 채움.
+  const mediaSettlement = useOpenApiSettlements({
+    month,
+    groupBy: ['MEDIA'],
+    includeInternalTrade: includeInternal,
+    orderBy: 'mediaCost',
+    order: 'DESC',
+    enabled: motivProduct !== null,
+  })
 
   useEffect(() => {
     try {
@@ -478,15 +493,89 @@ export default function MediaCostPage() {
           </div>
         ))}
 
-        {/* 매체 비용은 CT+ 전용 — CT/CTV 선택 시 안내만 표시 */}
-        {motivProduct && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
-            매체 비용은 CT+ 정산 전용입니다. CT · CTV 대행사 지정은{" "}
-            <a href="/campaign/ct-plus/final" className="font-semibold underline">정산 확인</a> 에서,
-            대행사별 집계는{" "}
-            <a href="/settlement/agency-fee" className="font-semibold underline">대행사별 수수료</a> 페이지에서 확인하세요.
-          </div>
-        )}
+        {/* CT/CTV 매체별 비용 — 새 Open API 정산 집계 (월 단위, groupBy=MEDIA) */}
+        {motivProduct && (() => {
+          const rows = mediaSettlement.rows
+          const totalMediaCost = rows.reduce((s, r) => s + (r.metrics.mediaCost ?? 0), 0)
+          const totalInternal  = rows.reduce((s, r) => s + (r.metrics.mediaCostInternal ?? 0), 0)
+          return (
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-gray-700">CT/CTV 매체별 비용 ({month})</p>
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600">Open API</span>
+                </div>
+                <label className="flex items-center gap-1.5 text-[11px] text-gray-500 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeInternal}
+                    onChange={e => setIncludeInternal(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-indigo-600"
+                  />
+                  내부거래 매체비 포함
+                </label>
+              </div>
+
+              {mediaSettlement.loading ? (
+                <div className="px-5 py-10 text-center text-sm text-gray-400">불러오는 중…</div>
+              ) : mediaSettlement.error ? (
+                (() => {
+                  const [code, ...rest] = mediaSettlement.error.split(':')
+                  const message = rest.join(':').trim() || undefined
+                  return (
+                    <div className="px-5 py-8 text-center">
+                      <p className="text-sm text-rose-600">{friendlyOpenApiError(code, message)}</p>
+                      <p className="mt-1 text-[11px] text-gray-400">상세 코드: {mediaSettlement.error}</p>
+                    </div>
+                  )
+                })()
+              ) : rows.length === 0 ? (
+                <div className="px-5 py-10 text-center text-sm text-gray-400">해당 월 CT/CTV 매체비 데이터가 없습니다.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50">
+                        <th className="px-5 py-2.5 text-left font-medium text-gray-500">매체</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500">매체비</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="내부거래 매체비 (mediaCostInternal)">내부거래분</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500">비중</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {rows.map((r, i) => {
+                        const media = findDimension(r, 'MEDIA')
+                        const cost = r.metrics.mediaCost ?? 0
+                        const internal = r.metrics.mediaCostInternal ?? 0
+                        return (
+                          <tr key={media?.id ?? i} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-5 py-2.5 font-medium text-gray-800">{media?.name ?? media?.id ?? '—'}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">₩{fmt(cost)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-400">{internal ? `₩${fmt(internal)}` : '—'}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">
+                              {totalMediaCost > 0 ? ((cost / totalMediaCost) * 100).toFixed(1) + '%' : '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                        <td className="px-5 py-2.5 text-xs text-gray-600">합계</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-800">₩{fmt(totalMediaCost)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-400">{totalInternal ? `₩${fmt(totalInternal)}` : '—'}</td>
+                        <td className="px-3 py-2.5"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+              <div className="border-t border-gray-100 px-5 py-2.5 text-[11px] text-gray-400">
+                CT+ 매체비는 위 표(자체 입력/raw 기준), CT/CTV 매체비는 Open API 정산 집계(월 단위) 기준입니다.
+              </div>
+            </div>
+          )
+        })()}
 
         {/* 정산 확정 (CT+) */}
         {showCtPlus && rows.length > 0 && (

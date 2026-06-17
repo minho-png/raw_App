@@ -70,3 +70,59 @@ export function validateDateRange(level: InsightsLevel, dateFrom: string, dateTo
   if (level === 'HOURLY' && days > 7) return { ok: false, message: 'HOURLY level 은 최대 7일 (포함 기준).' }
   return { ok: true, value: days }
 }
+
+// ── 정산 집계(/settlements) 검증 (명세 docs/OPEN_API_INSIGHTS_SPEC.md) ──────────
+/** groupBy 허용 차원 토큰. */
+export const ALLOWED_GROUP_BY = ['DATE', 'AGENCY', 'MEDIA', 'DATA_PROVIDER'] as const
+export type GroupByDim = typeof ALLOWED_GROUP_BY[number]
+/** 조회 기간 상한 (포함 일수 기준) — 초과 시 422. */
+export const SETTLEMENT_MAX_DAYS = 366
+
+/** dateFrom..dateTo 가 최대 366일(포함) 이내인지 + 순서. */
+export function validateSettlementDateRange(dateFrom: string, dateTo: string): Check<number> {
+  if (dateFrom > dateTo) return { ok: false, message: 'dateFrom 이 dateTo 보다 늦을 수 없습니다.' }
+  const days = daysBetween(dateFrom, dateTo)
+  if (days > SETTLEMENT_MAX_DAYS) {
+    return { ok: false, message: `조회 기간은 최대 ${SETTLEMENT_MAX_DAYS}일 (포함 기준) 입니다.` }
+  }
+  return { ok: true, value: days }
+}
+
+/**
+ * groupBy 콤마결합 문자열 검증 — 화이트리스트, 중복 불가, 최대 4개. 나열 순서 보존.
+ * 빈 값이면 기본 차원 ['DATE'] (명세 default). 잘못된 토큰/중복은 422.
+ */
+export function validateGroupBy(value: string | null): Check<GroupByDim[]> {
+  if (!value || !value.trim()) return { ok: true, value: ['DATE'] }
+  const tokens = value.split(',').map(t => t.trim()).filter(Boolean)
+  if (tokens.length === 0) return { ok: true, value: ['DATE'] }
+  if (tokens.length > 4) return { ok: false, message: 'groupBy 는 최대 4개 차원까지 가능합니다.' }
+  const seen = new Set<string>()
+  const out: GroupByDim[] = []
+  for (const t of tokens) {
+    if (!(ALLOWED_GROUP_BY as readonly string[]).includes(t)) {
+      return { ok: false, message: `groupBy 는 ${ALLOWED_GROUP_BY.join('/')} 중에서만 가능합니다 (받은 값: ${t}).` }
+    }
+    if (seen.has(t)) return { ok: false, message: `groupBy 차원 중복 불가 (${t}).` }
+    seen.add(t)
+    out.push(t as GroupByDim)
+  }
+  return { ok: true, value: out }
+}
+
+/** 단일 ID 필터 (agencyId/mediaId/dataProviderId) — 안전 문자만, 길이 제한. */
+export function sanitizeSingleId(value: string | null): string | undefined {
+  if (!value) return undefined
+  const v = value.trim()
+  if (!v || v.length > 64) return undefined
+  // ID/코드: 영숫자·_-만 허용 (인젝션 표면 차단).
+  return /^[A-Za-z0-9_-]+$/.test(v) ? v : undefined
+}
+
+/** 정산 orderBy 허용 키 (명세상 metrics 키). 화이트리스트 외 값은 silent drop. */
+export const ALLOWED_SETTLEMENT_ORDER_BY = new Set([
+  'revenue', 'grossProfit', 'margin', 'mediaCost', 'mediaCostInternal',
+])
+export function sanitizeSettlementOrderBy(value: string | null): string | undefined {
+  return value && ALLOWED_SETTLEMENT_ORDER_BY.has(value) ? value : undefined
+}

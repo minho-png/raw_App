@@ -36,6 +36,9 @@ import { useMotivAdGroups } from "@/lib/hooks/useMotivAdGroups"
 import { useSettlementOverrides, applyOverride, isOverrideStale } from "@/lib/hooks/useSettlementOverrides"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { ModalShell } from "@/components/atoms/ModalShell"
+import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
+import { findDimension } from "@/lib/openApi/settlementsTypes"
+import { friendlyOpenApiError } from "@/lib/openApi/health"
 
 function fmt(n: number) { return roundWon(n).toLocaleString("ko-KR") }
 function toMonthStr(d: Date) {
@@ -94,6 +97,15 @@ export default function SalesPurchasePage() {
   const motivProduct = showCt && showCtv ? 'CT_CTV_BOTH' : showCtv ? 'CTV' : showCt ? 'CT' : null
   const motivFetch = useMotivSettlementCampaignsByProduct(motivProduct ?? 'CT', month, motivProduct !== null)
   const { data: assignments } = useMotivAssignments()
+  // CT/CTV 매출/매입 — 새 Open API 정산 집계 (월 단위, groupBy=AGENCY). 실측
+  // revenue/grossProfit/margin/mediaCost 직접 제공 (cost×요율 파생 불필요).
+  const agencySettlement = useOpenApiSettlements({
+    month,
+    groupBy: ['AGENCY'],
+    orderBy: 'revenue',
+    order: 'DESC',
+    enabled: motivProduct !== null,
+  })
 
   // ── 매출/매입 정확성 보정 — campaigns.index 의 stats 는 lifetime 누적 가능성. ──
   // /stats/campaign/breakdown 으로 해당 월의 정확한 기간 stats 를 별도 fetch.
@@ -291,6 +303,80 @@ export default function SalesPurchasePage() {
             </div>
           }
         />
+
+        {/* CT/CTV 대행사별 정산 (Open API · 월별 실측) — revenue/grossProfit/margin/mediaCost */}
+        {motivProduct && (() => {
+          const rows = agencySettlement.rows
+          const tot = rows.reduce((a, r) => ({
+            revenue: a.revenue + (r.metrics.revenue ?? 0),
+            grossProfit: a.grossProfit + (r.metrics.grossProfit ?? 0),
+            mediaCost: a.mediaCost + (r.metrics.mediaCost ?? 0),
+          }), { revenue: 0, grossProfit: 0, mediaCost: 0 })
+          return (
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+                <p className="text-xs font-semibold text-gray-700">CT/CTV 대행사별 정산 ({month})</p>
+                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600">Open API 실측</span>
+              </div>
+              {agencySettlement.loading ? (
+                <div className="px-5 py-10 text-center text-sm text-gray-400">불러오는 중…</div>
+              ) : agencySettlement.error ? (
+                (() => {
+                  const [code, ...rest] = agencySettlement.error.split(':')
+                  const message = rest.join(':').trim() || undefined
+                  return (
+                    <div className="px-5 py-8 text-center">
+                      <p className="text-sm text-rose-600">{friendlyOpenApiError(code, message)}</p>
+                      <p className="mt-1 text-[11px] text-gray-400">상세 코드: {agencySettlement.error}</p>
+                    </div>
+                  )
+                })()
+              ) : rows.length === 0 ? (
+                <div className="px-5 py-10 text-center text-sm text-gray-400">해당 월 CT/CTV 정산 데이터가 없습니다.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50">
+                        <th className="px-5 py-2.5 text-left font-medium text-gray-500">대행사</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="revenue">매출</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="mediaCost">매체비(매입)</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="grossProfit">매출총이익</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="margin">마진</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {rows.map((r, i) => {
+                        const ag = findDimension(r, 'AGENCY')
+                        return (
+                          <tr key={ag?.id ?? i} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-5 py-2.5 font-medium text-gray-800">{ag?.name ?? ag?.id ?? '—'}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-800">₩{fmt(r.metrics.revenue ?? 0)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">₩{fmt(r.metrics.mediaCost ?? 0)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-emerald-700">₩{fmt(r.metrics.grossProfit ?? 0)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">{fmt(r.metrics.margin ?? 0)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                        <td className="px-5 py-2.5 text-xs text-gray-600">합계</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-800">₩{fmt(tot.revenue)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-600">₩{fmt(tot.mediaCost)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs text-emerald-700">₩{fmt(tot.grossProfit)}</td>
+                        <td className="px-3 py-2.5"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+              <div className="border-t border-gray-100 px-5 py-2.5 text-[11px] text-gray-400">
+                CT/CTV 정산은 Open API 월별 실측(revenue/grossProfit/margin/mediaCost) 기준. 아래 매출/매입 표는 기존(CT+ raw + Motiv) 기준.
+              </div>
+            </div>
+          )
+        })()}
 
         {isPastMonth && (
           <div className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs text-blue-900">
