@@ -13,6 +13,9 @@ import { useMotivAdGroups } from "@/lib/hooks/useMotivAdGroups"
 import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import { labelForTargetingProductId, motivTypeToProduct, type MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { getAdvertiserName } from "@/lib/motivApi/advertiserHelpers"
+import { useOpenApiDataProviders } from "@/lib/hooks/useOpenApiDataProviders"
+import { findDimension } from "@/lib/openApi/settlementsTypes"
+import { friendlyOpenApiError } from "@/lib/openApi/health"
 
 /**
  * DMP 수수료 정산 페이지 — 통합 표.
@@ -81,6 +84,13 @@ export default function DmpFeeClient() {
     const end   = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
     return { start, end }
   }, [month])
+
+  // Open API DATA_PROVIDER 집계 — DMP 공식 정산값 (월 단위 실측).
+  // mediaCost 외의 데이터비용 metric 은 명세 미확정 — metrics 표 받으면 그 필드로 교체.
+  const dataProviderSettlement = useOpenApiDataProviders({
+    month,
+    enabled: motivProduct !== null,
+  })
 
   const motivFetch = useMotivSettlementCampaignsByProduct(
     motivProduct ?? 'CT',
@@ -384,6 +394,75 @@ export default function DmpFeeClient() {
           month={month} onMonthChange={setMonth}
           product={product} onProductChange={setProduct}
         />
+
+        {/* DMP 공식 정산값 — Open API DATA_PROVIDER 집계 (월별 실측, 사용자 결정 2026-06-16) */}
+        {motivProduct && (() => {
+          const rows = dataProviderSettlement.rows
+          const totalCost = rows.reduce((s, r) => s + (r.metrics.mediaCost ?? 0), 0)
+          return (
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+                <p className="text-xs font-semibold text-gray-700">DMP(데이터 제공자)별 정산 ({month})</p>
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+              </div>
+              {dataProviderSettlement.loading ? (
+                <div className="px-5 py-10 text-center text-sm text-gray-400">불러오는 중…</div>
+              ) : dataProviderSettlement.error ? (
+                (() => {
+                  const [code, ...rest] = dataProviderSettlement.error.split(':')
+                  const message = rest.join(':').trim() || undefined
+                  return (
+                    <div className="px-5 py-8 text-center">
+                      <p className="text-sm text-rose-600">{friendlyOpenApiError(code, message)}</p>
+                      <p className="mt-1 text-[11px] text-gray-400">상세 코드: {dataProviderSettlement.error}</p>
+                    </div>
+                  )
+                })()
+              ) : rows.length === 0 ? (
+                <div className="px-5 py-10 text-center text-sm text-gray-400">해당 월 DMP 정산 데이터가 없습니다.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50">
+                        <th className="px-5 py-2.5 text-left font-medium text-gray-500">데이터 제공자</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="mediaCost">매체비</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500">비중</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {rows.map((r, i) => {
+                        const dp = findDimension(r, 'DATA_PROVIDER')
+                        const cost = r.metrics.mediaCost ?? 0
+                        // 명세: 데이터비용 없으면 id="NON", name="데이터비용 없음"
+                        const isNone = dp?.id === 'NON'
+                        return (
+                          <tr key={dp?.id ?? i} className={`hover:bg-gray-50/50 transition-colors ${isNone ? 'text-gray-400' : ''}`}>
+                            <td className="px-5 py-2.5 font-medium">{dp?.name ?? dp?.id ?? '—'}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums">₩{fmtNum(cost)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums">{totalCost > 0 ? ((cost / totalCost) * 100).toFixed(1) + '%' : '—'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                        <td className="px-5 py-2.5 text-xs text-gray-600">합계</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-800">₩{fmtNum(totalCost)}</td>
+                        <td className="px-3 py-2.5"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+              <div className="border-t border-gray-100 px-5 py-2.5 text-[11px] text-gray-500">
+                <strong className="text-emerald-700">DMP 정산 공식값</strong>은 이 표(Open API DATA_PROVIDER · 월별 실측) 기준입니다.
+                아래 통합 표는 기존(CT+ raw + Motiv) 기반 <span className="text-amber-700">참고용</span>.
+                <span className="ml-1 text-gray-400">⚠ 데이터비용 분해 metric 은 명세 미확정 — 현재 mediaCost 만 표시. 명세 확정 시 dataFee 로 교체.</span>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* 사용자 QA 보고 — 진단 카드가 프로덕션 노출되어 신뢰도/보안 위험.
             NODE_ENV=development 또는 URL ?debug=1 일 때만 노출. */}
