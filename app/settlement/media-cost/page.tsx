@@ -503,7 +503,7 @@ export default function MediaCostPage() {
               <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100">
                 <div className="flex items-center gap-2">
                   <p className="text-xs font-semibold text-gray-700">CT/CTV 매체별 비용 ({month})</p>
-                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600">Open API</span>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
                 </div>
                 <label className="flex items-center gap-1.5 text-[11px] text-gray-500 select-none cursor-pointer">
                   <input
@@ -570,8 +570,9 @@ export default function MediaCostPage() {
                   </table>
                 </div>
               )}
-              <div className="border-t border-gray-100 px-5 py-2.5 text-[11px] text-gray-400">
-                CT+ 매체비는 위 표(자체 입력/raw 기준), CT/CTV 매체비는 Open API 정산 집계(월 단위) 기준입니다.
+              <div className="border-t border-gray-100 px-5 py-2.5 text-[11px] text-gray-500">
+                <strong className="text-emerald-700">CT/CTV 정산 공식값</strong>은 이 표(Open API 월별 실측) 기준입니다.
+                위쪽 CT+ 상세는 자체 입력 / raw CSV 기반으로 별도 산정합니다.
               </div>
             </div>
           )
