@@ -14,6 +14,9 @@ import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { motivTypeToProduct } from "@/lib/motivApi/productMapping"
 import { roundWon } from "@/lib/calculationService"
 import { genId } from "@/lib/idGen"
+import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
+import { findDimension } from "@/lib/openApi/settlementsTypes"
+import { friendlyOpenApiError } from "@/lib/openApi/health"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
 
@@ -79,6 +82,14 @@ export default function AgencyFeePage() {
     motivProduct ?? 'CT', month, motivProduct !== null,
   )
   const { data: assignments } = useMotivAssignments()
+  // Open API AGENCY 집계 — 대행사 정산 공식값 (월별 실측). cost×요율 파생 불필요.
+  const agencySettlement = useOpenApiSettlements({
+    month,
+    groupBy: ['AGENCY'],
+    orderBy: 'mediaCost',
+    order: 'DESC',
+    enabled: motivProduct !== null,
+  })
 
   // 사용자 요구 — 매입/매출 시트(sales-purchase)와 동일 API 필터링 방식 적용.
   // /v1/stats/campaign/breakdown 로 해당 월의 정확한 기간 spend/agencyFee/dataFee 를
@@ -406,6 +417,82 @@ export default function AgencyFeePage() {
             </div>
           }
         />
+
+        {/* CT/CTV 대행사별 공식 정산값 — Open API AGENCY 집계 (월별 실측) */}
+        {motivProduct && (() => {
+          const rows = agencySettlement.rows
+          const tot = rows.reduce((a, r) => ({
+            revenue: a.revenue + (r.metrics.revenue ?? 0),
+            mediaCost: a.mediaCost + (r.metrics.mediaCost ?? 0),
+            grossProfit: a.grossProfit + (r.metrics.grossProfit ?? 0),
+          }), { revenue: 0, mediaCost: 0, grossProfit: 0 })
+          return (
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+                <p className="text-xs font-semibold text-gray-700">대행사별 공식 정산 ({month})</p>
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+              </div>
+              {agencySettlement.loading ? (
+                <div className="px-5 py-10 text-center text-sm text-gray-400">불러오는 중…</div>
+              ) : agencySettlement.error ? (
+                (() => {
+                  const [code, ...rest] = agencySettlement.error.split(':')
+                  const message = rest.join(':').trim() || undefined
+                  return (
+                    <div className="px-5 py-8 text-center">
+                      <p className="text-sm text-rose-600">{friendlyOpenApiError(code, message)}</p>
+                      <p className="mt-1 text-[11px] text-gray-400">상세 코드: {agencySettlement.error}</p>
+                    </div>
+                  )
+                })()
+              ) : rows.length === 0 ? (
+                <div className="px-5 py-10 text-center text-sm text-gray-400">해당 월 CT/CTV 대행사 정산 데이터가 없습니다.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50">
+                        <th className="px-5 py-2.5 text-left font-medium text-gray-500">대행사</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="revenue">매출</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="mediaCost">매체비</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="grossProfit">매출총이익</th>
+                        <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="margin">마진</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {rows.map((r, i) => {
+                        const ag = findDimension(r, 'AGENCY')
+                        return (
+                          <tr key={ag?.id ?? i} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-5 py-2.5 font-medium text-gray-800">{ag?.name ?? ag?.id ?? '—'}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-800">₩{fmt(r.metrics.revenue ?? 0)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">₩{fmt(r.metrics.mediaCost ?? 0)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-emerald-700">₩{fmt(r.metrics.grossProfit ?? 0)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">{fmt(r.metrics.margin ?? 0)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                        <td className="px-5 py-2.5 text-xs text-gray-600">합계</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-800">₩{fmt(tot.revenue)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-600">₩{fmt(tot.mediaCost)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs text-emerald-700">₩{fmt(tot.grossProfit)}</td>
+                        <td className="px-3 py-2.5"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+              <div className="border-t border-gray-100 px-5 py-2.5 text-[11px] text-gray-500">
+                <strong className="text-emerald-700">CT/CTV 대행사 정산 공식값</strong>은 이 표(Open API AGENCY · 월별 실측) 기준입니다.
+                <span className="ml-1 text-amber-600">아래 표·확정 카드는 참고용</span> (CT+ raw + Motiv lifetime).
+                <span className="ml-1 text-gray-400">⚠ 순수 대행수수료(agency_fee) 분해 metric 미확정 — grossProfit 으로 보조 표기.</span>
+              </div>
+            </div>
+          )
+        })()}
 
         {allRows.length === 0 && showCtPlus && filtered.length > 0 && (
           <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
