@@ -17,6 +17,7 @@ import { genId } from "@/lib/idGen"
 import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
 import { friendlyOpenApiError } from "@/lib/openApi/health"
+import { AgencyFeeSplitsPanel } from "@/components/settlement/AgencyFeeSplitsPanel"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
 
@@ -30,6 +31,8 @@ interface ResultRow {
   spend: number
   feeRate: number
   fee: number
+  /** 캠페인 식별자 (다중 지급처 패널 연동용, 2026-06-22). Motiv: `motiv-{id}`, CT+: campaign.id. */
+  _campaignId?: string
 }
 
 interface SettlementSnapshot {
@@ -190,6 +193,7 @@ export default function AgencyFeePage() {
             spend: roundWon(spend.dmp),
             feeRate: dmpRate,
             fee: roundWon(spend.dmp * dmpRate / 100),
+            _campaignId: c.id,
           })
         }
         if (spend.nonDmp > 0 && nonRate > 0) {
@@ -200,6 +204,7 @@ export default function AgencyFeePage() {
             spend: roundWon(spend.nonDmp),
             feeRate: nonRate,
             fee: roundWon(spend.nonDmp * nonRate / 100),
+            _campaignId: c.id,
           })
         }
       }
@@ -236,6 +241,7 @@ export default function AgencyFeePage() {
         spend,
         feeRate,
         fee: agencyFee,
+        _campaignId: `motiv-${c.id}`,
       })
     }
   }
@@ -766,6 +772,19 @@ export default function AgencyFeePage() {
             statsByMotivId={statsByMotivId}
           />
         )}
+
+        {/* 캠페인별 다중 지급처 (사용자 요청 2026-06-22) — agency_fee_splits 인프라 활용 */}
+        <AgencyFeeSplitsPanel
+          month={month}
+          campaigns={Array.from(allRows.reduce((m, r) => {
+            const id = r._campaignId
+            if (!id) return m
+            const cur = m.get(id) ?? { campaignId: id, campaignName: r.campaignName, agencyName: r.agencyName, baselineAmount: 0 }
+            cur.baselineAmount += r.fee
+            m.set(id, cur)
+            return m
+          }, new Map<string, { campaignId: string; campaignName: string; agencyName?: string; baselineAmount: number }>()).values())}
+        />
 
       </main>
     </div>
