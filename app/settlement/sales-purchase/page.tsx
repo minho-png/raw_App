@@ -220,6 +220,10 @@ export default function SalesPurchasePage() {
     [purchaseRows, purchaseOv.byKey],
   )
 
+  // 확정 잠금된 rowKey 집합 (PR-2 frozen 활용).
+  const frozenSalesKeys    = useMemo(() => new Set(salesOv.data.filter(o => o.frozen).map(o => o.rowKey)),    [salesOv.data])
+  const frozenPurchaseKeys = useMemo(() => new Set(purchaseOv.data.filter(o => o.frozen).map(o => o.rowKey)), [purchaseOv.data])
+
   // 수정 모달 상태
   const [editTarget, setEditTarget] = useState<{ type: 'sales' | 'purchase'; row: SalesRow | PurchaseRow } | null>(null)
 
@@ -455,8 +459,8 @@ export default function SalesPurchasePage() {
             </span>
           </div>
         )}
-        {view === 'sales'    && <SalesTable    rows={visibleSales}    emptyDiag={emptyDiag} onEdit={r => setEditTarget({ type: 'sales',    row: r })} />}
-        {view === 'purchase' && <PurchaseTable rows={visiblePurchase} emptyDiag={emptyDiag} onEdit={r => setEditTarget({ type: 'purchase', row: r })} />}
+        {view === 'sales'    && <SalesTable    rows={visibleSales}    emptyDiag={emptyDiag} frozenKeys={frozenSalesKeys}    onEdit={r => setEditTarget({ type: 'sales',    row: r })} onToggleConfirm={(r, lock) => (lock ? salesOv.confirm(r._rowKey)    : salesOv.unconfirm(r._rowKey))} />}
+        {view === 'purchase' && <PurchaseTable rows={visiblePurchase} emptyDiag={emptyDiag} frozenKeys={frozenPurchaseKeys} onEdit={r => setEditTarget({ type: 'purchase', row: r })} onToggleConfirm={(r, lock) => (lock ? purchaseOv.confirm(r._rowKey) : purchaseOv.unconfirm(r._rowKey))} />}
       </main>
 
       {editTarget && (
@@ -510,7 +514,13 @@ function SettlementEmptyState({ diag }: { diag: EmptyDiag }) {
 }
 
 // ─── 매출 테이블 ────────────────────────────────────────────────
-function SalesTable({ rows, emptyDiag, onEdit }: { rows: SalesRow[]; emptyDiag: EmptyDiag; onEdit: (r: SalesRow) => void }) {
+function SalesTable({ rows, emptyDiag, onEdit, frozenKeys, onToggleConfirm }: {
+  rows: SalesRow[]
+  emptyDiag: EmptyDiag
+  onEdit: (r: SalesRow) => void
+  frozenKeys?: Set<string>
+  onToggleConfirm?: (r: SalesRow, lock: boolean) => Promise<boolean | void>
+}) {
   if (rows.length === 0) {
     return <SettlementEmptyState diag={emptyDiag} />
   }
@@ -544,18 +554,30 @@ function SalesTable({ rows, emptyDiag, onEdit }: { rows: SalesRow[]; emptyDiag: 
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {rows.map((r, i) => (
-            <tr key={r._rowKey ?? i} className="hover:bg-gray-50">
-              <td className="px-1 py-1 text-center">
+          {rows.map((r, i) => {
+            const isFrozen = frozenKeys?.has(r._rowKey) ?? false
+            return (
+            <tr key={r._rowKey ?? i} className={`hover:bg-gray-50 ${isFrozen ? 'bg-emerald-50/30' : ''}`}>
+              <td className="px-1 py-1 text-center whitespace-nowrap">
                 <button
                   onClick={() => onEdit(r)}
-                  className="rounded p-1 text-gray-400 hover:bg-emerald-100 hover:text-emerald-700"
-                  title="이 행 수정"
+                  disabled={isFrozen}
+                  className={`rounded p-1 ${isFrozen ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:bg-emerald-100 hover:text-emerald-700'}`}
+                  title={isFrozen ? '확정 잠금 — 해제 후 수정 가능' : '이 행 수정'}
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                 </button>
+                {onToggleConfirm && (
+                  <button
+                    onClick={() => onToggleConfirm(r, !isFrozen)}
+                    className={`ml-0.5 rounded p-1 ${isFrozen ? 'text-emerald-700 hover:bg-emerald-200' : 'text-gray-400 hover:bg-emerald-100 hover:text-emerald-700'}`}
+                    title={isFrozen ? '확정 해제' : '이 행 확정 (DB 저장 후 잠금)'}
+                  >
+                    {isFrozen ? '🔒' : '✓'}
+                  </button>
+                )}
               </td>
               <td className="px-2 py-1.5 text-gray-700">{r.해당월}</td>
               <td className="px-2 py-1.5 text-gray-700">{r.담당자}</td>
@@ -577,7 +599,8 @@ function SalesTable({ rows, emptyDiag, onEdit }: { rows: SalesRow[]; emptyDiag: 
               <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{r['IMC 해당금액 (vat 제외)'] > 0 ? fmt(r['IMC 해당금액 (vat 제외)']) : '-'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-indigo-600">{r['TV 해당금액 (vat 제외)'] > 0 ? fmt(r['TV 해당금액 (vat 제외)']) : '-'}</td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
         <tfoot className="bg-gray-100">
           <tr>
@@ -598,7 +621,13 @@ function SalesTable({ rows, emptyDiag, onEdit }: { rows: SalesRow[]; emptyDiag: 
 }
 
 // ─── 매입 테이블 ────────────────────────────────────────────────
-function PurchaseTable({ rows, emptyDiag, onEdit }: { rows: PurchaseRow[]; emptyDiag: EmptyDiag; onEdit: (r: PurchaseRow) => void }) {
+function PurchaseTable({ rows, emptyDiag, onEdit, frozenKeys, onToggleConfirm }: {
+  rows: PurchaseRow[]
+  emptyDiag: EmptyDiag
+  onEdit: (r: PurchaseRow) => void
+  frozenKeys?: Set<string>
+  onToggleConfirm?: (r: PurchaseRow, lock: boolean) => Promise<boolean | void>
+}) {
   if (rows.length === 0) {
     return <SettlementEmptyState diag={emptyDiag} />
   }
@@ -635,18 +664,30 @@ function PurchaseTable({ rows, emptyDiag, onEdit }: { rows: PurchaseRow[]; empty
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {rows.map((r, i) => (
-            <tr key={r._rowKey ?? i} className="hover:bg-gray-50">
-              <td className="px-1 py-1 text-center">
+          {rows.map((r, i) => {
+            const isFrozen = frozenKeys?.has(r._rowKey) ?? false
+            return (
+            <tr key={r._rowKey ?? i} className={`hover:bg-gray-50 ${isFrozen ? 'bg-emerald-50/30' : ''}`}>
+              <td className="px-1 py-1 text-center whitespace-nowrap">
                 <button
                   onClick={() => onEdit(r)}
-                  className="rounded p-1 text-gray-400 hover:bg-blue-100 hover:text-blue-700"
-                  title="이 행 수정"
+                  disabled={isFrozen}
+                  className={`rounded p-1 ${isFrozen ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:bg-blue-100 hover:text-blue-700'}`}
+                  title={isFrozen ? '확정 잠금 — 해제 후 수정 가능' : '이 행 수정'}
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                 </button>
+                {onToggleConfirm && (
+                  <button
+                    onClick={() => onToggleConfirm(r, !isFrozen)}
+                    className={`ml-0.5 rounded p-1 ${isFrozen ? 'text-emerald-700 hover:bg-emerald-200' : 'text-gray-400 hover:bg-emerald-100 hover:text-emerald-700'}`}
+                    title={isFrozen ? '확정 해제' : '이 행 확정 (DB 저장 후 잠금)'}
+                  >
+                    {isFrozen ? '🔒' : '✓'}
+                  </button>
+                )}
               </td>
               <td className="px-2 py-1.5 text-gray-700">{r.년월}</td>
               <td className="px-2 py-1.5 text-gray-700">{r.담당자}</td>
@@ -670,7 +711,8 @@ function PurchaseTable({ rows, emptyDiag, onEdit }: { rows: PurchaseRow[]; empty
               <td className="px-2 py-1.5 text-right tabular-nums text-indigo-600">{r.TV > 0 ? fmt(r.TV) : '-'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{r.CT > 0 ? fmt(r.CT) : '-'}</td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
         <tfoot className="bg-gray-100">
           <tr>
