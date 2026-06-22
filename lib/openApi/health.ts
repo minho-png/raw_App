@@ -60,12 +60,20 @@ export function friendlyOpenApiError(code?: string, message?: string): string {
       return '이 API 에 대한 권한이 없습니다. 관리자에게 문의해 주세요.'
     case 'HTTP_404':
       return '엔드포인트 경로 오류 또는 미배포 상태입니다. 관리자에게 문의해 주세요.'
+    case 'HTTP_429':
+      return '요청 한도(rate limit)에 도달했습니다. 잠시 후 다시 시도해 주세요.'
+    case 'HTTP_500':
+    case 'HTTP_502':
+    case 'HTTP_503':
+    case 'HTTP_504':
+      return '업스트림 서버 일시 장애입니다. 잠시 후 재시도해 주세요.'
     case 'VALIDATION_ERROR':
     case 'BAD_REQUEST':
       return `요청 파라미터가 올바르지 않습니다.${message ? ` (${message})` : ''}`
     case 'INTERNAL':
       return `서버 내부 오류가 발생했습니다.${message ? ` (${message})` : ''}`
     default:
+      // 명시 case 외의 5xx 도 업스트림 장애로 분류 (HTTP_505 등 회귀 잠금).
       if (code?.startsWith('HTTP_5')) return '업스트림 서버 일시 장애입니다. 잠시 후 재시도해 주세요.'
       return message || code || '알 수 없는 오류가 발생했습니다.'
   }

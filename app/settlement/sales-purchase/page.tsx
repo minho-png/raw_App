@@ -304,6 +304,16 @@ export default function SalesPurchasePage() {
           }
         />
 
+        {/* product=CT_PLUS 단일 선택 시 Open API 정산 섹션 미표시 — 사용자 안내 (FE-B). */}
+        {!motivProduct && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-2.5 text-[11px] text-emerald-900 flex items-center gap-2">
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">안내</span>
+            <span>
+              <strong>CT/CTV 대행사별 공식 정산값(Open API)</strong>은 product 필터를 <strong>&apos;CT&apos;</strong>, <strong>&apos;CTV&apos;</strong>, 또는 <strong>&apos;ALL&apos;</strong> 로 선택하면 표시됩니다.
+            </span>
+          </div>
+        )}
+
         {/* CT/CTV 대행사별 정산 (Open API · 월별 실측) — revenue/grossProfit/margin/mediaCost */}
         {motivProduct && (() => {
           const rows = agencySettlement.rows
