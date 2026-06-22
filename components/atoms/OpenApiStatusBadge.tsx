@@ -147,8 +147,9 @@ export function OpenApiStatusBadge() {
       {status === 'ok' && identity && (
         <span className="font-mono opacity-80 hidden sm:inline">· {identity.mb_id}</span>
       )}
+      {/* QA-4: 에러 상태에서는 모바일에도 짧은 code 를 노출해 원인 즉시 파악. 정상 상태(mb_id) 는 sm 이상만. */}
       {showCode && (
-        <span className="font-mono opacity-70 hidden sm:inline">· {errorCode}</span>
+        <span className="font-mono opacity-70">· {errorCode}</span>
       )}
     </span>
   )

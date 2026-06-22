@@ -398,6 +398,17 @@ export default function DmpFeeClient() {
           product={product} onProductChange={setProduct}
         />
 
+        {/* product=CT_PLUS 단일 선택 시 Open API 정산 섹션 미표시 — 사용자 안내 (FE-B). */}
+        {!motivProduct && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-2.5 text-[11px] text-emerald-900 flex items-center gap-2">
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">안내</span>
+            <span>
+              <strong>CT/CTV 공식 정산값(Open API)</strong>은 product 필터를 <strong>&apos;CT&apos;</strong>, <strong>&apos;CTV&apos;</strong>, 또는 <strong>&apos;ALL&apos;</strong> 로 선택하면 표시됩니다.
+              현재는 CT+ 통합 표만 노출됩니다.
+            </span>
+          </div>
+        )}
+
         {/* DMP 공식 정산값 — Open API DATA_PROVIDER 집계 (월별 실측, 사용자 결정 2026-06-16) */}
         {motivProduct && (() => {
           const rows = dataProviderSettlement.rows
@@ -420,7 +431,10 @@ export default function DmpFeeClient() {
                 </label>
               </div>
               {dataProviderSettlement.loading ? (
-                <div className="px-5 py-10 text-center text-sm text-gray-400">불러오는 중…</div>
+                <div className="px-5 py-10 text-center text-sm text-gray-400 flex items-center justify-center gap-2">
+                  <svg className="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity=".25"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>
+                  불러오는 중…
+                </div>
               ) : dataProviderSettlement.error ? (
                 (() => {
                   const [code, ...rest] = dataProviderSettlement.error.split(':')
@@ -452,8 +466,9 @@ export default function DmpFeeClient() {
                         const cost = r.metrics.mediaCost ?? 0
                         // 명세: 데이터비용 없으면 id="NON", name="데이터비용 없음"
                         const isNone = dp?.id === 'NON'
+                        // QA-1: 같은 DMP+매체 조합이 여러 번 오면 key 중복 → index 추가로 고유성 보장.
                         return (
-                          <tr key={`${dp?.id ?? i}-${md?.id ?? ''}`} className={`hover:bg-gray-50/50 transition-colors ${isNone ? 'text-gray-400' : ''}`}>
+                          <tr key={`${dp?.id ?? '-'}-${md?.id ?? '-'}-${i}`} className={`hover:bg-gray-50/50 transition-colors ${isNone ? 'text-gray-400' : ''}`}>
                             <td className="px-5 py-2.5 font-medium">{dp?.name ?? dp?.id ?? '—'}</td>
                             {byMedia && <td className="px-4 py-2.5 text-gray-700">{md?.name ?? md?.id ?? '—'}</td>}
                             <td className="px-4 py-2.5 text-right tabular-nums">₩{fmtNum(cost)}</td>

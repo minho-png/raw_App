@@ -96,7 +96,13 @@ test('friendlyOpenApiError: 기술코드 → 한글 메시지', () => {
   assert.match(friendlyOpenApiError('HTTP_401'), /만료|무효/)
   assert.match(friendlyOpenApiError('HTTP_403'), /권한/)
   assert.match(friendlyOpenApiError('HTTP_404'), /경로|미배포/)
+  // QA-A/QA-5: 5xx 명시 case 회귀 잠금 (HTTP_500/502/503/504 + 명시 외 5xx).
+  assert.match(friendlyOpenApiError('HTTP_500'), /업스트림 서버/)
+  assert.match(friendlyOpenApiError('HTTP_502'), /업스트림 서버/)
   assert.match(friendlyOpenApiError('HTTP_503'), /업스트림 서버/)
+  assert.match(friendlyOpenApiError('HTTP_504'), /업스트림 서버/)
+  assert.match(friendlyOpenApiError('HTTP_505'), /업스트림 서버/)  // 명시 case 외 5xx
+  assert.match(friendlyOpenApiError('HTTP_429'), /한도|rate/i)
   // 알 수 없는 code → message fallback
   assert.equal(friendlyOpenApiError('UNKNOWN_CODE', '구체 메시지'), '구체 메시지')
 })
