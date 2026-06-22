@@ -331,3 +331,24 @@ export function deriveSettlementFromCost(
   const revenue = mediaCost + pureAgencyFee + dataFee
   return { mediaCost, pureAgencyFee, dataFee, agencyFeeTotal, revenue }
 }
+
+/**
+ * 마진율(margin) 표시 포맷 — 단위 휴리스틱 (사용자 결정 2026-06-22).
+ *
+ * Open API metrics 명세에서 margin 의 단위(소수 vs 퍼센트)가 미확정.
+ * roundWon 적용 시 소수(예: 0.15) 가 0 으로 표시되는 회귀를 방지하기 위해
+ * 휴리스틱 단위 추측:
+ *   - |m| < 1 (예: 0.15) → 소수 단위 → ×100 후 % 표시 ("15.00%")
+ *   - 1 ≤ |m| < 1000 (예: 15) → 퍼센트 단위 → 그대로 % 표시 ("15.0%")
+ *   - |m| ≥ 1000 → 기저점(basis point) 가능성 → 그대로 표시 ("1500")
+ *   - NaN/Infinity → "—"
+ *
+ * 명세 metrics 표 확보 후 단일 단위로 고정 권장.
+ */
+export function fmtMargin(m: number | undefined | null): string {
+  if (m === undefined || m === null || !Number.isFinite(m)) return '—'
+  const abs = Math.abs(m)
+  if (abs < 1) return (m * 100).toFixed(2) + '%'
+  if (abs < 1000) return m.toFixed(1) + '%'
+  return Math.round(m).toLocaleString('ko-KR')
+}
