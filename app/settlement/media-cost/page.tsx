@@ -14,6 +14,7 @@ import { genId } from "@/lib/idGen"
 import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
 import { friendlyOpenApiError } from "@/lib/openApi/health"
+import { MonthlyMediaCostGrid } from "@/components/settlement/MonthlyMediaCostGrid"
 
 const SNAPSHOTS_KEY  = "media-cost-snapshots-v1"
 
@@ -66,6 +67,8 @@ export default function MediaCostPage() {
   const [noteInput, setNoteInput]       = useState('')
   // 내부거래 매체비 포함 여부 (Open API includeInternalTrade). 기본 포함.
   const [includeInternal, setIncludeInternal] = useState(true)
+  // 사용자 요청 — 월별 매체 매입 비용 그리드 (선택 month 의 연도 기본).
+  const [gridYear, setGridYear] = useState(() => new Date().getFullYear())
 
   const showCtPlus = product === 'ALL' || product === 'CT_PLUS'
   const showCt     = product === 'ALL' || product === 'CT'
@@ -616,6 +619,10 @@ export default function MediaCostPage() {
             </div>
           </div>
         )}
+
+        {/* 월별 매체 매입 비용 그리드 — 사용자 요청 2026-06-22 (이미지 패턴 반영).
+            DB(monthly_media_costs)에 직접 저장. CTV/CT/CT+ 그룹별 매체사 행 + 1~12월 셀. */}
+        <MonthlyMediaCostGrid year={gridYear} onYearChange={setGridYear} />
       </main>
     </div>
   )
