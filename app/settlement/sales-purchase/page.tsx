@@ -553,7 +553,12 @@ function SalesTable({ rows, emptyDiag, onEdit }: { rows: SalesRow[]; emptyDiag: 
                 {r['거래처명 (사업자등록증 기준)']}
               </td>
               <td className="px-2 py-1.5 text-gray-600 truncate max-w-[160px]" title={r.광고주명}>{r.광고주명 || '-'}</td>
-              <td className="px-2 py-1.5 text-gray-700 truncate max-w-[260px]" title={r.캠페인명}>{r.캠페인명}</td>
+              <td className="px-2 py-1.5 text-gray-700 truncate max-w-[260px]" title={r.캠페인명}>
+                {r.캠페인명}
+                {r._isFree && (
+                  <span className="ml-1 inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700" title="무료 캠페인 (is_free)">무료</span>
+                )}
+              </td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-800">{fmt(r.공급가액)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{fmt(r.세액)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">{fmt(r.합계금액)}</td>
@@ -640,7 +645,12 @@ function PurchaseTable({ rows, emptyDiag, onEdit }: { rows: PurchaseRow[]; empty
                 {r['거래처명 (세금계산서 기준)']}
               </td>
               <td className="px-2 py-1.5 text-gray-600 truncate max-w-[160px]" title={r.광고주명}>{r.광고주명 || '-'}</td>
-              <td className="px-2 py-1.5 text-gray-700 truncate max-w-[260px]" title={r.캠페인명}>{r.캠페인명}</td>
+              <td className="px-2 py-1.5 text-gray-700 truncate max-w-[260px]" title={r.캠페인명}>
+                {r.캠페인명}
+                {r._isFree && (
+                  <span className="ml-1 inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700" title="무료 캠페인 (is_free)">무료</span>
+                )}
+              </td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-800">{fmt(r.공급가액)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{fmt(r.세액)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">{fmt(r.합계금액)}</td>

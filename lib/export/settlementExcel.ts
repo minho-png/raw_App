@@ -131,6 +131,8 @@ export interface SalesRow {
   // 내부 메타 (Excel 출력 시 헤더에서 제외 — 페이지에서 그룹핑/수정 식별용)
   _agencyId?: string
   _rowKey: string  // 'sales:{month}:{campaignId}' (override 식별)
+  /** 무료 캠페인 표시 (UI 배지용). Excel 출력엔 미반영. */
+  _isFree?: boolean
 }
 
 export interface SalesRowsParams {
@@ -287,6 +289,8 @@ export interface PurchaseRow {
   // 사용자 요청 (2026-05-22) — '송금일 기준' / '송금기한' 제거.
   // 내부 메타
   _agencyId?: string
+  /** 무료 캠페인 표시 (UI 배지용). Excel 출력엔 미반영. */
+  _isFree?: boolean
   _rowKey: string  // 'purchase:{month}:{campaignId}[:media]' (override 식별)
 }
 
@@ -442,6 +446,7 @@ export function buildPurchaseRows(params: PurchaseRowsParams): PurchaseRow[] {
         CT: product === 'CT' ? agencyFee : 0,
         _agencyId: groupAgencyId,
         _rowKey: `purchase:${month}:motiv-${c.id}:agencyFee`,
+        _isFree: c.is_free,
       })
     }
 
