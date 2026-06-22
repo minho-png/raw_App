@@ -61,7 +61,29 @@ export function useSettlementOverrides(type: 'sales' | 'purchase', month: string
     await fetch(`/api/v1/settlement-overrides?rowKey=${encodeURIComponent(rowKey)}`, { method: 'DELETE' })
   }, [])
 
-  return { ...state, refresh, upsert, remove }
+  /** 확정 — frozen=true 로 잠금. 이후 upsert/remove 거부. */
+  const confirm = useCallback(async (rowKey: string) => {
+    const res = await fetch(`/api/v1/settlement-overrides?action=confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowKey }),
+    })
+    if (res.ok) await refresh()
+    return res.ok
+  }, [refresh])
+
+  /** 확정 해제 — frozen=false. 재수정 가능. */
+  const unconfirm = useCallback(async (rowKey: string) => {
+    const res = await fetch(`/api/v1/settlement-overrides?action=unconfirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowKey }),
+    })
+    if (res.ok) await refresh()
+    return res.ok
+  }, [refresh])
+
+  return { ...state, refresh, upsert, remove, confirm, unconfirm }
 }
 
 /**
