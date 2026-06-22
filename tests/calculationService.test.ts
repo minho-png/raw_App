@@ -14,7 +14,31 @@ import {
   deriveSettlementFromCost,
   detectDmpType,
   DMP_FEE_RATES_DECIMAL,
+  fmtMargin,
 } from '../lib/calculationService.ts'
+
+// ── fmtMargin: 명세 단위 미확정 휴리스틱 (소수/퍼센트/basis point) ─────
+test('fmtMargin: 소수(<1) → ×100 후 %', () => {
+  assert.equal(fmtMargin(0.15), '15.00%')
+  assert.equal(fmtMargin(0.075), '7.50%')
+  assert.equal(fmtMargin(0), '0.00%')
+})
+
+test('fmtMargin: 퍼센트(1~999) → .toFixed(1)+%', () => {
+  assert.equal(fmtMargin(15), '15.0%')
+  assert.equal(fmtMargin(99.5), '99.5%')
+})
+
+test('fmtMargin: basis point (≥1000) → 정수+천단위', () => {
+  assert.equal(fmtMargin(1500), '1,500')
+})
+
+test('fmtMargin: NaN/Infinity/null → 대시', () => {
+  assert.equal(fmtMargin(NaN), '—')
+  assert.equal(fmtMargin(Infinity), '—')
+  assert.equal(fmtMargin(null), '—')
+  assert.equal(fmtMargin(undefined), '—')
+})
 
 // ── deriveSettlementFromCost: 매체비 → 정산성 파생 (Open API Phase 1 갭 보완) ──
 test('deriveSettlementFromCost: 요율 없으면 전부 0 (기존 동작 유지)', () => {

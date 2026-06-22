@@ -12,7 +12,7 @@ import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettle
 import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
 import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { motivTypeToProduct } from "@/lib/motivApi/productMapping"
-import { roundWon } from "@/lib/calculationService"
+import { roundWon, fmtMargin } from "@/lib/calculationService"
 import { genId } from "@/lib/idGen"
 import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
@@ -478,7 +478,7 @@ export default function AgencyFeePage() {
                             <td className="px-4 py-2.5 text-right tabular-nums text-gray-800">₩{fmt(r.metrics.revenue ?? 0)}</td>
                             <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">₩{fmt(r.metrics.mediaCost ?? 0)}</td>
                             <td className="px-4 py-2.5 text-right tabular-nums text-emerald-700">₩{fmt(r.metrics.grossProfit ?? 0)}</td>
-                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">{fmt(r.metrics.margin ?? 0)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-500" title="명세 단위(소수/퍼센트) 미확정 — 휴리스틱 표시">{fmtMargin(r.metrics.margin)}</td>
                           </tr>
                         )
                       })}
