@@ -69,6 +69,8 @@ export default function DmpFeeClient() {
   const [month, setMonth] = useState(() => toMonthStr(new Date()))
   const [product, setProduct] = useState<MediaProductFilter>('ALL')
   const [copied, setCopied] = useState(false)
+  // 사용자 요청 — DMP 부분에서 매체별 확인 토글. ON 시 DATA_PROVIDER × MEDIA 매트릭스.
+  const [byMedia, setByMedia] = useState(false)
 
   const showCtPlus = product === 'ALL' || product === 'CT_PLUS'
   const showCt     = product === 'ALL' || product === 'CT'
@@ -89,6 +91,7 @@ export default function DmpFeeClient() {
   // mediaCost 외의 데이터비용 metric 은 명세 미확정 — metrics 표 받으면 그 필드로 교체.
   const dataProviderSettlement = useOpenApiDataProviders({
     month,
+    byMedia,
     enabled: motivProduct !== null,
   })
 
@@ -401,9 +404,20 @@ export default function DmpFeeClient() {
           const totalCost = rows.reduce((s, r) => s + (r.metrics.mediaCost ?? 0), 0)
           return (
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-              <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
-                <p className="text-xs font-semibold text-gray-700">DMP(데이터 제공자)별 정산 ({month})</p>
-                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-gray-700">DMP(데이터 제공자)별 정산 ({month})</p>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+                </div>
+                <label className="flex items-center gap-1.5 text-[11px] text-gray-500 select-none cursor-pointer" title="DMP × 매체 매트릭스로 분리해 확인">
+                  <input
+                    type="checkbox"
+                    checked={byMedia}
+                    onChange={e => setByMedia(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-emerald-600"
+                  />
+                  매체별로 보기
+                </label>
               </div>
               {dataProviderSettlement.loading ? (
                 <div className="px-5 py-10 text-center text-sm text-gray-400">불러오는 중…</div>
@@ -426,6 +440,7 @@ export default function DmpFeeClient() {
                     <thead>
                       <tr className="border-b border-gray-100 bg-gray-50">
                         <th className="px-5 py-2.5 text-left font-medium text-gray-500">데이터 제공자</th>
+                        {byMedia && <th className="px-4 py-2.5 text-left font-medium text-gray-500">매체</th>}
                         <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="mediaCost">매체비</th>
                         <th className="px-4 py-2.5 text-right font-medium text-gray-500">비중</th>
                       </tr>
@@ -433,12 +448,14 @@ export default function DmpFeeClient() {
                     <tbody className="divide-y divide-gray-50">
                       {rows.map((r, i) => {
                         const dp = findDimension(r, 'DATA_PROVIDER')
+                        const md = byMedia ? findDimension(r, 'MEDIA') : undefined
                         const cost = r.metrics.mediaCost ?? 0
                         // 명세: 데이터비용 없으면 id="NON", name="데이터비용 없음"
                         const isNone = dp?.id === 'NON'
                         return (
-                          <tr key={dp?.id ?? i} className={`hover:bg-gray-50/50 transition-colors ${isNone ? 'text-gray-400' : ''}`}>
+                          <tr key={`${dp?.id ?? i}-${md?.id ?? ''}`} className={`hover:bg-gray-50/50 transition-colors ${isNone ? 'text-gray-400' : ''}`}>
                             <td className="px-5 py-2.5 font-medium">{dp?.name ?? dp?.id ?? '—'}</td>
+                            {byMedia && <td className="px-4 py-2.5 text-gray-700">{md?.name ?? md?.id ?? '—'}</td>}
                             <td className="px-4 py-2.5 text-right tabular-nums">₩{fmtNum(cost)}</td>
                             <td className="px-4 py-2.5 text-right tabular-nums">{totalCost > 0 ? ((cost / totalCost) * 100).toFixed(1) + '%' : '—'}</td>
                           </tr>
@@ -447,7 +464,7 @@ export default function DmpFeeClient() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                        <td className="px-5 py-2.5 text-xs text-gray-600">합계</td>
+                        <td className="px-5 py-2.5 text-xs text-gray-600" colSpan={byMedia ? 2 : 1}>합계</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-800">₩{fmtNum(totalCost)}</td>
                         <td className="px-3 py-2.5"></td>
                       </tr>
