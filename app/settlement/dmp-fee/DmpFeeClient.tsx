@@ -422,7 +422,25 @@ export default function DmpFeeClient() {
           const rawRows = dpSnapshot.doc
             ? dpSnapshot.doc.rows.map(r => ({ dimension: r.dimension, metrics: r.metrics }))
             : dataProviderSettlement.rows
-          const rows = rawRows.map(r => ({ ...r, metrics: dpSnapshot.effectiveMetrics(r as { dimension: unknown[]; metrics: Record<string, number> }) }))
+          const merged = rawRows.map(r => ({ ...r, metrics: dpSnapshot.effectiveMetrics(r as { dimension: unknown[]; metrics: Record<string, number> }) }))
+          // QA BUG-CT-08: byMedia=false 일 때 동일 DATA_PROVIDER id 가 여러 행으로 분리돼 오는 경우
+          // (특히 "NON" 더미) 가 있어 클라이언트 합산. byMedia=true 는 DMP × MEDIA 매트릭스라 합산 안 함.
+          const rows = byMedia ? merged : (() => {
+            const agg = new Map<string, typeof merged[number]>()
+            for (const r of merged) {
+              const dp = findDimension(r as Parameters<typeof findDimension>[0], 'DATA_PROVIDER')
+              const k = dp?.id ?? '-'
+              const cur = agg.get(k)
+              if (cur) {
+                const nm: Record<string, number> = { ...cur.metrics }
+                for (const [mk, mv] of Object.entries(r.metrics)) nm[mk] = (nm[mk] ?? 0) + (mv ?? 0)
+                agg.set(k, { ...cur, metrics: nm })
+              } else {
+                agg.set(k, r)
+              }
+            }
+            return Array.from(agg.values())
+          })()
           const totalCost = rows.reduce((s, r) => s + (r.metrics.mediaCost ?? 0), 0)
           return (
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">

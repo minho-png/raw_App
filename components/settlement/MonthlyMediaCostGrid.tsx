@@ -299,7 +299,7 @@ function CategoryBlock(props: {
                 <input
                   type="text"
                   inputMode="numeric"
-                  value={amounts[m] === 0 ? '' : amounts[m].toLocaleString('ko-KR')}
+                  value={amounts[m] ? amounts[m].toLocaleString('ko-KR') : ''}
                   onChange={e => setLocal(row.mediaName, m, e.target.value)}
                   onBlur={() => flush(row)}
                   className="w-full rounded border border-transparent px-1 py-0.5 text-right tabular-nums text-[11px] hover:border-gray-300 focus:border-emerald-400 focus:outline-none"

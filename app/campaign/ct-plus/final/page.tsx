@@ -266,27 +266,27 @@ export default function CtPlusFinalPage() {
           <div className="flex items-end gap-4 flex-wrap">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-700">정산 월 선택</label>
-              {loading ? (
-                <p className="text-xs text-gray-400">로딩 중...</p>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <select
-                    value={activeMonth}
-                    onChange={e => setSelectedMonth(e.target.value)}
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  >
-                    {availableMonths.map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="month"
-                    value={activeMonth}
-                    onChange={e => setSelectedMonth(e.target.value)}
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  />
-                </div>
-              )}
+              {/* QA BUG-CT-06: master/raw 로딩 중에도 월 선택은 가능해야 함 (활성월은 현재월 기본). */}
+              <div className="flex items-center gap-2">
+                <select
+                  value={activeMonth}
+                  onChange={e => setSelectedMonth(e.target.value)}
+                  disabled={masterLoading && availableMonths.length === 0}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-60"
+                >
+                  {availableMonths.length === 0 && <option value={activeMonth}>{activeMonth}</option>}
+                  {availableMonths.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                <input
+                  type="month"
+                  value={activeMonth}
+                  onChange={e => setSelectedMonth(e.target.value)}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+                {loading && <span className="text-[11px] text-gray-400 animate-pulse">데이터 로딩 중…</span>}
+              </div>
             </div>
             {settlements.length > 0 && (
               <div className="flex items-center gap-2 text-xs">
@@ -515,14 +515,21 @@ function AgencySettlementGroups({
   onDownloadPayment: (agencyId: string) => void
 }) {
   const agById = new Map(agencies.map(a => [a.id, a]))
+  // QA BUG-CT-07: supplier:google 같은 합성 키 ID 가 UI 에 그대로 노출되지 않도록
+  // 행에 들어 있는 '거래처명 (세금계산서 기준)' 으로 표시. Agency 가 없을 때만 fallback.
+  function displayName(id: string): string {
+    const ag = agById.get(id)
+    if (ag?.name) return ag.name
+    if (id.startsWith('supplier:')) {
+      const pRow = purchaseByAg.get(id)?.[0]
+      return pRow?.['거래처명 (세금계산서 기준)'] || id.slice('supplier:'.length)
+    }
+    return id
+  }
   // 매출/매입 모두 등장한 agencyId 합집합
   const ids = new Set<string>([...salesByAg.keys(), ...purchaseByAg.keys()])
   ids.delete('__unassigned__')
-  const sortedIds = [...ids].sort((a, b) => {
-    const an = agById.get(a)?.name ?? ''
-    const bn = agById.get(b)?.name ?? ''
-    return an.localeCompare(bn)
-  })
+  const sortedIds = [...ids].sort((a, b) => displayName(a).localeCompare(displayName(b)))
   const unassignedSales    = salesByAg.get('__unassigned__')    ?? []
   const unassignedPurchase = purchaseByAg.get('__unassigned__') ?? []
 
@@ -540,14 +547,13 @@ function AgencySettlementGroups({
         </header>
         <ul className="divide-y divide-gray-100">
           {sortedIds.map(id => {
-            const ag = agById.get(id)
             const rows = salesByAg.get(id) ?? []
             if (rows.length === 0) return null
             const total = rows.reduce((s, r) => s + Number(r.합계금액 ?? 0), 0)
             return (
               <li key={id} className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">{ag?.name ?? id}</p>
+                  <p className="text-sm font-medium text-gray-800 truncate">{displayName(id)}</p>
                   <p className="text-[11px] text-gray-500">{rows.length}건 · 합계 ₩{total.toLocaleString()}</p>
                 </div>
                 <button
@@ -585,7 +591,7 @@ function AgencySettlementGroups({
             return (
               <li key={id} className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">{ag?.name ?? id}</p>
+                  <p className="text-sm font-medium text-gray-800 truncate">{displayName(id)}</p>
                   <p className="text-[11px] text-gray-500">
                     {rows.length}건 · 합계 ₩{total.toLocaleString()}
                     {ag?.bankName && (
