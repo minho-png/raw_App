@@ -6,7 +6,6 @@ import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useRawData } from "@/lib/hooks/useRawData"
 import { applyMarkupToRows } from "@/lib/markupService"
 import { SettlementFilterBar } from "@/components/atoms/SettlementFilterBar"
-import { MotivAgencyAggregation } from "@/components/settlement/MotivAgencyAggregation"
 import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
 import { useMotivStatsCampaign } from "@/lib/hooks/useMotivStatsCampaign"
@@ -20,7 +19,6 @@ import { friendlyOpenApiError } from "@/lib/openApi/health"
 import { AgencyFeeSplitsPanel } from "@/components/settlement/AgencyFeeSplitsPanel"
 import { useOpenApiSettlementSnapshot } from "@/lib/hooks/useOpenApiSettlementSnapshot"
 import { SnapshotActions, SnapshotStatusBadge } from "@/components/settlement/SnapshotActions"
-import { LegacyCollapseSection } from "@/components/settlement/LegacyCollapseSection"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
 
@@ -768,29 +766,6 @@ export default function AgencyFeePage() {
             </div>
           </div>
         ))}
-
-        {/* Motiv 기반 CT/CTV — 대행사별 집계 (읽기 전용, 레거시 참고용).
-            QA BUG-CT-04: stats/campaign 422 로 로딩 실패하는 경우가 있어 기본 접힘. */}
-        {motivProduct && (
-          <LegacyCollapseSection
-            title={
-              motivProduct === 'CT_CTV_BOTH' ? 'CT · CTV 대행사별 집계 (Motiv lifetime)'
-              : motivProduct === 'CTV' ? 'CTV 대행사별 집계 (Motiv lifetime)'
-              : 'CT 대행사별 집계 (Motiv lifetime)'
-            }
-            subtitle="마감 검토용 — 공식값은 위쪽 Open API 표 기준"
-          >
-            <MotivAgencyAggregation
-              title="대행사별 집계 (Motiv lifetime)"
-              loading={motivFetch.loading || periodStats.loading}
-              error={motivFetch.error || periodStats.error}
-              campaigns={motivFetch.data}
-              agencies={agencies}
-              assignments={assignments}
-              statsByMotivId={statsByMotivId}
-            />
-          </LegacyCollapseSection>
-        )}
 
         {/* 캠페인별 다중 지급처 (사용자 요청 2026-06-22) — agency_fee_splits 인프라 활용 */}
         <AgencyFeeSplitsPanel
