@@ -17,6 +17,37 @@ import { useMonthlyMediaCosts, type MonthlyMediaCostDoc, type MediaCostCategory 
 const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
 const CATEGORIES: MediaCostCategory[] = ['CTV', 'CT', 'CT+']
 
+/**
+ * 카테고리별 기본 매체명 시드 — 사용자 이미지 (2026-06-22) 기준.
+ * 빈 상태에서 default 행으로 표시. 사용자가 셀에 금액 입력하면 DB upsert.
+ * USD 매체는 currency='USD' 로 시드 (예: 엑셀비드).
+ */
+const DEFAULT_SEED: Record<MediaCostCategory, { name: string; currency?: 'KRW' | 'USD' }[]> = {
+  CTV: [
+    { name: 'APM' },
+    { name: '삼성TV플러스 (CT직연동)' },
+    { name: '뉴아이디' },
+    { name: 'LGU_FAST(NET)' },
+    { name: 'LGU_FAST(GROSS)' },
+    { name: 'SKB_VOD(NET)' },
+    { name: 'SKB_VOD(GROSS)' },
+  ],
+  CT: [
+    { name: '(주) 모비와이드' },
+    { name: '(주) 씨제이이메조미디어' },
+    { name: '(주) 에프엔에스엔 카울리' },
+    { name: '(주) 엔에이치엔에이스' },
+    { name: 'SAMSUNG' },
+    { name: '엑셀비드', currency: 'USD' },
+  ],
+  'CT+': [
+    { name: '구글코리아' },
+    { name: '매드코퍼레이션 (네이버/카카오)' },
+    { name: '메타플랫폼' },
+    { name: '매드코퍼레이션 (네이버/카카오) 수수료' },
+  ],
+}
+
 function fmt(n: number): string {
   if (!Number.isFinite(n) || n === 0) return ''
   return Math.round(n).toLocaleString('ko-KR')
@@ -45,12 +76,30 @@ export function MonthlyMediaCostGrid({ year, onYearChange }: Props) {
     const g = new Map<MediaCostCategory | 'OTHER', MonthlyMediaCostDoc[]>()
     for (const cat of CATEGORIES) g.set(cat, [])
     g.set('OTHER', [])
+    const seenByCat = new Map<MediaCostCategory, Set<string>>()
+    for (const cat of CATEGORIES) seenByCat.set(cat, new Set())
+
     for (const r of data) {
       const c = (r.category ?? 'OTHER') as MediaCostCategory | 'OTHER'
       ;(g.get(c) ?? g.get('OTHER'))!.push(r)
+      if (c !== 'OTHER') seenByCat.get(c as MediaCostCategory)?.add(r.mediaName)
+    }
+    // 기본 시드 — DB 에 없는 매체명은 in-memory placeholder 로 표시 (사용자가 입력 시 upsert).
+    for (const cat of CATEGORIES) {
+      const seen = seenByCat.get(cat)!
+      for (const seed of DEFAULT_SEED[cat]) {
+        if (seen.has(seed.name)) continue
+        g.get(cat)!.push({
+          year,
+          mediaName: seed.name,
+          category: cat,
+          amounts: {},
+          currency: seed.currency ?? 'KRW',
+        })
+      }
     }
     return g
-  }, [data])
+  }, [data, year])
 
   function effectiveAmounts(row: MonthlyMediaCostDoc): Record<string, number> {
     const local = localEdits.get(row.mediaName)
