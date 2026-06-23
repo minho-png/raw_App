@@ -41,6 +41,7 @@ import { findDimension } from "@/lib/openApi/settlementsTypes"
 import { friendlyOpenApiError } from "@/lib/openApi/health"
 import { useOpenApiSettlementSnapshot } from "@/lib/hooks/useOpenApiSettlementSnapshot"
 import { SnapshotActions, SnapshotStatusBadge } from "@/components/settlement/SnapshotActions"
+import { LegacyCollapseSection } from "@/components/settlement/LegacyCollapseSection"
 
 function fmt(n: number) { return roundWon(n).toLocaleString("ko-KR") }
 function toMonthStr(d: Date) {
@@ -502,26 +503,32 @@ export default function SalesPurchasePage() {
             </div>
           </div>
         )}
-        {/* 사용자 요청 — 매칭 기능 없이 불러온 대행사명 그대로 매입/매출 대행사별 정리.
-            카드: 대행사 이름 + 합계 금액 + 행 수. 클릭 시 아래 표가 그 대행사로 필터. */}
-        <AgencySummaryPanel
-          view={view}
-          salesRows={visibleSales}
-          purchaseRows={visiblePurchase}
-          agencies={agencies}
-        />
-
-        {motivProduct && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 flex items-center gap-2">
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">참고</span>
-            <span>
-              아래 <strong>매출/매입 표</strong>는 기존(CT+ raw + Motiv lifetime) 기반 검토용입니다.
-              CT/CTV 정산 <strong>공식값은 위쪽 Open API 표</strong>를 사용하세요.
-            </span>
+        {/* QA BUG-CT-04/05: 레거시 (CT+ raw + Motiv lifetime) 섹션 — 기본 접힘.
+            CRUD(편집/확정/잠금)는 펼친 후 정상 사용 가능. 공식값은 위쪽 Open API 표. */}
+        <LegacyCollapseSection
+          title="매출/매입 통합 표 (CT+ raw + Motiv lifetime)"
+          subtitle="대행사별 카드 · CRUD 편집 · 마감 검토용"
+        >
+          <div className="space-y-3">
+            <AgencySummaryPanel
+              view={view}
+              salesRows={visibleSales}
+              purchaseRows={visiblePurchase}
+              agencies={agencies}
+            />
+            {motivProduct && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 flex items-center gap-2">
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">참고</span>
+                <span>
+                  이 표는 기존(CT+ raw + Motiv lifetime) 기반 <strong>검토용</strong>.
+                  CT/CTV 정산 <strong>공식값은 위쪽 Open API 표</strong>를 사용하세요.
+                </span>
+              </div>
+            )}
+            {view === 'sales'    && <SalesTable    rows={visibleSales}    emptyDiag={emptyDiag} frozenKeys={frozenSalesKeys}    onEdit={r => setEditTarget({ type: 'sales',    row: r })} onToggleConfirm={(r, lock) => (lock ? salesOv.confirm(r._rowKey)    : salesOv.unconfirm(r._rowKey))} />}
+            {view === 'purchase' && <PurchaseTable rows={visiblePurchase} emptyDiag={emptyDiag} frozenKeys={frozenPurchaseKeys} onEdit={r => setEditTarget({ type: 'purchase', row: r })} onToggleConfirm={(r, lock) => (lock ? purchaseOv.confirm(r._rowKey) : purchaseOv.unconfirm(r._rowKey))} />}
           </div>
-        )}
-        {view === 'sales'    && <SalesTable    rows={visibleSales}    emptyDiag={emptyDiag} frozenKeys={frozenSalesKeys}    onEdit={r => setEditTarget({ type: 'sales',    row: r })} onToggleConfirm={(r, lock) => (lock ? salesOv.confirm(r._rowKey)    : salesOv.unconfirm(r._rowKey))} />}
-        {view === 'purchase' && <PurchaseTable rows={visiblePurchase} emptyDiag={emptyDiag} frozenKeys={frozenPurchaseKeys} onEdit={r => setEditTarget({ type: 'purchase', row: r })} onToggleConfirm={(r, lock) => (lock ? purchaseOv.confirm(r._rowKey) : purchaseOv.unconfirm(r._rowKey))} />}
+        </LegacyCollapseSection>
       </main>
 
       {editTarget && (
