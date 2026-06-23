@@ -3,12 +3,9 @@
 import { useMemo, useEffect } from "react"
 import { useFilterPersistence } from "@/lib/hooks/useFilterPersistence"
 import { FilterToggle, FilterChipGroup, FilterDateRange } from "@/components/atoms/filters"
-import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
-import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAgencies } from "@/lib/hooks/useMotivAgencies"
-import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import { KpiCard } from "@/components/analysis/KpiCard"
 import { SummaryCard } from "@/components/molecules/SummaryCard"
 import { AlertIcon } from "@/components/analysis/AlertIcon"
@@ -80,11 +77,9 @@ export default function CtAnalysisPage() {
   const refreshKey = refreshControl.key
 
   // ── 데이터 소스 ──────────────────────────────────────────
-  const { agencies, advertisers, operators } = useMasterData()
   const motiv = useMotivSettlementCampaignsByProduct('CT',
     { dateRange: { start: rangeStart, end: rangeEnd }, refreshKey },
   )
-  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
   const { byId: adAccountById }   = useMotivAdAccounts(true, refreshKey)
   const { byId: motivAgencyById } = useMotivAgencies(true, refreshKey)
   // 사용자 결정 — '전일 스냅샷 기능 삭제 / 비교 기능 없이 작동 / 미소진은
@@ -482,24 +477,7 @@ export default function CtAnalysisPage() {
           )}
         </section>
 
-        {/* 정산 테이블 (MOTIV → 내부 Agency 자동 매칭) */}
-        <section className="space-y-2 mt-8">
-          <MotivSettlementTable
-            title="CT 정산 지정"
-            loading={motiv.loading}
-            error={motiv.error}
-            campaigns={motiv.data.filter(c => !isExcludedCampaign(c.title ?? ''))}
-            exchangeRate={motiv.exchangeRate}
-            agencies={agencies}
-            advertisers={advertisers}
-            operators={operators}
-            assignments={assignments}
-            onUpsertAssignment={upsertAssignment}
-            adAccountById={adAccountById}
-            motivAgencyById={motivAgencyById}
-            directMotivDisplay  /* 정산 시 Motiv API 광고주/대행사 직접 표시 — 추후 매칭 추가 예정 */
-          />
-        </section>
+        {/* 정산 지정 (CT) — 레거시 제거 (2026-06-23). /management + agency_fee_splits 로 일원화. */}
       </main>
     </div>
   )
