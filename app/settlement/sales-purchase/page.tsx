@@ -243,6 +243,8 @@ export default function SalesPurchasePage() {
 
   // 미지정 (대행사 미할당) 행 가시화 + 토글 필터
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false)
+  // 사용자 요청 (2026-06-22) — 매출/매입에서 확정된 정보만 보기 토글.
+  const [showFrozenOnly, setShowFrozenOnly] = useState(false)
   const unassignedSales    = useMemo(() => mergedSales.filter(r => !r._agencyId).length,    [mergedSales])
   const unassignedPurchase = useMemo(() => mergedPurchase.filter(r => !r._agencyId).length, [mergedPurchase])
   // 사용자 QA NEW-WARN-02 — 거래처 미지정 DMP 금액 (예: 28.4M) 사용자에게 가시화.
@@ -252,12 +254,20 @@ export default function SalesPurchasePage() {
   }, [view, mergedSales, mergedPurchase])
   const UNASSIGNED_THRESHOLD = 1_000_000
   const visibleSales    = useMemo(
-    () => showUnassignedOnly ? mergedSales.filter(r => !r._agencyId)    : mergedSales,
-    [mergedSales, showUnassignedOnly],
+    () => {
+      let rows = showUnassignedOnly ? mergedSales.filter(r => !r._agencyId) : mergedSales
+      if (showFrozenOnly) rows = rows.filter(r => frozenSalesKeys.has(r._rowKey))
+      return rows
+    },
+    [mergedSales, showUnassignedOnly, showFrozenOnly, frozenSalesKeys],
   )
   const visiblePurchase = useMemo(
-    () => showUnassignedOnly ? mergedPurchase.filter(r => !r._agencyId) : mergedPurchase,
-    [mergedPurchase, showUnassignedOnly],
+    () => {
+      let rows = showUnassignedOnly ? mergedPurchase.filter(r => !r._agencyId) : mergedPurchase
+      if (showFrozenOnly) rows = rows.filter(r => frozenPurchaseKeys.has(r._rowKey))
+      return rows
+    },
+    [mergedPurchase, showUnassignedOnly, showFrozenOnly, frozenPurchaseKeys],
   )
   const unassignedCount = view === 'sales' ? unassignedSales : unassignedPurchase
 
@@ -304,9 +314,47 @@ export default function SalesPurchasePage() {
                   view === 'purchase' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                 }`}
               >매입 ({purchaseRows.length})</button>
+              {/* 사용자 요청 (2026-06-22) — 확정된 정보만 보기 토글. 확정 카운트 강조. */}
+              <button
+                onClick={() => setShowFrozenOnly(v => !v)}
+                className={`ml-2 rounded-md px-3 py-1 text-xs font-medium transition-colors border ${
+                  showFrozenOnly
+                    ? 'border-emerald-500 bg-emerald-100 text-emerald-800'
+                    : 'border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50'
+                }`}
+                title="settlement_overrides 의 frozen=true 행만 표시"
+              >
+                {showFrozenOnly ? '🔒 확정만 (해제)' : `🔒 확정만 (${view === 'sales' ? frozenSalesKeys.size : frozenPurchaseKeys.size})`}
+              </button>
             </div>
           }
         />
+
+        {/* 확정된 정보 요약 카드 — 매출/매입 별 확정 행 수 + 합계 (사용자 요청). */}
+        {(frozenSalesKeys.size > 0 || frozenPurchaseKeys.size > 0) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-emerald-800">매출 확정</span>
+                <span className="text-[10px] text-emerald-600">{frozenSalesKeys.size}건 · DB 잠금</span>
+              </div>
+              <p className="mt-1 text-base font-bold tabular-nums text-emerald-900">
+                ₩{fmt(mergedSales.filter(r => frozenSalesKeys.has(r._rowKey)).reduce((s, r) => s + (r.합계금액 ?? 0), 0))}
+              </p>
+              <p className="mt-0.5 text-[10px] text-emerald-700">합계금액 (VAT 포함)</p>
+            </div>
+            <div className="rounded-lg border border-blue-200 bg-blue-50/50 px-4 py-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-blue-800">매입 확정</span>
+                <span className="text-[10px] text-blue-600">{frozenPurchaseKeys.size}건 · DB 잠금</span>
+              </div>
+              <p className="mt-1 text-base font-bold tabular-nums text-blue-900">
+                ₩{fmt(mergedPurchase.filter(r => frozenPurchaseKeys.has(r._rowKey)).reduce((s, r) => s + (r.합계금액 ?? 0), 0))}
+              </p>
+              <p className="mt-0.5 text-[10px] text-blue-700">합계금액 (VAT 포함)</p>
+            </div>
+          </div>
+        )}
 
         {/* product=CT_PLUS 단일 선택 시 Open API 정산 섹션 미표시 — 사용자 안내 (FE-B). */}
         {!motivProduct && (
