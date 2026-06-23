@@ -6,8 +6,9 @@ import { type MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { useOpenApiDataProviders } from "@/lib/hooks/useOpenApiDataProviders"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
 import { friendlyOpenApiError } from "@/lib/openApi/health"
-import { useOpenApiSettlementSnapshot } from "@/lib/hooks/useOpenApiSettlementSnapshot"
+import { useOpenApiSettlementSnapshot, snapshotRowKey } from "@/lib/hooks/useOpenApiSettlementSnapshot"
 import { SnapshotActions, SnapshotStatusBadge } from "@/components/settlement/SnapshotActions"
+import { SnapshotEditModal } from "@/components/settlement/SnapshotEditModal"
 
 /**
  * DMP 수수료 정산 페이지 — Open API DATA_PROVIDER 기반 (PR #150/151 마이그레이션).
@@ -29,6 +30,7 @@ export default function DmpFeeClient() {
   const [product, setProduct] = useState<MediaProductFilter>('ALL')
   // 사용자 요청 — DMP 부분에서 매체별 확인 토글. ON 시 DATA_PROVIDER × MEDIA 매트릭스.
   const [byMedia, setByMedia] = useState(false)
+  const [editRow, setEditRow] = useState<{ _key: string; dimension: unknown[]; metrics: Record<string, number>; label: string } | null>(null)
 
   const showCt  = product === 'ALL' || product === 'CT'
   const showCtv = product === 'ALL' || product === 'CTV'
@@ -117,7 +119,7 @@ export default function DmpFeeClient() {
                     />
                     매체별로 보기
                   </label>
-                  <SnapshotActions snapshot={dpSnapshot} liveRows={dataProviderSettlement.rows} />
+                  <SnapshotActions snapshot={dpSnapshot} liveRows={dataProviderSettlement.rows} excelFilename={`dmp-fee_${month}${byMedia ? '_by-media' : ''}`} />
                 </div>
               </div>
               {dataProviderSettlement.loading ? (
@@ -147,6 +149,7 @@ export default function DmpFeeClient() {
                         {byMedia && <th className="px-4 py-2.5 text-left font-medium text-gray-500">매체</th>}
                         <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="mediaCost">매체비</th>
                         <th className="px-4 py-2.5 text-right font-medium text-gray-500">비중</th>
+                        <th className="px-3 py-2.5 text-center font-medium text-gray-500">편집</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -156,6 +159,8 @@ export default function DmpFeeClient() {
                         const cost = r.metrics.mediaCost ?? 0
                         // 명세: 데이터비용 없으면 id="NON", name="데이터비용 없음"
                         const isNone = dp?.id === 'NON'
+                        const key = snapshotRowKey(r)
+                        const label = byMedia ? `${dp?.name ?? '—'} · ${md?.name ?? md?.id ?? '—'}` : (dp?.name ?? dp?.id ?? '—')
                         // QA-1: 같은 DMP+매체 조합이 여러 번 오면 key 중복 → index 추가로 고유성 보장.
                         return (
                           <tr key={`${dp?.id ?? '-'}-${md?.id ?? '-'}-${i}`} className={`hover:bg-gray-50/50 transition-colors ${isNone ? 'text-gray-400' : ''}`}>
@@ -163,6 +168,14 @@ export default function DmpFeeClient() {
                             {byMedia && <td className="px-4 py-2.5 text-gray-700">{md?.name ?? md?.id ?? '—'}</td>}
                             <td className="px-4 py-2.5 text-right tabular-nums">₩{fmtNum(cost)}</td>
                             <td className="px-4 py-2.5 text-right tabular-nums">{totalCost > 0 ? ((cost / totalCost) * 100).toFixed(1) + '%' : '—'}</td>
+                            <td className="px-3 py-2.5 text-center">
+                              <button
+                                onClick={() => setEditRow({ _key: key, dimension: r.dimension, metrics: r.metrics, label })}
+                                disabled={!dpSnapshot.doc}
+                                className="rounded border border-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={dpSnapshot.doc ? '행 metric 편집' : '먼저 💾 정산 진행으로 DB 저장 필요'}
+                              >✏️</button>
+                            </td>
                           </tr>
                         )
                       })}
@@ -171,6 +184,7 @@ export default function DmpFeeClient() {
                       <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
                         <td className="px-5 py-2.5 text-xs text-gray-600" colSpan={byMedia ? 2 : 1}>합계</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-800">₩{fmtNum(totalCost)}</td>
+                        <td className="px-3 py-2.5"></td>
                         <td className="px-3 py-2.5"></td>
                       </tr>
                     </tfoot>
@@ -185,6 +199,15 @@ export default function DmpFeeClient() {
           )
         })()}
       </main>
+
+      <SnapshotEditModal
+        row={editRow ? { _key: editRow._key, dimension: editRow.dimension, metrics: editRow.metrics } : null}
+        rowLabel={editRow?.label ?? ''}
+        editableKeys={['mediaCost']}
+        frozen={!!dpSnapshot.doc?.frozen}
+        onSave={(rowKey, edits) => dpSnapshot.editRow(rowKey, edits)}
+        onClose={() => setEditRow(null)}
+      />
     </div>
   )
 }

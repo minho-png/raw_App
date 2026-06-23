@@ -7,8 +7,9 @@ import type { MediaProductFilter } from "@/lib/motivApi/productMapping"
 import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
 import { friendlyOpenApiError } from "@/lib/openApi/health"
-import { useOpenApiSettlementSnapshot } from "@/lib/hooks/useOpenApiSettlementSnapshot"
+import { useOpenApiSettlementSnapshot, snapshotRowKey } from "@/lib/hooks/useOpenApiSettlementSnapshot"
 import { SnapshotActions, SnapshotStatusBadge } from "@/components/settlement/SnapshotActions"
+import { SnapshotEditModal } from "@/components/settlement/SnapshotEditModal"
 
 function fmt(n: number) { return roundWon(n).toLocaleString("ko-KR") }
 function toMonthStr(d: Date) {
@@ -19,6 +20,7 @@ export default function SalesPurchasePage() {
   const today = new Date()
   const [month, setMonth]     = useState(toMonthStr(today))
   const [product, setProduct] = useState<MediaProductFilter>('ALL')
+  const [editRow, setEditRow] = useState<{ _key: string; dimension: unknown[]; metrics: Record<string, number>; label: string } | null>(null)
 
   // Motiv CT/CTV 데이터 — Open API 정산 집계만 사용 (legacy CT+ raw 파이프라인 제거됨).
   const showCt    = product === 'ALL' || product === 'CT'
@@ -83,7 +85,7 @@ export default function SalesPurchasePage() {
                   <SnapshotStatusBadge doc={agencySnapshot.doc} />
                 </div>
                 <div className="flex items-center gap-2">
-                  <SnapshotActions snapshot={agencySnapshot} liveRows={agencySettlement.rows} />
+                  <SnapshotActions snapshot={agencySnapshot} liveRows={agencySettlement.rows} excelFilename={`sales-purchase_${month}`} />
                 </div>
               </div>
               {agencySettlement.loading ? (
@@ -111,11 +113,13 @@ export default function SalesPurchasePage() {
                         <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="mediaCost">매체비(매입)</th>
                         <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="grossProfit">매출총이익</th>
                         <th className="px-4 py-2.5 text-right font-medium text-gray-500" title="margin">마진</th>
+                        <th className="px-3 py-2.5 text-center font-medium text-gray-500">편집</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {rows.map((r, i) => {
                         const ag = findDimension(r as Parameters<typeof findDimension>[0], 'AGENCY')
+                        const key = snapshotRowKey(r)
                         return (
                           <tr key={ag?.id ?? i} className="hover:bg-gray-50/50 transition-colors">
                             <td className="px-5 py-2.5 font-medium text-gray-800">{ag?.name ?? ag?.id ?? '—'}</td>
@@ -123,6 +127,14 @@ export default function SalesPurchasePage() {
                             <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">₩{fmt(r.metrics.mediaCost ?? 0)}</td>
                             <td className="px-4 py-2.5 text-right tabular-nums text-emerald-700">₩{fmt(r.metrics.grossProfit ?? 0)}</td>
                             <td className="px-4 py-2.5 text-right tabular-nums text-gray-500" title="명세 단위(소수/퍼센트) 미확정 — 휴리스틱 표시">{fmtMargin(r.metrics.margin)}</td>
+                            <td className="px-3 py-2.5 text-center">
+                              <button
+                                onClick={() => setEditRow({ _key: key, dimension: r.dimension, metrics: r.metrics, label: ag?.name ?? ag?.id ?? '—' })}
+                                disabled={!agencySnapshot.doc}
+                                className="rounded border border-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={agencySnapshot.doc ? '행 metric 편집' : '먼저 💾 정산 진행으로 DB 저장 필요'}
+                              >✏️</button>
+                            </td>
                           </tr>
                         )
                       })}
@@ -133,6 +145,7 @@ export default function SalesPurchasePage() {
                         <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-800">₩{fmt(tot.revenue)}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-600">₩{fmt(tot.mediaCost)}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-xs text-emerald-700">₩{fmt(tot.grossProfit)}</td>
+                        <td className="px-3 py-2.5"></td>
                         <td className="px-3 py-2.5"></td>
                       </tr>
                     </tfoot>
@@ -147,6 +160,15 @@ export default function SalesPurchasePage() {
         })()}
 
       </main>
+
+      <SnapshotEditModal
+        row={editRow ? { _key: editRow._key, dimension: editRow.dimension, metrics: editRow.metrics } : null}
+        rowLabel={editRow?.label ?? ''}
+        editableKeys={['revenue', 'mediaCost', 'grossProfit', 'margin']}
+        frozen={!!agencySnapshot.doc?.frozen}
+        onSave={(rowKey, edits) => agencySnapshot.editRow(rowKey, edits)}
+        onClose={() => setEditRow(null)}
+      />
     </div>
   )
 }
