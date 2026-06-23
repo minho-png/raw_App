@@ -563,11 +563,16 @@ export default function AgencyFeePage() {
                   excelFilename={`agency-fee-by-media_${month}`}
                 />
               </div>
+              {/* F4: 상/하단 표는 별도 DB 문서 — 사용자에게 명시. */}
+              <div className="rounded-md border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-[11px] text-indigo-800">
+                이 표는 상단 표와 별도 DB 문서입니다(groupBy 다름) — 편집은 여기에만 반영되며 상단 합계는 차이 배너로만 표시됩니다.
+              </div>
               <AgencyExpandableTable
                 title={`AGENCY × MEDIA 수수료 — ${month}`}
                 detailRows={agencyMediaLive.rows}
                 detailSnapshot={agencyMediaSnapshot}
                 apiAgencyAggregate={apiAgencyAggregate}
+                sortBy="mediaCost"
                 editableMetrics={[
                   { key: 'mediaCost',   label: '매체비' },
                   { key: 'grossProfit', label: '수수료(grossProfit)' },
@@ -582,6 +587,10 @@ export default function AgencyFeePage() {
                       return mc > 0 ? +((m.grossProfit ?? 0) / mc * 100).toFixed(2) : 0
                     },
                     storeAs: 'feeRate',
+                    // F1: 부모 행은 자식 합의 가중평균 (grossProfit / mediaCost). 단순 합산 금지.
+                    aggregate: g => g.sum.mediaCost > 0
+                      ? +((g.sum.grossProfit ?? 0) / g.sum.mediaCost * 100).toFixed(2)
+                      : 0,
                   },
                 ]}
                 diffMetric="grossProfit"

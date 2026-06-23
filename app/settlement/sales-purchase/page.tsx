@@ -190,6 +190,10 @@ export default function SalesPurchasePage() {
                   excelFilename={`sales-by-media_${month}`}
                 />
               </div>
+              {/* F4: 상/하단 표는 별도 DB 문서 — 사용자에게 명시. */}
+              <div className="rounded-md border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-[11px] text-indigo-800">
+                이 표는 상단 표와 별도 DB 문서입니다(groupBy 다름) — 편집은 여기에만 반영되며 상단 합계는 차이 배너로만 표시됩니다.
+              </div>
               <AgencyExpandableTable
                 title={`AGENCY × MEDIA — ${month}`}
                 detailRows={agencyMediaLive.rows}

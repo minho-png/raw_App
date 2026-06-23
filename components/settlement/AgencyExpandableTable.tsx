@@ -14,7 +14,7 @@
  * 지급처는 별도의 `AgencyFeeSplitsPanel` 이 담당.
  */
 
-import { useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { findDimension, type SettlementRow } from '@/lib/openApi/settlementsTypes'
 import { snapshotRowKey, type SnapshotState } from '@/lib/hooks/useOpenApiSettlementSnapshot'
 import { roundWon } from '@/lib/calculationService'
@@ -28,6 +28,11 @@ export interface EditableMetricSpec {
   derive?: (metrics: Record<string, number>) => number
   /** 편집 시 metrics 에 어떤 키로 저장할지 (derive 가 있으면 별도 키로 저장 + 자동 재계산 표시). */
   storeAs?: string
+  /**
+   * 부모 행(대행사 집계) 표시값을 별도 계산. 미지정 시 기본 동작(자식 합 또는 derive(g.sum)).
+   * F1: feeRate 처럼 단순 합산이 무의미한 metric 의 가중평균/역산용.
+   */
+  aggregate?: (group: { sum: Record<string, number> }) => number
 }
 
 interface AgencyDetailSnapshot {
@@ -52,6 +57,8 @@ interface Props {
   diffMetric?: string
   /** 차이 metric 의 사용자 라벨 (배너용). 기본 '매출'. */
   diffMetricLabel?: string
+  /** 대행사 정렬 기준 metric 키 (기본 'revenue'). agency-fee 처럼 revenue 가 없는 페이지에서 override. */
+  sortBy?: string
   /** 표 우상단 타이틀. */
   title: string
   /** 표 하단 안내 문구 (선택). */
@@ -87,6 +94,7 @@ export function AgencyExpandableTable(props: Props) {
     detailRows, detailSnapshot, apiAgencyAggregate,
     editableMetrics,
     diffMetric = 'revenue', diffMetricLabel = '매출',
+    sortBy = 'revenue',
     title, footnote,
   } = props
 
@@ -125,15 +133,30 @@ export function AgencyExpandableTable(props: Props) {
       }
     }
     // sum = child metrics 합산 (effectiveMetrics 머지 이후).
+    // F1: 비통화 + derive 인 metric 키(예: feeRate)는 합산에서 제외 — 저장된 override 가
+    // g.sum 을 오염시키지 못하도록. 부모 행은 aggregate/derive 로 재계산한다.
+    const nonAdditiveKeys = new Set(
+      editableMetrics
+        .filter(m => m.currency === false && typeof m.derive === 'function')
+        .map(m => m.storeAs ?? m.key),
+    )
     for (const g of map.values()) {
       const acc: Record<string, number> = {}
       for (const c of g.children) {
-        for (const [k, v] of Object.entries(c.metrics)) acc[k] = (acc[k] ?? 0) + (Number(v) || 0)
+        for (const [k, v] of Object.entries(c.metrics)) {
+          if (nonAdditiveKeys.has(k)) continue
+          acc[k] = (acc[k] ?? 0) + (Number(v) || 0)
+        }
       }
       g.sum = acc
     }
-    return Array.from(map.values()).sort((a, b) => (b.sum.revenue ?? 0) - (a.sum.revenue ?? 0))
-  }, [sourceRows, detailSnapshot])
+    return Array.from(map.values()).sort((a, b) => (b.sum[sortBy] ?? 0) - (a.sum[sortBy] ?? 0))
+  }, [sourceRows, detailSnapshot, editableMetrics, sortBy])
+
+  // diffMetric 이 통화(currency:false 아님)인지 — F7: 퍼센트 등 비통화 metric 에서
+  // roundWon 으로 소수 차이가 0 으로 truncate 되는 문제 방지.
+  const diffMetricSpec = editableMetrics.find(m => (m.storeAs ?? m.key) === diffMetric || m.key === diffMetric)
+  const diffIsCurrency = diffMetricSpec ? diffMetricSpec.currency !== false : true
 
   // 차이 알림 — 대행사별 (DB sum) vs (API aggregate).
   const diffs = useMemo(() => {
@@ -141,13 +164,22 @@ export function AgencyExpandableTable(props: Props) {
     for (const g of groups) {
       const apiMetrics = apiAgencyAggregate.get(g.agencyId)
       if (!apiMetrics) continue
-      const db = g.sum[diffMetric] ?? 0
-      const api = apiMetrics[diffMetric] ?? 0
-      const diff = roundWon(db - api)
-      if (Math.abs(diff) > 1) out.push({ agencyName: g.agencyName, db, api, diff })
+      // 부모 표시값과 동일한 산출 방식 사용 (aggregate > derive > 직접) — banner 도
+      // 표 셀과 같은 값이어야 사용자가 매칭 가능.
+      const db = diffMetricSpec?.aggregate
+        ? diffMetricSpec.aggregate(g)
+        : diffMetricSpec?.derive
+          ? diffMetricSpec.derive(g.sum)
+          : (g.sum[diffMetric] ?? 0)
+      const api = diffMetricSpec?.derive
+        ? diffMetricSpec.derive(apiMetrics)
+        : (apiMetrics[diffMetric] ?? 0)
+      const diff = diffIsCurrency ? roundWon(db - api) : +(db - api).toFixed(2)
+      const threshold = diffIsCurrency ? 1 : 0.01
+      if (Math.abs(diff) > threshold) out.push({ agencyName: g.agencyName, db, api, diff })
     }
     return out
-  }, [groups, apiAgencyAggregate, diffMetric])
+  }, [groups, apiAgencyAggregate, diffMetric, diffMetricSpec, diffIsCurrency])
 
   function toggleExpand(agencyId: string) {
     setExpanded(prev => {
@@ -172,7 +204,7 @@ export function AgencyExpandableTable(props: Props) {
     })
   }
 
-  async function commitCell(rowKey: string, metricKey: string, originalValue: number) {
+  async function commitCell(rowKey: string, metricKey: string, rawApiValue: number) {
     const raw = pending[rowKey]?.[metricKey]
     if (raw === undefined) return
     const n = Number(raw.replace(/,/g, ''))
@@ -182,7 +214,11 @@ export function AgencyExpandableTable(props: Props) {
       clearPending(rowKey, metricKey)
       return
     }
-    if (n === originalValue) {
+    // F2: no-op 회피는 "이미 rowEdit 가 없고 + n 이 API 원본과 동일" 일 때만.
+    // 사용자가 현재 derive 값과 일치하게 타이핑했더라도 rowEdit 가 없다면 다음 API
+    // 변동에 흔들리므로 명시적 override 로 잠가야 한다.
+    const hasExistingEdit = detailSnapshot.doc?.rowEdits?.[rowKey]?.[metricKey] !== undefined
+    if (!hasExistingEdit && n === rawApiValue) {
       clearPending(rowKey, metricKey)
       return
     }
@@ -202,7 +238,22 @@ export function AgencyExpandableTable(props: Props) {
   }
 
   if (!detailSnapshot.doc && sourceRows.length === 0) {
-    return null
+    // F5: 빈 상태에서 silent return null 대신 안내 카드 표시.
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold text-gray-700">{title}</p>
+            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700">
+              DB 편집
+            </span>
+          </div>
+        </div>
+        <div className="px-5 py-10 text-center text-xs text-gray-500">
+          표시할 데이터가 없습니다. 상단 표에서 <strong className="text-gray-700">💾 정산 진행</strong> 을 눌러 DB 저장 후 이 표가 활성화됩니다.
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -274,7 +325,7 @@ export function AgencyExpandableTable(props: Props) {
               const isOpen = expanded.has(g.agencyId)
               const api = apiAgencyAggregate.get(g.agencyId)
               return (
-                <RowFragment key={g.agencyId}>
+                <React.Fragment key={g.agencyId}>
                   <tr
                     className={`hover:bg-gray-50/60 transition-colors ${isOpen ? 'bg-indigo-50/30' : ''}`}
                   >
@@ -293,16 +344,31 @@ export function AgencyExpandableTable(props: Props) {
                       <span className="ml-1.5 text-[10px] text-gray-400">{g.children.length}개 매체</span>
                     </td>
                     {editableMetrics.map(m => {
-                      const live = m.derive ? m.derive(g.sum) : (g.sum[m.key] ?? 0)
-                      const apiVal = api ? (m.derive ? m.derive(api) : (api[m.key] ?? 0)) : null
-                      const delta = apiVal !== null ? roundWon(live - apiVal) : 0
-                      const showDelta = apiVal !== null && Math.abs(delta) > 1 && m.key === diffMetric
+                      // F1: aggregate > derive > 자식 합. ratio metric 은 aggregate 로
+                      // 가중평균/역산해야 자식 합산(예: 15+15+15=45%) 오류를 막는다.
+                      const live = m.aggregate
+                        ? m.aggregate(g)
+                        : m.derive
+                          ? m.derive(g.sum)
+                          : (g.sum[m.key] ?? 0)
+                      const apiVal = api
+                        ? (m.derive ? m.derive(api) : (api[m.key] ?? 0))
+                        : null
+                      const isCurrency = m.currency !== false
+                      // F7: 비통화는 toFixed(2), 통화는 roundWon.
+                      const delta = apiVal !== null
+                        ? (isCurrency ? roundWon(live - apiVal) : +(live - apiVal).toFixed(2))
+                        : 0
+                      // F3: ratio(derive + 비통화) 는 delta 표시 생략, 그 외 모든 metric 에서 표시.
+                      const isRatio = !isCurrency && typeof m.derive === 'function'
+                      const threshold = isCurrency ? 1 : 0.01
+                      const showDelta = apiVal !== null && !isRatio && Math.abs(delta) > threshold
                       return (
                         <td key={m.key} className="px-4 py-2.5 text-right tabular-nums text-gray-800">
-                          {m.currency === false ? fmtPct(live) : `₩${fmtMoney(live)}`}
+                          {isCurrency ? `₩${fmtMoney(live)}` : fmtPct(live)}
                           {showDelta && (
                             <span className={`ml-1 text-[10px] font-semibold ${delta > 0 ? 'text-rose-600' : 'text-blue-600'}`}>
-                              ({delta > 0 ? '+' : ''}{fmtMoney(delta)})
+                              ({delta > 0 ? '+' : ''}{isCurrency ? fmtMoney(delta) : fmtPct(delta)})
                             </span>
                           )}
                         </td>
@@ -319,10 +385,13 @@ export function AgencyExpandableTable(props: Props) {
                       {editableMetrics.map(m => {
                         const storeKey = m.storeAs ?? m.key
                         const original = m.derive ? m.derive(c.metrics) : (c.metrics[m.key] ?? 0)
+                        // F2: skip-save 비교용 — rowEdit 적용 전 raw API 값.
+                        const rawApiValue = m.derive ? m.derive(c.row.metrics) : (c.row.metrics[storeKey] ?? 0)
                         const pendingVal = pending[c.rowKey]?.[storeKey]
+                        // F9: 비통화는 toFixed(2) 그대로(말단 0 보존), 통화는 정수.
                         const displayVal = pendingVal !== undefined
                           ? pendingVal
-                          : (m.currency === false ? String(+original.toFixed(2)) : String(Math.round(original)))
+                          : (m.currency === false ? original.toFixed(2) : String(Math.round(original)))
                         const isSaving = saving.has(`${c.rowKey}:${storeKey}`)
                         const disabled = frozen || !detailSnapshot.doc || isSaving
                         return (
@@ -335,7 +404,7 @@ export function AgencyExpandableTable(props: Props) {
                                 value={displayVal}
                                 disabled={disabled}
                                 onChange={e => onCellChange(c.rowKey, storeKey, e.target.value)}
-                                onBlur={() => commitCell(c.rowKey, storeKey, m.derive ? m.derive(c.metrics) : (c.metrics[storeKey] ?? 0))}
+                                onBlur={() => commitCell(c.rowKey, storeKey, rawApiValue)}
                                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                                 className={`w-28 rounded border px-2 py-0.5 text-right tabular-nums focus:outline-none focus:ring-1 ${
                                   disabled
@@ -353,7 +422,7 @@ export function AgencyExpandableTable(props: Props) {
                       })}
                     </tr>
                   ))}
-                </RowFragment>
+                </React.Fragment>
               )
             })}
           </tbody>
@@ -361,14 +430,26 @@ export function AgencyExpandableTable(props: Props) {
             <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
               <td className="px-3 py-2.5"></td>
               <td className="px-3 py-2.5 text-xs text-gray-600">합계</td>
-              {editableMetrics.map(m => {
-                const totalLive = groups.reduce((s, g) => s + (m.derive ? m.derive(g.sum) : (g.sum[m.key] ?? 0)), 0)
-                return (
-                  <td key={m.key} className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-800">
-                    {m.currency === false ? fmtPct(totalLive) : `₩${fmtMoney(totalLive)}`}
-                  </td>
-                )
-              })}
+              {(() => {
+                // F1: 전체 합계도 aggregate/derive 인지에 따라 다르게. 비율 metric 은
+                // 그룹 sum 들을 전부 합쳐 한 번 더 가중평균. 단순 합산은 의미가 없다.
+                const grandSum: Record<string, number> = {}
+                for (const g of groups) {
+                  for (const [k, v] of Object.entries(g.sum)) grandSum[k] = (grandSum[k] ?? 0) + (Number(v) || 0)
+                }
+                return editableMetrics.map(m => {
+                  const totalLive = m.aggregate
+                    ? m.aggregate({ sum: grandSum })
+                    : m.derive
+                      ? m.derive(grandSum)
+                      : (grandSum[m.key] ?? 0)
+                  return (
+                    <td key={m.key} className="px-4 py-2.5 text-right tabular-nums text-xs text-gray-800">
+                      {m.currency === false ? fmtPct(totalLive) : `₩${fmtMoney(totalLive)}`}
+                    </td>
+                  )
+                })
+              })()}
             </tr>
           </tfoot>
         </table>
@@ -380,7 +461,3 @@ export function AgencyExpandableTable(props: Props) {
   )
 }
 
-// React table 자식 fragment — table 직접 자식 제약상 tbody 안에 두 row 묶음용.
-function RowFragment({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
-}
