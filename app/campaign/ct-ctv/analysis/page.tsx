@@ -3,12 +3,9 @@
 import { useMemo, useEffect } from "react"
 import { useFilterPersistence } from "@/lib/hooks/useFilterPersistence"
 import { FilterToggle, FilterDateRange } from "@/components/atoms/filters"
-import { useMasterData } from "@/lib/hooks/useMasterData"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
-import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
 import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
 import { useMotivAgencies } from "@/lib/hooks/useMotivAgencies"
-import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import { KpiCard } from "@/components/analysis/KpiCard"
 import { SummaryCard } from "@/components/molecules/SummaryCard"
 import { AlertIcon } from "@/components/analysis/AlertIcon"
@@ -62,11 +59,9 @@ export default function CtCtvAnalysisPage() {
   const refreshKey = refreshControl.key
 
   // ── 데이터 소스 ──────────────────────────────────────────
-  const { agencies, advertisers, operators } = useMasterData()
   const motiv = useMotivSettlementCampaignsByProduct('CTV',
     { dateRange: { start: rangeStart, end: rangeEnd }, refreshKey },
   )
-  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
   const { byId: adAccountById }   = useMotivAdAccounts(true, refreshKey)
   const { byId: motivAgencyById } = useMotivAgencies(true, refreshKey)
   // 선택한 일자(시작일)의 전일자 스냅샷과 비교
@@ -397,24 +392,8 @@ export default function CtCtvAnalysisPage() {
           )}
         </section>
 
-        {/* 정산 테이블 */}
-        <section className="space-y-2 mt-8">
-          <MotivSettlementTable
-            title="CTV 정산 지정"
-            loading={motiv.loading}
-            error={motiv.error}
-            campaigns={motiv.data.filter(c => !isExcludedCampaign(c.title ?? ''))}
-            exchangeRate={motiv.exchangeRate}
-            agencies={agencies}
-            advertisers={advertisers}
-            operators={operators}
-            assignments={assignments}
-            onUpsertAssignment={upsertAssignment}
-            adAccountById={adAccountById}
-            motivAgencyById={motivAgencyById}
-            directMotivDisplay  /* 정산 시 Motiv API 광고주/대행사 직접 표시 — 추후 매칭 추가 예정 */
-          />
-        </section>
+        {/* 정산 테이블 (CTV 정산 지정) — 레거시 제거 (2026-06-23 사용자 결정).
+            대행사·광고주·운영자 지정은 /management 페이지 + agency_fee_splits 인프라로 일원화. */}
       </main>
     </div>
   )

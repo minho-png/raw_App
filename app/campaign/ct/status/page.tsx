@@ -7,11 +7,6 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts"
 import { useMotivSettlementCampaignsByProduct } from "@/lib/hooks/useMotivSettlementCampaigns"
-import { useMotivAssignments } from "@/lib/hooks/useMotivAssignments"
-import { useMotivAdAccounts } from "@/lib/hooks/useMotivAdAccounts"
-import { useMotivAgencies } from "@/lib/hooks/useMotivAgencies"
-import { useMasterData } from "@/lib/hooks/useMasterData"
-import { MotivSettlementTable } from "@/components/settlement/MotivSettlementTable"
 import type { MotivCampaign } from "@/lib/motivApi/types"
 
 // ── 타입 ────────────────────────────────────────────────────
@@ -82,11 +77,6 @@ function sumMetrics(arr: MotivCampaign[]): Metrics {
 
 export default function CtStatusPage() {
   const [category, setCategory] = useFilterPersistence<Category>('ct-status:category', 'total')
-
-  const { agencies, advertisers, operators } = useMasterData()
-  const { data: assignments, upsert: upsertAssignment } = useMotivAssignments()
-  const { byId: adAccountById } = useMotivAdAccounts()
-  const { byId: motivAgencyById } = useMotivAgencies()
 
   // CT 전체 (DISPLAY + VIDEO + PARTNERS) Motiv API
   const motivCt = useMotivSettlementCampaignsByProduct('CT', undefined, true)
@@ -188,28 +178,7 @@ export default function CtStatusPage() {
                 sub="(매출 − 집행 − 수수료 − DMP) ÷ 매출" highlight />
         </section>
 
-        {/* 정산 지정 — Motiv 캠페인 리스트 + 일괄 매핑 */}
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-800">정산 지정 (CT 캠페인)</h2>
-          <p className="text-[11px] text-gray-500">
-            여기서 지정한 대행사·광고주·운영자 정보가 매입/매출 현황 / 계산서 발급에 자동 반영됩니다.
-          </p>
-          <MotivSettlementTable
-            title="CT 캠페인 (DISPLAY · VIDEO · PARTNERS)"
-            loading={motivCt.loading}
-            error={motivCt.error}
-            campaigns={filtered}
-            exchangeRate={motivCt.exchangeRate}
-            agencies={agencies}
-            advertisers={advertisers}
-            operators={operators}
-            assignments={assignments}
-            onUpsertAssignment={upsertAssignment}
-            adAccountById={adAccountById}
-            motivAgencyById={motivAgencyById}
-            directMotivDisplay  /* 정산 시 Motiv API 광고주/대행사 직접 표시 — 추후 매칭 추가 예정 */
-          />
-        </section>
+        {/* 정산 지정 (CT) — 레거시 제거 (2026-06-23). /management + agency_fee_splits 로 일원화. */}
       </main>
     </div>
   )
