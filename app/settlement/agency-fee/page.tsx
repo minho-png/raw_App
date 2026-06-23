@@ -20,6 +20,7 @@ import { AgencyFeeSplitsPanel } from "@/components/settlement/AgencyFeeSplitsPan
 import { useOpenApiSettlementSnapshot, snapshotRowKey } from "@/lib/hooks/useOpenApiSettlementSnapshot"
 import { SnapshotActions, SnapshotStatusBadge } from "@/components/settlement/SnapshotActions"
 import { SnapshotEditModal } from "@/components/settlement/SnapshotEditModal"
+import { AgencyExpandableTable } from "@/components/settlement/AgencyExpandableTable"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
 
@@ -98,6 +99,16 @@ export default function AgencyFeePage() {
   })
   // DB 영속화 — sales-purchase 와 동일 (workspace+month+groupBy 키 공유, 양쪽에서 확정 동기화).
   const agencySnapshot = useOpenApiSettlementSnapshot({ month, groupBy: ['AGENCY'], enabled: motivProduct !== null })
+  // 하단 — AGENCY × MEDIA 라이브 + 별도 키 스냅샷. 대행사 토글로 펼쳐 매체별
+  // mediaCost / agencyFee(grossProfit 대체) / feeRate 인라인 편집.
+  const agencyMediaLive = useOpenApiSettlements({
+    month,
+    groupBy: ['AGENCY', 'MEDIA'],
+    orderBy: 'mediaCost',
+    order: 'DESC',
+    enabled: motivProduct !== null,
+  })
+  const agencyMediaSnapshot = useOpenApiSettlementSnapshot({ month, groupBy: ['AGENCY', 'MEDIA'], enabled: motivProduct !== null })
 
   // 사용자 요구 — 매입/매출 시트(sales-purchase)와 동일 API 필터링 방식 적용.
   // /v1/stats/campaign/breakdown 로 해당 월의 정확한 기간 spend/agencyFee/dataFee 를
@@ -530,6 +541,62 @@ export default function AgencyFeePage() {
                 <strong className="text-emerald-700">CT/CTV 대행사 정산 공식값</strong>은 이 표(Open API AGENCY · 월별 실측) 기준입니다.
                 <span className="ml-1 text-gray-400">⚠ 순수 대행수수료(agency_fee) 분해 metric 미확정 — grossProfit 으로 보조 표기.</span>
               </div>
+            </div>
+          )
+        })()}
+
+        {/* 하단 — 대행사 토글 + 매체별 수수료율 편집 (DB 저장본 기준). 상단 AGENCY 합계와 차이 알림. */}
+        {motivProduct && (() => {
+          const apiAgencyAggregate = new Map<string, Record<string, number>>()
+          for (const r of agencySettlement.rows) {
+            const ag = findDimension(r, 'AGENCY')
+            if (!ag) continue
+            apiAgencyAggregate.set(ag.id, r.metrics)
+          }
+          return (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h2 className="text-sm font-semibold text-gray-800">대행사별 매체 수수료 — DB 편집</h2>
+                <SnapshotActions
+                  snapshot={agencyMediaSnapshot}
+                  liveRows={agencyMediaLive.rows}
+                  excelFilename={`agency-fee-by-media_${month}`}
+                />
+              </div>
+              {/* F4: 상/하단 표는 별도 DB 문서 — 사용자에게 명시. */}
+              <div className="rounded-md border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-[11px] text-indigo-800">
+                이 표는 상단 표와 별도 DB 문서입니다(groupBy 다름) — 편집은 여기에만 반영되며 상단 합계는 차이 배너로만 표시됩니다.
+              </div>
+              <AgencyExpandableTable
+                title={`AGENCY × MEDIA 수수료 — ${month}`}
+                detailRows={agencyMediaLive.rows}
+                detailSnapshot={agencyMediaSnapshot}
+                apiAgencyAggregate={apiAgencyAggregate}
+                sortBy="mediaCost"
+                editableMetrics={[
+                  { key: 'mediaCost',   label: '매체비' },
+                  { key: 'grossProfit', label: '수수료(grossProfit)' },
+                  {
+                    key: 'feeRate',
+                    label: '수수료율(%)',
+                    currency: false,
+                    derive: m => {
+                      // 저장된 feeRate(rowEdits)가 있으면 그대로, 없으면 grossProfit/mediaCost 역산.
+                      if (Number.isFinite(m.feeRate) && m.feeRate !== 0) return m.feeRate
+                      const mc = m.mediaCost ?? 0
+                      return mc > 0 ? +((m.grossProfit ?? 0) / mc * 100).toFixed(2) : 0
+                    },
+                    storeAs: 'feeRate',
+                    // F1: 부모 행은 자식 합의 가중평균 (grossProfit / mediaCost). 단순 합산 금지.
+                    aggregate: g => g.sum.mediaCost > 0
+                      ? +((g.sum.grossProfit ?? 0) / g.sum.mediaCost * 100).toFixed(2)
+                      : 0,
+                  },
+                ]}
+                diffMetric="grossProfit"
+                diffMetricLabel="수수료(grossProfit)"
+                footnote="매체 단위로 수수료율을 직접 편집하면 rowEdits 에 누적 저장됩니다. 캠페인별 다중 지급처는 아래 패널에서 분리 관리."
+              />
             </div>
           )
         })()}

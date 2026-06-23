@@ -10,6 +10,8 @@ import { friendlyOpenApiError } from "@/lib/openApi/health"
 import { useOpenApiSettlementSnapshot, snapshotRowKey } from "@/lib/hooks/useOpenApiSettlementSnapshot"
 import { SnapshotActions, SnapshotStatusBadge } from "@/components/settlement/SnapshotActions"
 import { SnapshotEditModal } from "@/components/settlement/SnapshotEditModal"
+import { AgencyExpandableTable } from "@/components/settlement/AgencyExpandableTable"
+import { MonthlyPurchasePanel } from "@/components/settlement/MonthlyPurchasePanel"
 
 function fmt(n: number) { return roundWon(n).toLocaleString("ko-KR") }
 function toMonthStr(d: Date) {
@@ -37,6 +39,16 @@ export default function SalesPurchasePage() {
   })
   // DB 영속화 스냅샷 (PR-C 인프라).
   const agencySnapshot = useOpenApiSettlementSnapshot({ month, groupBy: ['AGENCY'], enabled: motivProduct !== null })
+  // 하단 표 — AGENCY × MEDIA 라이브 + 별도 키 스냅샷. 사용자 요구: "DB 저장본은
+  // 하단 표에서 수정 + 대행사 토글로 자식 보기". groupBy 키가 다르므로 별도 doc.
+  const agencyMediaLive = useOpenApiSettlements({
+    month,
+    groupBy: ['AGENCY', 'MEDIA'],
+    orderBy: 'revenue',
+    order: 'DESC',
+    enabled: motivProduct !== null,
+  })
+  const agencyMediaSnapshot = useOpenApiSettlementSnapshot({ month, groupBy: ['AGENCY', 'MEDIA'], enabled: motivProduct !== null })
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -158,6 +170,50 @@ export default function SalesPurchasePage() {
             </div>
           )
         })()}
+
+        {/* 하단 — 매출(DB 편집): AGENCY × MEDIA 확장 가능 표 + 상단 AGENCY API 합계와의 차이 알림 */}
+        {motivProduct && (() => {
+          // 상단 API AGENCY 집계 → agencyId 별 metric Map (차이 비교용).
+          const apiAgencyAggregate = new Map<string, Record<string, number>>()
+          for (const r of agencySettlement.rows) {
+            const ag = findDimension(r, 'AGENCY')
+            if (!ag) continue
+            apiAgencyAggregate.set(ag.id, r.metrics)
+          }
+          return (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h2 className="text-sm font-semibold text-gray-800">매출 — DB 편집 (대행사 토글)</h2>
+                <SnapshotActions
+                  snapshot={agencyMediaSnapshot}
+                  liveRows={agencyMediaLive.rows}
+                  excelFilename={`sales-by-media_${month}`}
+                />
+              </div>
+              {/* F4: 상/하단 표는 별도 DB 문서 — 사용자에게 명시. */}
+              <div className="rounded-md border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-[11px] text-indigo-800">
+                이 표는 상단 표와 별도 DB 문서입니다(groupBy 다름) — 편집은 여기에만 반영되며 상단 합계는 차이 배너로만 표시됩니다.
+              </div>
+              <AgencyExpandableTable
+                title={`AGENCY × MEDIA — ${month}`}
+                detailRows={agencyMediaLive.rows}
+                detailSnapshot={agencyMediaSnapshot}
+                apiAgencyAggregate={apiAgencyAggregate}
+                editableMetrics={[
+                  { key: 'revenue',     label: '매출' },
+                  { key: 'mediaCost',   label: '매체비(매입)' },
+                  { key: 'grossProfit', label: '매출총이익' },
+                ]}
+                diffMetric="revenue"
+                diffMetricLabel="매출"
+                footnote="매체(MEDIA) 단위로 인라인 편집 — 대행사 합계가 자동 재계산. 상단 표와의 차이는 상단 알림에 표시."
+              />
+            </div>
+          )
+        })()}
+
+        {/* 매입 (다른 페이지에서 입력된 monthly_media_costs 표시 전용) */}
+        <MonthlyPurchasePanel month={month} />
 
       </main>
 
