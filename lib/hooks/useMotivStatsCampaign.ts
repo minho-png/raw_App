@@ -78,6 +78,7 @@ export function useMotivStatsCampaign({
         const PAGES_PER_CHUNK = 30  // chunk 당 3000 rows (≈ 한달 100 캠페인) 까지 안전 cap
         const CAMP_CHUNK = 20       // 한 chunk 에 캠페인 20개 — 한달 600 rows 예상 (여유)
         const CHUNK_PARALLEL = 3    // chunk 병렬 (rate limit 고려)
+        const REQUEST_TIMEOUT_MS = 30_000  // QA BUG-CT-04/05: 페이지 fetch 30s 후 abort → 무한 로딩 방지
         const allRows: Record<string, string>[] = []
         let totals: Record<string, string> | null = null
         let truncatedChunks = 0
@@ -110,7 +111,18 @@ export function useMotivStatsCampaign({
             params.set('sort', 'campaign_id')
 
             const t0 = Date.now()
-            const res = await fetch(`/api/motiv/stats/campaign?${params.toString()}`, { cache: 'no-store' })
+            const ctrl = new AbortController()
+            const tid = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS)
+            let res: Response
+            try {
+              res = await fetch(`/api/motiv/stats/campaign?${params.toString()}`, { cache: 'no-store', signal: ctrl.signal })
+            } catch (fe) {
+              const err = fe as { name?: string }
+              if (err?.name === 'AbortError') throw new Error(`stats/campaign timeout — ${REQUEST_TIMEOUT_MS}ms 초과`)
+              throw fe
+            } finally {
+              clearTimeout(tid)
+            }
             const ms = Date.now() - t0
             const diag = {
               upstream: res.headers.get('X-OpenApi-Upstream'),

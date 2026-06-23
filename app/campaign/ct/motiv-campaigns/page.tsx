@@ -54,8 +54,11 @@ export default function MotivCampaignsPage() {
 
       const res = await fetch(`/api/motiv/campaigns?${params.toString()}`, { cache: 'no-store' });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(body.error ?? `HTTP ${res.status}`);
+        const body = await res.json().catch(() => ({ error: res.statusText })) as { error?: string | { code?: string; message?: string } };
+        const errMsg = typeof body.error === 'string'
+          ? body.error
+          : body.error?.message ?? body.error?.code ?? `HTTP ${res.status}`;
+        throw new Error(errMsg);
       }
       const json = (await res.json()) as MotivCampaignListResponse;
       setData(json);

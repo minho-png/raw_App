@@ -18,6 +18,9 @@ import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
 import { friendlyOpenApiError } from "@/lib/openApi/health"
 import { AgencyFeeSplitsPanel } from "@/components/settlement/AgencyFeeSplitsPanel"
+import { useOpenApiSettlementSnapshot } from "@/lib/hooks/useOpenApiSettlementSnapshot"
+import { SnapshotActions, SnapshotStatusBadge } from "@/components/settlement/SnapshotActions"
+import { LegacyCollapseSection } from "@/components/settlement/LegacyCollapseSection"
 
 const SNAPSHOTS_KEY  = "agency-fee-snapshots-v1"
 
@@ -93,6 +96,8 @@ export default function AgencyFeePage() {
     order: 'DESC',
     enabled: motivProduct !== null,
   })
+  // DB 영속화 — sales-purchase 와 동일 (workspace+month+groupBy 키 공유, 양쪽에서 확정 동기화).
+  const agencySnapshot = useOpenApiSettlementSnapshot({ month, groupBy: ['AGENCY'], enabled: motivProduct !== null })
 
   // 사용자 요구 — 매입/매출 시트(sales-purchase)와 동일 API 필터링 방식 적용.
   // /v1/stats/campaign/breakdown 로 해당 월의 정확한 기간 spend/agencyFee/dataFee 를
@@ -436,7 +441,10 @@ export default function AgencyFeePage() {
 
         {/* CT/CTV 대행사별 공식 정산값 — Open API AGENCY 집계 (월별 실측) */}
         {motivProduct && (() => {
-          const rows = agencySettlement.rows
+          const rawRows = agencySnapshot.doc
+            ? agencySnapshot.doc.rows.map(r => ({ dimension: r.dimension, metrics: r.metrics }))
+            : agencySettlement.rows
+          const rows = rawRows.map(r => ({ ...r, metrics: agencySnapshot.effectiveMetrics(r as { dimension: unknown[]; metrics: Record<string, number> }) }))
           const tot = rows.reduce((a, r) => ({
             revenue: a.revenue + (r.metrics.revenue ?? 0),
             mediaCost: a.mediaCost + (r.metrics.mediaCost ?? 0),
@@ -444,9 +452,15 @@ export default function AgencyFeePage() {
           }), { revenue: 0, mediaCost: 0, grossProfit: 0 })
           return (
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-              <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
-                <p className="text-xs font-semibold text-gray-700">대행사별 공식 정산 ({month})</p>
-                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-gray-700">대행사별 공식 정산 ({month})</p>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+                  <SnapshotStatusBadge doc={agencySnapshot.doc} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <SnapshotActions snapshot={agencySnapshot} liveRows={agencySettlement.rows} />
+                </div>
               </div>
               {agencySettlement.loading ? (
                 <div className="px-5 py-10 text-center text-sm text-gray-400">불러오는 중…</div>
@@ -477,7 +491,7 @@ export default function AgencyFeePage() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {rows.map((r, i) => {
-                        const ag = findDimension(r, 'AGENCY')
+                        const ag = findDimension(r as Parameters<typeof findDimension>[0], 'AGENCY')
                         return (
                           <tr key={ag?.id ?? i} className="hover:bg-gray-50/50 transition-colors">
                             <td className="px-5 py-2.5 font-medium text-gray-800">{ag?.name ?? ag?.id ?? '—'}</td>
@@ -755,22 +769,27 @@ export default function AgencyFeePage() {
           </div>
         ))}
 
-        {/* Motiv 기반 CT/CTV — 대행사별 집계 (읽기 전용).
-            대행사 지정은 '정산 확인' 페이지에서 관리됩니다. */}
+        {/* Motiv 기반 CT/CTV — 대행사별 집계 (읽기 전용, 레거시 참고용).
+            QA BUG-CT-04: stats/campaign 422 로 로딩 실패하는 경우가 있어 기본 접힘. */}
         {motivProduct && (
-          <MotivAgencyAggregation
+          <LegacyCollapseSection
             title={
-              motivProduct === 'CT_CTV_BOTH' ? 'CT · CTV 대행사별 집계 (Motiv)'
-              : motivProduct === 'CTV' ? 'CTV 대행사별 집계 (Motiv)'
-              : 'CT 대행사별 집계 (Motiv)'
+              motivProduct === 'CT_CTV_BOTH' ? 'CT · CTV 대행사별 집계 (Motiv lifetime)'
+              : motivProduct === 'CTV' ? 'CTV 대행사별 집계 (Motiv lifetime)'
+              : 'CT 대행사별 집계 (Motiv lifetime)'
             }
-            loading={motivFetch.loading || periodStats.loading}
-            error={motivFetch.error || periodStats.error}
-            campaigns={motivFetch.data}
-            agencies={agencies}
-            assignments={assignments}
-            statsByMotivId={statsByMotivId}
-          />
+            subtitle="마감 검토용 — 공식값은 위쪽 Open API 표 기준"
+          >
+            <MotivAgencyAggregation
+              title="대행사별 집계 (Motiv lifetime)"
+              loading={motivFetch.loading || periodStats.loading}
+              error={motivFetch.error || periodStats.error}
+              campaigns={motivFetch.data}
+              agencies={agencies}
+              assignments={assignments}
+              statsByMotivId={statsByMotivId}
+            />
+          </LegacyCollapseSection>
         )}
 
         {/* 캠페인별 다중 지급처 (사용자 요청 2026-06-22) — agency_fee_splits 인프라 활용 */}
