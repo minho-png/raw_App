@@ -9,15 +9,19 @@
 
 import type { SnapshotState } from '@/lib/hooks/useOpenApiSettlementSnapshot'
 import type { SettlementRow } from '@/lib/openApi/settlementsTypes'
+import { downloadSnapshotExcel } from '@/lib/export/snapshotExcel'
 
 interface Props {
   snapshot: SnapshotState & {
     capture: (rows: SettlementRow[]) => Promise<boolean>
     confirm: () => Promise<boolean>
     unconfirm: () => Promise<boolean>
+    effectiveMetrics: (row: { dimension: unknown[]; metrics: Record<string, number> }) => Record<string, number>
   }
   /** 라이브 Open API 응답 — 정산 진행 시 capture 인자. */
   liveRows: SettlementRow[]
+  /** Excel 다운로드 파일명 (확장자 .xlsx 자동 추가). */
+  excelFilename?: string
 }
 
 export function SnapshotStatusBadge({ doc }: { doc: SnapshotState['doc'] }) {
@@ -38,7 +42,17 @@ export function SnapshotStatusBadge({ doc }: { doc: SnapshotState['doc'] }) {
   )
 }
 
-export function SnapshotActions({ snapshot, liveRows }: Props) {
+export function SnapshotActions({ snapshot, liveRows, excelFilename }: Props) {
+  const hasData = !!snapshot.doc?.rows?.length || liveRows.length > 0
+  function handleExcel() {
+    // 저장된 스냅샷이 있으면 그 값, 없으면 라이브 응답 기준. effectiveMetrics 적용.
+    const src = snapshot.doc?.rows ?? liveRows
+    downloadSnapshotExcel(
+      src as unknown as { _key?: string; dimension: unknown[]; metrics: Record<string, number> }[],
+      excelFilename ?? `snapshot_${new Date().toISOString().slice(0, 10)}`,
+      snapshot.effectiveMetrics,
+    )
+  }
   return (
     <>
       {!snapshot.doc?.frozen && liveRows.length > 0 && (
@@ -60,6 +74,13 @@ export function SnapshotActions({ snapshot, liveRows }: Props) {
           onClick={() => snapshot.unconfirm()}
           className="rounded bg-amber-500 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-amber-600"
         >🔓 잠금 해제</button>
+      )}
+      {hasData && (
+        <button
+          onClick={handleExcel}
+          className="rounded border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+          title="현재 표(스냅샷 + rowEdits)를 Excel(.xlsx) 로 다운로드"
+        >📥 Excel</button>
       )}
     </>
   )
