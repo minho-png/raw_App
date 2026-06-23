@@ -67,8 +67,6 @@ export default function MediaCostPage() {
   const [noteInput, setNoteInput]       = useState('')
   // 내부거래 매체비 포함 여부 (Open API includeInternalTrade). 기본 포함.
   const [includeInternal, setIncludeInternal] = useState(true)
-  // 사용자 요청 — 월별 매체 매입 비용 그리드 (선택 month 의 연도 기본).
-  const [gridYear, setGridYear] = useState(() => new Date().getFullYear())
 
   const showCtPlus = product === 'ALL' || product === 'CT_PLUS'
   const showCt     = product === 'ALL' || product === 'CT'
@@ -622,7 +620,12 @@ export default function MediaCostPage() {
 
         {/* 월별 매체 매입 비용 그리드 — 사용자 요청 2026-06-22 (이미지 패턴 반영).
             DB(monthly_media_costs)에 직접 저장. CTV/CT/CT+ 그룹별 매체사 행 + 1~12월 셀. */}
-        <MonthlyMediaCostGrid year={gridYear} onYearChange={setGridYear} />
+        {/* 위에서 선택한 month(YYYY-MM)에서 연도 자동 추출 — 사용자 요청 2026-06-22.
+            연도 이동은 그리드 내 ◀ ▶ 버튼이 month state 를 1월로 업데이트. */}
+        <MonthlyMediaCostGrid
+          year={Number(month.split('-')[0]) || new Date().getFullYear()}
+          onYearChange={y => setMonth(`${y}-${month.split('-')[1] ?? '01'}`)}
+        />
       </main>
     </div>
   )
