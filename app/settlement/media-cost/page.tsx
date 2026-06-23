@@ -15,6 +15,7 @@ import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
 import { friendlyOpenApiError } from "@/lib/openApi/health"
 import { MonthlyMediaCostGrid } from "@/components/settlement/MonthlyMediaCostGrid"
+import { useOpenApiSettlementSnapshot, snapshotRowKey } from "@/lib/hooks/useOpenApiSettlementSnapshot"
 
 const SNAPSHOTS_KEY  = "media-cost-snapshots-v1"
 
@@ -84,6 +85,12 @@ export default function MediaCostPage() {
     includeInternalTrade: includeInternal,
     orderBy: 'mediaCost',
     order: 'DESC',
+    enabled: motivProduct !== null,
+  })
+  // DB 영속화 스냅샷 — PR-C 인프라. 사용자가 "정산 진행" 누르면 라이브 응답 저장.
+  const mediaSnapshot = useOpenApiSettlementSnapshot({
+    month,
+    groupBy: ['MEDIA'],
     enabled: motivProduct !== null,
   })
 
@@ -506,25 +513,62 @@ export default function MediaCostPage() {
 
         {/* CT/CTV 매체별 비용 — 새 Open API 정산 집계 (월 단위, groupBy=MEDIA) */}
         {motivProduct && (() => {
-          const rows = mediaSettlement.rows
+          // DB 스냅샷이 있으면 그것을 우선 사용 (사용자 수정 누적 반영).
+          // 없으면 라이브 Open API 응답 사용.
+          const rawRows = mediaSnapshot.doc
+            ? mediaSnapshot.doc.rows.map(r => ({ dimension: r.dimension, metrics: r.metrics }))
+            : mediaSettlement.rows
+          const rows = rawRows.map(r => ({
+            ...r,
+            // effectiveMetrics: snapshot.rowEdits 가 있으면 적용
+            metrics: mediaSnapshot.effectiveMetrics(r as { dimension: unknown[]; metrics: Record<string, number> }),
+          }))
           const totalMediaCost = rows.reduce((s, r) => s + (r.metrics.mediaCost ?? 0), 0)
           const totalInternal  = rows.reduce((s, r) => s + (r.metrics.mediaCostInternal ?? 0), 0)
           return (
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100">
+              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100 flex-wrap">
                 <div className="flex items-center gap-2">
                   <p className="text-xs font-semibold text-gray-700">CT/CTV 매체별 비용 ({month})</p>
                   <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+                  {mediaSnapshot.doc && (
+                    mediaSnapshot.doc.frozen
+                      ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800" title={`확정자: ${mediaSnapshot.doc.confirmedBy} · ${mediaSnapshot.doc.confirmedAt?.slice(0, 16)}`}>🔒 DB 확정</span>
+                      : <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700" title={`저장자: ${mediaSnapshot.doc.capturedBy} · ${mediaSnapshot.doc.capturedAt?.slice(0, 16)}`}>💾 DB 저장됨</span>
+                  )}
                 </div>
-                <label className="flex items-center gap-1.5 text-[11px] text-gray-500 select-none cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeInternal}
-                    onChange={e => setIncludeInternal(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-indigo-600"
-                  />
-                  내부거래 매체비 포함
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-[11px] text-gray-500 select-none cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeInternal}
+                      onChange={e => setIncludeInternal(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-indigo-600"
+                    />
+                    내부거래 매체비 포함
+                  </label>
+                  {/* 사용자 요청 (2026-06-22) "정산 진행 → DB 저장 + CRUD" — PR-C 인프라 활용. */}
+                  {!mediaSnapshot.doc?.frozen && mediaSettlement.rows.length > 0 && (
+                    <button
+                      onClick={() => mediaSnapshot.capture(mediaSettlement.rows)}
+                      disabled={mediaSnapshot.loading}
+                      className="rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                      title="현재 API 응답을 DB 에 저장 (다음 진입 시 이 값 우선 표시 + 수정 가능)"
+                    >💾 정산 진행 (DB 저장)</button>
+                  )}
+                  {mediaSnapshot.doc && !mediaSnapshot.doc.frozen && (
+                    <button
+                      onClick={() => mediaSnapshot.confirm()}
+                      className="rounded bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
+                    >✓ 확정</button>
+                  )}
+                  {mediaSnapshot.doc?.frozen && (
+                    <button
+                      onClick={() => mediaSnapshot.unconfirm()}
+                      className="rounded bg-amber-500 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-amber-600"
+                    >🔓 잠금 해제</button>
+                  )}
+                </div>
               </div>
 
               {mediaSettlement.loading ? (
@@ -555,7 +599,8 @@ export default function MediaCostPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {rows.map((r, i) => {
-                        const media = findDimension(r, 'MEDIA')
+                        // r 은 SettlementRow 또는 SnapshotRow — findDimension 호환을 위해 단언.
+                        const media = findDimension(r as Parameters<typeof findDimension>[0], 'MEDIA')
                         const cost = r.metrics.mediaCost ?? 0
                         const internal = r.metrics.mediaCostInternal ?? 0
                         return (
