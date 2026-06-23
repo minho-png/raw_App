@@ -62,6 +62,7 @@ export function useMotivStatsDaily({
       return
     }
     let cancelled = false
+    // QA BUG-CT-05: 무한 로딩 방지 — 페이지 단위 30s AbortController.
     setState(s => ({ ...s, loading: true, error: null }))
     ;(async () => {
       try {
@@ -69,6 +70,7 @@ export function useMotivStatsDaily({
         // 누락될 수 있음 → 모든 페이지 순회 (최대 10페이지 = 1000 row 안전 캡).
         const PER_PAGE = 100
         const MAX_PAGES = 10
+        const REQUEST_TIMEOUT_MS = 30_000
         const allRows: Record<string, string>[] = []
         let totals: Record<string, string> | null = null
 
@@ -86,7 +88,18 @@ export function useMotivStatsDaily({
           params.set('sort', 'date')
 
           const t0 = Date.now()
-          const res = await fetch(`/api/motiv/stats/daily?${params.toString()}`, { cache: 'no-store' })
+          const ctrl = new AbortController()
+          const tid = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS)
+          let res: Response
+          try {
+            res = await fetch(`/api/motiv/stats/daily?${params.toString()}`, { cache: 'no-store', signal: ctrl.signal })
+          } catch (fe) {
+            const err = fe as { name?: string }
+            if (err?.name === 'AbortError') throw new Error(`stats/daily timeout — ${REQUEST_TIMEOUT_MS}ms 초과`)
+            throw fe
+          } finally {
+            clearTimeout(tid)
+          }
           const ms = Date.now() - t0
           const diag = {
             upstream: res.headers.get('X-OpenApi-Upstream'),
