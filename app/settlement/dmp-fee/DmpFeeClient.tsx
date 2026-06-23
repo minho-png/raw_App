@@ -16,6 +16,8 @@ import { getAdvertiserName } from "@/lib/motivApi/advertiserHelpers"
 import { useOpenApiDataProviders } from "@/lib/hooks/useOpenApiDataProviders"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
 import { friendlyOpenApiError } from "@/lib/openApi/health"
+import { useOpenApiSettlementSnapshot } from "@/lib/hooks/useOpenApiSettlementSnapshot"
+import { SnapshotActions, SnapshotStatusBadge } from "@/components/settlement/SnapshotActions"
 
 /**
  * DMP 수수료 정산 페이지 — 통합 표.
@@ -92,6 +94,12 @@ export default function DmpFeeClient() {
   const dataProviderSettlement = useOpenApiDataProviders({
     month,
     byMedia,
+    enabled: motivProduct !== null,
+  })
+  // DB 영속화 — byMedia 토글에 따라 groupBy 가 다른 스냅샷 분리 저장.
+  const dpSnapshot = useOpenApiSettlementSnapshot({
+    month,
+    groupBy: byMedia ? ['DATA_PROVIDER', 'MEDIA'] : ['DATA_PROVIDER'],
     enabled: motivProduct !== null,
   })
 
@@ -411,24 +419,31 @@ export default function DmpFeeClient() {
 
         {/* DMP 공식 정산값 — Open API DATA_PROVIDER 집계 (월별 실측, 사용자 결정 2026-06-16) */}
         {motivProduct && (() => {
-          const rows = dataProviderSettlement.rows
+          const rawRows = dpSnapshot.doc
+            ? dpSnapshot.doc.rows.map(r => ({ dimension: r.dimension, metrics: r.metrics }))
+            : dataProviderSettlement.rows
+          const rows = rawRows.map(r => ({ ...r, metrics: dpSnapshot.effectiveMetrics(r as { dimension: unknown[]; metrics: Record<string, number> }) }))
           const totalCost = rows.reduce((s, r) => s + (r.metrics.mediaCost ?? 0), 0)
           return (
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100">
+              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100 flex-wrap">
                 <div className="flex items-center gap-2">
                   <p className="text-xs font-semibold text-gray-700">DMP(데이터 제공자)별 정산 ({month})</p>
                   <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+                  <SnapshotStatusBadge doc={dpSnapshot.doc} />
                 </div>
-                <label className="flex items-center gap-1.5 text-[11px] text-gray-500 select-none cursor-pointer" title="DMP × 매체 매트릭스로 분리해 확인">
-                  <input
-                    type="checkbox"
-                    checked={byMedia}
-                    onChange={e => setByMedia(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-emerald-600"
-                  />
-                  매체별로 보기
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-[11px] text-gray-500 select-none cursor-pointer" title="DMP × 매체 매트릭스로 분리해 확인">
+                    <input
+                      type="checkbox"
+                      checked={byMedia}
+                      onChange={e => setByMedia(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-emerald-600"
+                    />
+                    매체별로 보기
+                  </label>
+                  <SnapshotActions snapshot={dpSnapshot} liveRows={dataProviderSettlement.rows} />
+                </div>
               </div>
               {dataProviderSettlement.loading ? (
                 <div className="px-5 py-10 text-center text-sm text-gray-400 flex items-center justify-center gap-2">
@@ -461,8 +476,8 @@ export default function DmpFeeClient() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {rows.map((r, i) => {
-                        const dp = findDimension(r, 'DATA_PROVIDER')
-                        const md = byMedia ? findDimension(r, 'MEDIA') : undefined
+                        const dp = findDimension(r as Parameters<typeof findDimension>[0], 'DATA_PROVIDER')
+                        const md = byMedia ? findDimension(r as Parameters<typeof findDimension>[0], 'MEDIA') : undefined
                         const cost = r.metrics.mediaCost ?? 0
                         // 명세: 데이터비용 없으면 id="NON", name="데이터비용 없음"
                         const isNone = dp?.id === 'NON'

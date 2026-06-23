@@ -39,6 +39,8 @@ import { ModalShell } from "@/components/atoms/ModalShell"
 import { useOpenApiSettlements } from "@/lib/hooks/useOpenApiSettlements"
 import { findDimension } from "@/lib/openApi/settlementsTypes"
 import { friendlyOpenApiError } from "@/lib/openApi/health"
+import { useOpenApiSettlementSnapshot } from "@/lib/hooks/useOpenApiSettlementSnapshot"
+import { SnapshotActions, SnapshotStatusBadge } from "@/components/settlement/SnapshotActions"
 
 function fmt(n: number) { return roundWon(n).toLocaleString("ko-KR") }
 function toMonthStr(d: Date) {
@@ -106,6 +108,8 @@ export default function SalesPurchasePage() {
     order: 'DESC',
     enabled: motivProduct !== null,
   })
+  // DB 영속화 스냅샷 (PR-C 인프라).
+  const agencySnapshot = useOpenApiSettlementSnapshot({ month, groupBy: ['AGENCY'], enabled: motivProduct !== null })
 
   // ── 매출/매입 정확성 보정 — campaigns.index 의 stats 는 lifetime 누적 가능성. ──
   // /stats/campaign/breakdown 으로 해당 월의 정확한 기간 stats 를 별도 fetch.
@@ -368,7 +372,10 @@ export default function SalesPurchasePage() {
 
         {/* CT/CTV 대행사별 정산 (Open API · 월별 실측) — revenue/grossProfit/margin/mediaCost */}
         {motivProduct && (() => {
-          const rows = agencySettlement.rows
+          const rawRows = agencySnapshot.doc
+            ? agencySnapshot.doc.rows.map(r => ({ dimension: r.dimension, metrics: r.metrics }))
+            : agencySettlement.rows
+          const rows = rawRows.map(r => ({ ...r, metrics: agencySnapshot.effectiveMetrics(r as { dimension: unknown[]; metrics: Record<string, number> }) }))
           const tot = rows.reduce((a, r) => ({
             revenue: a.revenue + (r.metrics.revenue ?? 0),
             grossProfit: a.grossProfit + (r.metrics.grossProfit ?? 0),
@@ -376,9 +383,15 @@ export default function SalesPurchasePage() {
           }), { revenue: 0, grossProfit: 0, mediaCost: 0 })
           return (
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-              <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
-                <p className="text-xs font-semibold text-gray-700">CT/CTV 대행사별 정산 ({month})</p>
-                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-gray-700">CT/CTV 대행사별 정산 ({month})</p>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700" title="Open API 월별 실측값 — 정산 공식값으로 사용">공식 정산값 · Open API</span>
+                  <SnapshotStatusBadge doc={agencySnapshot.doc} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <SnapshotActions snapshot={agencySnapshot} liveRows={agencySettlement.rows} />
+                </div>
               </div>
               {agencySettlement.loading ? (
                 <div className="px-5 py-10 text-center text-sm text-gray-400">불러오는 중…</div>
@@ -409,7 +422,7 @@ export default function SalesPurchasePage() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {rows.map((r, i) => {
-                        const ag = findDimension(r, 'AGENCY')
+                        const ag = findDimension(r as Parameters<typeof findDimension>[0], 'AGENCY')
                         return (
                           <tr key={ag?.id ?? i} className="hover:bg-gray-50/50 transition-colors">
                             <td className="px-5 py-2.5 font-medium text-gray-800">{ag?.name ?? ag?.id ?? '—'}</td>
