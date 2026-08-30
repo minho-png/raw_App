@@ -1,0 +1,120 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { checkCronAuth } from '@/lib/auth/cronAuth'
+import { fetchMessages, imapConfigFromEnv } from '@/lib/email/imapReader'
+import { sendGmail } from '@/lib/email/gmailSender'
+import { analyzeMessages, attachLlmInsight, detectOptionsFromEnv } from '@/lib/publica/reportAnalyzer'
+import { formatAlertEmail } from '@/lib/publica/alertFormatter'
+
+/**
+ * Publica 데일리 리포트 분석 에이전트 — Vercel Cron 전용 엔드포인트.
+ *
+ * 흐름: 봇 메일함 IMAP 조회 → CSV 첨부 파싱 → 규칙 탐지 → (선택) LLM 요약 → 결과 메일 발송.
+ *
+ * 필수 env: CRON_SECRET, PUBLICA_IMAP_USER, PUBLICA_IMAP_PASSWORD,
+ *           GMAIL_USER, GMAIL_APP_PASSWORD, PUBLICA_ALERT_RECIPIENT
+ * 자세한 설정은 docs/PUBLICA_DAILY_REPORT_AGENT.md 참고.
+ */
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+// IMAP 조회 + 3개 CSV 파싱 + LLM 호출까지 여유를 둔다 (Vercel 기본 10s 로는 부족).
+export const maxDuration = 60
+
+/** 리포트 미수신도 이상 신호로 간주할지 (기본 true — 무소식이 곧 장애일 수 있음). */
+const ALERT_ON_MISSING = process.env.PUBLICA_ALERT_ON_MISSING !== 'false'
+/** 이상이 없어도 매일 발송할지 (기본 false — 이상 있을 때만 알림). */
+const ALWAYS_SEND = process.env.PUBLICA_ALWAYS_SEND === 'true'
+
+function recipient(): string {
+  return (process.env.PUBLICA_ALERT_RECIPIENT || process.env.ALERT_RECIPIENT || '').trim()
+}
+
+function lookbackHours(): number {
+  const n = Number(process.env.PUBLICA_LOOKBACK_HOURS)
+  return Number.isFinite(n) && n > 0 ? n : 26 // 하루 1회 발송 + 지연 여유
+}
+
+export async function GET(req: NextRequest) {
+  const auth = checkCronAuth(req)
+  if (!auth.ok) {
+    console.warn('[cron/publica-daily-report] 401:', auth.reason, auth.hint)
+    return NextResponse.json(
+      { ok: false, error: 'unauthorized', reason: auth.reason, hint: auth.hint },
+      { status: 401 },
+    )
+  }
+
+  const to = recipient()
+  if (!to) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'missing_recipient',
+        hint: 'PUBLICA_ALERT_RECIPIENT (또는 ALERT_RECIPIENT) 환경변수 미설정',
+      },
+      { status: 500 },
+    )
+  }
+
+  const now = new Date()
+  try {
+    const since = new Date(now.getTime() - lookbackHours() * 60 * 60 * 1000)
+    const messages = await fetchMessages(imapConfigFromEnv(), {
+      since,
+      from: process.env.PUBLICA_SENDER_FILTER?.trim() || 'publica',
+      limit: Number(process.env.PUBLICA_MAX_MESSAGES) || 20,
+    })
+
+    // ── 리포트 미수신 — 침묵도 장애 신호로 처리 ────────────────
+    if (messages.length === 0) {
+      if (!ALERT_ON_MISSING) {
+        return NextResponse.json({ ok: true, sent: false, reason: 'no_messages', ranAt: now.toISOString() })
+      }
+      const subject = `[Publica] 리포트 미수신 — 최근 ${lookbackHours()}시간`
+      const text = `최근 ${lookbackHours()}시간 동안 Publica 리포트 메일이 수신되지 않았습니다.\n`
+        + `조회 기준: ${since.toISOString()} 이후, 발신자 필터 "${process.env.PUBLICA_SENDER_FILTER?.trim() || 'publica'}"\n\n`
+        + `확인 사항: Publica 발송 중단 여부 / 개인 메일함의 자동 전달 규칙 / 봇 메일함 수신 상태`
+      const { id } = await sendGmail({ to, subject, text, html: `<p>${text.replace(/\n/g, '<br/>')}</p>` })
+      return NextResponse.json({
+        ok: true, sent: true, reason: 'no_messages', messageId: id, ranAt: now.toISOString(),
+      })
+    }
+
+    // ── 분석 ──────────────────────────────────────────────────
+    const base = analyzeMessages(messages, detectOptionsFromEnv())
+    const analysis = await attachLlmInsight(base)
+
+    const hasFindings = analysis.counts.critical > 0 || analysis.counts.warning > 0
+    const shouldSend = hasFindings || ALWAYS_SEND || analysis.warnings.length > 0
+
+    if (!shouldSend) {
+      return NextResponse.json({
+        ok: true,
+        sent: false,
+        reason: 'no_anomalies',
+        messages: messages.length,
+        reports: analysis.reports.length,
+        ranAt: now.toISOString(),
+      })
+    }
+
+    const { subject, text, html } = formatAlertEmail(analysis, now)
+    const { id } = await sendGmail({ to, subject, text, html })
+
+    return NextResponse.json({
+      ok: true,
+      sent: true,
+      messageId: id,
+      recipient: to,
+      messages: messages.length,
+      reports: analysis.reports.map(r => r.kind),
+      counts: analysis.counts,
+      truncated: analysis.truncated,
+      warnings: analysis.warnings,
+      ranAt: now.toISOString(),
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[cron/publica-daily-report] error:', msg)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+  }
+}

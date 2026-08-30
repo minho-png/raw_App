@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/motiv-snapshot",
       "schedule": "5 0 * * *"
+    },
+    {
+      "path": "/api/cron/publica-daily-report",
+      "schedule": "0 4 * * *"
     }
   ]
 }
