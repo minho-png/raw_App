@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { checkCronAuth } from '@/lib/auth/cronAuth'
 import { fetchMessages, imapConfigFromEnv } from '@/lib/email/imapReader'
-import { sendGmail } from '@/lib/email/gmailSender'
+import { sendPublicaAlert, publicaSenderFromEnv, publicaRecipientFromEnv } from '@/lib/email/publicaSender'
 import { analyzeMessages, attachLlmInsight, detectOptionsFromEnv } from '@/lib/publica/reportAnalyzer'
 import { formatAlertEmail } from '@/lib/publica/alertFormatter'
 
@@ -24,10 +24,6 @@ const ALERT_ON_MISSING = process.env.PUBLICA_ALERT_ON_MISSING !== 'false'
 /** 이상이 없어도 매일 발송할지 (기본 false — 이상 있을 때만 알림). */
 const ALWAYS_SEND = process.env.PUBLICA_ALWAYS_SEND === 'true'
 
-function recipient(): string {
-  return (process.env.PUBLICA_ALERT_RECIPIENT || process.env.ALERT_RECIPIENT || '').trim()
-}
-
 function lookbackHours(): number {
   const n = Number(process.env.PUBLICA_LOOKBACK_HOURS)
   return Number.isFinite(n) && n > 0 ? n : 26 // 하루 1회 발송 + 지연 여유
@@ -43,16 +39,18 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const to = recipient()
-  if (!to) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'missing_recipient',
-        hint: 'PUBLICA_ALERT_RECIPIENT (또는 ALERT_RECIPIENT) 환경변수 미설정',
-      },
-      { status: 500 },
-    )
+  // 메일 설정은 IMAP 조회보다 먼저 검증한다 — 다 읽고 나서 보낼 곳이 없으면 헛수고.
+  // publicaSenderFromEnv 는 공용 GMAIL_USER 로 폴백하지 않고, 전용 계정이
+  // 없으면 여기서 막는다 (잘못된 계정으로 나가는 것보다 안 나가는 편이 낫다).
+  let to: string
+  let senderAddress: string
+  try {
+    to = publicaRecipientFromEnv()
+    senderAddress = publicaSenderFromEnv().user
+  } catch (e) {
+    const hint = e instanceof Error ? e.message : String(e)
+    console.error('[cron/publica-daily-report] mail config:', hint)
+    return NextResponse.json({ ok: false, error: 'mail_config', hint }, { status: 500 })
   }
 
   const now = new Date()
@@ -73,9 +71,9 @@ export async function GET(req: NextRequest) {
       const text = `최근 ${lookbackHours()}시간 동안 Publica 리포트 메일이 수신되지 않았습니다.\n`
         + `조회 기준: ${since.toISOString()} 이후, 발신자 필터 "${process.env.PUBLICA_SENDER_FILTER?.trim() || 'publica'}"\n\n`
         + `확인 사항: Publica 발송 중단 여부 / 개인 메일함의 자동 전달 규칙 / 봇 메일함 수신 상태`
-      const { id } = await sendGmail({ to, subject, text, html: `<p>${text.replace(/\n/g, '<br/>')}</p>` })
+      const { id, from } = await sendPublicaAlert({ to, subject, text, html: `<p>${text.replace(/\n/g, '<br/>')}</p>` })
       return NextResponse.json({
-        ok: true, sent: true, reason: 'no_messages', messageId: id, ranAt: now.toISOString(),
+        ok: true, sent: true, reason: 'no_messages', messageId: id, from, recipient: to, ranAt: now.toISOString(),
       })
     }
 
@@ -91,6 +89,7 @@ export async function GET(req: NextRequest) {
         ok: true,
         sent: false,
         reason: 'no_anomalies',
+        from: senderAddress,
         messages: messages.length,
         reports: analysis.reports.length,
         ranAt: now.toISOString(),
@@ -98,12 +97,13 @@ export async function GET(req: NextRequest) {
     }
 
     const { subject, text, html } = formatAlertEmail(analysis, now)
-    const { id } = await sendGmail({ to, subject, text, html })
+    const { id, from } = await sendPublicaAlert({ to, subject, text, html })
 
     return NextResponse.json({
       ok: true,
       sent: true,
       messageId: id,
+      from,
       recipient: to,
       messages: messages.length,
       reports: analysis.reports.map(r => r.kind),

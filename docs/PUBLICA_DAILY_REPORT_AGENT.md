@@ -35,8 +35,10 @@ Publica(`svc-publica-reporting@…`)는 매일 **3통**을 보내고, 각 메일
                                      raw_App
                                         │  분석
                                         ▼
-                                  결과 메일 발송
+                        봇 메일함에서 발신 ──▶ 개인 계정 (분석 결과 수신)
 ```
+
+봇 메일함은 **하나**다. 같은 계정이 리포트를 받고(IMAP) 분석 결과를 보낸다(SMTP).
 
 - 저장소·Vercel 환경변수에는 **봇 메일함** 자격증명만 들어간다.
 - 개인 메일은 전달 대상이 아니므로 애초에 도달하지 않는다.
@@ -63,8 +65,15 @@ Publica(`svc-publica-reporting@…`)는 매일 **3통**을 보내고, 각 메일
 | `CRON_SECRET` | cron 엔드포인트 인증 (기존 cron 과 공용) |
 | `PUBLICA_IMAP_USER` | 봇 메일함 주소 |
 | `PUBLICA_IMAP_PASSWORD` | 봇 계정 앱 비밀번호 (공백은 자동 제거) |
-| `GMAIL_USER` / `GMAIL_APP_PASSWORD` | 결과 메일 **발신** 계정 (기존 알림과 공용) |
-| `PUBLICA_ALERT_RECIPIENT` | 결과 수신 주소. 미설정 시 `ALERT_RECIPIENT` 로 fallback |
+| `PUBLICA_ALERT_RECIPIENT` | 결과 수신 주소 (예: `dk.lee@motiv-i.com`). **폴백 없음** |
+
+> **발신 계정은 공용 `GMAIL_USER` 를 쓰지 않는다.**
+> Publica 알림은 위 봇 계정(`PUBLICA_IMAP_*`)으로 발송된다 — 봇 메일함 하나가
+> 리포트 수신과 알림 발신을 겸한다. 발신만 다른 계정으로 나누고 싶으면
+> `PUBLICA_SMTP_USER` / `PUBLICA_SMTP_PASSWORD` 를 따로 지정한다.
+> 전용 계정이 없거나 공용 `GMAIL_USER` 와 같은 주소면 **발송 대신 에러**를 낸다
+> (잘못된 계정으로 새어나가는 것보다 안 나가는 편이 낫다).
+> 의도적으로 같은 주소를 쓰려면 `PUBLICA_ALLOW_SHARED_SENDER=true`.
 
 선택값(조회 조건·발송 정책·탐지 임계값·LLM)은 `.env.local.example` 의
 「Publica 데일리 리포트 에이전트」 절에 전부 주석과 함께 정리되어 있다.
@@ -195,7 +204,8 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://<배포주소>/api/cron/pub
 | `lib/publica/anomalyDetector.ts` | Service | 탐지 규칙 (순수 함수) |
 | `lib/publica/alertFormatter.ts` | Service | 메일 제목·본문 |
 | `lib/publica/reportAnalyzer.ts` | Service | 오케스트레이션 + LLM |
-| `lib/email/imapReader.ts` | Repository | IMAP 조회 |
+| `lib/email/imapReader.ts` | Repository | 봇 메일함 IMAP 조회 |
+| `lib/email/publicaSender.ts` | Repository | 전용 계정 발신 (공용 계정 폴백 차단) |
 | `lib/auth/cronAuth.ts` | — | cron Bearer 인증 |
 | `app/api/cron/publica-daily-report/route.ts` | Controller | 엔드포인트 |
 | `tests/publicaErrorCodes.test.ts` | 테스트 | 사전·집계 |
