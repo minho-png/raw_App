@@ -69,9 +69,16 @@ export async function GET(req: NextRequest) {
   const now = new Date()
   try {
     const since = new Date(now.getTime() - lookbackHours() * 60 * 60 * 1000)
+    // 발신자 필터. dry-run 에 한해 ?from= 으로 덮어쓸 수 있다 — 자동 전달은 앞으로
+    // 오는 메일에만 걸리므로, 과거 리포트를 손으로 전달해 검증할 때 필요하다
+    // (수동 전달은 From 이 전달한 사람으로 바뀌어 원 발신자 필터에 걸리지 않는다).
+    // 운영 실행 경로는 env 값만 쓴다 — 예약 실행 동작을 쿼리로 흔들지 않기 위함.
+    const senderFilter = (dryRun ? req.nextUrl.searchParams.get('from')?.trim() : '')
+      || process.env.PUBLICA_SENDER_FILTER?.trim()
+      || 'publica'
     const messages = await fetchMessages(imapConfigFromEnv(), {
       since,
-      from: process.env.PUBLICA_SENDER_FILTER?.trim() || 'publica',
+      from: senderFilter,
       limit: Number(process.env.PUBLICA_MAX_MESSAGES) || 20,
     })
 
@@ -82,12 +89,13 @@ export async function GET(req: NextRequest) {
       }
       const subject = `[Publica] 리포트 미수신 — 최근 ${lookbackHours()}시간`
       const text = `최근 ${lookbackHours()}시간 동안 Publica 리포트 메일이 수신되지 않았습니다.\n`
-        + `조회 기준: ${since.toISOString()} 이후, 발신자 필터 "${process.env.PUBLICA_SENDER_FILTER?.trim() || 'publica'}"\n\n`
+        + `조회 기준: ${since.toISOString()} 이후, 발신자 필터 "${senderFilter}"\n\n`
         + `확인 사항: Publica 발송 중단 여부 / 개인 메일함의 자동 전달 규칙 / 봇 메일함 수신 상태`
       if (dryRun) {
         return NextResponse.json({
           ok: true, dryRun: true, sent: false, reason: 'no_messages',
           wouldSend: true, subject, from: senderAddress, recipient: to,
+          searched: { since: since.toISOString(), senderFilter, mailbox: process.env.PUBLICA_IMAP_MAILBOX?.trim() || 'INBOX' },
           mailConfigError: mailConfigError || undefined, ranAt: now.toISOString(),
         })
       }
@@ -125,6 +133,7 @@ export async function GET(req: NextRequest) {
         sent: false,
         wouldSend: shouldSend,
         subject,
+        searched: { since: since.toISOString(), senderFilter },
         from: senderAddress,
         recipient: to,
         mailConfigError: mailConfigError || undefined,

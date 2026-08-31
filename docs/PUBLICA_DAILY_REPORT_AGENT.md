@@ -42,6 +42,24 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 | `from` / `recipient` | 어느 계정에서 누구에게 나갈지 |
 | `mailConfigError` | 발신·수신 설정 문제 (dry-run 에서는 중단하지 않고 보고만 함) |
 
+### 첫 설정 직후 — 자동 전달은 소급되지 않는다
+
+Gmail 자동 전달은 **규칙을 만든 뒤 도착하는 메일에만** 걸린다. 따라서 설정 직후
+봇 메일함은 비어 있고, 실제 데이터는 다음 리포트부터 들어온다.
+
+기다리지 않고 지금 검증하려면 과거 리포트를 봇 주소로 **수동 전달**한다.
+단 수동 전달은 `From` 이 전달한 사람으로 바뀌어 원 발신자 필터(`publica`)에
+걸리지 않으므로, dry-run 에 한해 `?from=` 으로 필터를 덮어쓴다:
+
+```bash
+curl -s -H "Authorization: Bearer $CRON_SECRET" \
+  "https://<배포주소>/api/cron/publica-daily-report?dryRun=1&from=dk.lee" | jq
+```
+
+`from` 덮어쓰기는 dry-run 에서만 동작한다. 예약 실행 경로는 env 값만 쓰므로
+운영 동작이 쿼리로 흔들리지 않는다. 응답의 `searched` 필드에 실제 적용된
+조회 구간·필터·메일함이 실려 있어, 0건일 때 원인을 바로 짚을 수 있다.
+
 `messages` 가 비어 있으면 아직 전달된 메일이 없는 것이다. 다음을 확인한다:
 개인 계정의 전달 필터 활성화 여부(봇 메일함의 확인 메일 승인 필요) /
 봇 계정의 IMAP 사용 설정 / `PUBLICA_LOOKBACK_HOURS` 조회 구간(기본 26시간).
