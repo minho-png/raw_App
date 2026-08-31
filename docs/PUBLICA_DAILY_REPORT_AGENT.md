@@ -20,6 +20,35 @@ Publica(`svc-publica-reporting@…`)는 매일 **3통**을 보내고, 각 메일
 
 ---
 
+## 설정 검증 (dry-run)
+
+`?dryRun=1` 을 붙이면 **메일을 보내지 않고** 조회·파싱·탐지 결과만 JSON 으로 돌려준다.
+봇 계정과 전달 필터를 설정한 직후, 배선이 맞는지 확인할 때 쓴다.
+
+```bash
+curl -s -H "Authorization: Bearer $CRON_SECRET" \
+  "https://<배포주소>/api/cron/publica-daily-report?dryRun=1" | jq
+```
+
+응답에서 확인할 것:
+
+| 필드 | 의미 |
+|---|---|
+| `messages[].from` | 전달된 메일의 **원 발신자**. Publica 주소가 보이면 전달 필터 정상 |
+| `messages[].attachments` | 첨부 CSV 파일명. 비어 있으면 첨부 인식 실패 |
+| `reports[].kind` / `.rows` | 리포트 종류 판별 결과와 파싱된 행 수 |
+| `counts` / `anomalies` | 탐지 결과 |
+| `preview` | 실제로 발송될 메일 본문 |
+| `from` / `recipient` | 어느 계정에서 누구에게 나갈지 |
+| `mailConfigError` | 발신·수신 설정 문제 (dry-run 에서는 중단하지 않고 보고만 함) |
+
+`messages` 가 비어 있으면 아직 전달된 메일이 없는 것이다. 다음을 확인한다:
+개인 계정의 전달 필터 활성화 여부(봇 메일함의 확인 메일 승인 필요) /
+봇 계정의 IMAP 사용 설정 / `PUBLICA_LOOKBACK_HOURS` 조회 구간(기본 26시간).
+
+dry-run 은 메일함을 읽기 전용으로 열기 때문에 몇 번을 돌려도 안전하다.
+
+
 ## 2. 개인 메일함을 열지 않는 구조
 
 리포트는 개인 업무 계정으로 도착하지만, 에이전트에 개인 메일함 자격증명을 넣지 않는다.

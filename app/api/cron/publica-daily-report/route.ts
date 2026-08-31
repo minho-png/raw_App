@@ -11,7 +11,12 @@ import { formatAlertEmail } from '@/lib/publica/alertFormatter'
  * 흐름: 봇 메일함 IMAP 조회 → CSV 첨부 파싱 → 규칙 탐지 → (선택) LLM 요약 → 결과 메일 발송.
  *
  * 필수 env: CRON_SECRET, PUBLICA_IMAP_USER, PUBLICA_IMAP_PASSWORD,
- *           GMAIL_USER, GMAIL_APP_PASSWORD, PUBLICA_ALERT_RECIPIENT
+ *           PUBLICA_ALERT_RECIPIENT
+ * 발신은 봇 계정(PUBLICA_IMAP_*)으로 나간다 — 공용 GMAIL_USER 는 쓰지 않는다.
+ *
+ * `?dryRun=1` 을 붙이면 조회·파싱·탐지까지만 하고 **메일을 보내지 않는다.**
+ * 설정 직후 배선(전달 필터 / IMAP 접속 / 첨부 인식)을 확인하는 용도.
+ *
  * 자세한 설정은 docs/PUBLICA_DAILY_REPORT_AGENT.md 참고.
  */
 export const runtime = 'nodejs'
@@ -39,18 +44,26 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  // dry-run: 조회·파싱·탐지만 하고 발송하지 않는다 (설정 검증용).
+  const dryRun = req.nextUrl.searchParams.get('dryRun') === '1'
+
   // 메일 설정은 IMAP 조회보다 먼저 검증한다 — 다 읽고 나서 보낼 곳이 없으면 헛수고.
   // publicaSenderFromEnv 는 공용 GMAIL_USER 로 폴백하지 않고, 전용 계정이
   // 없으면 여기서 막는다 (잘못된 계정으로 나가는 것보다 안 나가는 편이 낫다).
-  let to: string
-  let senderAddress: string
+  let to = ''
+  let senderAddress = ''
+  let mailConfigError = ''
   try {
     to = publicaRecipientFromEnv()
     senderAddress = publicaSenderFromEnv().user
   } catch (e) {
-    const hint = e instanceof Error ? e.message : String(e)
-    console.error('[cron/publica-daily-report] mail config:', hint)
-    return NextResponse.json({ ok: false, error: 'mail_config', hint }, { status: 500 })
+    mailConfigError = e instanceof Error ? e.message : String(e)
+    // dry-run 은 메일을 보내지 않으므로 발송 설정이 아직 없어도 IMAP 배선을
+    // 먼저 확인할 수 있게 계속 진행한다. 실제 실행은 여기서 중단.
+    if (!dryRun) {
+      console.error('[cron/publica-daily-report] mail config:', mailConfigError)
+      return NextResponse.json({ ok: false, error: 'mail_config', hint: mailConfigError }, { status: 500 })
+    }
   }
 
   const now = new Date()
@@ -71,6 +84,13 @@ export async function GET(req: NextRequest) {
       const text = `최근 ${lookbackHours()}시간 동안 Publica 리포트 메일이 수신되지 않았습니다.\n`
         + `조회 기준: ${since.toISOString()} 이후, 발신자 필터 "${process.env.PUBLICA_SENDER_FILTER?.trim() || 'publica'}"\n\n`
         + `확인 사항: Publica 발송 중단 여부 / 개인 메일함의 자동 전달 규칙 / 봇 메일함 수신 상태`
+      if (dryRun) {
+        return NextResponse.json({
+          ok: true, dryRun: true, sent: false, reason: 'no_messages',
+          wouldSend: true, subject, from: senderAddress, recipient: to,
+          mailConfigError: mailConfigError || undefined, ranAt: now.toISOString(),
+        })
+      }
       const { id, from } = await sendPublicaAlert({ to, subject, text, html: `<p>${text.replace(/\n/g, '<br/>')}</p>` })
       return NextResponse.json({
         ok: true, sent: true, reason: 'no_messages', messageId: id, from, recipient: to, ranAt: now.toISOString(),
@@ -84,7 +104,7 @@ export async function GET(req: NextRequest) {
     const hasFindings = analysis.counts.critical > 0 || analysis.counts.warning > 0
     const shouldSend = hasFindings || ALWAYS_SEND || analysis.warnings.length > 0
 
-    if (!shouldSend) {
+    if (!shouldSend && !dryRun) {
       return NextResponse.json({
         ok: true,
         sent: false,
@@ -97,6 +117,33 @@ export async function GET(req: NextRequest) {
     }
 
     const { subject, text, html } = formatAlertEmail(analysis, now)
+
+    if (dryRun) {
+      return NextResponse.json({
+        ok: true,
+        dryRun: true,
+        sent: false,
+        wouldSend: shouldSend,
+        subject,
+        from: senderAddress,
+        recipient: to,
+        mailConfigError: mailConfigError || undefined,
+        messages: messages.map(m => ({
+          from: m.from,
+          subject: m.subject,
+          receivedAt: m.receivedAt.toISOString(),
+          attachments: m.attachments.map(a => a.filename),
+        })),
+        reports: analysis.reports.map(r => ({ kind: r.kind, filename: r.filename, rows: r.rows.length })),
+        counts: analysis.counts,
+        anomalies: analysis.anomalies,
+        truncated: analysis.truncated,
+        warnings: analysis.warnings,
+        preview: text,
+        ranAt: now.toISOString(),
+      })
+    }
+
     const { id, from } = await sendPublicaAlert({ to, subject, text, html })
 
     return NextResponse.json({
