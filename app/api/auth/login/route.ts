@@ -3,22 +3,25 @@ import clientPromise from '@/lib/mongodb'
 import { UserRepository } from '@/services/userRepository'
 import { createSessionToken, COOKIE_NAME } from '@/lib/auth/session'
 
+/** 기본 관리자 계정 (사용자 요청 2026-09-14 — 로그인 초기화). */
+const DEFAULT_ADMIN_ID = 'test1234'
+const DEFAULT_ADMIN_PW = 'test1234'
+
 /**
- * 사용자가 없을 때 기본 관리자를 즉시 생성합니다.
- * (최초 배포 시 auto-seed 경쟁 조건 방지)
+ * 기본 관리자(test1234/test1234)를 항상 사용 가능하게 보장합니다.
+ * - 계정이 없으면 생성, 비밀번호가 다르면 재설정 (self-healing).
+ * - test1234 계정만 대상 — 다른 사용자 계정은 건드리지 않습니다.
+ * - 정상 로그인 경로에서는 verify 성공 시 즉시 return 하여 쓰기 없음.
  */
 async function ensureDefaultAdmin(repo: UserRepository): Promise<void> {
   try {
-    const count = await repo.countUsers()
-    if (count > 0) return
-    await repo.createUser('Test1234', 'Test1234', 'admin')
-    console.log('[auth/login] 기본 관리자 계정 생성: Test1234')
+    const ok = await repo.verifyCredentials(DEFAULT_ADMIN_ID, DEFAULT_ADMIN_PW)
+    if (ok) return
+    await repo.upsertUser(DEFAULT_ADMIN_ID, DEFAULT_ADMIN_PW, 'admin')
+    console.log(`[auth/login] 기본 관리자 계정 초기화: ${DEFAULT_ADMIN_ID}`)
   } catch (e) {
-    // 이미 존재하면 중복 키 에러 → 무시
     const msg = String((e as Error)?.message ?? e)
-    if (!msg.includes('duplicate') && !msg.includes('E11000')) {
-      console.warn('[auth/login] 기본 관리자 시드 실패:', msg)
-    }
+    console.warn('[auth/login] 기본 관리자 초기화 실패:', msg)
   }
 }
 
